@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.5-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.6-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -245,7 +245,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.5_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.6_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 

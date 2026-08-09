@@ -264,8 +264,10 @@ function handleLayoutChange(payload: {
   // Images (~52px thumbs) and file chips (~26px) each need vertical room in input mode.
   const imagesHeight = payload.hasImages ? 60 : 0;
   const filesHeight = payload.hasFiles ? 34 : 0;
-  // In chat mode pickers overlay the conversation above the composer. They
-  // must not resize the native window or push the chat viewport upward.
+  // Input mode: grow the native window around in-flow pickers.
+  // Chat mode: pickers stay in-flow inside the composer (thread shrinks) so they
+  // are never clipped by absolute positioning against overflow:hidden ancestors.
+  // Do not resize the chat window for picker chrome.
   const extraHeight =
     (modeValue === "chat" ? 0 : pickerHeight) +
     modelMenuHeight +
@@ -276,9 +278,10 @@ function handleLayoutChange(payload: {
   if (modeValue === "input") {
     chatWindowInitialized.value = false;
     lastComposerExtraHeight.value = 0;
-    queueLayoutResize(() =>
-      resizeWindow(PANEL_WIDTH, INPUT_BAR_HEIGHT + extraHeight, false, false, "bottom"),
-    );
+    queueLayoutResize(async () => {
+      await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
+      await resizeWindow(PANEL_WIDTH, INPUT_BAR_HEIGHT + extraHeight, false, false, "bottom");
+    });
     return;
   }
 
@@ -400,6 +403,15 @@ async function close() {
 onMounted(async () => {
   const window = getCurrentWebviewWindow();
   void window.setMaximizable(false);
+  // Sync native size with design px + UI zoom before the first paint settles.
+  // tauri.conf / window.rs create 640×84, but zoomed shells still need a
+  // matching LogicalSize or the first Alt+Alt frame looks clipped.
+  if (mode.value === "input") {
+    queueLayoutResize(async () => {
+      await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
+      await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false, false, "bottom");
+    });
+  }
   void window.listen<CapturedContext>(IPC_EVENTS.contextCaptured, (event) => {
     if (mode.value === "chat") {
       return;
@@ -418,7 +430,6 @@ onMounted(async () => {
   // 动态窗口（overlay-N）即将被销毁，不需要 reset UI/resize
   const isBaseOverlay = windowLabel === "overlay";
   if (isBaseOverlay) {
-    void applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
     void window.listen("overlay-hidden", () => {
       capturedContext.value = null;
       contextReady.value = false;

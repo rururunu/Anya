@@ -236,8 +236,9 @@ fn create_new_overlay(app: &AppHandle, context: &RequestContext) {
     pending_contexts().insert(label.clone(), context.clone());
     match WebviewWindowBuilder::new(app, &label, WebviewUrl::App("/#/overlay".into()))
         .title(app.package_info().name.clone())
-        .inner_size(640.0, 82.0)
-        .min_inner_size(640.0, 82.0)
+        // Keep in sync with Overlay.vue INPUT_HEIGHT (82px bar + 1px dock borders).
+        .inner_size(640.0, 84.0)
+        .min_inner_size(640.0, 84.0)
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -344,7 +345,7 @@ pub fn toggle_overlay(app: &AppHandle, mouse_pos: Option<(i32, i32)>) {
                 let context = resolve_environment_context(app, capture_now());
                 if let Some((mx, my)) = mouse_pos.filter(|_| has_selected_context(&context)) {
                     const WIN_W: f64 = 640.0;
-                    const WIN_H: f64 = 82.0;
+                    const WIN_H: f64 = 84.0;
                     const OFFSET: i32 = 16;
                     let (x, y) = calc_position_near_mouse(&window, mx, my, WIN_W, WIN_H, OFFSET);
                     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
@@ -432,7 +433,8 @@ fn place_and_show_overlay_at_mouse(
     context: &RequestContext,
 ) {
     const WIN_W: f64 = 640.0;
-    const WIN_H: f64 = 82.0;
+    // Keep in sync with Overlay.vue INPUT_HEIGHT (82px bar + 1px dock borders).
+    const WIN_H: f64 = 84.0;
     const OFFSET: i32 = 16;
 
     let all_windows = app.webview_windows();

@@ -1674,9 +1674,10 @@ onUnmounted(() => {
   );
 }
 
-/* Chat pickers are intentionally allowed to extend into the thread area. */
+/* Chat-mode composer grows with in-flow pickers; keep overflow clipped so
+   dock corners stay clean (lists no longer float into the thread). */
 .peek-panel.chat .composer-dock {
-  overflow: visible;
+  overflow: hidden;
 }
 
 .peek-panel.chat :deep(.input-footer-primary) {

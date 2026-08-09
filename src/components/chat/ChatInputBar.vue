@@ -4139,7 +4139,10 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   flex-direction: column;
 }
 
-/* Pickers float above the composer in chat mode instead of changing its layout. */
+/* Pickers: workbench floats them; Alt+Alt overlay keeps them in document flow
+   so input-mode window growth / chat-mode composer height actually wraps the list.
+   Absolute `bottom: 100%` was clipped by overflow:hidden ancestors (and chat
+   mode intentionally skipped native resize), so "/" and option menus vanished. */
 .chat-input-shell.overlay-pickers :deep(.command-list) {
   position: absolute;
   z-index: 30;
@@ -4152,6 +4155,16 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   box-shadow: 0 -10px 28px color-mix(in srgb, #000 24%, transparent);
 }
 
+.chat-input-shell.overlay-composer.overlay-pickers :deep(.command-list) {
+  position: relative;
+  z-index: 1;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  box-shadow: none;
+}
+
 /* File / hash mention lists float above the input with a visible gap, and keep
    full border so they don't visually merge with (or cover) the input frame. */
 .chat-input-shell.overlay-pickers :deep(.file-suggestion-list),
@@ -4160,6 +4173,14 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   max-height: min(320px, 42vh);
   border-bottom: 1px solid var(--peek-border);
   border-radius: 8px;
+}
+
+.chat-input-shell.overlay-composer.overlay-pickers :deep(.file-suggestion-list),
+.chat-input-shell.overlay-composer.overlay-pickers :deep(.hash-suggestion-list) {
+  bottom: auto;
+  max-height: min(320px, 42vh);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
 }
 
 .chat-input-shell.overlay-pickers :deep(.attach-resource-panel) {
@@ -4633,16 +4654,17 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 }
 
 .overlay-composer.overlay-pickers.chip-picker-open :deep(.command-list) {
-  right: 0;
-  bottom: 100%;
-  left: 0;
-  width: auto;
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
   padding: 4px 0;
   border: 1px solid var(--peek-border);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
   background: var(--peek-list-bg);
-  box-shadow: 0 -10px 28px color-mix(in srgb, #000 24%, transparent);
+  box-shadow: none;
 }
 
 .overlay-composer.overlay-pickers.interaction-request-open :deep(.ask-user-list),
