@@ -3,6 +3,7 @@ import {
   appendComposerSegment,
   flushLiveMessageToSegments,
   formatMentionPath,
+  isEditableTextSegment,
   joinInlineParts,
   mentionDisplayLabel,
   pasteLineCount,
@@ -87,5 +88,12 @@ describe("composerSegments", () => {
     const parsed = parseComposerTextToSegments("just a draft");
     expect(parsed.segments).toEqual([]);
     expect(parsed.liveMessage).toBe("just a draft");
+  });
+
+  it("identifies editable text segments", () => {
+    expect(isEditableTextSegment({ kind: "text", text: "hi" })).toBe(true);
+    expect(isEditableTextSegment({ kind: "paste", text: "a\nb" })).toBe(true);
+    expect(isEditableTextSegment({ kind: "paste", text: "a\nb\nc\nd\ne\nf" })).toBe(false);
+    expect(isEditableTextSegment({ kind: "mention", path: "a.ts" })).toBe(false);
   });
 });

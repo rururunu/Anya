@@ -47,6 +47,14 @@
   --peek-syntax-property: #0550ae;
   --peek-syntax-operator: #cf222e;
   --peek-syntax-punctuation: #1f2328;
+  --peek-chart-1: #4f8ef7;
+  --peek-chart-2: #34c98f;
+  --peek-chart-3: #f7a44f;
+  --peek-chart-4: #e05c7a;
+  --peek-chart-5: #9b6df2;
+  --peek-chart-6: #3ec6d9;
+  --peek-chart-7: #d9c14f;
+  --peek-chart-8: #8a9aa8;
 }
 
 [data-theme="dark"] {
@@ -95,6 +103,14 @@
   --peek-syntax-property: #79c0ff;
   --peek-syntax-operator: #ff7b72;
   --peek-syntax-punctuation: #c9d1d9;
+  --peek-chart-1: #6ea8ff;
+  --peek-chart-2: #4fd6a0;
+  --peek-chart-3: #ffb46b;
+  --peek-chart-4: #f0788f;
+  --peek-chart-5: #b18bfa;
+  --peek-chart-6: #5fd8e8;
+  --peek-chart-7: #e8d166;
+  --peek-chart-8: #a3b1c0;
 }
 
 :root,

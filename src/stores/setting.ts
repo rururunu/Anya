@@ -56,7 +56,7 @@ const defaultSettings: AppSettings = {
   collaborationModels: [],
   minimalCoding: false,
   zoom: 100,
-  hardwareAccelerationEnabled: true,
+  hardwareAccelerationEnabled: false,
   primaryHotkey: "Alt",
   primaryHotkeyEnabled: true,
   secondaryHotkey: "Ctrl+Alt+Space",
@@ -165,7 +165,7 @@ function applyCommonSettings(target: AppSettings, settings: AppSettings) {
   target.mcpServers = settings.mcpServers ?? [];
   target.enabledBuiltinSkills = settings.enabledBuiltinSkills ?? [];
   target.zoom = normalizeZoomValue(settings);
-  target.hardwareAccelerationEnabled = settings.hardwareAccelerationEnabled ?? true;
+  target.hardwareAccelerationEnabled = settings.hardwareAccelerationEnabled ?? false;
   target.primaryHotkey = settings.primaryHotkey ?? "Alt";
   target.primaryHotkeyEnabled = settings.primaryHotkeyEnabled ?? true;
   target.secondaryHotkey = settings.secondaryHotkey ?? "Ctrl+Alt+Space";

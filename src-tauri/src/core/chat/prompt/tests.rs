@@ -172,7 +172,8 @@ fn workspace_context_identifies_the_exact_active_directory() {
     assert!(content.contains(
         "[Current Workspace]\nName: Customer App\nRoot Directory: C:\\projects\\customer-app"
     ));
-    assert!(content.contains("never infer another workspace"));
+    assert!(content.contains("Do not infer another project"));
+    assert!(content.contains("MCP filesystem allow-lists"));
 }
 
 #[test]

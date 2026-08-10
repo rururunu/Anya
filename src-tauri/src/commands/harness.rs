@@ -3,6 +3,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::app_state::AppState;
 use crate::core::checkpoint::{shared_checkpoint_store, Checkpoint, CheckpointStore};
+use crate::core::event::PlanModeSource;
 use crate::core::tools::plan_mode::shared_plan_mode_store;
 use crate::core::tools::tool_approval::shared_tool_approval_store;
 use crate::models::chat::InteractionResolvedEvent;
@@ -19,6 +20,9 @@ pub struct RespondToolApprovalRequest {
 pub struct SetPlanModeRequest {
     pub session_id: String,
     pub active: bool,
+    /// How the gate was toggled. Defaults to manual (mode picker / explicit IPC).
+    #[serde(default)]
+    pub source: Option<PlanModeSource>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -75,10 +79,11 @@ pub fn set_plan_mode(
     request: SetPlanModeRequest,
 ) -> Result<(), String> {
     shared_plan_mode_store().set_active(&request.session_id, request.active);
+    let source = request.source.unwrap_or(PlanModeSource::Manual);
     state
         .core
         .chat()
-        .emit_plan_mode_changed(&request.session_id, request.active);
+        .emit_plan_mode_changed(&request.session_id, request.active, source);
     Ok(())
 }
 

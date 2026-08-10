@@ -23,10 +23,11 @@ pub struct SettingsState {
 }
 
 /// Read the one setting needed before Tauri creates the WebView2 environment.
-/// WebView2 already enables GPU rendering by default, so only the opt-out path
-/// needs a browser argument.
+/// Hardware acceleration defaults off; only the enabled path skips browser args.
 pub fn configure_prestart_webview() {
     let Some(app_data) = std::env::var_os("APPDATA") else {
+        // No settings file yet — apply the default (GPU off).
+        apply_disable_gpu_args();
         return;
     };
     let app_data = PathBuf::from(app_data);
@@ -43,7 +44,7 @@ pub fn configure_prestart_webview() {
     } else {
         legacy_path
     };
-    let hardware_acceleration_enabled = fs::read_to_string(settings_file)
+    let hardware_acceleration_enabled = fs::read_to_string(&settings_file)
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
         .and_then(|settings| {
@@ -51,11 +52,14 @@ pub fn configure_prestart_webview() {
                 .get("hardwareAccelerationEnabled")
                 .and_then(serde_json::Value::as_bool)
         })
-        .unwrap_or(true);
+        .unwrap_or(false);
     if hardware_acceleration_enabled {
         return;
     }
+    apply_disable_gpu_args();
+}
 
+fn apply_disable_gpu_args() {
     const DISABLE_GPU_ARGS: &str = "--disable-gpu --disable-gpu-compositing";
     let existing = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
     if existing.contains("--disable-gpu") {

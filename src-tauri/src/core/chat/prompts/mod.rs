@@ -9,6 +9,8 @@ pub const SYSTEM_PROMPT: &str = concat!(
     include_str!("../../../../prompts/policies.md"),
     "\n\n",
     include_str!("../../../../prompts/tools.md"),
+    "\n\n",
+    include_str!("../../../../prompts/charts.md"),
 );
 
 /// LLM 历史压缩用的 system prompt（Reasonix `summarySystemPrompt`）。
@@ -105,6 +107,21 @@ mod tests {
                 "stable system prompt should not reference skill-specific detail: {needle}"
             );
         }
+    }
+
+    #[test]
+    fn chart_prompt_defines_the_fenced_spec_protocol() {
+        assert!(SYSTEM_PROMPT.contains("# Data charts"));
+        assert!(SYSTEM_PROMPT.contains("```chart"));
+        assert!(SYSTEM_PROMPT.contains("\"type\":\"bar\""));
+        assert!(SYSTEM_PROMPT.contains("\"type\":\"bar3d\""));
+        assert!(SYSTEM_PROMPT.contains("\"series\""));
+        assert!(SYSTEM_PROMPT.contains("\"items\""));
+        assert!(SYSTEM_PROMPT.contains("indicators"));
+        assert!(SYSTEM_PROMPT.contains("nodes"));
+        assert!(SYSTEM_PROMPT.contains("`custom`"));
+        assert!(SYSTEM_PROMPT.contains("3D only when"));
+        assert!(SYSTEM_PROMPT.contains("skip the chart and answer in prose"));
     }
 
     #[test]

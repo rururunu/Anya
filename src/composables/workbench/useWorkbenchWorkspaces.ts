@@ -87,7 +87,7 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
 
   function clearWorkspaceLongPress(drag: WorkspacePointerDrag) {
     if (drag.longPressTimer) globalThis.clearTimeout(drag.longPressTimer);
-    drag.longPressTimer = 0;
+    drag.longPressTimer = null;
   }
 
   function suppressWorkspaceClick(workspaceId: string) {
@@ -111,7 +111,7 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
       startY: event.clientY,
       dragging: false,
       cancelled: false,
-      longPressTimer: 0,
+      longPressTimer: null,
     };
     drag.longPressTimer = globalThis.setTimeout(() => {
       const current = workspacePointerDrag.value;

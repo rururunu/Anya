@@ -182,7 +182,7 @@ pub(super) fn inject_context(
     }
     if let Some(workspace) = &context.workspace {
         blocks.push(format!(
-            "[Current Workspace]\nName: {}\nRoot Directory: {}\nTreat this as the exact active project. All file operations must use this root. When asked which workspace is active, answer with this name and root; never infer another workspace from the application identity, active window, or conversation history.",
+            "[Current Workspace]\nName: {}\nRoot Directory: {}\nTreat this as the exact active project. All file operations must use this root via built-in workspace tools (read_file, find_files, search, shell). Do not infer another project from memory, conversation history, the application identity, the active window, or MCP filesystem allow-lists — those are not the workspace root. When asked which workspace is active, answer with this name and root.",
             workspace.name, workspace.root
         ));
     }

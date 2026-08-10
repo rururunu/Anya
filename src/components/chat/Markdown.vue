@@ -23,6 +23,8 @@ import { marked } from "marked";
 import { computed, h, onMounted, onUpdated, ref, render, type Component } from "vue";
 import "katex/dist/katex.min.css";
 import { copyText } from "@/services/clipboard";
+import { parseChartSpec } from "@/services/chat/chartSpec";
+import { hydrateChartBlocks } from "./chartHydration";
 
 const props = defineProps<{
   content: string;
@@ -34,17 +36,33 @@ const rootRef = ref<HTMLElement | null>(null);
 
 const renderer = new marked.Renderer();
 
-marked.use(markedKatex({
-  nonStandard: true,
-  throwOnError: false,
-}));
+marked.use(
+  markedKatex({
+    nonStandard: true,
+    throwOnError: false,
+  }),
+);
 
 renderer.code = ({ text, lang }) => {
-  const requestedLanguage = lang?.trim().split(/\s+/)[0].toLowerCase() || "";
-  const language = /^[a-z0-9_+-]+$/.test(requestedLanguage) ? requestedLanguage : "";
-  const highlighted = language && hljs.getLanguage(language)
-    ? hljs.highlight(text, { language }).value
-    : hljs.highlightAuto(text).value;
+  const requestedLanguage = (lang ?? "").trim().split(/\s+/)[0]?.toLowerCase() || "";
+
+  if (requestedLanguage === "chart") {
+    const spec = parseChartSpec(text ?? "");
+    if (spec) {
+      return `<div class="chart-block" data-chart-spec="${escapeHtmlAttribute(JSON.stringify(spec))}"></div>\n`;
+    }
+  }
+
+  const language = /^[a-z0-9_+-]+$/.test(requestedLanguage)
+    ? requestedLanguage === "chart"
+      ? "json"
+      : requestedLanguage
+    : "";
+  const source = text ?? "";
+  const highlighted =
+    language && hljs.getLanguage(language)
+      ? hljs.highlight(source, { language }).value
+      : hljs.highlightAuto(source).value;
   const languageClass = language ? ` language-${language}` : "";
   const languageLabel = displayLanguage(language);
 
@@ -55,7 +73,9 @@ function iconForLanguage(language: string): Component {
   if (["diff", "patch"].includes(language)) {
     return GitCompareArrows;
   }
-  if (["bash", "shell", "sh", "zsh", "fish", "powershell", "ps1", "bat", "cmd"].includes(language)) {
+  if (
+    ["bash", "shell", "sh", "zsh", "fish", "powershell", "ps1", "bat", "cmd"].includes(language)
+  ) {
     return SquareTerminal;
   }
   if (["sql", "mysql", "pgsql", "postgresql", "graphql"].includes(language)) {
@@ -64,7 +84,22 @@ function iconForLanguage(language: string): Component {
   if (["json", "jsonc", "yaml", "yml", "toml", "xml"].includes(language)) {
     return Braces;
   }
-  if (["html", "css", "scss", "less", "javascript", "js", "typescript", "ts", "jsx", "tsx", "vue", "svelte"].includes(language)) {
+  if (
+    [
+      "html",
+      "css",
+      "scss",
+      "less",
+      "javascript",
+      "js",
+      "typescript",
+      "ts",
+      "jsx",
+      "tsx",
+      "vue",
+      "svelte",
+    ].includes(language)
+  ) {
     return Code2;
   }
   if (["csharp", "cs", "fsharp", "fs"].includes(language)) {
@@ -93,6 +128,14 @@ function displayLanguage(language: string) {
   return labels[language] || language || "Code";
 }
 
+function escapeHtmlAttribute(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function renderButtonIcon(button: HTMLButtonElement, icon: Component) {
   render(h(icon, { size: 14, strokeWidth: 2, "aria-hidden": "true" }), button);
 }
@@ -102,15 +145,24 @@ function hydrateCodeBlockIcons() {
   if (!root) return;
   root.querySelectorAll<HTMLElement>("[data-code-language-icon]").forEach((element) => {
     const language = element.dataset.codeLanguageIcon ?? "";
-    render(h(iconForLanguage(language), { size: 13, strokeWidth: 2, "aria-hidden": "true" }), element);
+    render(
+      h(iconForLanguage(language), { size: 13, strokeWidth: 2, "aria-hidden": "true" }),
+      element,
+    );
   });
   root.querySelectorAll<HTMLButtonElement>("[data-code-copy]").forEach((button) => {
     renderButtonIcon(button, Copy);
   });
 }
 
-onMounted(hydrateCodeBlockIcons);
-onUpdated(hydrateCodeBlockIcons);
+function hydrateAll() {
+  hydrateCodeBlockIcons();
+  const root = rootRef.value;
+  if (root) hydrateChartBlocks(root);
+}
+
+onMounted(hydrateAll);
+onUpdated(hydrateAll);
 
 marked.setOptions({
   breaks: true,
@@ -119,10 +171,33 @@ marked.setOptions({
 });
 
 const html = computed(() => {
-  const raw = marked.parse(normalizeLegacyMath(props.content || ""), { async: false }) as string;
-  return DOMPurify.sanitize(raw, {
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|file|sms):|[^&#]*?:|data:image\/)/i
-  });
+  try {
+    const raw = marked.parse(normalizeLegacyMath(props.content || ""), { async: false }) as string;
+    return DOMPurify.sanitize(raw, {
+      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|file|sms):|[^&#]*?:|data:image\/)/i,
+      // Tables are part of the default allowlist, but some DOM environments
+      // (e.g. certain test harnesses or webviews) resolve tag checks
+      // differently. Declare the full table family explicitly so markdown
+      // tables can never be silently stripped and shown as raw pipe text.
+      ADD_TAGS: [
+        "table",
+        "thead",
+        "tbody",
+        "tfoot",
+        "tr",
+        "th",
+        "td",
+        "caption",
+        "colgroup",
+        "col",
+      ],
+    });
+  } catch (error) {
+    console.error("markdown render failed:", error);
+    return DOMPurify.sanitize(
+      `<pre class="markdown-fallback">${escapeHtmlAttribute(props.content || "")}</pre>`,
+    );
+  }
 });
 
 async function onMarkdownClick(event: MouseEvent) {
@@ -198,13 +273,12 @@ function normalizeLegacyMath(content: string) {
         return part;
       }
 
-      const escapedBlocks = part.replace(
-        /\\\[\s*([\s\S]*?)\s*\\\]/g,
-        (match, formula: string) => isLikelyTex(formula) ? asDisplayMath(formula) : match,
+      const escapedBlocks = part.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, formula: string) =>
+        isLikelyTex(formula) ? asDisplayMath(formula) : match,
       );
       const withBlocks = escapedBlocks.replace(
         /^\s*\[\s*\r?\n([\s\S]*?)\r?\n\s*\]\s*$/gm,
-        (match, formula: string) => isLikelyTex(formula) ? asDisplayMath(formula) : match,
+        (match, formula: string) => (isLikelyTex(formula) ? asDisplayMath(formula) : match),
       );
 
       return withBlocks
@@ -230,14 +304,14 @@ function isLikelyTex(value: string) {
 }
 </script>
 
-
 <style scoped>
 .markdown-body {
   font-size: 13px;
   line-height: 1.65;
   color: var(--peek-text);
   overflow-wrap: anywhere;
-}.markdown-body :deep(img) {
+}
+.markdown-body :deep(img) {
   max-width: 100%;
   max-height: 280px;
   border-radius: 6px;
@@ -270,10 +344,18 @@ function isLikelyTex(value: string) {
   margin-top: 0;
 }
 
-.markdown-body :deep(h1) { font-size: 1.18em; }
-.markdown-body :deep(h2) { font-size: 1.12em; }
-.markdown-body :deep(h3) { font-size: 1.06em; }
-.markdown-body :deep(h4) { font-size: 1em; }
+.markdown-body :deep(h1) {
+  font-size: 1.18em;
+}
+.markdown-body :deep(h2) {
+  font-size: 1.12em;
+}
+.markdown-body :deep(h3) {
+  font-size: 1.06em;
+}
+.markdown-body :deep(h4) {
+  font-size: 1em;
+}
 
 .markdown-body :deep(pre) {
   margin: 0.65em 0;
@@ -353,7 +435,8 @@ function isLikelyTex(value: string) {
   width: 28px;
   height: 24px;
   padding: 0;
-  border: 1px solid var(--peek-code-border, color-mix(in srgb, var(--peek-text) 14%, var(--peek-border)));
+  border: 1px solid
+    var(--peek-code-border, color-mix(in srgb, var(--peek-text) 14%, var(--peek-border)));
   border-radius: 5px;
   background: color-mix(in srgb, var(--peek-code-fg, var(--peek-text)) 8%, transparent);
   color: var(--peek-code-icon, var(--peek-code-fg, var(--peek-text)));
@@ -510,28 +593,45 @@ function isLikelyTex(value: string) {
 }
 
 .markdown-body :deep(.hljs-comment),
-.markdown-body :deep(.hljs-quote) { color: #7f8c98; font-style: italic; }
+.markdown-body :deep(.hljs-quote) {
+  color: #7f8c98;
+  font-style: italic;
+}
 .markdown-body :deep(.hljs-keyword),
 .markdown-body :deep(.hljs-selector-tag),
 .markdown-body :deep(.hljs-literal),
-.markdown-body :deep(.hljs-type) { color: #c792ea; }
+.markdown-body :deep(.hljs-type) {
+  color: #c792ea;
+}
 .markdown-body :deep(.hljs-string),
 .markdown-body :deep(.hljs-regexp),
 .markdown-body :deep(.hljs-addition),
-.markdown-body :deep(.hljs-attribute) { color: #addb67; }
+.markdown-body :deep(.hljs-attribute) {
+  color: #addb67;
+}
 .markdown-body :deep(.hljs-number),
 .markdown-body :deep(.hljs-symbol),
-.markdown-body :deep(.hljs-bullet) { color: #f78c6c; }
+.markdown-body :deep(.hljs-bullet) {
+  color: #f78c6c;
+}
 .markdown-body :deep(.hljs-title),
 .markdown-body :deep(.hljs-section),
-.markdown-body :deep(.hljs-function .hljs-title) { color: #82aaff; }
+.markdown-body :deep(.hljs-function .hljs-title) {
+  color: #82aaff;
+}
 .markdown-body :deep(.hljs-variable),
 .markdown-body :deep(.hljs-template-variable),
-.markdown-body :deep(.hljs-params) { color: #f07178; }
+.markdown-body :deep(.hljs-params) {
+  color: #f07178;
+}
 .markdown-body :deep(.hljs-built_in),
 .markdown-body :deep(.hljs-meta),
-.markdown-body :deep(.hljs-link) { color: #ffcb6b; }
-.markdown-body :deep(.hljs-deletion) { color: #ff5370; }
+.markdown-body :deep(.hljs-link) {
+  color: #ffcb6b;
+}
+.markdown-body :deep(.hljs-deletion) {
+  color: #ff5370;
+}
 .markdown-body :deep(pre code.language-diff .hljs-addition) {
   display: inline-block;
   min-width: 100%;
@@ -544,17 +644,30 @@ function isLikelyTex(value: string) {
 }
 
 :global([data-theme="light"] .markdown-body .hljs-comment),
-:global([data-theme="light"] .markdown-body .hljs-quote) { color: #66736f; }
+:global([data-theme="light"] .markdown-body .hljs-quote) {
+  color: #66736f;
+}
 :global([data-theme="light"] .markdown-body .hljs-keyword),
-:global([data-theme="light"] .markdown-body .hljs-type) { color: #7652a6; }
+:global([data-theme="light"] .markdown-body .hljs-type) {
+  color: #7652a6;
+}
 :global([data-theme="light"] .markdown-body .hljs-string),
-:global([data-theme="light"] .markdown-body .hljs-addition) { color: #267045; }
+:global([data-theme="light"] .markdown-body .hljs-addition) {
+  color: #267045;
+}
 :global([data-theme="light"] .markdown-body .hljs-number),
-:global([data-theme="light"] .markdown-body .hljs-variable) { color: #a0492d; }
+:global([data-theme="light"] .markdown-body .hljs-variable) {
+  color: #a0492d;
+}
 :global([data-theme="light"] .markdown-body .hljs-title),
-:global([data-theme="light"] .markdown-body .hljs-section) { color: #28699c; }
+:global([data-theme="light"] .markdown-body .hljs-section) {
+  color: #28699c;
+}
 :global([data-theme="light"] .markdown-body .hljs-built_in),
-:global([data-theme="light"] .markdown-body .hljs-meta) { color: #8a661f; }
-:global([data-theme="light"] .markdown-body .hljs-deletion) { color: #b84f48; }
-
+:global([data-theme="light"] .markdown-body .hljs-meta) {
+  color: #8a661f;
+}
+:global([data-theme="light"] .markdown-body .hljs-deletion) {
+  color: #b84f48;
+}
 </style>

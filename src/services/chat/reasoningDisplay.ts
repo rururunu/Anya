@@ -9,7 +9,7 @@ type ReasoningDisplayOptions = {
 };
 
 export function displayReasoningText(
-  reasoning: string,
+  reasoning: string | undefined | null,
   {
     streaming,
     truncateStreaming = true,
@@ -18,10 +18,10 @@ export function displayReasoningText(
   }: ReasoningDisplayOptions,
 ): string {
   if (!streaming || !truncateStreaming) {
-    return reasoning;
+    return reasoning ?? "";
   }
 
-  let text = reasoning;
+  let text = reasoning ?? "";
   let truncated = false;
 
   if (maxChars > 0 && text.length > maxChars) {

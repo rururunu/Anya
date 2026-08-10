@@ -70,57 +70,52 @@
 
         <SidebarInset class="settings-content-pane">
           <div class="settings-scroll peek-scrollbar">
-            <Transition
-              :css="false"
-              mode="out-in"
-              @enter="gsapSettingsPanelEnter"
-              @leave="gsapSettingsPanelLeave"
-            >
-              <div :key="activeCategory" class="settings-panel">
-                <WorkspaceSettings v-if="activeCategory === 'workspace'" />
-                <McpSettings v-else-if="activeCategory === 'mcp'" />
-                <SkillsSettings v-else-if="activeCategory === 'skills'" />
-                <ProviderSettings v-else-if="activeCategory === 'provider'" />
-                <HistorySettings
-                  v-else-if="activeCategory === 'history'"
-                  :expanded-history-groups="expandedHistoryGroups"
-                  @toggle-history-group="toggleHistoryGroup"
-                />
-                <TokenUsageSettings v-else-if="activeCategory === 'usage'" />
-                <AboutSettings
-                  v-else-if="activeCategory === 'about'"
-                  :name="appName"
-                  :version="appVersion"
-                  :identifier="appIdentifier"
-                />
-                <SettingFieldList
-                  v-else
-                  :items="visibleItems"
-                  :empty-text="t.empty"
-                  v-model:api-key-draft="apiKeyDraft"
-                  v-model:mem0-api-key-draft="mem0ApiKeyDraft"
-                  v-model:mem0-user-id-draft="mem0UserIdDraft"
-                  v-model:mem0-base-url-draft="mem0BaseUrlDraft"
-                  v-model:serper-api-key-draft="serperApiKeyDraft"
-                  v-model:tavily-api-key-draft="tavilyApiKeyDraft"
-                  @toggle="onToggle"
-                  @slider-change="onSliderChange"
-                  @color-scheme-change="onColorSchemeChange"
-                  @language-change="onLanguageChange"
-                  @zoom-change="onZoomChange"
-                  @reasoning-effort-change="onReasoningEffortChange"
-                  @reasoning-language-change="onReasoningLanguageChange"
-                  @tool-approval-mode-change="onToolApprovalModeChange"
-                  @agent-work-display-change="onAgentWorkDisplayChange"
-                  @web-search-provider-change="onWebSearchProviderChange"
-                  @default-model-change="onDefaultModelChange"
-                  @multimodal-model-change="onMultimodalModelChange"
-                  @save-api-key="saveApiKey"
-                  @save-memory-settings="saveMemorySettings"
-                  @save-web-search-settings="saveWebSearchSettings"
-                />
-              </div>
-            </Transition>
+            <!-- No JS Transition: animated out-in + GSAP can leave this pane blank forever
+                 when done() never fires (seen as white-screen/freeze on some WebView2 installs). -->
+            <div :key="activeCategory" class="settings-panel">
+              <WorkspaceSettings v-if="activeCategory === 'workspace'" />
+              <McpSettings v-else-if="activeCategory === 'mcp'" />
+              <SkillsSettings v-else-if="activeCategory === 'skills'" />
+              <ProviderSettings v-else-if="activeCategory === 'provider'" />
+              <HistorySettings
+                v-else-if="activeCategory === 'history'"
+                :expanded-history-groups="expandedHistoryGroups"
+                @toggle-history-group="toggleHistoryGroup"
+              />
+              <TokenUsageSettings v-else-if="activeCategory === 'usage'" />
+              <AboutSettings
+                v-else-if="activeCategory === 'about'"
+                :name="appName"
+                :version="appVersion"
+                :identifier="appIdentifier"
+              />
+              <SettingFieldList
+                v-else
+                :items="visibleItems"
+                :empty-text="t.empty"
+                v-model:api-key-draft="apiKeyDraft"
+                v-model:mem0-api-key-draft="mem0ApiKeyDraft"
+                v-model:mem0-user-id-draft="mem0UserIdDraft"
+                v-model:mem0-base-url-draft="mem0BaseUrlDraft"
+                v-model:serper-api-key-draft="serperApiKeyDraft"
+                v-model:tavily-api-key-draft="tavilyApiKeyDraft"
+                @toggle="onToggle"
+                @slider-change="onSliderChange"
+                @color-scheme-change="onColorSchemeChange"
+                @language-change="onLanguageChange"
+                @zoom-change="onZoomChange"
+                @reasoning-effort-change="onReasoningEffortChange"
+                @reasoning-language-change="onReasoningLanguageChange"
+                @tool-approval-mode-change="onToolApprovalModeChange"
+                @agent-work-display-change="onAgentWorkDisplayChange"
+                @web-search-provider-change="onWebSearchProviderChange"
+                @default-model-change="onDefaultModelChange"
+                @multimodal-model-change="onMultimodalModelChange"
+                @save-api-key="saveApiKey"
+                @save-memory-settings="saveMemorySettings"
+                @save-web-search-settings="saveWebSearchSettings"
+              />
+            </div>
           </div>
         </SidebarInset>
       </SidebarProvider>
@@ -160,11 +155,7 @@ import AboutSettings from "@/components/settings/AboutSettings.vue";
 import ProviderSettings from "@/components/settings/ProviderSettings.vue";
 import SettingFieldList from "@/components/settings/SettingFieldList.vue";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
-import {
-  gsapSettingsNavMount,
-  gsapSettingsPanelEnter,
-  gsapSettingsPanelLeave,
-} from "@/services/motion/gsapPresets";
+import { gsapSettingsNavMount } from "@/services/motion/gsapPresets";
 import { getAppInfo } from "@/services/ipc";
 import {
   Sidebar,
@@ -743,7 +734,6 @@ watch(
   display: flex;
   flex-direction: column;
   padding: 4px;
-  will-change: opacity, transform;
 }
 
 .titlebar-btn {

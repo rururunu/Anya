@@ -298,7 +298,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { Eye, EyeOff, Globe2 } from "@lucide/vue";
 import { useDebounceFn } from "@vueuse/core";
-import gsap from "gsap";
+import { gsap, safeGsap } from "@/services/motion/gsapSafe";
 
 import type { Component } from "vue";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
@@ -423,10 +423,20 @@ watch(providerTab, async (tab) => {
 onMounted(() => {
   const logo = logoWrapRef.value;
   if (!logo) return;
-  gsap.fromTo(
-    logo,
-    { autoAlpha: 0, y: 18, scale: 0.92 },
-    { autoAlpha: 1, y: 0, scale: 1, duration: 0.7, ease: "power3.out" },
+  safeGsap(
+    "onboardingLogoEnter",
+    () => {
+      gsap.fromTo(
+        logo,
+        { autoAlpha: 0, y: 18, scale: 0.92 },
+        { autoAlpha: 1, y: 0, scale: 1, duration: 0.7, ease: "power3.out" },
+      );
+    },
+    () => {
+      logo.style.opacity = "1";
+      logo.style.visibility = "visible";
+      logo.style.transform = "";
+    },
   );
 });
 

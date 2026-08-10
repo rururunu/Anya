@@ -607,8 +607,8 @@ async function copyValue(key: string, value: string | undefined) {
   try {
     await copyText(value);
     copiedKey.value = key;
-    if (copyResetTimer) window.clearTimeout(copyResetTimer);
-    copyResetTimer = window.setTimeout(() => {
+    if (copyResetTimer) globalThis.clearTimeout(copyResetTimer);
+    copyResetTimer = globalThis.setTimeout(() => {
       if (copiedKey.value === key) copiedKey.value = "";
     }, 1400);
   } catch (error) {
@@ -632,7 +632,7 @@ async function hydrateSnapshot() {
 
 onMounted(async () => {
   frontendLogs.value = getRecentLogs();
-  logsPollTimer = window.setInterval(() => {
+  logsPollTimer = globalThis.setInterval(() => {
     frontendLogs.value = getRecentLogs();
   }, 1000);
   try {
@@ -648,8 +648,8 @@ onMounted(async () => {
 onUnmounted(() => {
   unlisten?.();
   unlistenFocus?.();
-  if (copyResetTimer) window.clearTimeout(copyResetTimer);
-  if (logsPollTimer) window.clearInterval(logsPollTimer);
+  if (copyResetTimer) globalThis.clearTimeout(copyResetTimer);
+  if (logsPollTimer) globalThis.clearInterval(logsPollTimer);
 });
 </script>
 

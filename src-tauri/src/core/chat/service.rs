@@ -9,10 +9,10 @@ use crate::core::chat::error::ChatError;
 use crate::core::chat::preferences::SendPreferences;
 use crate::core::chat::prompt::{PromptBuildInput, PromptBuilder, PromptPreferences};
 use crate::core::context::ContextResolver;
-use crate::core::event::{BusEvent, EventBus};
+use crate::core::event::{BusEvent, EventBus, PlanModeSource};
 use crate::core::runtime::{ChatMessage, MessageStatus, Role, DEFAULT_SESSION_ID};
 use crate::core::tools::context::{AskStore, PathPermissionStore, TaskItem};
-use crate::core::workspace::WorkspaceManager;
+use crate::core::workspace::{Workspace, WorkspaceManager};
 use crate::models::chat::ChatSendOverrides;
 use crate::models::settings::ChatMode;
 use crate::runtime::ToolManager;
@@ -121,23 +121,6 @@ impl ChatService {
         if content.is_empty() {
             return Err(ChatError::EmptyMessage);
         }
-        let known_workspaces = self.workspace_manager.list();
-        let workspace = if quick_ask {
-            None
-        } else if let Some(workspace_id) = workspace_id.as_deref() {
-            known_workspaces
-                .iter()
-                .find(|workspace| workspace.id == workspace_id)
-                .cloned()
-        } else {
-            None
-        };
-        if let Some(workspace) = workspace.as_ref() {
-            self.workspace_manager
-                .touch(&workspace.id)
-                .await
-                .map_err(ChatError::Internal)?;
-        }
 
         let session_id = session_id.unwrap_or_else(|| DEFAULT_SESSION_ID.to_string());
 
@@ -146,6 +129,23 @@ impl ChatService {
             self.agent_runtime.active_assistant_for_session(&session_id)
         {
             return self.soft_inject(&session_id, content, &assistant_message_id);
+        }
+
+        let known_workspaces = self.workspace_manager.list();
+        // Prefer the request's workspace, then the session binding. Never rely
+        // solely on IDE/window inference for an already-bound conversation —
+        // approve/queue/resume paths often omit workspace_id and would otherwise
+        // silently bind the foreground IDE (e.g. this app's own repo).
+        let workspace = if quick_ask {
+            None
+        } else {
+            self.resolve_send_workspace(&session_id, workspace_id.as_deref(), &known_workspaces)
+        };
+        if let Some(workspace) = workspace.as_ref() {
+            self.workspace_manager
+                .touch(&workspace.id)
+                .await
+                .map_err(ChatError::Internal)?;
         }
 
         let agent_run_id = self.agent_runtime.create_run(content.clone());
@@ -159,8 +159,9 @@ impl ChatService {
                 context
             })
             .map_err(|error| ChatError::Internal(error.to_string()))?;
-        // An explicitly selected workspace owns the new conversation. IDE context
-        // is still useful for files and selection, but must not switch its workspace.
+        // An explicitly selected / session-bound workspace owns the turn. IDE
+        // context is still useful for files and selection, but must not switch
+        // the active project root.
         if let Some(workspace) = workspace.as_ref() {
             context.set_workspace(workspace.name.clone(), &workspace.root);
         }
@@ -179,6 +180,12 @@ impl ChatService {
                     .unwrap_or_else(|| resolved.root.clone());
                 self.conversation.bind_workspace(&session_id, &workspace_id);
             }
+        } else if !quick_ask {
+            // Keep the session sticky even when later turns omit workspace_id.
+            if let Some(workspace) = workspace.as_ref() {
+                self.conversation
+                    .bind_workspace(&session_id, &workspace.id);
+            }
         }
         let user_message = create_message(&session_id, Role::User, content, MessageStatus::Done);
         let assistant_message = create_message(
@@ -188,7 +195,9 @@ impl ChatService {
             MessageStatus::Pending,
         );
 
-        self.conversation.append(&session_id, user_message.clone());
+        if !overrides.resume_plan {
+            self.conversation.append(&session_id, user_message.clone());
+        }
         self.conversation
             .append(&session_id, assistant_message.clone());
 
@@ -196,6 +205,7 @@ impl ChatService {
             session_id: session_id.clone(),
             user_message: user_message.clone(),
             assistant_message: assistant_message.clone(),
+            resume_plan: overrides.resume_plan,
         });
 
         // Memory recall may use `reqwest::blocking` — must not run on a tokio worker.
@@ -222,7 +232,17 @@ impl ChatService {
         };
         let _memory_decision = task_rules.memory_decision;
 
-        let history = self.conversation.messages(&session_id);
+        let mut history = self.conversation.messages(&session_id);
+        if overrides.resume_plan {
+            // Resume turns drive the prompt with the approval instruction but
+            // never persist it — the synthetic message exists for this turn only.
+            // The empty assistant just appended is the stream target, not
+            // history: trim it so the approval instruction is the final user
+            // turn. Otherwise the empty assistant lands between turns in the
+            // prompt and providers reject the request (approve & execute fails).
+            history = compact::trim_empty_assistant_tail(history);
+            history.push(user_message.clone());
+        }
         let settings = self
             .app_handle
             .as_ref()
@@ -287,29 +307,46 @@ impl ChatService {
         // Approval UI lives at the end of the assistant reply (not a composer banner).
         let plan_store = crate::core::tools::plan_mode::shared_plan_mode_store();
         let plan_was_active = plan_store.is_active(&session_id);
-        match chat_mode {
-            ChatMode::Ask => {
-                if plan_was_active {
-                    plan_store.set_active(&session_id, false);
-                    self.emit_plan_mode_changed(&session_id, false);
-                }
+        if overrides.resume_plan {
+            // Approve & execute: the backend owns the plan gate. Unlock writers
+            // here instead of relying on the frontend's set_plan_mode IPC
+            // landing first — a resume turn must always run unlocked.
+            if plan_was_active {
+                plan_store.set_active(&session_id, false);
+                self.emit_plan_mode_changed(&session_id, false, PlanModeSource::Manual);
             }
-            ChatMode::Plan => {
-                if !plan_was_active {
-                    plan_store.set_active(&session_id, true);
-                    self.emit_plan_mode_changed(&session_id, true);
+        } else {
+            match chat_mode {
+                ChatMode::Ask => {
+                    if plan_was_active {
+                        plan_store.set_active(&session_id, false);
+                        self.emit_plan_mode_changed(&session_id, false, PlanModeSource::Manual);
+                    }
                 }
-            }
-            ChatMode::Agent => {
-                if !overrides.skip_auto_plan
-                    && !plan_was_active
-                    && crate::core::tools::plan_mode::should_auto_plan(
-                        &user_message.content,
-                        chat_mode,
-                    )
-                {
-                    plan_store.set_active(&session_id, true);
-                    self.emit_plan_mode_changed(&session_id, true);
+                ChatMode::Plan => {
+                    if !plan_was_active {
+                        plan_store.set_active(&session_id, true);
+                        self.emit_plan_mode_changed(&session_id, true, PlanModeSource::Manual);
+                    }
+                }
+                ChatMode::Agent => {
+                    if plan_was_active {
+                        // Leaving a sticky plan gate for this Agent send.
+                        plan_store.set_active(&session_id, false);
+                        self.emit_plan_mode_changed(&session_id, false, PlanModeSource::Manual);
+                    }
+                    // Always evaluate auto-plan for Agent turns (including after
+                    // clearing a leftover gate). Otherwise complex Agent asks
+                    // never show the approval card / countdown.
+                    if !overrides.skip_auto_plan
+                        && crate::core::tools::plan_mode::should_auto_plan(
+                            &user_message.content,
+                            chat_mode,
+                        )
+                    {
+                        plan_store.set_active(&session_id, true);
+                        self.emit_plan_mode_changed(&session_id, true, PlanModeSource::Auto);
+                    }
                 }
             }
         }
@@ -388,6 +425,43 @@ impl ChatService {
             assistant_message_id: assistant_message.id,
             agent_run_id: Some(agent_run_id),
         })
+    }
+
+    fn resolve_send_workspace(
+        &self,
+        session_id: &str,
+        workspace_id: Option<&str>,
+        known_workspaces: &[Workspace],
+    ) -> Option<Workspace> {
+        let lookup = |id: &str| -> Option<Workspace> {
+            known_workspaces
+                .iter()
+                .find(|workspace| workspace.id == id)
+                .cloned()
+                .or_else(|| {
+                    let root = PathBuf::from(id);
+                    known_workspaces
+                        .iter()
+                        .find(|workspace| workspace.root == root)
+                        .cloned()
+                })
+        };
+
+        if let Some(id) = workspace_id.map(str::trim).filter(|id| !id.is_empty()) {
+            if let Some(workspace) = lookup(id) {
+                return Some(workspace);
+            }
+        }
+
+        if let Some(bound) = self.conversation.workspace_for_session(session_id) {
+            if let Some(workspace) = lookup(&bound) {
+                return Some(workspace);
+            }
+        }
+
+        // Last resort for workbench turns that omitted workspace_id before the
+        // session was bound: use the currently selected workspace.
+        self.workspace_manager.current()
     }
 
     async fn remember_ide_workspace(&self, context: &crate::core::runtime::RequestContext) {
@@ -574,10 +648,16 @@ impl ChatService {
         context
     }
 
-    pub fn emit_plan_mode_changed(&self, session_id: &str, active: bool) {
+    pub fn emit_plan_mode_changed(
+        &self,
+        session_id: &str,
+        active: bool,
+        source: PlanModeSource,
+    ) {
         self.event_bus.emit(BusEvent::PlanModeChanged {
             session_id: session_id.to_string(),
             active,
+            source,
         });
     }
 }

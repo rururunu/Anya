@@ -44,8 +44,8 @@ function removeCapturedSelection() {
 }
 
 const PANEL_WIDTH = 640;
-// The input bar is 82px tall; include the composer's 1px top and bottom borders.
-const INPUT_HEIGHT = 84;
+// Fallback when dock height is not measured yet: single-line input + footer + dock borders.
+const INPUT_HEIGHT = 88;
 const OVERLAY_MIN_HEIGHT_INPUT = INPUT_HEIGHT;
 const CHAT_HEIGHT_PREFERRED = 520;
 const CHAT_SCREEN_MARGIN = 48;
@@ -67,6 +67,9 @@ const imageSidebarOpen = ref(false);
 let layoutResizeQueue = Promise.resolve();
 let windowWidthBeforeSidebar = PANEL_WIDTH;
 let windowWidthWithSidebar = PANEL_WIDTH;
+/** Last applied input-mode design size — skip redundant Win32 setMinSize/setSize. */
+let lastInputDesignWidth = 0;
+let lastInputDesignHeight = 0;
 
 // 获取当前窗口的 label，用于所有 IPC 调用
 const windowLabel = getCurrentWebviewWindow().label;
@@ -161,13 +164,19 @@ async function resizeWindow(
   const delta = scaledHeight - currentHeight;
   const deltaWidth = scaledWidth - currentWidth;
 
+  // Skip no-op resizes — setSize/setResizable on every keystroke causes jitter.
+  if (Math.abs(delta) < 0.5 && Math.abs(deltaWidth) < 0.5) {
+    return;
+  }
+
   await window.setResizable(resizable);
   // Keep maximizable off for the borderless overlay — toggling it forces a
   // Win32 non-client style refresh that flashes on every double-Alt summon.
   await window.setMaximizable(false);
+
   await window.setSize(new LogicalSize(scaledWidth, scaledHeight));
 
-  if (!skipPositionCorrection && (Math.abs(delta) > 0.5 || Math.abs(deltaWidth) > 0.5)) {
+  if (!skipPositionCorrection) {
     // 水平：居中扩展，并 clamp 到当前显示器左右边界
     let newX = logicalPos.x - deltaWidth / 2;
 
@@ -219,6 +228,8 @@ function handleLayoutChange(payload: {
   mode?: "input" | "chat";
   hasImages?: boolean;
   hasFiles?: boolean;
+  /** Measured composer .input-bar height (multi-line text, chips, images). */
+  inputBarHeight?: number;
   diffSidebarOpen?: boolean;
   subagentSidebarOpen?: boolean;
   runtimeSidebarOpen?: boolean;
@@ -261,9 +272,15 @@ function handleLayoutChange(payload: {
   const modelMenuHeight =
     modeValue === "input" && payload.showModelMenu ? payload.modelMenuHeight : 0;
   const contextHeight = payload.hasContextPreview ? CONTEXT_PREVIEW_HEIGHT : 0;
-  // Images (~52px thumbs) and file chips (~26px) each need vertical room in input mode.
-  const imagesHeight = payload.hasImages ? 60 : 0;
-  const filesHeight = payload.hasFiles ? 34 : 0;
+  // Prefer measured composer dock height so multi-line Alt+Alt input grows the
+  // window and the 1px top/bottom dock borders are never clipped.
+  const measuredBarHeight =
+    typeof payload.inputBarHeight === "number" && payload.inputBarHeight > 0
+      ? payload.inputBarHeight
+      : 0;
+  const imagesHeight = measuredBarHeight > 0 ? 0 : payload.hasImages ? 60 : 0;
+  const filesHeight = measuredBarHeight > 0 ? 0 : payload.hasFiles ? 34 : 0;
+  const inputBarHeight = measuredBarHeight > 0 ? measuredBarHeight : INPUT_BAR_HEIGHT;
   // Input mode: grow the native window around in-flow pickers.
   // Chat mode: pickers stay in-flow inside the composer (thread shrinks) so they
   // are never clipped by absolute positioning against overflow:hidden ancestors.
@@ -278,9 +295,18 @@ function handleLayoutChange(payload: {
   if (modeValue === "input") {
     chatWindowInitialized.value = false;
     lastComposerExtraHeight.value = 0;
+    const nextHeight = inputBarHeight + extraHeight;
+    if (
+      Math.abs(nextHeight - lastInputDesignHeight) < 1 &&
+      Math.abs(PANEL_WIDTH - lastInputDesignWidth) < 1
+    ) {
+      return;
+    }
+    lastInputDesignWidth = PANEL_WIDTH;
+    lastInputDesignHeight = nextHeight;
     queueLayoutResize(async () => {
       await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-      await resizeWindow(PANEL_WIDTH, INPUT_BAR_HEIGHT + extraHeight, false, false, "bottom");
+      await resizeWindow(PANEL_WIDTH, nextHeight, false, false, "bottom");
     });
     return;
   }
@@ -390,6 +416,8 @@ async function resetToInputMode() {
   windowWidthWithSidebar = PANEL_WIDTH;
   chatStore.setOverlayDraftSession("");
   await setOverlayChatMode(windowLabel, false);
+  lastInputDesignWidth = PANEL_WIDTH;
+  lastInputDesignHeight = INPUT_HEIGHT;
   await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
   await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false, false, "bottom");
 }
@@ -408,6 +436,8 @@ onMounted(async () => {
   // matching LogicalSize or the first Alt+Alt frame looks clipped.
   if (mode.value === "input") {
     queueLayoutResize(async () => {
+      lastInputDesignWidth = PANEL_WIDTH;
+      lastInputDesignHeight = INPUT_HEIGHT;
       await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
       await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false, false, "bottom");
     });

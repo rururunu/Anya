@@ -4,9 +4,10 @@
       <Suspense>
         <component :is="Component" class="h-full w-full" />
         <template #fallback>
-          <!-- Solid fill only — boot splash stays on top until Main is painted.
-               Avoid a second animated loader that vanishes when the route resolves. -->
+          <!-- Workbench: solid fill under HTML splash. Peek/overlay: transparent —
+               never paint the workbench boot logo into an 84px Alt+Alt window. -->
           <div v-if="isWorkbench" class="route-boot-fill" aria-hidden="true" />
+          <div v-else-if="isPeek" class="route-peek-fill" aria-hidden="true" />
           <div v-else class="route-loading" />
         </template>
       </Suspense>
@@ -21,7 +22,12 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import AppErrorBoundary from "@/components/AppErrorBoundary.vue";
 import AppTooltipLayer from "@/components/ui/AppTooltipLayer.vue";
 
-const isWorkbench = getCurrentWebviewWindow().label === "workbench";
+const windowLabel = getCurrentWebviewWindow().label;
+const isWorkbench = windowLabel === "workbench";
+const isPeek =
+  windowLabel === "overlay" ||
+  windowLabel.startsWith("overlay-") ||
+  windowLabel.startsWith("overlay-preview-");
 </script>
 
 <style scoped>
@@ -30,5 +36,11 @@ const isWorkbench = getCurrentWebviewWindow().label === "workbench";
   width: 100%;
   height: 100%;
   background: var(--peek-bg, #1f1f1f);
+}
+
+.route-peek-fill {
+  width: 100%;
+  height: 100%;
+  background: transparent;
 }
 </style>

@@ -35,6 +35,11 @@
     "core:webview:allow-set-webview-background-color",
     "dialog:default",
     "opener:default",
+    "fs:allow-write-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "**" }]
+    },
     "allow-window-commands",
     "allow-settings-commands",
     "allow-chat-commands"

@@ -99,6 +99,12 @@ function activeTriggerMention(
   // CJK or prose never treats that prose as part of the mention token.
   const end = safeCaret;
   const query = message.slice(start + 1, end);
+
+  // A completed `#skill:id` / `#mcp:id` token should not keep the picker open.
+  if (trigger === "#" && /^(skill|mcp):[A-Za-z0-9_.-]+$/.test(query)) {
+    return null;
+  }
+
   return { query, start, end };
 }
 

@@ -218,9 +218,13 @@ export function respondToolApproval(request: RespondToolApprovalRequest) {
   return ipcInvoke<void>(IPC_COMMANDS.respondToolApproval, { request });
 }
 
-export function setPlanMode(sessionId: string, active: boolean) {
+export function setPlanMode(
+  sessionId: string,
+  active: boolean,
+  source: "auto" | "manual" = "manual",
+) {
   return ipcInvoke<void>(IPC_COMMANDS.setPlanMode, {
-    request: { sessionId, active },
+    request: { sessionId, active, source },
   });
 }
 

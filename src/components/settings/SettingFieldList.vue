@@ -21,7 +21,22 @@
       <div class="space-y-1">
         <p class="text-muted-foreground text-[11px]">Anya › {{ item.path }}</p>
         <h3 class="text-sm font-medium">{{ item.title }}</h3>
-        <p class="text-muted-foreground text-xs leading-relaxed">{{ item.description }}</p>
+        <p class="text-muted-foreground text-xs leading-relaxed">
+          <template
+            v-for="(part, index) in descriptionParts(item.description)"
+            :key="`${item.id}-desc-${index}`"
+          >
+            <button
+              v-if="part.type === 'url'"
+              type="button"
+              class="setting-desc-link"
+              @click="openExternalUrl(part.value)"
+            >
+              {{ part.value }}
+            </button>
+            <template v-else>{{ part.value }}</template>
+          </template>
+        </p>
       </div>
 
       <div
@@ -399,6 +414,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { RefreshCw } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -441,6 +457,43 @@ import {
   agentWorkDisplayOptions,
   zoomOptions,
 } from "@/types/setting";
+
+type DescriptionPart = { type: "text" | "url"; value: string };
+
+function descriptionParts(text: string): DescriptionPart[] {
+  const source = String(text ?? "");
+  if (!source) return [{ type: "text", value: "" }];
+  const parts: DescriptionPart[] = [];
+  const pattern = /https?:\/\/[^\s]+/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source))) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", value: source.slice(lastIndex, match.index) });
+    }
+    let url = match[0];
+    let trailing = "";
+    while (/[.,;:!?)]$/.test(url)) {
+      trailing = `${url.slice(-1)}${trailing}`;
+      url = url.slice(0, -1);
+    }
+    if (url) parts.push({ type: "url", value: url });
+    if (trailing) parts.push({ type: "text", value: trailing });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < source.length) {
+    parts.push({ type: "text", value: source.slice(lastIndex) });
+  }
+  return parts.length ? parts : [{ type: "text", value: source }];
+}
+
+async function openExternalUrl(url: string) {
+  try {
+    await openUrl(url);
+  } catch (error) {
+    console.error("failed to open url in default browser:", url, error);
+  }
+}
 
 const props = defineProps<{
   items: SettingDefinition[];
@@ -728,6 +781,24 @@ function onSearchSecretInput(id: string, value: string | number) {
 </script>
 
 <style scoped>
+.setting-desc-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.setting-desc-link:hover {
+  color: color-mix(in srgb, var(--primary) 82%, var(--foreground));
+}
+
 .setting-group {
   padding: 8px 6px;
 }

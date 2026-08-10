@@ -19,6 +19,11 @@
     "dialog:default",
     "opener:default",
     "opener:allow-open-path",
+    "fs:allow-write-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "**" }]
+    },
     "allow-window-commands",
     "allow-settings-commands",
     "allow-app-commands",

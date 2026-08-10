@@ -400,8 +400,8 @@ function childAgentRows(activity: ToolActivity): ChildAgentRow[] {
   });
 }
 
-function shortTaskTitle(prompt: string, index: number) {
-  const lines = prompt
+function shortTaskTitle(prompt: string | undefined | null, index: number) {
+  const lines = (prompt ?? "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);

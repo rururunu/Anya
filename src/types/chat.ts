@@ -195,6 +195,9 @@ export interface ChatSendRequest {
   toolApprovalMode?: "ask" | "auto" | "alwaysAllow";
   /** Skip complexity auto-plan (used after Approve & execute). */
   skipAutoPlan?: boolean;
+  /** Approve & execute continuation: drives the turn but never persists a
+   * user bubble / history entry for the approval message. */
+  resumePlan?: boolean;
 }
 
 export interface OfficeContext {
@@ -458,6 +461,8 @@ export interface InteractionResolvedEvent {
 export interface PlanModeChangedEvent {
   sessionId: string;
   active: boolean;
+  /** How the plan was entered: "auto" (agent complexity detection) or "manual". */
+  source?: "auto" | "manual";
 }
 
 export interface CheckpointInfo {

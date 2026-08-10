@@ -1,6 +1,6 @@
 [package]
 name = "peek"
-version = "0.2.6"
+version = "0.2.8"
 description = "Hand your work & questions to Anya anytime."
 authors = ["you"]
 edition = "2021"
@@ -31,6 +31,7 @@ serde_json = "1"
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

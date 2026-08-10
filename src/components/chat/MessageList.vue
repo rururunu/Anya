@@ -88,51 +88,56 @@
               >
                 <span
                   v-if="part.kind === 'mention'"
-                  class="user-mention-chip"
-                  :class="{ 'user-dir-mention': part.isDir }"
+                  class="inline-token inline-token-mark inline-token-file"
+                  :class="{ 'is-dir': part.isDir }"
                   :title="normalizeMentionPath(part.path)"
                 >
-                  <Folder v-if="part.isDir" :size="12" class="user-mention-fallback" />
+                  <Folder
+                    v-if="part.isDir"
+                    :size="12"
+                    class="inline-token-logo-fallback"
+                    aria-hidden="true"
+                  />
                   <img
                     v-else-if="fileIconForPath(part.path)"
-                    class="user-mention-icon"
+                    class="inline-token-logo"
                     :src="fileIconForPath(part.path) || ''"
                     alt=""
                   />
-                  <File v-else :size="12" class="user-mention-fallback" />
-                  <span class="user-mention-name">@{{ part.name }}</span>
+                  <File v-else :size="12" class="inline-token-logo-fallback" aria-hidden="true" />
+                  <span class="inline-token-label">@{{ part.name }}</span>
                 </span>
                 <span
                   v-else-if="part.kind === 'skill'"
-                  class="user-mention-chip user-hash-chip user-hash-skill"
+                  class="inline-token inline-token-mark inline-token-skill"
                   :title="hashChipTitle('skill', part.id)"
                 >
                   <img
                     v-if="hashChipIcon('skill', part.id)"
-                    class="user-mention-icon"
+                    class="inline-token-logo"
                     :src="hashChipIcon('skill', part.id) || ''"
                     alt=""
                     referrerpolicy="no-referrer"
                     @error="markHashIconBroken('skill', part.id)"
                   />
-                  <Zap v-else :size="12" class="user-mention-fallback" />
-                  <span class="user-mention-name">{{ hashChipLabel("skill", part.id) }}</span>
+                  <Zap v-else :size="12" class="inline-token-logo-fallback" aria-hidden="true" />
+                  <span class="inline-token-label">{{ hashChipLabel("skill", part.id) }}</span>
                 </span>
                 <span
                   v-else-if="part.kind === 'mcp'"
-                  class="user-mention-chip user-hash-chip user-hash-mcp"
+                  class="inline-token inline-token-mark inline-token-mcp"
                   :title="hashChipTitle('mcp', part.id)"
                 >
                   <img
                     v-if="hashChipIcon('mcp', part.id)"
-                    class="user-mention-icon"
+                    class="inline-token-logo"
                     :src="hashChipIcon('mcp', part.id) || ''"
                     alt=""
                     referrerpolicy="no-referrer"
                     @error="markHashIconBroken('mcp', part.id)"
                   />
-                  <Bot v-else :size="12" class="user-mention-fallback" />
-                  <span class="user-mention-name">{{ hashChipLabel("mcp", part.id) }}</span>
+                  <Bot v-else :size="12" class="inline-token-logo-fallback" aria-hidden="true" />
+                  <span class="inline-token-label">{{ hashChipLabel("mcp", part.id) }}</span>
                 </span>
                 <template v-else>{{ part.text }}</template>
               </template>
@@ -231,11 +236,13 @@
             @review="$emit('reviewChanges')"
           />
           <PlanApprovalCard
-            v-if="showPlanApprovalFor(item.message)"
-            :tasks="planTasksForMessage(item.message)"
+            v-if="showPlanCardFor(item.message)"
+            :tasks="planTasksForMessage(item.message, isApprovedPlan(item.message))"
             :busy="planBusy || isSessionSending"
+            :executing="isApprovedPlan(item.message)"
+            :auto-countdown="isApprovedPlan(item.message) ? null : planCountdownInfo"
             @approve="approvePlanMode"
-            @cancel="cancelPlanMode"
+            @reject="rejectAutoExecute"
           />
           <div
             v-if="
@@ -289,11 +296,9 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { Bot, Check, Copy, File, Folder, Undo2, Zap } from "@lucide/vue";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
-import {
-  isDirMention,
-  mentionDisplayLabel,
-  normalizeMentionPath,
-} from "@/services/chat/composerSegments";
+import { normalizeMentionPath } from "@/services/chat/composerSegments";
+import { splitInlineTokenParts } from "@/services/chat/inlineTokenMarks";
+import "@/services/chat/inlineTokenMarks.css";
 import {
   mcpMentionIconUrl,
   mcpMentionLabel,
@@ -357,7 +362,31 @@ const chatStore = useChatStore();
 const log = createLogger("message-list");
 const { sending } = storeToRefs(chatStore);
 const planBusy = ref(false);
+
+/** Auto-execute window for auto-entered plans (agent-mode complexity detection). */
+const AUTO_EXECUTE_SECONDS = 30;
+const planCountdown = ref<number | null>(null);
+let planTimer: ReturnType<typeof setInterval> | null = null;
+function clearPlanTimer() {
+  if (planTimer) {
+    clearInterval(planTimer);
+    planTimer = null;
+  }
+}
 const isSessionSending = computed(() => Boolean(props.sessionId && sending.value[props.sessionId]));
+/** Plan message that was approved — keep the checklist visible while it runs. */
+const approvedPlanMessageId = ref<string | null>(null);
+/** Plan message whose auto-execute countdown was rejected — keep waiting for manual approve. */
+const rejectedAutoExecuteMessageId = ref<string | null>(null);
+
+watch(
+  () => props.sessionId,
+  () => {
+    approvedPlanMessageId.value = null;
+    rejectedAutoExecuteMessageId.value = null;
+  },
+);
+
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 const brokenHashIcons = reactive<Record<string, boolean>>({});
 const resolvedHashIcons = reactive<Record<string, string>>({});
@@ -441,6 +470,84 @@ const planModeActive = computed(() =>
   Boolean(props.sessionId && chatStore.sessionPlanMode[props.sessionId]),
 );
 
+/** Stable plan identity: content + nesting only (ignore status churn). */
+function planStructureFingerprint(tasks: TaskItem[]): string {
+  return tasks
+    .map(
+      (task) =>
+        `${typeof task.level === "number" ? task.level : 0}\t${String(task.content ?? "").trim()}`,
+    )
+    .join("\n");
+}
+
+function pendingPlanFingerprint(message: ChatMessage | undefined): string | null {
+  if (!message || !looksLikePendingPlan(message)) return null;
+  const tasks = tasksFromMessage(message);
+  if (!tasks.length) return null;
+  return planStructureFingerprint(tasks);
+}
+
+function clearRejectedPlanIfUpdated(fingerprint: string | null) {
+  if (!props.sessionId || !fingerprint) return false;
+  const rejected = chatStore.rejectedPlanFingerprint(props.sessionId);
+  if (!rejected || rejected === fingerprint) return false;
+  // New or revised checklist — allow auto-execute countdown again.
+  chatStore.setSessionRejectedPlanFingerprint(props.sessionId, null);
+  rejectedAutoExecuteMessageId.value = null;
+  return true;
+}
+
+const planAutoActive = computed(() => {
+  if (!props.sessionId) return false;
+  if (!planModeActive.value) return false;
+  if (isSessionSending.value) return false;
+  // Explicit Plan mode always waits for the user.
+  if (chatStore.sessionCompose[props.sessionId]?.chatMode === "plan") return false;
+
+  const messageId = lastDoneAssistantId.value;
+  if (!messageId || messageId === approvedPlanMessageId.value) return false;
+  if (hasUserMessageAfter(messageId)) return false;
+  const message = props.messages.find((item) => item.id === messageId);
+  const fingerprint = pendingPlanFingerprint(message);
+  if (!fingerprint) return false;
+
+  const rejected = chatStore.rejectedPlanFingerprint(props.sessionId);
+  // Same rejected checklist: keep waiting for manual approve (no countdown).
+  if (rejected && rejected === fingerprint) return false;
+  if (messageId === rejectedAutoExecuteMessageId.value && rejected === fingerprint) return false;
+
+  // New/updated plan after a reject may still have trigger=manual until we re-arm.
+  if (chatStore.sessionPlanTrigger[props.sessionId] === "auto") return true;
+  return Boolean(rejected && rejected !== fingerprint);
+});
+
+const planCountdownInfo = computed<{ remaining: number; total: number } | null>(() =>
+  planCountdown.value === null
+    ? null
+    : { remaining: planCountdown.value, total: AUTO_EXECUTE_SECONDS },
+);
+
+watch(
+  planAutoActive,
+  (active) => {
+    clearPlanTimer();
+    if (active) {
+      planCountdown.value = AUTO_EXECUTE_SECONDS;
+      planTimer = setInterval(() => {
+        planCountdown.value = Math.max(0, (planCountdown.value ?? 0) - 0.1);
+        if ((planCountdown.value ?? 0) <= 0) {
+          clearPlanTimer();
+          void approvePlanMode();
+        }
+      }, 100);
+    } else {
+      planCountdown.value = null;
+    }
+  },
+  { immediate: true },
+);
+onUnmounted(clearPlanTimer);
+
 const lastDoneAssistantId = computed(() => {
   for (let i = props.messages.length - 1; i >= 0; i -= 1) {
     const message = props.messages[i];
@@ -484,47 +591,174 @@ function tasksFromMessage(message: ChatMessage): TaskItem[] {
   return [];
 }
 
-function planTasksForMessage(message: ChatMessage): TaskItem[] {
+function planTasksForMessage(message: ChatMessage, preferLive = false): TaskItem[] {
+  if (preferLive && props.sessionId) {
+    const live = chatStore.sessionTasks[props.sessionId];
+    if (live?.length) return live;
+  }
   const fromMessage = tasksFromMessage(message);
   if (fromMessage.length) return fromMessage;
   if (!props.sessionId) return [];
   return chatStore.sessionTasks[props.sessionId] ?? [];
 }
 
-function showPlanApprovalFor(message: ChatMessage): boolean {
-  if (!planModeActive.value) return false;
-  if (message.status !== "done") return false;
-  return message.id === lastDoneAssistantId.value;
+function hasUserMessageAfter(messageId: string): boolean {
+  const idx = props.messages.findIndex((message) => message.id === messageId);
+  if (idx === -1) return false;
+  for (let i = idx + 1; i < props.messages.length; i += 1) {
+    const message = props.messages[i];
+    if (message && String(message.role).toLowerCase() === "user") return true;
+  }
+  return false;
 }
 
-async function cancelPlanMode() {
-  if (!props.sessionId || planBusy.value) return;
-  planBusy.value = true;
-  try {
-    await setPlanMode(props.sessionId, false);
-    chatStore.setSessionPlanMode(props.sessionId, false);
-    chatStore.setCompose(props.sessionId, { chatMode: "agent" });
-  } catch (error) {
-    log.error("exit plan mode failed", error);
-  } finally {
-    planBusy.value = false;
-  }
+function isApprovedPlan(message: ChatMessage): boolean {
+  return message.id === approvedPlanMessageId.value;
 }
+
+/** A planning turn: task checklist on THIS message, without mutating tool work yet. */
+function looksLikePendingPlan(message: ChatMessage): boolean {
+  // Message-local only — sessionTasks would make every later reply look like a plan.
+  const tasks = tasksFromMessage(message);
+  if (!tasks.length) return false;
+  const hadMutations = (message.toolActivities ?? []).some((activity) => {
+    const kind = String(activity.kind ?? "").toLowerCase();
+    // Shell may be used for read-only inspection while drafting a plan; only
+    // file mutations mean this turn already started implementing.
+    return kind === "edit" || kind === "create" || kind === "delete" || kind === "move";
+  });
+  if (hadMutations) return false;
+  return tasks.some((task) => {
+    const status = String(task.status ?? "pending").toLowerCase();
+    return (
+      status === "pending" ||
+      status === "in_progress" ||
+      status === "active" ||
+      status === "running"
+    );
+  });
+}
+
+function showPlanCardFor(message: ChatMessage): boolean {
+  if (message.status !== "done") return false;
+  if (isApprovedPlan(message)) {
+    return planTasksForMessage(message, true).length > 0;
+  }
+  if (message.id !== lastDoneAssistantId.value) return false;
+  if (hasUserMessageAfter(message.id)) return false;
+  // Require a checklist on this message (don't show solely because the sticky gate is on).
+  return looksLikePendingPlan(message);
+}
+
+/** If Agent left a pending plan checklist but the gate never flipped, recover it. */
+function ensurePlanGateForPendingChecklist() {
+  if (!props.sessionId || planBusy.value || isSessionSending.value) return;
+  // Manual Plan mode never auto-executes.
+  if (chatStore.sessionCompose[props.sessionId]?.chatMode === "plan") return;
+  const messageId = lastDoneAssistantId.value;
+  if (!messageId || messageId === approvedPlanMessageId.value) return;
+  if (hasUserMessageAfter(messageId)) return;
+  const message = props.messages.find((item) => item.id === messageId);
+  const fingerprint = pendingPlanFingerprint(message);
+  if (!fingerprint) return;
+
+  const rejected = chatStore.rejectedPlanFingerprint(props.sessionId);
+  // Still the same rejected checklist — keep manual approve only.
+  if (rejected && rejected === fingerprint) {
+    if (chatStore.sessionPlanTrigger[props.sessionId] === "auto") {
+      chatStore.setSessionPlanTrigger(props.sessionId, "manual");
+    }
+    return;
+  }
+
+  // New or updated plan after a reject: clear the block and allow countdown.
+  clearRejectedPlanIfUpdated(fingerprint);
+
+  const armAuto = () => {
+    chatStore.setSessionPlanMode(props.sessionId!, true);
+    chatStore.setSessionPlanTrigger(props.sessionId!, "auto");
+    void setPlanMode(props.sessionId!, true, "auto")
+      .then(() => {
+        chatStore.setSessionPlanMode(props.sessionId!, true);
+        chatStore.setSessionPlanTrigger(props.sessionId!, "auto");
+      })
+      .catch((error) => {
+        log.warn("recover plan gate for pending checklist failed", error);
+      });
+  };
+
+  if (planModeActive.value) {
+    if (chatStore.sessionPlanTrigger[props.sessionId] !== "auto") {
+      armAuto();
+    }
+    return;
+  }
+
+  armAuto();
+}
+
+watch(
+  () =>
+    [
+      props.sessionId,
+      lastDoneAssistantId.value,
+      isSessionSending.value,
+      planModeActive.value,
+      props.messages
+        .map((message) => `${message.id}:${message.status}:${message.toolActivities?.length ?? 0}`)
+        .join("|"),
+      JSON.stringify(props.sessionId ? (chatStore.sessionTasks[props.sessionId] ?? []) : []),
+    ] as const,
+  () => {
+    ensurePlanGateForPendingChecklist();
+  },
+);
 
 async function approvePlanMode() {
   if (!props.sessionId || planBusy.value || sending.value?.[props.sessionId]) return;
   planBusy.value = true;
+  clearPlanTimer();
   try {
-    await setPlanMode(props.sessionId, false);
-    chatStore.setSessionPlanMode(props.sessionId, false);
-    chatStore.setCompose(props.sessionId, { chatMode: "agent" });
+    // Keep the checklist on this plan message; hide only the approve actions.
+    if (lastDoneAssistantId.value) {
+      approvedPlanMessageId.value = lastDoneAssistantId.value;
+    }
+    chatStore.setSessionRejectedPlanFingerprint(props.sessionId, null);
+    rejectedAutoExecuteMessageId.value = null;
+    // Ensure writers unlock even if the gate was recovered only on the frontend.
+    if (!planModeActive.value) {
+      chatStore.setSessionPlanMode(props.sessionId, true);
+      await setPlanMode(props.sessionId, true).catch(() => undefined);
+    }
     await chatStore.send(tr(settingStore.language, "planModeExecuteMessage"), props.sessionId, {
       skipAutoPlan: true,
+      resumePlan: true,
     });
   } catch (error) {
     log.error("approve plan mode failed", error);
   } finally {
     planBusy.value = false;
+  }
+}
+
+function rejectAutoExecute() {
+  // Stop auto-run only — keep the plan checklist and manual approve available.
+  // Remember this checklist structure so identical plans don't restart countdown;
+  // a new/updated plan fingerprint will allow auto-execute again.
+  clearPlanTimer();
+  planCountdown.value = null;
+  if (lastDoneAssistantId.value) {
+    rejectedAutoExecuteMessageId.value = lastDoneAssistantId.value;
+  }
+  if (props.sessionId) {
+    chatStore.setSessionPlanTrigger(props.sessionId, "manual");
+    const message = props.messages.find((item) => item.id === lastDoneAssistantId.value);
+    const fingerprint =
+      pendingPlanFingerprint(message) ??
+      (message ? planStructureFingerprint(tasksFromMessage(message)) : null);
+    if (fingerprint) {
+      chatStore.setSessionRejectedPlanFingerprint(props.sessionId, fingerprint);
+    }
   }
 }
 
@@ -604,40 +838,17 @@ type InlineMessagePart =
   | { kind: "skill"; id: string }
   | { kind: "mcp"; id: string };
 
-/** Match `@file`, `#skill:id`, and `#mcp:id` tokens for chip rendering. */
-const INLINE_TOKEN_RE = /@(?:"([^"]+)"|([^\s@#]+))|#(skill|mcp):([A-Za-z0-9_.-]+)/g;
-
+/** Match `@file`, `#skill:id`, and `#mcp:id` for markdown-like inline marks. */
 function inlineMessageParts(text: string): InlineMessagePart[] {
-  const parts: InlineMessagePart[] = [];
-  let lastIndex = 0;
-  const re = new RegExp(INLINE_TOKEN_RE.source, "g");
-  let match: RegExpExecArray | null;
-  const mentionPaths: string[] = [];
-  while ((match = re.exec(text)) !== null) {
-    if (!(match[3] && match[4])) {
-      mentionPaths.push(match[1] || match[2] || "");
+  return splitInlineTokenParts(text).map((part) => {
+    if (part.kind === "mention") {
+      return { kind: "mention", path: part.path, name: part.name, isDir: part.isDir };
     }
-  }
-  re.lastIndex = 0;
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ kind: "text", text: text.slice(lastIndex, match.index) });
+    if (part.kind === "skill" || part.kind === "mcp") {
+      return { kind: part.kind, id: part.id };
     }
-    if (match[3] && match[4]) {
-      const kind = match[3] as "skill" | "mcp";
-      parts.push({ kind, id: match[4] });
-    } else {
-      const path = match[1] || match[2] || "";
-      const isDir = isDirMention(path);
-      const name = mentionDisplayLabel(path, { isDir, catalog: mentionPaths });
-      parts.push({ kind: "mention", path, name, isDir });
-    }
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    parts.push({ kind: "text", text: text.slice(lastIndex) });
-  }
-  return parts.length > 0 ? parts : [{ kind: "text", text }];
+    return { kind: "text", text: part.text };
+  });
 }
 
 function fileIconForPath(path: string) {
@@ -1212,51 +1423,6 @@ onUnmounted(() => {
 .user-message-text {
   display: inline;
   min-width: 0;
-}
-.user-mention-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: min(220px, 100%);
-  height: 24px;
-  margin: 0 4px 0 0;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--peek-input-bg) 78%, var(--peek-surface));
-  color: var(--peek-text);
-  font-size: 12px;
-  font-weight: 550;
-  line-height: 16px;
-  vertical-align: middle;
-  overflow: hidden;
-}
-.user-mention-chip.user-dir-mention {
-  max-width: min(320px, 100%);
-}
-.user-mention-icon {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  object-fit: contain;
-}
-.user-mention-fallback {
-  flex: none;
-  color: var(--peek-muted);
-}
-.user-mention-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 16px;
-  padding: 1px 0;
-}
-.user-hash-skill {
-  border-color: color-mix(in srgb, var(--peek-accent) 40%, transparent);
-}
-.user-hash-mcp {
-  border-color: color-mix(in srgb, #3b82f6 45%, transparent);
 }
 .message-actions {
   display: flex;

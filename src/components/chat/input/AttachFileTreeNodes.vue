@@ -97,7 +97,7 @@ const emit = defineEmits<{
 
 const pressPath = ref<string | null>(null);
 const longPressed = ref(false);
-let pressTimer: number | null = null;
+let pressTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearDirPress() {
   if (pressTimer != null) {

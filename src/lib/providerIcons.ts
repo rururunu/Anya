@@ -127,8 +127,9 @@ function capitalizeWord(value: string): string {
 }
 
 /** Turn Antigravity / Gemini internal ids into readable labels. */
-export function formatGeminiDisplayName(modelId: string): string {
-  const raw = modelId.trim();
+export function formatGeminiDisplayName(modelId: string | undefined | null): string {
+  const raw = (modelId ?? "").trim();
+  if (!raw) return "";
   const rest = raw.replace(/^gemini[-_]/i, "");
   const lower = rest.toLowerCase();
 
@@ -163,8 +164,11 @@ export function formatGeminiDisplayName(modelId: string): string {
  * Short display label for a model. DeepSeek models drop the `deepseek-` prefix
  * (e.g. `deepseek-v4-pro` → `v4-pro`) since the brand icon already conveys the vendor.
  */
-export function formatModelDisplayName(modelId: string, provider?: string | null): string {
-  const id = modelId.trim();
+export function formatModelDisplayName(
+  modelId: string | undefined | null,
+  provider?: string | null,
+): string {
+  const id = (modelId ?? "").trim();
   if (!id) return id;
   if (isDeepSeekProvider(provider) && /^deepseek[-_]/i.test(id)) {
     return id.replace(/^deepseek[-_]/i, "");

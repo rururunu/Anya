@@ -9,8 +9,9 @@ const INLINE_TOKEN_RE = /@(?:"([^"]+)"|([^\s@#]+))|#(?:skill|mcp):([A-Za-z0-9_.-
 const LEADING_CHIP_RE =
   /^(?:@(?:"[^"]+"|[^\s@#]+)|#(?:skill|mcp):[A-Za-z0-9_.-]+|#\S+)(?:\s+(?:@(?:"[^"]+"|[^\s@#]+)|#(?:skill|mcp):[A-Za-z0-9_.-]+|#\S+))*\s*/;
 
-function fileBaseName(path: string): string {
-  return path.split(/[/\\]/).pop() || path;
+function fileBaseName(path: string | undefined | null): string {
+  const value = path ?? "";
+  return value.split(/[/\\]/).pop() || value;
 }
 
 function prettifyTokens(text: string): string {
@@ -29,8 +30,8 @@ function truncateChars(value: string, max: number): string {
 }
 
 /** Human-facing session title for titlebar / sidebar lists. */
-export function formatSessionPreview(preview: string, maxLen = 48): string {
-  const normalized = preview.replace(/\s+/g, " ").trim();
+export function formatSessionPreview(preview: string | undefined | null, maxLen = 48): string {
+  const normalized = (preview ?? "").replace(/\s+/g, " ").trim();
   if (!normalized) return "";
 
   // Strip leading wire tokens first so prose wins; then prettify any remaining chips.

@@ -1,12 +1,16 @@
 <template>
-  <section v-if="visible" class="plan-approval-card">
+  <section v-if="visible" class="plan-approval-card" :class="{ executing }">
     <header class="plan-approval-header">
       <span class="plan-approval-icon" aria-hidden="true">
         <ListChecks :size="16" :stroke-width="1.8" />
       </span>
       <div class="plan-approval-title">
-        <strong>{{ tr(settingStore.language, "planModeActive") }}</strong>
-        <span>{{ tr(settingStore.language, "planModeReviewHint") }}</span>
+        <strong>
+          {{ tr(settingStore.language, executing ? "planModeExecuting" : "planModeActive") }}
+        </strong>
+        <span v-if="executing">
+          {{ tr(settingStore.language, "planModeExecutingHint") }}
+        </span>
       </div>
     </header>
 
@@ -29,14 +33,40 @@
       {{ tr(settingStore.language, "planModeNoTasksYet") }}
     </p>
 
-    <div class="plan-approval-actions">
+    <div v-if="!executing && autoCountdown" class="plan-auto-execute">
+      <div
+        class="plan-auto-progress"
+        role="progressbar"
+        :aria-valuenow="Math.ceil(autoCountdown.remaining)"
+        aria-valuemin="0"
+        :aria-valuemax="Math.ceil(autoCountdown.total)"
+        aria-label="auto execute countdown"
+      >
+        <div
+          class="plan-auto-progress-fill"
+          :style="{
+            width: `${Math.min(100, Math.max(0, (autoCountdown.remaining / autoCountdown.total) * 100))}%`,
+          }"
+        />
+      </div>
+      <span class="plan-auto-hint">
+        {{
+          tr(settingStore.language, "planAutoExecuteHint", {
+            seconds: Math.ceil(autoCountdown.remaining),
+          })
+        }}
+      </span>
+    </div>
+
+    <div v-if="!executing" class="plan-approval-actions">
       <button
+        v-if="autoCountdown"
         type="button"
         class="plan-approval-btn ghost"
         :disabled="busy"
-        @click="$emit('cancel')"
+        @click="$emit('reject')"
       >
-        {{ tr(settingStore.language, "planModeCancel") }}
+        {{ tr(settingStore.language, "planModeRejectAuto") }}
       </button>
       <button
         type="button"
@@ -62,16 +92,20 @@ const props = withDefaults(
     tasks: TaskItem[];
     visible?: boolean;
     busy?: boolean;
+    executing?: boolean;
+    autoCountdown?: { remaining: number; total: number } | null;
   }>(),
   {
     visible: true,
     busy: false,
+    executing: false,
+    autoCountdown: null,
   },
 );
 
 defineEmits<{
   approve: [];
-  cancel: [];
+  reject: [];
 }>();
 
 const settingStore = useSettingStore();
@@ -102,6 +136,16 @@ function statusClass(status: string) {
   border: 1px solid color-mix(in srgb, var(--peek-accent) 22%, var(--peek-border));
   border-radius: 14px;
   background: color-mix(in srgb, var(--peek-accent) 6%, var(--peek-surface));
+}
+
+.plan-approval-card.executing {
+  border-color: color-mix(in srgb, var(--peek-success) 28%, var(--peek-border));
+  background: color-mix(in srgb, var(--peek-success) 6%, var(--peek-surface));
+}
+
+.plan-approval-card.executing .plan-approval-icon {
+  background: color-mix(in srgb, var(--peek-success) 14%, transparent);
+  color: var(--peek-success);
 }
 
 .plan-approval-header {
@@ -210,6 +254,35 @@ function statusClass(status: string) {
   font-size: 12px;
 }
 
+.plan-auto-execute {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plan-auto-progress {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--peek-accent) 14%, var(--peek-border));
+  overflow: hidden;
+}
+
+.plan-auto-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--peek-accent);
+  transition: width 0.1s linear;
+}
+
+.plan-auto-hint {
+  flex: none;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--peek-muted);
+  white-space: nowrap;
+}
+
 .plan-approval-actions {
   display: flex;
   flex-wrap: wrap;
@@ -237,6 +310,11 @@ function statusClass(status: string) {
   border-color: color-mix(in srgb, var(--peek-text) 12%, transparent);
   background: transparent;
   color: var(--peek-muted);
+}
+
+.plan-approval-btn.ghost:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--peek-text) 28%, transparent);
+  color: var(--peek-text);
 }
 
 .plan-approval-btn.primary {

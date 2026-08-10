@@ -32,17 +32,18 @@ export function attachSelection(message: string, selection?: string) {
   return `${message.trim()}\n\n<peek-selection lines="${lines}">\n${normalized}${SELECTION_CLOSE}`;
 }
 
-export function parseSelectionAttachment(content: string): SelectionAttachment {
-  const match = SELECTION_OPEN.exec(content);
-  let cleanContent = content;
+export function parseSelectionAttachment(content: string | undefined | null): SelectionAttachment {
+  const source = content ?? "";
+  const match = SELECTION_OPEN.exec(source);
+  let cleanContent = source;
   let selection: string | undefined = undefined;
   let lineCount: number | undefined = undefined;
 
   if (match) {
-    const closeIndex = content.lastIndexOf(SELECTION_CLOSE);
+    const closeIndex = source.lastIndexOf(SELECTION_CLOSE);
     if (closeIndex >= match.index + match[0].length) {
-      cleanContent = content.slice(0, match.index).trim();
-      selection = content.slice(match.index + match[0].length, closeIndex);
+      cleanContent = source.slice(0, match.index).trim();
+      selection = source.slice(match.index + match[0].length, closeIndex);
       lineCount = Number(match[1]);
     }
   }

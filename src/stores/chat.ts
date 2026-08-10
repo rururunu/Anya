@@ -77,6 +77,7 @@ export function defaultCompose(): SessionCompose {
 }
 
 const COMPOSE_STORAGE_KEY = "aaa.sessionCompose.v1";
+const REJECTED_PLAN_STORAGE_KEY = "aaa.rejectedPlanFingerprint.v1";
 
 interface ComposeCache {
   entries: Record<string, SessionCompose>;
@@ -113,6 +114,32 @@ function loadComposeCache(): void {
 function persistComposeCache(): void {
   try {
     localStorage.setItem(COMPOSE_STORAGE_KEY, JSON.stringify(composeCache));
+  } catch {
+    // Storage unavailable — keep in-memory state only.
+  }
+}
+
+function loadRejectedPlanFingerprints(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(REJECTED_PLAN_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") return {};
+    const entries: Record<string, string> = {};
+    for (const [sessionId, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value.trim()) {
+        entries[sessionId] = value;
+      }
+    }
+    return entries;
+  } catch {
+    return {};
+  }
+}
+
+function persistRejectedPlanFingerprints(entries: Record<string, string>): void {
+  try {
+    localStorage.setItem(REJECTED_PLAN_STORAGE_KEY, JSON.stringify(entries));
   } catch {
     // Storage unavailable — keep in-memory state only.
   }
@@ -237,6 +264,13 @@ export const useChatStore = defineStore("chat", {
     sessionTasks: {} as Record<string, TaskItem[]>,
     /** Session plan-mode gate (writer tools blocked until approve). */
     sessionPlanMode: {} as Record<string, boolean>,
+    /** How the active plan was entered. Auto plans (agent complexity
+     * detection) get the 30s auto-execute window; manual plans always wait. */
+    sessionPlanTrigger: {} as Record<string, "auto" | "manual">,
+    /** Structure fingerprint of a plan whose auto-execute was rejected. Same
+     * checklist stays manual; a new/updated plan clears this and may countdown.
+     * Persisted so a restart does not revive the auto-execute countdown. */
+    sessionRejectedPlanFingerprint: loadRejectedPlanFingerprints() as Record<string, string>,
   }),
   getters: {
     overlayMessages(state): ChatMessage[] {
@@ -472,6 +506,48 @@ export const useChatStore = defineStore("chat", {
         ...this.sessionPlanMode,
         [sessionId]: active,
       };
+    },
+    setSessionPlanTrigger(sessionId: string, trigger: "auto" | "manual") {
+      if (!sessionId) {
+        return;
+      }
+      if (this.sessionPlanTrigger[sessionId] === trigger) {
+        return;
+      }
+      this.sessionPlanTrigger = {
+        ...this.sessionPlanTrigger,
+        [sessionId]: trigger,
+      };
+    },
+    setSessionRejectedPlanFingerprint(sessionId: string, fingerprint: string | null) {
+      if (!sessionId) {
+        return;
+      }
+      if (!fingerprint) {
+        if (!(sessionId in this.sessionRejectedPlanFingerprint)) {
+          return;
+        }
+        const next = { ...this.sessionRejectedPlanFingerprint };
+        delete next[sessionId];
+        this.sessionRejectedPlanFingerprint = next;
+        persistRejectedPlanFingerprints(next);
+        return;
+      }
+      if (this.sessionRejectedPlanFingerprint[sessionId] === fingerprint) {
+        return;
+      }
+      const next = {
+        ...this.sessionRejectedPlanFingerprint,
+        [sessionId]: fingerprint,
+      };
+      this.sessionRejectedPlanFingerprint = next;
+      persistRejectedPlanFingerprints(next);
+    },
+    rejectedPlanFingerprint(sessionId: string): string | null {
+      if (!sessionId) {
+        return null;
+      }
+      return this.sessionRejectedPlanFingerprint[sessionId] ?? null;
     },
     isPlanModeActive(sessionId: string): boolean {
       return Boolean(sessionId && this.sessionPlanMode[sessionId]);
@@ -780,18 +856,20 @@ export const useChatStore = defineStore("chat", {
 
       const messages = [...(this.sessions[targetSessionId] ?? [])];
 
-      const localUserIndex = findLastMessageIndex(
-        messages,
-        (item) => item.id.startsWith("local-user-") && item.content === userMessage.content,
-      );
-      if (localUserIndex !== -1) {
-        messages[localUserIndex] = userMessage;
-      } else {
-        const existingUserIndex = messages.findIndex((item) => item.id === userMessage.id);
-        if (existingUserIndex === -1) {
-          messages.push(userMessage);
+      if (!normalized.resumePlan) {
+        const localUserIndex = findLastMessageIndex(
+          messages,
+          (item) => item.id.startsWith("local-user-") && item.content === userMessage.content,
+        );
+        if (localUserIndex !== -1) {
+          messages[localUserIndex] = userMessage;
         } else {
-          messages[existingUserIndex] = userMessage;
+          const existingUserIndex = messages.findIndex((item) => item.id === userMessage.id);
+          if (existingUserIndex === -1) {
+            messages.push(userMessage);
+          } else {
+            messages[existingUserIndex] = userMessage;
+          }
         }
       }
 
@@ -1129,7 +1207,7 @@ export const useChatStore = defineStore("chat", {
       let workTimeline = previous.workTimeline ? [...previous.workTimeline] : undefined;
       // Breaker/max-steps notices replace or append onto content; ensure they
       // appear in the work timeline so AgentWorkDetails can render them.
-      const stopNotice = content
+      const stopNotice = (content ?? "")
         .split(/\n+/)
         .map((line) => line.trim())
         .find((line) => line.startsWith("已停止：") || line.startsWith("Stopped:"));
@@ -1430,6 +1508,9 @@ export const useChatStore = defineStore("chat", {
         fromQueue?: boolean;
         /** Skip complexity auto-plan (approve & execute follow-up). */
         skipAutoPlan?: boolean;
+        /** Approve & execute continuation: no optimistic user bubble, and the
+         * backend never persists the approval message to history. */
+        resumePlan?: boolean;
       },
     ) {
       const trimmed = message.trim();
@@ -1438,6 +1519,12 @@ export const useChatStore = defineStore("chat", {
       }
 
       const busy = Boolean(this.sending[sessionId] || this.hasActiveAssistantResponse(sessionId));
+
+      if (options?.resumePlan && busy) {
+        // Never stage an approval continuation for later; the plan card only
+        // shows after the turn finished, so this is a race guard only.
+        return false;
+      }
 
       // While a turn is executing, new user messages are staged instead of
       // being injected immediately. They reach the AI either via the guide
@@ -1457,7 +1544,7 @@ export const useChatStore = defineStore("chat", {
       if (!options?.staged) {
         if (softInject) {
           this.stageSoftInject(sessionId, trimmed);
-        } else {
+        } else if (!options?.resumePlan) {
           this.stageTurn(sessionId, trimmed);
         }
       }
@@ -1510,16 +1597,20 @@ export const useChatStore = defineStore("chat", {
         }
 
         this.markSessionStarted(sessionId);
+        const composeForSend = this.ensureCompose(sessionId);
+        const workspaceId = options?.workspaceId ?? composeForSend.draftWorkspaceId ?? undefined;
+        const quickAsk = options?.quickAsk ?? !workspaceId;
         const response = await chat({
           message: trimmed,
           sessionId,
-          workspaceId: options?.workspaceId,
-          quickAsk: options?.quickAsk,
+          workspaceId,
+          quickAsk,
           modelId: compose.chatModel.trim() || undefined,
           modelProvider: compose.chatModelProvider.trim() || undefined,
           chatMode: compose.chatMode,
           toolApprovalMode: compose.toolApprovalMode,
           skipAutoPlan: options?.skipAutoPlan,
+          resumePlan: options?.resumePlan,
         });
         this.reconcileOptimisticIds(sessionId, response.userMessageId, response.assistantMessageId);
         if (softInject) {

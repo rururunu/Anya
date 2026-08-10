@@ -2,9 +2,7 @@ import type { ChatModelInfo, ModelThinkingVariant } from "@/types/chat";
 import type { AppLanguage } from "@/types/setting";
 import { tr } from "@/services/i18n";
 
-export function modelHasThinkingVariants(
-  model: Pick<ChatModelInfo, "thinkingVariants">,
-): boolean {
+export function modelHasThinkingVariants(model: Pick<ChatModelInfo, "thinkingVariants">): boolean {
   return (model.thinkingVariants?.length ?? 0) > 1;
 }
 
@@ -20,8 +18,7 @@ export function findModelEntry(
   return models.find(
     (model) =>
       (!providerId || model.provider === providerId) &&
-      (model.id === id ||
-        model.thinkingVariants?.some((variant) => variant.id === id)),
+      (model.id === id || model.thinkingVariants?.some((variant) => variant.id === id)),
   );
 }
 
@@ -54,22 +51,20 @@ export function getActiveThinkingVariant(
   );
 }
 
-export function getThinkingTierOptions(
-  entry: ChatModelInfo,
-): ModelThinkingVariant[] {
+export function getThinkingTierOptions(entry: ChatModelInfo): ModelThinkingVariant[] {
   return entry.thinkingVariants ?? [];
 }
 
 export function localizeThinkingTierLabel(
-  label: string,
+  label: string | undefined | null,
   language: AppLanguage,
 ): string {
-  const normalized = label.trim().toLowerCase();
+  const normalized = (label ?? "").trim().toLowerCase();
   if (normalized === "low") return tr(language, "thinkingTierLow");
   if (normalized === "high") return tr(language, "thinkingTierHigh");
   if (normalized === "agent") return tr(language, "thinkingTierAgent");
   if (normalized === "default") return tr(language, "thinkingTierDefault");
-  return label;
+  return label ?? "";
 }
 
 export function isKnownModelSelection(

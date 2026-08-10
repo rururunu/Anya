@@ -76,11 +76,11 @@ const recording = ref(false);
 const draft = ref("");
 const buttonRef = ref<HTMLButtonElement | null>(null);
 
-const displayValue = () => props.modelValue || props.defaultValue;
-const formattedDisplayValue = () =>
-  props.mode === "double-modifier"
-    ? `${displayValue()} x 2`
-    : displayValue().split("+").join(" + ");
+const displayValue = () => props.modelValue || props.defaultValue || "";
+const formattedDisplayValue = () => {
+  const value = displayValue();
+  return props.mode === "double-modifier" ? `${value} x 2` : value.split("+").join(" + ");
+};
 
 function startRecording() {
   if (!props.enabled) return;

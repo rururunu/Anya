@@ -475,6 +475,20 @@ fn summary_message(session_id: &str, body: &str, folded_count: usize) -> ChatMes
     }
 }
 
+/// Drop the trailing empty assistant message — the current turn's stream
+/// target — from a history snapshot. Used by resume turns (approve & execute)
+/// so the synthetic approval instruction becomes the final user turn instead
+/// of landing after an empty assistant, which providers reject.
+pub fn trim_empty_assistant_tail(mut history: Vec<ChatMessage>) -> Vec<ChatMessage> {
+    if history
+        .last()
+        .is_some_and(|message| message.role == Role::Assistant && message.content.trim().is_empty())
+    {
+        history.pop();
+    }
+    history
+}
+
 fn split_for_compact(
     history: &[ChatMessage],
 ) -> (Vec<ChatMessage>, Option<ChatMessage>, Vec<ChatMessage>) {
@@ -598,6 +612,55 @@ mod tests {
             timestamp: 2,
             estimated_tokens: None,
         }
+    }
+
+    #[test]
+    fn resume_history_keeps_approval_as_final_user_turn() {
+        // service.rs resume construction: the current turn's empty assistant
+        // (stream target) must be trimmed before the synthetic approval
+        // instruction is pushed, otherwise it lands between turns in the
+        // prompt and providers reject the request.
+        let mut history = vec![
+            user_msg("u1", "重构登录模块"),
+            assistant_msg("a1", "计划：1. 拆分 service 2. 加测试"),
+            assistant_msg("a2", ""),
+        ];
+        let mut resume = trim_empty_assistant_tail(history.clone());
+        resume.push(user_msg("u2", "计划已批准，现在执行"));
+
+        assert_eq!(resume.len(), 3);
+        assert_eq!(resume.last().unwrap().id, "u2");
+        assert!(resume
+            .iter()
+            .all(|m| !(m.role == Role::Assistant && m.content.trim().is_empty())));
+
+        let (prior, current, pending_tail) = split_for_compact(&resume);
+        assert_eq!(current.unwrap().id, "u2");
+        assert_eq!(prior.last().unwrap().id, "a1");
+        assert!(pending_tail.is_empty());
+
+        // The un-trimmed construction (the bug) leaks the empty assistant into
+        // the prompt prior — guard the invariant at the split layer too.
+        history.push(user_msg("u2", "计划已批准，现在执行"));
+        let (prior, current, _) = split_for_compact(&history);
+        assert_eq!(current.unwrap().id, "u2");
+        assert!(prior
+            .iter()
+            .any(|m| m.role == Role::Assistant && m.content.trim().is_empty()));
+    }
+
+    #[test]
+    fn trim_only_removes_empty_assistant_tail() {
+        let with_content = vec![assistant_msg("a1", "内容")];
+        assert_eq!(trim_empty_assistant_tail(with_content).len(), 1);
+
+        let user_tail = vec![user_msg("u1", "hi"), assistant_msg("a1", "回复")];
+        assert_eq!(trim_empty_assistant_tail(user_tail).len(), 2);
+
+        let empty_tail = vec![user_msg("u1", "hi"), assistant_msg("a1", "")];
+        let trimmed = trim_empty_assistant_tail(empty_tail);
+        assert_eq!(trimmed.len(), 1);
+        assert_eq!(trimmed[0].id, "u1");
     }
 
     #[tokio::test]

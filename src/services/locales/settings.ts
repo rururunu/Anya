@@ -109,6 +109,7 @@ export type SettingsI18nKey =
   | "settings.provider.title"
   | "settings.provider.description"
   | "settings.provider.apiKey"
+  | "settings.provider.getApiKey"
   | "settings.provider.baseUrl"
   | "settings.provider.modelsList"
   | "settings.provider.modelsPlaceholder"
@@ -176,6 +177,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.description":
     "Configure DeepSeek, Gemini, or OpenAI-compatible vendors (MiMo, Kimi, GLM, MiniMax, Ark).",
   "settings.provider.apiKey": "API Key",
+  "settings.provider.getApiKey": "Get a key:",
   "settings.provider.baseUrl": "Base URL",
   "settings.provider.modelsList": "Model List",
   "settings.provider.modelsPlaceholder": "Model ID, e.g. gpt-4o",
@@ -233,7 +235,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Adjust the scale of interface elements and fonts for high-DPI displays.",
   "settings.fields.hardwareAccelerationEnabled.title": "Hardware acceleration",
   "settings.fields.hardwareAccelerationEnabled.description":
-    "Use the GPU for WebView2 rendering. Enabled by default; changing this setting requires a full application restart.",
+    "Use the GPU for WebView2 rendering. Disabled by default for broader driver compatibility; changing this setting requires a full application restart.",
   "settings.fields.opacity.title": "Opacity",
   "settings.fields.opacity.description":
     "Adjust window opacity and enable frosted glass background.",
@@ -245,7 +247,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Record a backup shortcut for apps that steal double-Alt (e.g. IDEA). Turn off the switch to stop listening for this global shortcut. Default: Ctrl+Alt+Space.",
   "settings.fields.deepseekApiKey.title": "API Key",
   "settings.fields.deepseekApiKey.description":
-    "Used for DeepSeek chat requests. Stored locally only.",
+    "Used for DeepSeek chat requests. Stored locally only. Get a key: https://platform.deepseek.com/api_keys",
   "settings.fields.defaultModel.title": "Default model",
   "settings.fields.defaultModel.description":
     "The model used for new chats. Available models are loaded from the DeepSeek API.",
@@ -278,7 +280,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Recall relevant memories and save durable preferences and project rules.",
   "settings.fields.mem0ApiKey.title": "mem0 API Key",
   "settings.fields.mem0ApiKey.description":
-    "Connects to mem0 and is stored only in local settings. Leave empty for local memory.",
+    "Connects to mem0 and is stored only in local settings. Leave empty for local memory. Get a key: https://app.mem0.ai/dashboard/api-keys",
   "settings.fields.mem0UserId.title": "User ID",
   "settings.fields.mem0UserId.description":
     "A stable identifier used to isolate memories for this user.",
@@ -292,9 +294,11 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.webSearchProvider.description":
     "Choose Serper or Tavily as the web search backend.",
   "settings.fields.serperApiKey.title": "Serper API Key",
-  "settings.fields.serperApiKey.description": "Used for Serper search. Stored locally only.",
+  "settings.fields.serperApiKey.description":
+    "Used for Serper search. Stored locally only. Get a key: https://serper.dev",
   "settings.fields.tavilyApiKey.title": "Tavily API Key",
-  "settings.fields.tavilyApiKey.description": "Used for Tavily search. Stored locally only.",
+  "settings.fields.tavilyApiKey.description":
+    "Used for Tavily search. Stored locally only. Get a key: https://app.tavily.com",
   "settings.fields.toolApprovalMode.title": "Tool approval mode",
   "settings.fields.toolApprovalMode.description":
     "Ask / Auto / Always allow. Always allow still blocks dangerous shell via rules.",
@@ -399,6 +403,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.description":
       "配置 DeepSeek、Gemini，或小米 MiMo / Kimi / 智谱 / MiniMax / 火山方舟等 OpenAI 兼容厂商。",
     "settings.provider.apiKey": "API Key",
+    "settings.provider.getApiKey": "获取地址：",
     "settings.provider.baseUrl": "Base URL",
     "settings.provider.modelsList": "模型列表",
     "settings.provider.modelsPlaceholder": "模型 ID，例如 gpt-4o",
@@ -440,7 +445,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.zoom.description": "调整软件界面大小。",
     "settings.fields.hardwareAccelerationEnabled.title": "硬件加速",
     "settings.fields.hardwareAccelerationEnabled.description":
-      "使用 GPU 加速 WebView2 界面渲染。默认开启，更改后需要完整重启应用才能生效。",
+      "使用 GPU 加速 WebView2 界面渲染。默认关闭以提升驱动兼容性，更改后需要完整重启应用才能生效。",
     "settings.fields.opacity.title": "透明度",
     "settings.fields.opacity.description": "调整窗口背景透明度与毛玻璃效果。",
     "settings.fields.primaryHotkey.title": "主快捷键",
@@ -450,7 +455,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.secondaryHotkey.description":
       "为会抢走双击 Alt 的应用（如 IDEA）录制备用快捷键。关闭开关后不再监听该全局快捷键。默认：Ctrl+Alt+Space。",
     "settings.fields.deepseekApiKey.title": "API Key",
-    "settings.fields.deepseekApiKey.description": "DeepSeek API Key",
+    "settings.fields.deepseekApiKey.description":
+      "用于 DeepSeek 请求，密钥仅保存在本机。获取地址：https://platform.deepseek.com/api_keys",
     "settings.fields.defaultModel.title": "默认模型",
     "settings.fields.defaultModel.description":
       "新对话默认使用的模型，列表通过 DeepSeek API 获取。",
@@ -480,7 +486,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "自动召回相关记忆，并按规则保存长期偏好与项目约定。",
     "settings.fields.mem0ApiKey.title": "mem0 API Key",
     "settings.fields.mem0ApiKey.description":
-      "用于连接 mem0，密钥仅保存在本机设置中。留空时使用本地记忆。",
+      "用于连接 mem0，密钥仅保存在本机设置中。留空时使用本地记忆。获取地址：https://app.mem0.ai/dashboard/api-keys",
     "settings.fields.mem0UserId.title": "User ID",
     "settings.fields.mem0UserId.description": "稳定的用户标识，用于隔离不同用户的记忆。",
     "settings.fields.mem0BaseUrl.title": "Base URL",
@@ -491,9 +497,11 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.webSearchProvider.title": "搜索 Provider",
     "settings.fields.webSearchProvider.description": "选择 Serper 或 Tavily 作为联网搜索后端。",
     "settings.fields.serperApiKey.title": "Serper API Key",
-    "settings.fields.serperApiKey.description": "用于 Serper 搜索，密钥仅保存在本机设置中。",
+    "settings.fields.serperApiKey.description":
+      "用于 Serper 搜索，密钥仅保存在本机设置中。获取地址：https://serper.dev",
     "settings.fields.tavilyApiKey.title": "Tavily API Key",
-    "settings.fields.tavilyApiKey.description": "用于 Tavily 搜索，密钥仅保存在本机设置中。",
+    "settings.fields.tavilyApiKey.description":
+      "用于 Tavily 搜索，密钥仅保存在本机设置中。获取地址：https://app.tavily.com",
     "settings.fields.toolApprovalMode.title": "工具审批模式",
     "settings.fields.toolApprovalMode.description":
       "询问 / 自动 / 一律允许。一律允许仍会拦截危险 shell。",
@@ -572,6 +580,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.description":
       "DeepSeek API またはカスタムの OpenAI 互換プロバイダーを設定します。",
     "settings.provider.apiKey": "API キー",
+    "settings.provider.getApiKey": "取得先：",
     "settings.provider.baseUrl": "ベース URL",
     "settings.provider.modelsList": "モデルリスト",
     "settings.provider.modelsPlaceholder": "モデルID（例: gpt-4o）",
@@ -612,7 +621,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.opacity.description": "ウィンドウの透明度とすりガラス効果を調整します。",
     "settings.fields.deepseekApiKey.title": "API キー",
     "settings.fields.deepseekApiKey.description":
-      "DeepSeek のチャットリクエストに使用し、ローカルにのみ保存されます。",
+      "DeepSeek のチャットリクエストに使用し、ローカルにのみ保存されます。取得先：https://platform.deepseek.com/api_keys",
     "settings.fields.defaultModel.title": "既定のモデル",
     "settings.fields.defaultModel.description":
       "新しいチャットで使用するモデルです。一覧は DeepSeek API から取得します。",
@@ -634,7 +643,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "関連するメモリを呼び出し、長期的な設定やプロジェクトルールを保存します。",
     "settings.fields.mem0ApiKey.title": "mem0 API キー",
     "settings.fields.mem0ApiKey.description":
-      "mem0 への接続に使用します。空欄の場合はローカルメモリを使用します。",
+      "mem0 への接続に使用します。空欄の場合はローカルメモリを使用します。取得先：https://app.mem0.ai/dashboard/api-keys",
     "settings.fields.mem0UserId.title": "ユーザー ID",
     "settings.fields.mem0UserId.description": "ユーザーごとのメモリを分離する安定した識別子です。",
     "settings.fields.mem0BaseUrl.title": "ベース URL",
@@ -646,9 +655,11 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.webSearchProvider.title": "検索プロバイダー",
     "settings.fields.webSearchProvider.description": "Serper または Tavily を選択します。",
     "settings.fields.serperApiKey.title": "Serper API キー",
-    "settings.fields.serperApiKey.description": "Serper 検索用。ローカルにのみ保存されます。",
+    "settings.fields.serperApiKey.description":
+      "Serper 検索用。ローカルにのみ保存されます。取得先：https://serper.dev",
     "settings.fields.tavilyApiKey.title": "Tavily API キー",
-    "settings.fields.tavilyApiKey.description": "Tavily 検索用。ローカルにのみ保存されます。",
+    "settings.fields.tavilyApiKey.description":
+      "Tavily 検索用。ローカルにのみ保存されます。取得先：https://app.tavily.com",
     "settings.fields.toolApprovalMode.title": "ツール承認",
     "settings.fields.toolApprovalMode.description":
       "Ask / Auto / 常に許可。危険な shell は引き続きブロックされます。",
@@ -712,6 +723,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.description":
       "Настройте DeepSeek API или другие OpenAI-совместимые провайдеры.",
     "settings.provider.apiKey": "API ключ",
+    "settings.provider.getApiKey": "Получить ключ:",
     "settings.provider.baseUrl": "Базовый URL",
     "settings.provider.modelsList": "Список моделей",
     "settings.provider.modelsPlaceholder": "ID модели, напр. gpt-4o",
@@ -753,7 +765,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.opacity.description": "Настройте прозрачность окна и эффект матового стекла.",
     "settings.fields.deepseekApiKey.title": "Ключ API",
     "settings.fields.deepseekApiKey.description":
-      "Используется для запросов DeepSeek и хранится только локально.",
+      "Используется для запросов DeepSeek и хранится только локально. Получить ключ: https://platform.deepseek.com/api_keys",
     "settings.fields.defaultModel.title": "Модель по умолчанию",
     "settings.fields.defaultModel.description":
       "Модель для новых чатов. Список загружается через API DeepSeek.",
@@ -775,7 +787,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "Находит связанную память и сохраняет долгосрочные предпочтения и правила проекта.",
     "settings.fields.mem0ApiKey.title": "Ключ API mem0",
     "settings.fields.mem0ApiKey.description":
-      "Подключает mem0. Оставьте пустым для локальной памяти.",
+      "Подключает mem0. Оставьте пустым для локальной памяти. Получить ключ: https://app.mem0.ai/dashboard/api-keys",
     "settings.fields.mem0UserId.title": "ID пользователя",
     "settings.fields.mem0UserId.description":
       "Постоянный идентификатор для разделения памяти пользователей.",
@@ -788,9 +800,11 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.webSearchProvider.title": "Провайдер поиска",
     "settings.fields.webSearchProvider.description": "Выберите Serper или Tavily.",
     "settings.fields.serperApiKey.title": "Ключ API Serper",
-    "settings.fields.serperApiKey.description": "Для поиска Serper. Хранится только локально.",
+    "settings.fields.serperApiKey.description":
+      "Для поиска Serper. Хранится только локально. Получить ключ: https://serper.dev",
     "settings.fields.tavilyApiKey.title": "Ключ API Tavily",
-    "settings.fields.tavilyApiKey.description": "Для поиска Tavily. Хранится только локально.",
+    "settings.fields.tavilyApiKey.description":
+      "Для поиска Tavily. Хранится только локально. Получить ключ: https://app.tavily.com",
     "settings.fields.toolApprovalMode.title": "Одобрение инструментов",
     "settings.fields.toolApprovalMode.description":
       "Ask / Auto / Always allow. Опасный shell всё ещё блокируется.",
@@ -855,6 +869,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.description":
       "Konfigurieren Sie die DeepSeek-API oder benutzerdefinierte OpenAI-kompatible Anbieter.",
     "settings.provider.apiKey": "API-Schlüssel",
+    "settings.provider.getApiKey": "Key unter:",
     "settings.provider.baseUrl": "Basis-URL",
     "settings.provider.modelsList": "Modellliste",
     "settings.provider.modelsPlaceholder": "Modell-ID, z.B. gpt-4o",
@@ -896,7 +911,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.opacity.description": "Passen Sie Fenstertransparenz und Milchglaseffekt an.",
     "settings.fields.deepseekApiKey.title": "API-Schlüssel",
     "settings.fields.deepseekApiKey.description":
-      "Wird für DeepSeek-Anfragen verwendet und nur lokal gespeichert.",
+      "Wird für DeepSeek-Anfragen verwendet und nur lokal gespeichert. Key unter: https://platform.deepseek.com/api_keys",
     "settings.fields.defaultModel.title": "Standardmodell",
     "settings.fields.defaultModel.description":
       "Modell für neue Chats. Die Liste wird über die DeepSeek-API geladen.",
@@ -919,7 +934,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "Ruft relevante Erinnerungen ab und speichert dauerhafte Einstellungen und Projektregeln.",
     "settings.fields.mem0ApiKey.title": "mem0-API-Schlüssel",
     "settings.fields.mem0ApiKey.description":
-      "Verbindet mem0. Leer lassen, um lokalen Speicher zu verwenden.",
+      "Verbindet mem0. Leer lassen, um lokalen Speicher zu verwenden. Key unter: https://app.mem0.ai/dashboard/api-keys",
     "settings.fields.mem0UserId.title": "Benutzer-ID",
     "settings.fields.mem0UserId.description":
       "Stabile Kennung zur Trennung der Erinnerungen verschiedener Benutzer.",
@@ -932,9 +947,11 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.webSearchProvider.title": "Suchanbieter",
     "settings.fields.webSearchProvider.description": "Wählen Sie Serper oder Tavily.",
     "settings.fields.serperApiKey.title": "Serper-API-Schlüssel",
-    "settings.fields.serperApiKey.description": "Für Serper-Suche. Nur lokal gespeichert.",
+    "settings.fields.serperApiKey.description":
+      "Für Serper-Suche. Nur lokal gespeichert. Key unter: https://serper.dev",
     "settings.fields.tavilyApiKey.title": "Tavily-API-Schlüssel",
-    "settings.fields.tavilyApiKey.description": "Für Tavily-Suche. Nur lokal gespeichert.",
+    "settings.fields.tavilyApiKey.description":
+      "Für Tavily-Suche. Nur lokal gespeichert. Key unter: https://app.tavily.com",
     "settings.fields.toolApprovalMode.title": "Werkzeugfreigabe",
     "settings.fields.toolApprovalMode.description":
       "Ask / Auto / Always allow. Gefährliche Shells bleiben blockiert.",
@@ -1000,6 +1017,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.description":
       "Configurez l'API DeepSeek ou des fournisseurs personnalisés compatibles OpenAI.",
     "settings.provider.apiKey": "Clé API",
+    "settings.provider.getApiKey": "Obtenir une clé :",
     "settings.provider.baseUrl": "URL de base",
     "settings.provider.modelsList": "Liste des modèles",
     "settings.provider.modelsPlaceholder": "ID du modèle, ex. gpt-4o",
@@ -1043,7 +1061,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "Ajustez la transparence et l\u2019effet de verre dépoli.",
     "settings.fields.deepseekApiKey.title": "Clé API",
     "settings.fields.deepseekApiKey.description":
-      "Utilisée pour les requêtes DeepSeek et stockée uniquement en local.",
+      "Utilisée pour les requêtes DeepSeek et stockée uniquement en local. Obtenir une clé : https://platform.deepseek.com/api_keys",
     "settings.fields.defaultModel.title": "Modèle par défaut",
     "settings.fields.defaultModel.description":
       "Modèle utilisé pour les nouvelles discussions. La liste vient de l\u2019API DeepSeek.",
@@ -1067,7 +1085,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "Rappelle les souvenirs pertinents et enregistre les préférences durables et les règles du projet.",
     "settings.fields.mem0ApiKey.title": "Clé API mem0",
     "settings.fields.mem0ApiKey.description":
-      "Connecte mem0. Laissez vide pour utiliser la mémoire locale.",
+      "Connecte mem0. Laissez vide pour utiliser la mémoire locale. Obtenir une clé : https://app.mem0.ai/dashboard/api-keys",
     "settings.fields.mem0UserId.title": "Identifiant utilisateur",
     "settings.fields.mem0UserId.description":
       "Identifiant stable permettant d\u2019isoler la mémoire de chaque utilisateur.",
@@ -1081,10 +1099,10 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.webSearchProvider.description": "Choisissez Serper ou Tavily.",
     "settings.fields.serperApiKey.title": "Clé API Serper",
     "settings.fields.serperApiKey.description":
-      "Pour la recherche Serper. Stockée uniquement en local.",
+      "Pour la recherche Serper. Stockée uniquement en local. Obtenir une clé : https://serper.dev",
     "settings.fields.tavilyApiKey.title": "Clé API Tavily",
     "settings.fields.tavilyApiKey.description":
-      "Pour la recherche Tavily. Stockée uniquement en local.",
+      "Pour la recherche Tavily. Stockée uniquement en local. Obtenir une clé : https://app.tavily.com",
     "settings.fields.toolApprovalMode.title": "Approbation des outils",
     "settings.fields.toolApprovalMode.description":
       "Ask / Auto / Always allow. Les shells dangereux restent bloqués.",
@@ -1150,6 +1168,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.description":
       "DeepSeek API 또는 사용자 정의 OpenAI 호환 제공자를 설정합니다.",
     "settings.provider.apiKey": "API 키",
+    "settings.provider.getApiKey": "발급 주소:",
     "settings.provider.baseUrl": "기본 URL",
     "settings.provider.modelsList": "모델 목록",
     "settings.provider.modelsPlaceholder": "모델 ID, 예: gpt-4o",
@@ -1189,7 +1208,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.opacity.title": "불투명도",
     "settings.fields.opacity.description": "창 투명도와 반투명 유리 효과를 조정합니다.",
     "settings.fields.deepseekApiKey.title": "API 키",
-    "settings.fields.deepseekApiKey.description": "DeepSeek 요청에 사용하며 로컬에만 저장됩니다.",
+    "settings.fields.deepseekApiKey.description":
+      "DeepSeek 요청에 사용하며 로컬에만 저장됩니다. 발급 주소: https://platform.deepseek.com/api_keys",
     "settings.fields.defaultModel.title": "기본 모델",
     "settings.fields.defaultModel.description":
       "새 채팅에 사용할 모델입니다. 목록은 DeepSeek API에서 가져옵니다.",
@@ -1211,7 +1231,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "관련 메모리를 불러오고 장기 환경설정과 프로젝트 규칙을 저장합니다.",
     "settings.fields.mem0ApiKey.title": "mem0 API 키",
     "settings.fields.mem0ApiKey.description":
-      "mem0 연결에 사용합니다. 비워 두면 로컬 메모리를 사용합니다.",
+      "mem0 연결에 사용합니다. 비워 두면 로컬 메모리를 사용합니다. 발급 주소: https://app.mem0.ai/dashboard/api-keys",
     "settings.fields.mem0UserId.title": "사용자 ID",
     "settings.fields.mem0UserId.description": "사용자별 메모리를 분리하는 고정 식별자입니다.",
     "settings.fields.mem0BaseUrl.title": "기본 URL",
@@ -1223,9 +1243,11 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.webSearchProvider.title": "검색 제공자",
     "settings.fields.webSearchProvider.description": "Serper 또는 Tavily를 선택합니다.",
     "settings.fields.serperApiKey.title": "Serper API 키",
-    "settings.fields.serperApiKey.description": "Serper 검색용. 로컬에만 저장됩니다.",
+    "settings.fields.serperApiKey.description":
+      "Serper 검색용. 로컬에만 저장됩니다. 발급 주소: https://serper.dev",
     "settings.fields.tavilyApiKey.title": "Tavily API 키",
-    "settings.fields.tavilyApiKey.description": "Tavily 검색용. 로컬에만 저장됩니다.",
+    "settings.fields.tavilyApiKey.description":
+      "Tavily 검색용. 로컬에만 저장됩니다. 발급 주소: https://app.tavily.com",
     "settings.fields.toolApprovalMode.title": "도구 승인",
     "settings.fields.toolApprovalMode.description":
       "Ask / Auto / Always allow. 위험한 shell은 계속 차단됩니다.",

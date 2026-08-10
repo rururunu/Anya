@@ -1,6 +1,17 @@
 use crate::core::runtime::ChatMessage;
 
 use crate::core::tools::context::TaskItem;
+use serde::{Deserialize, Serialize};
+
+/// Where a plan-mode activation came from. `Auto` plans (agent-mode complexity
+/// detection) get the 30s auto-execute window; `Manual` plans (user picked
+/// plan mode explicitly) always wait for the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlanModeSource {
+    Auto,
+    Manual,
+}
 
 /// EventBus 事件 — Vue 只订阅这些，不感知 Provider。
 #[derive(Debug, Clone)]
@@ -39,6 +50,7 @@ pub enum BusEvent {
         session_id: String,
         user_message: ChatMessage,
         assistant_message: ChatMessage,
+        resume_plan: bool,
     },
     ChatDelta {
         session_id: String,
@@ -106,6 +118,7 @@ pub enum BusEvent {
     PlanModeChanged {
         session_id: String,
         active: bool,
+        source: PlanModeSource,
     },
     ToolStarted {
         session_id: String,

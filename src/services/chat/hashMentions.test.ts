@@ -34,6 +34,11 @@ describe("hashMentions", () => {
 
     // Mid-word hash should not open the picker.
     expect(activeHashMention("foo#bar", 7)).toBeNull();
+
+    // Completed resource tokens should not keep the picker open.
+    expect(activeHashMention("#skill:docx", 11)).toBeNull();
+    expect(activeHashMention("#mcp:gmail", 10)).toBeNull();
+    expect(activeHashMention("use #skill:docx", 15)).toBeNull();
   });
 
   it("detects @ file mentions with caret awareness", () => {

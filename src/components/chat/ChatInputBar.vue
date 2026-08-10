@@ -223,6 +223,8 @@
         'has-images': attachedImages.length > 0 || attachedFiles.length > 0,
         'drag-over': fileDragOver,
       }"
+      data-tauri-drag-region="false"
+      @mousedown="onInputBarMouseDown"
       @dragover.prevent="onFileDragOver"
       @dragleave="onFileDragLeave"
       @drop.prevent="onFileDrop"
@@ -289,172 +291,41 @@
         </div>
       </div>
 
-      <div class="input-content peek-scrollbar">
-        <TooltipProvider :delay-duration="280">
-          <template v-for="(seg, segIdx) in composerSegments" :key="`seg-${segIdx}-${seg.kind}`">
-            <span
-              v-if="seg.kind === 'text'"
-              class="input-prefix"
-              data-tauri-drag-region="false"
-              @click="focusInput"
-            >
-              {{ seg.text }}
-            </span>
-            <span
-              v-else-if="seg.kind === 'selection'"
-              class="selection-tag"
-              data-tauri-drag-region="false"
-              :title="`Selected ${seg.lines} lines`"
-            >
-              <span>select-{{ seg.lines }}</span>
-            </span>
-            <span
-              v-else-if="seg.kind === 'paste' && pasteLineCount(seg.text) > 5"
-              class="selection-tag text-tag"
-              data-tauri-drag-region="false"
-              :title="`Pasted ${pasteLineCount(seg.text)} lines`"
-            >
-              <span>text-{{ pasteLineCount(seg.text) }}</span>
-            </span>
-            <span
-              v-else-if="seg.kind === 'paste'"
-              class="input-prefix"
-              data-tauri-drag-region="false"
-              @click="focusInput"
-            >
-              {{ seg.text }}
-            </span>
-            <Tooltip v-else-if="seg.kind === 'mention'">
-              <TooltipTrigger as-child>
-                <span
-                  class="file-mention-tag removable-mention-tag"
-                  :class="{ 'dir-mention-tag': isMentionDir(seg) }"
-                  data-tauri-drag-region="false"
-                >
-                  <Folder v-if="isMentionDir(seg)" :size="12" />
-                  <img
-                    v-else-if="fileIconForPath(seg.path)"
-                    class="file-chip-icon-img"
-                    :src="fileIconForPath(seg.path) || ''"
-                    alt=""
-                  />
-                  <File v-else :size="12" />
-                  <span class="file-mention-name">{{ mentionLabel(seg) }}</span>
-                  <button
-                    type="button"
-                    class="mention-chip-remove"
-                    :aria-label="tr(language, 'close')"
-                    @click.stop="removeComposerSegment(segIdx)"
-                  >
-                    <X :size="11" :stroke-width="2" />
-                  </button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" :side-offset="6" class="composer-chip-tooltip">
-                {{ normalizeMentionPath(seg.path) }}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip v-else-if="seg.kind === 'skill'">
-              <TooltipTrigger as-child>
-                <span
-                  class="file-mention-tag hash-mention-tag hash-skill-tag removable-mention-tag"
-                  data-tauri-drag-region="false"
-                >
-                  <img
-                    v-if="hashIconFor('skill', seg.id)"
-                    class="file-chip-icon-img"
-                    :src="hashIconFor('skill', seg.id) || ''"
-                    alt=""
-                    referrerpolicy="no-referrer"
-                  />
-                  <Zap v-else :size="12" />
-                  <span class="file-mention-name">{{ hashLabelFor("skill", seg.id) }}</span>
-                  <button
-                    type="button"
-                    class="mention-chip-remove"
-                    :aria-label="tr(language, 'close')"
-                    @click.stop="removeComposerSegment(segIdx)"
-                  >
-                    <X :size="11" :stroke-width="2" />
-                  </button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" :side-offset="6" class="composer-chip-tooltip">
-                {{ hashChipTitle("skill", seg.id) }}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip v-else-if="seg.kind === 'mcp'">
-              <TooltipTrigger as-child>
-                <span
-                  class="file-mention-tag hash-mention-tag hash-mcp-tag removable-mention-tag"
-                  data-tauri-drag-region="false"
-                >
-                  <img
-                    v-if="hashIconFor('mcp', seg.id)"
-                    class="file-chip-icon-img"
-                    :src="hashIconFor('mcp', seg.id) || ''"
-                    alt=""
-                    referrerpolicy="no-referrer"
-                  />
-                  <Bot v-else :size="12" />
-                  <span class="file-mention-name">{{ hashLabelFor("mcp", seg.id) }}</span>
-                  <button
-                    type="button"
-                    class="mention-chip-remove"
-                    :aria-label="tr(language, 'close')"
-                    @click.stop="removeComposerSegment(segIdx)"
-                  >
-                    <X :size="11" :stroke-width="2" />
-                  </button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" :side-offset="6" class="composer-chip-tooltip">
-                {{ hashChipTitle("mcp", seg.id) }}
-              </TooltipContent>
-            </Tooltip>
-          </template>
-        </TooltipProvider>
-        <textarea
-          v-if="props.appearance === 'workbench'"
-          ref="inputRef"
+      <div
+        class="input-content peek-scrollbar"
+        :class="{
+          'has-chips': hasComposerChips,
+          'has-leading': composerSegments.length > 0,
+          'is-multiline': composerInputMultiline,
+        }"
+        data-tauri-drag-region="false"
+      >
+        <template v-for="(seg, segIdx) in composerSegments" :key="`L-${segIdx}-${seg.kind}`">
+          <span
+            v-if="seg.kind === 'selection'"
+            class="selection-tag"
+            data-tauri-drag-region="false"
+            :title="`Selected ${seg.lines} lines`"
+          >
+            <span>select-{{ seg.lines }}</span>
+          </span>
+        </template>
+
+        <ComposerEditable
+          ref="composerRef"
           v-model="message"
           :placeholder="inputPlaceholder"
-          class="chat-input workbench-textarea peek-scrollbar"
-          :class="{ 'is-multiline': workbenchInputMultiline }"
-          data-tauri-drag-region="false"
-          spellcheck="false"
-          autocomplete="off"
-          rows="1"
-          role="combobox"
-          aria-autocomplete="list"
-          :aria-expanded="showSuggestions || interactivePickerOpen"
+          :multiline="composerInputMultiline"
+          :empty="!message"
           :readonly="inputLockedForTyping"
+          :aria-expanded="showSuggestions || interactivePickerOpen"
+          :mcp-servers="settingStore.mcpServers ?? []"
+          :skills="composerSkillMeta"
+          :file-catalog="workspaceFiles"
+          class="peek-scrollbar"
+          @caret-change="onComposerCaretChange"
           @input="onComposerInput"
           @keydown="handleKeydown"
-          @keyup="syncComposerCaret"
-          @click="syncComposerCaret"
-          @select="syncComposerCaret"
-          @paste="handlePaste"
-        />
-        <input
-          v-else
-          ref="inputRef"
-          v-model="message"
-          type="text"
-          :placeholder="inputPlaceholder"
-          class="chat-input"
-          data-tauri-drag-region="false"
-          spellcheck="false"
-          autocomplete="off"
-          role="combobox"
-          aria-autocomplete="list"
-          :aria-expanded="showSuggestions || interactivePickerOpen"
-          :readonly="inputLockedForTyping"
-          @input="syncComposerCaret"
-          @keydown="handleKeydown"
-          @keyup="syncComposerCaret"
-          @click="syncComposerCaret"
-          @select="syncComposerCaret"
           @paste="handlePaste"
         />
       </div>
@@ -716,7 +587,6 @@ import {
 import HistoryPicker from "./input/HistoryPicker.vue";
 import ModelPicker from "./input/ModelPicker.vue";
 import OptionPicker from "./input/OptionPicker.vue";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import AskUserPicker from "./input/AskUserPicker.vue";
 import PathPermissionPicker from "./input/PathPermissionPicker.vue";
 import ToolApprovalPicker from "./input/ToolApprovalPicker.vue";
@@ -726,6 +596,7 @@ import CommandSuggestions from "./input/CommandSuggestions.vue";
 import WorkspacePickerPanel from "./input/WorkspacePickerPanel.vue";
 import AttachResourcePanel from "./input/AttachResourcePanel.vue";
 import ContextUsageRing from "./ContextUsageRing.vue";
+import ComposerEditable from "./ComposerEditable.vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { executeSlashCommand, fetchEnvironmentContext, slashCommands } from "@/commands/slash";
@@ -742,16 +613,14 @@ import {
 } from "@/services/chat/attachFiles";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
 import {
-  appendComposerSegment,
-  flushLiveMessageToSegments,
-  isDirMention,
-  mentionDisplayLabel,
+  formatMentionPath,
+  formatResourceMention,
   normalizeMentionPath,
-  pasteLineCount,
   parseComposerTextToSegments,
   serializeComposerSegments as serializeSegments,
   type ComposerSegment,
 } from "@/services/chat/composerSegments";
+import { createComposerUndoStack, type ComposerSnapshot } from "@/services/chat/composerUndo";
 import {
   activeFilePathMention,
   activeHashMention,
@@ -759,13 +628,6 @@ import {
   parseHashMentions,
   type HashMentionItem,
 } from "@/services/chat/hashMentions";
-import {
-  mcpMentionIconUrl,
-  mcpMentionLabel,
-  prettyHashInstallId,
-  skillMentionIconUrl,
-  skillMentionLabel,
-} from "@/services/chat/hashMentionDisplay";
 import {
   recordResourceUsage,
   recordResourceUsages,
@@ -898,44 +760,70 @@ const emit = defineEmits<{
       hasImages?: boolean;
       hasFiles?: boolean;
       isPreviewOpen?: boolean;
+      /** Measured .input-bar height so Alt+Alt can grow with multi-line input. */
+      inputBarHeight?: number;
+      layoutReason?: "picker" | "chrome" | "other";
     },
   ];
   modelChange: [modelId: string];
 }>();
 
 const message = ref("");
+/** Leading selection chips only — mentions/skills live as plain text in `message`. */
 const composerSegments = ref<ComposerSegment[]>([]);
-const workbenchInputMultiline = ref(false);
+const composerUndo = createComposerUndoStack();
+const composerInputMultiline = ref(false);
+/** Kept as a no-op stub so stale HMR closures never throw ReferenceError. */
+let composerShellResizeObserver: ResizeObserver | null = null;
+const hasComposerChips = computed(() =>
+  composerSegments.value.some((seg) => seg.kind === "selection"),
+);
 const attachedImages = ref<string[]>([]);
 const attachedFiles = ref<AttachedFileChip[]>([]);
 const fileDragOver = ref(false);
+/** Esc closes @/# suggestion UI without deleting the typed token. */
+const mentionSuggestSuppressed = ref<{ trigger: "@" | "#"; start: number } | null>(null);
 
-/** Flatten frozen chips + live textarea into the outbound message body. */
+function isMentionSuggestSuppressed(trigger: "@" | "#", start: number) {
+  const suppressed = mentionSuggestSuppressed.value;
+  return Boolean(suppressed && suppressed.trigger === trigger && suppressed.start === start);
+}
+
+function suppressMentionSuggestions(trigger: "@" | "#", start: number) {
+  mentionSuggestSuppressed.value = { trigger, start };
+  selectedIndex.value = 0;
+  emitLayoutChange();
+}
+
+/** Flatten selection chips + live textarea into the outbound message body. */
 function serializeComposerSegments() {
   return serializeSegments(composerSegments.value, message.value);
 }
 
-/** Move trailing typed text into a frozen text segment so a new chip can sit after it. */
-function flushMessageToSegments() {
-  const next = flushLiveMessageToSegments(composerSegments.value, message.value);
-  composerSegments.value = next.segments;
-  message.value = next.liveMessage;
+/** Capture current composer state for programmatic-edit undo. */
+function captureComposerSnapshot(): ComposerSnapshot {
+  return {
+    message: message.value,
+    segments: composerSegments.value.map((seg) => ({ ...seg })),
+  };
 }
 
-/** Append a chip, merging adjacent text/paste segments when possible. */
-function pushComposerSegment(segment: ComposerSegment) {
-  appendComposerSegment(composerSegments.value, segment);
-}
-
-function removeComposerSegment(index: number) {
-  if (index < 0 || index >= composerSegments.value.length) return;
-  composerSegments.value.splice(index, 1);
+/**
+ * Restore the most recent snapshot; returns false when the stack is empty so
+ * plain text edits can fall through to the textarea's native undo.
+ */
+function undoComposerSnapshot(): boolean {
+  const snapshot = composerUndo.pop();
+  if (!snapshot) return false;
+  message.value = snapshot.message;
+  composerSegments.value = snapshot.segments;
   void nextTick(() => {
-    resizeWorkbenchInput();
+    resizeComposerInput();
     focusInput();
     syncComposerCaret();
     emitLayoutChange();
   });
+  return true;
 }
 
 function clearComposerSegments() {
@@ -957,8 +845,8 @@ function loadDraft() {
   }
   const compose = chatStore.ensureCompose(props.sessionId);
   const parsed = parseComposerTextToSegments(compose.draft || "");
-  composerSegments.value = parsed.segments;
-  message.value = parsed.liveMessage;
+  message.value = serializeSegments(parsed.segments, parsed.liveMessage);
+  composerSegments.value = [];
 }
 
 const persistDraftDebounced = useDebounceFn((sessionId: string) => {
@@ -992,7 +880,6 @@ function removeAttachedFile(index: number) {
 async function ingestDroppedOrPastedFiles(files: FileList | File[]) {
   const list = Array.from(files);
   if (list.length === 0) return;
-  flushMessageToSegments();
   for (const file of list) {
     if (isImageFile(file)) {
       const dataUrl = await new Promise<string | null>((resolve) => {
@@ -1037,7 +924,7 @@ async function applyCapturedImages(images?: string[]) {
   emitLayoutChange();
 }
 
-const inputRef = ref<HTMLInputElement | HTMLTextAreaElement | null>(null);
+const composerRef = ref<InstanceType<typeof ComposerEditable> | null>(null);
 const chatInputShellRef = ref<HTMLElement | null>(null);
 const attachButtonRef = ref<HTMLButtonElement | null>(null);
 const chatModeButtonRef = ref<HTMLButtonElement | null>(null);
@@ -1204,6 +1091,7 @@ watch(
 watch(
   composerSegments,
   () => {
+    void nextTick(resizeComposerInput);
     emitLayoutChange();
   },
   { deep: true },
@@ -1433,13 +1321,8 @@ const sessionChatMode = computed(() => {
   const compose = chatStore.sessionCompose[props.sessionId];
   return normalizeChatMode(compose?.chatMode ?? settingStore.chatMode);
 });
-/** Prefer live plan gate so auto-plan flips the chip without waiting on compose. */
-const effectiveChatMode = computed<ChatMode>(() => {
-  if (props.sessionId && chatStore.sessionPlanMode[props.sessionId]) {
-    return "plan";
-  }
-  return sessionChatMode.value;
-});
+/** Session mode chip follows the user's picker choice only. */
+const effectiveChatMode = computed<ChatMode>(() => sessionChatMode.value);
 const sessionToolApprovalMode = computed(() => {
   if (!props.sessionId) {
     return settingStore.toolApprovalMode;
@@ -1486,18 +1369,8 @@ async function syncPlanModeFromBackend(sessionId: string) {
   try {
     const active = await getPlanMode(sessionId);
     chatStore.setSessionPlanMode(sessionId, Boolean(active));
-    syncComposeWithPlanGate(sessionId, Boolean(active));
   } catch (error) {
     log.warn("get_plan_mode failed", error);
-  }
-}
-
-function syncComposeWithPlanGate(sessionId: string, active: boolean) {
-  const compose = chatStore.ensureCompose(sessionId);
-  if (active && compose.chatMode === "agent") {
-    chatStore.setCompose(sessionId, { chatMode: "plan" });
-  } else if (!active && compose.chatMode === "plan") {
-    chatStore.setCompose(sessionId, { chatMode: "agent" });
   }
 }
 
@@ -1772,7 +1645,9 @@ const askPickerRowCount = computed(() => {
 });
 
 const hasInlineAttachmentTags = computed(
-  () => composerSegments.value.some((seg) => seg.kind !== "text") || attachedFiles.value.length > 0,
+  () =>
+    composerSegments.value.some((seg) => seg.kind === "selection") ||
+    attachedFiles.value.length > 0,
 );
 
 const inputPlaceholder = computed(() => {
@@ -1829,18 +1704,6 @@ function removeTrailingAttachment(): boolean {
     composerSegments.value.pop();
     if (last.kind === "selection") {
       emit("removeSelection");
-      return true;
-    }
-    if (last.kind === "text") {
-      message.value = `${last.text}${message.value}`;
-      void nextTick(() => {
-        const input = inputRef.value;
-        if (input) {
-          const pos = last.text.length;
-          input.setSelectionRange(pos, pos);
-        }
-      });
-      return true;
     }
     return true;
   }
@@ -1852,15 +1715,28 @@ function removeTrailingAttachment(): boolean {
 }
 
 let layoutChangeFlushScheduled = false;
+let lastEmittedChromeHeight = 0;
+/** Signature of picker/attachment chrome — only emit layout when this changes. */
+let lastLayoutChromeSignature = "";
 
-function emitLayoutChange() {
+function layoutChromeSignature() {
+  return [
+    activePickerRowCount(),
+    showSuggestions.value ? 1 : 0,
+    attachPanelOpen.value ? 1 : 0,
+    attachedImages.value.length,
+    attachedFiles.value.length,
+  ].join(":");
+}
+
+function emitLayoutChange(force = false) {
   if (layoutChangeFlushScheduled) {
     return;
   }
   layoutChangeFlushScheduled = true;
   void nextTick(() => {
     layoutChangeFlushScheduled = false;
-    flushLayoutChange();
+    flushLayoutChange(force);
   });
 }
 
@@ -1902,10 +1778,11 @@ function estimateActivePickerHeight(pickerRows: number): number {
     return 10 + 26 + 48 + options * 30;
   }
   if (showPathPermissionPicker.value) {
-    return 10 + 26 + 48 + 34 + pathPermissionOptions.value.length * 30;
+    // Header + path chip + option cards (with descriptions) + card padding.
+    return 24 + 40 + 52 + pathPermissionOptions.value.length * 52;
   }
   if (showToolApprovalPicker.value) {
-    return 10 + 26 + toolApprovalOptions.value.length * 30;
+    return 24 + 40 + toolApprovalOptions.value.length * 52;
   }
   if (workspacePickerOpen.value) {
     return 10 + pickerRows * 32;
@@ -1994,7 +1871,7 @@ function updateInteractionPickerMaxHeight() {
   shell.style.setProperty("--interaction-picker-max-height", `${capped}px`);
 }
 
-function flushLayoutChange() {
+function flushLayoutChange(force = false) {
   const pickerRows = activePickerRowCount();
   if (pickerRows <= 0) {
     measuredPickerHeight = 0;
@@ -2002,6 +1879,23 @@ function flushLayoutChange() {
 
   const pickerHeight =
     pickerRows > 0 ? Math.max(measuredPickerHeight, estimateActivePickerHeight(pickerRows)) : 0;
+
+  const shell = chatInputShellRef.value;
+  const inputBar = shell?.querySelector<HTMLElement>(".input-bar");
+  const chromeHeight =
+    props.appearance === "overlay" && shell ? shell.offsetHeight : (inputBar?.offsetHeight ?? 0);
+
+  const signature = layoutChromeSignature();
+  const pickerStateChanged = signature !== lastLayoutChromeSignature;
+  const chromeChanged = Math.abs(chromeHeight - lastEmittedChromeHeight) > 1;
+
+  if (!force && !pickerStateChanged && !chromeChanged) {
+    if (pickerRows > 0) schedulePickerHeightMeasure();
+    return;
+  }
+
+  lastLayoutChromeSignature = signature;
+  lastEmittedChromeHeight = chromeHeight;
 
   emit("layoutChange", {
     showSuggestions: showSuggestions.value,
@@ -2011,9 +1905,10 @@ function flushLayoutChange() {
     askUserRowCount: showAskUserPicker.value ? askPickerRowCount.value : 0,
     pickerRowCount: pickerRows,
     pickerHeight,
-    // Grow the overlay for image thumbs and/or file chips above the input.
     hasImages: attachedImages.value.length > 0,
     hasFiles: attachedFiles.value.length > 0,
+    inputBarHeight: chromeHeight > 0 ? chromeHeight : undefined,
+    layoutReason: pickerStateChanged ? "picker" : chromeChanged ? "chrome" : "other",
   });
 
   if (pickerRows > 0) {
@@ -2353,12 +2248,18 @@ function selectChatMode(mode: string) {
   if (!props.sessionId) {
     return;
   }
-  const enablePlan = next === "plan";
-  void setPlanMode(props.sessionId, enablePlan)
-    .then(() => {
-      chatStore.setSessionPlanMode(props.sessionId!, enablePlan);
-    })
-    .catch((error) => log.warn("sync plan mode on mode switch failed", error));
+  // Entering Plan turns the writer gate on. Leaving Plan only updates the mode
+  // preference — keep the pending plan/approval card until the user approves or
+  // sends a follow-up (backend clears the gate on that send).
+  if (next === "plan") {
+    chatStore.setSessionRejectedPlanFingerprint(props.sessionId, null);
+    void setPlanMode(props.sessionId, true, "manual")
+      .then(() => {
+        chatStore.setSessionPlanMode(props.sessionId!, true);
+        chatStore.setSessionPlanTrigger(props.sessionId!, "manual");
+      })
+      .catch((error) => log.warn("sync plan mode on mode switch failed", error));
+  }
 }
 
 function selectThinkingTier(variantId: string) {
@@ -2382,6 +2283,7 @@ onMounted(async () => {
   if (props.sessionId) {
     void syncPlanModeFromBackend(props.sessionId);
   }
+  void ensureHashCatalog();
   await chatModelStore.fetch();
   if (chatModelStore.models.length === 0 && chatModel.value.trim() === "deepseek-chat") {
     chatModel.value = "";
@@ -2409,6 +2311,11 @@ onMounted(async () => {
   try {
     unlistenFocus = await getCurrentWebviewWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) {
+        // Workspace files may change while the window is blurred (IDE save/new).
+        workspaceFilesFetchedAt = 0;
+        if (attachPanelOpen.value && attachPanelTab.value === "files") {
+          void ensureWorkspaceFiles(true);
+        }
         if (props.appearance === "overlay") {
           void focusInput();
         } else {
@@ -2441,6 +2348,8 @@ watch(
 
 onUnmounted(() => {
   persistDraft();
+  composerShellResizeObserver?.disconnect();
+  composerShellResizeObserver = null;
   unlistenWorkspaces?.();
   unlistenChatFinished?.();
   unlistenChatStarted?.();
@@ -2522,21 +2431,34 @@ const showCommandSuggestions = computed(
 const workspaceFiles = ref<string[]>([]);
 const workspaceFilesLoading = ref(false);
 const workspaceFilesRoot = ref("");
+/** Soft TTL so typing `@ab` does not rescan every keystroke, but opens refresh. */
+const WORKSPACE_FILES_TTL_MS = 4_000;
+let workspaceFilesFetchedAt = 0;
+let workspaceFilesRequestId = 0;
 /** Caret in the live input —`#` / `@` mentions resolve against this, not only EOF. */
 const composerCaret = ref(0);
 
 function syncComposerCaret() {
-  const input = inputRef.value;
-  if (!input) return;
-  const next = input.selectionStart ?? message.value.length;
+  const next = composerRef.value?.getSelection().start ?? message.value.length;
   if (composerCaret.value !== next) {
     composerCaret.value = next;
   }
 }
 
+function onComposerCaretChange(caret: number) {
+  if (composerCaret.value !== caret) {
+    composerCaret.value = caret;
+  }
+}
+
 function onComposerInput() {
   syncComposerCaret();
-  resizeWorkbenchInput();
+  const heightChanged = resizeComposerInput();
+  // Grow the Alt+Alt native window with wrapped lines (up to 4), not an
+  // inner scrollbar while the dock is still single-line tall.
+  if (props.appearance === "overlay" && heightChanged) {
+    void nextTick(() => emitLayoutChange());
+  }
 }
 
 watch(message, (value) => {
@@ -2558,6 +2480,7 @@ const fileSuggestions = computed(() => {
   const pool = workspaceFiles.value;
   const filtered = query ? pool.filter((path) => path.toLowerCase().includes(query)) : pool;
   return filtered
+    .filter((path): path is string => typeof path === "string" && path.length > 0)
     .sort((left, right) => {
       const leftName = left.split("/").pop()?.toLowerCase() ?? left.toLowerCase();
       const rightName = right.split("/").pop()?.toLowerCase() ?? right.toLowerCase();
@@ -2567,11 +2490,25 @@ const fileSuggestions = computed(() => {
     })
     .slice(0, 12);
 });
-const showFileSuggestions = computed(() => activeFileMention.value !== null);
+const showFileSuggestions = computed(() => {
+  const mention = activeFileMention.value;
+  if (!mention) return false;
+  return !isMentionSuggestSuppressed("@", mention.start);
+});
 
 const hashCatalog = ref<HashMentionItem[]>([]);
 const hashCatalogLoading = ref(false);
 const hashCatalogReady = ref(false);
+const composerSkillMeta = computed(() =>
+  hashCatalog.value
+    .filter((item) => item.kind === "skill")
+    .map((item) => ({
+      name: item.id,
+      title: item.title,
+      qualifiedName: item.vendor,
+      iconUrl: item.iconUrl,
+    })),
+);
 
 const activeHashQuery = computed(() => {
   if (
@@ -2591,7 +2528,11 @@ const hashSuggestions = computed(() => {
   return filterHashMentionItems(hashCatalog.value, mention.query);
 });
 
-const showHashSuggestions = computed(() => activeHashQuery.value !== null);
+const showHashSuggestions = computed(() => {
+  const mention = activeHashQuery.value;
+  if (!mention) return false;
+  return !isMentionSuggestSuppressed("#", mention.start);
+});
 
 const attachSkillItems = computed(() =>
   sortByResourceUsage(
@@ -2669,52 +2610,47 @@ async function ensureHashCatalog(force = false) {
   }
 }
 
-function hashCatalogItem(kind: "skill" | "mcp", id: string): HashMentionItem | undefined {
-  return hashCatalog.value.find((item) => item.kind === kind && item.id === id);
-}
-
-function hashLabelFor(kind: "skill" | "mcp", id: string): string {
-  const item = hashCatalogItem(kind, id);
-  if (item?.title?.trim()) return item.title.trim();
-  if (kind === "mcp") return mcpMentionLabel(id, settingStore.mcpServers ?? []);
-  return skillMentionLabel(id);
-}
-
-function hashIconFor(kind: "skill" | "mcp", id: string): string | null {
-  const local = peekInstallIcon(kind, id);
-  if (local) return local;
-  const fromCatalog = hashCatalogItem(kind, id)?.iconUrl?.trim();
-  if (fromCatalog) return fromCatalog;
-  if (kind === "mcp") return mcpMentionIconUrl(id, settingStore.mcpServers ?? []);
-  return skillMentionIconUrl(id);
-}
-
-function hashChipTitle(kind: "skill" | "mcp", id: string): string {
-  const item = hashCatalogItem(kind, id);
-  if (item?.vendor) return item.vendor;
-  if (kind === "mcp") {
-    const server = (settingStore.mcpServers ?? []).find((entry) => entry.id === id);
-    return server?.qualifiedName?.trim() || prettyHashInstallId(id);
-  }
-  return prettyHashInstallId(id);
+function insertPlainToken(token: string) {
+  const sel = composerRef.value?.getSelection() ?? {
+    start: message.value.length,
+    end: message.value.length,
+  };
+  const before = message.value.slice(0, sel.start);
+  const after = message.value.slice(sel.end);
+  const needsSpaceBefore = before.length > 0 && !/\s$/.test(before);
+  // Always leave a trailing space so the caret exits the @/# token and suggestions close.
+  const needsSpaceAfter = after.length === 0 || !/^\s/.test(after);
+  const inserted = `${needsSpaceBefore ? " " : ""}${token}${needsSpaceAfter ? " " : ""}`;
+  const next = `${before}${inserted}${after}`;
+  const caret = before.length + inserted.length;
+  mentionSuggestSuppressed.value = null;
+  composerRef.value?.setText(next, caret);
+  void nextTick(() => {
+    composerRef.value?.focus({ preventScroll: true });
+    resizeComposerInput();
+    syncComposerCaret();
+    emitLayoutChange();
+  });
 }
 
 function selectHashMention(item: HashMentionItem) {
   const mention = activeHashQuery.value;
   if (!mention) return;
-  const suffix = message.value.slice(mention.end);
-  message.value = message.value.slice(0, mention.start);
-  flushMessageToSegments();
-  pushComposerSegment(
-    item.kind === "skill" ? { kind: "skill", id: item.id } : { kind: "mcp", id: item.id },
-  );
-  // Keep text that was after the unfinished `#…` token (mid-message inserts).
-  message.value = suffix.replace(/^\s+/, "");
   selectedIndex.value = 0;
+  const token = formatResourceMention(item.kind, item.id);
+  const before = message.value.slice(0, mention.start);
+  const after = message.value.slice(mention.end);
+  const needsSpaceBefore = before.length > 0 && !/\s$/.test(before);
+  const needsSpaceAfter = after.length === 0 || !/^\s/.test(after);
+  const inserted = `${needsSpaceBefore ? " " : ""}${token}${needsSpaceAfter ? " " : ""}`;
+  const next = `${before}${inserted}${after}`;
+  const caret = before.length + inserted.length;
+  mentionSuggestSuppressed.value = null;
+  composerRef.value?.setText(next, caret);
   void nextTick(() => {
-    resizeWorkbenchInput();
-    focusInput();
+    resizeComposerInput();
     syncComposerCaret();
+    emitLayoutChange();
   });
 }
 
@@ -2723,53 +2659,60 @@ async function ensureWorkspaceFiles(force = false) {
   if (!root) {
     workspaceFiles.value = [];
     workspaceFilesRoot.value = "";
+    workspaceFilesFetchedAt = 0;
     return;
   }
-  if (!force && workspaceFilesRoot.value === root) return;
+
+  const now = Date.now();
+  const sameRoot = workspaceFilesRoot.value === root;
+  const fresh =
+    sameRoot &&
+    workspaceFilesFetchedAt > 0 &&
+    now - workspaceFilesFetchedAt < WORKSPACE_FILES_TTL_MS;
+  // Same workspace was previously treated as a permanent cache — new/renamed
+  // files never appeared in @ suggestions or the attach file tree.
+  if (!force && fresh) return;
+  if (!force && workspaceFilesLoading.value && sameRoot) return;
+
+  const requestId = ++workspaceFilesRequestId;
   workspaceFilesLoading.value = true;
   try {
-    workspaceFiles.value = await listWorkspaceFiles();
+    const files = await listWorkspaceFiles();
+    if (requestId !== workspaceFilesRequestId) return;
+    workspaceFiles.value = files;
     workspaceFilesRoot.value = root;
+    workspaceFilesFetchedAt = Date.now();
   } catch (error) {
+    if (requestId !== workspaceFilesRequestId) return;
     console.error("list_workspace_files failed:", error);
     workspaceFiles.value = [];
     workspaceFilesRoot.value = root;
+    workspaceFilesFetchedAt = 0;
   } finally {
-    workspaceFilesLoading.value = false;
+    if (requestId === workspaceFilesRequestId) {
+      workspaceFilesLoading.value = false;
+    }
   }
 }
 
 function selectWorkspaceFile(path: string) {
   const mention = activeFileMention.value;
   if (!mention) return;
-  const suffix = message.value.slice(mention.end);
-  message.value = message.value.slice(0, mention.start);
-  flushMessageToSegments();
-  pushComposerSegment({ kind: "mention", path: toWorkspaceRelativePath(path) });
-  message.value = suffix.replace(/^\s+/, "");
   selectedIndex.value = 0;
+  const token = formatMentionPath(toWorkspaceRelativePath(path));
+  const before = message.value.slice(0, mention.start);
+  const after = message.value.slice(mention.end);
+  const needsSpaceBefore = before.length > 0 && !/\s$/.test(before);
+  const needsSpaceAfter = after.length === 0 || !/^\s/.test(after);
+  const inserted = `${needsSpaceBefore ? " " : ""}${token}${needsSpaceAfter ? " " : ""}`;
+  const next = `${before}${inserted}${after}`;
+  const caret = before.length + inserted.length;
+  mentionSuggestSuppressed.value = null;
+  composerRef.value?.setText(next, caret);
   void nextTick(() => {
-    resizeWorkbenchInput();
-    focusInput();
+    resizeComposerInput();
     syncComposerCaret();
-  });
-}
-
-function isMentionDir(seg: { path: string; isDir?: boolean }) {
-  return isDirMention(seg.path, seg.isDir);
-}
-
-function mentionCatalog(): string[] {
-  const fromSegments = composerSegments.value
-    .filter((seg): seg is Extract<ComposerSegment, { kind: "mention" }> => seg.kind === "mention")
-    .map((seg) => seg.path);
-  return [...workspaceFiles.value, ...fromSegments];
-}
-
-function mentionLabel(seg: { path: string; isDir?: boolean }) {
-  return mentionDisplayLabel(seg.path, {
-    isDir: seg.isDir,
-    catalog: mentionCatalog(),
+    emitLayoutChange();
   });
 }
 
@@ -2792,20 +2735,54 @@ function fileIconForPath(path: string) {
 
 async function focusInput() {
   await nextTick();
-  inputRef.value?.focus({ preventScroll: true });
+  composerRef.value?.focus({ preventScroll: true });
 }
 
-function resizeWorkbenchInput() {
-  if (props.appearance !== "workbench" || !(inputRef.value instanceof HTMLTextAreaElement)) {
+/** Click empty padding around the textarea — focus and place caret at end. */
+function onInputBarMouseDown(event: MouseEvent) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (
+    target.closest(
+      "button, a, textarea, input, label, [contenteditable='true'], .composer-editable, .input-footer, .input-images, .input-files, .command-list, .attach-resource-panel, .model-picker-list, .option-picker-list, .selection-tag",
+    )
+  ) {
     return;
   }
-  const el = inputRef.value;
+  event.preventDefault();
+  void nextTick(() => {
+    composerRef.value?.focus({ preventScroll: true });
+    composerRef.value?.setSelection(message.value.length);
+    syncComposerCaret();
+  });
+}
+
+function resizeComposerInput(): boolean {
+  const editor = composerRef.value;
+  if (!editor) return false;
+  const el = editor.el;
+  if (!el) return false;
+  const lineHeight = 24;
+  const maxLines = props.appearance === "overlay" ? 4 : 8;
+  const minHeight = lineHeight;
+  const maxHeight = lineHeight * maxLines;
+  const prevHeight = el.offsetHeight;
+
+  // Auto-grow up to maxLines, then scroll. Measure via height:auto only when
+  // applying — skip layout emit when the pixel height is unchanged.
   el.style.height = "auto";
-  const nextHeight = Math.min(el.scrollHeight, 144);
+  const contentHeight = el.scrollHeight;
+  const nextHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
   el.style.height = `${nextHeight}px`;
-  // Single-line: sit after @/# chips on the same row (text flow).
-  // Multi-line: take the full row so text isn't trapped in a side column.
-  workbenchInputMultiline.value = nextHeight > 28;
+  el.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
+
+  composerInputMultiline.value = nextHeight > lineHeight + 4;
+  return Math.abs(nextHeight - prevHeight) > 1;
+}
+
+/** @deprecated use resizeComposerInput — kept as alias for call-site churn */
+function resizeWorkbenchInput() {
+  resizeComposerInput();
 }
 
 /** Keyboard navigation for pickers must work even if the input lost focus (e.g. after Alt-Tab). */
@@ -2813,7 +2790,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   if (!interactivePickerOpen.value) {
     return;
   }
-  if (event.target === inputRef.value) {
+  if (event.target instanceof Node && composerRef.value?.el?.contains(event.target)) {
     return;
   }
   handleKeydown(event);
@@ -2913,6 +2890,7 @@ function syncOverlayWorkspaceFromContext() {
     currentWorkspace.value = null;
     workspaceFiles.value = [];
     workspaceFilesRoot.value = "";
+    workspaceFilesFetchedAt = 0;
     return;
   }
   const normalized = normalizeWorkspaceRoot(ideRoot);
@@ -2933,6 +2911,7 @@ async function loadWorkspaceState() {
     if (current?.root !== currentWorkspace.value?.root) {
       workspaceFiles.value = [];
       workspaceFilesRoot.value = "";
+      workspaceFilesFetchedAt = 0;
     }
     currentWorkspace.value = current;
   } catch (error) {
@@ -2994,7 +2973,7 @@ function onAttachPanelTabChange(tab: "skills" | "mcp" | "files") {
   attachPanelTab.value = tab;
   selectedIndex.value = 0;
   if (tab === "files") {
-    void ensureWorkspaceFiles();
+    void ensureWorkspaceFiles(true);
   }
 }
 
@@ -3016,17 +2995,8 @@ function selectAttachWorkspaceFile(path: string, isDir = false) {
 }
 
 function selectAttachResource(item: HashMentionItem) {
-  flushMessageToSegments();
-  pushComposerSegment(
-    item.kind === "skill" ? { kind: "skill", id: item.id } : { kind: "mcp", id: item.id },
-  );
+  insertPlainToken(formatResourceMention(item.kind, item.id));
   recordResourceUsage(item.kind, item.id);
-  void nextTick(() => {
-    resizeWorkbenchInput();
-    focusInput();
-    syncComposerCaret();
-    emitLayoutChange();
-  });
 }
 
 async function pickAttachFiles() {
@@ -3042,10 +3012,8 @@ async function pickAttachFiles() {
       .map((entry) => String(entry ?? "").trim())
       .filter(Boolean);
     if (paths.length === 0) return;
-    flushMessageToSegments();
-    for (const path of paths) {
-      pushComposerSegment({ kind: "mention", path: toWorkspaceRelativePath(path) });
-    }
+    const tokens = paths.map((path) => formatMentionPath(toWorkspaceRelativePath(path)));
+    insertPlainToken(tokens.join(" "));
     attachPanelOpen.value = false;
     await syncPopupState(false);
     void nextTick(() => {
@@ -3307,15 +3275,9 @@ function handlePaste(event: ClipboardEvent) {
     }
   }
 
-  const text = event.clipboardData?.getData("text/plain") ?? "";
-  if (!/[\r\n]/.test(text)) return;
-
-  event.preventDefault();
-  const normalized = text.replace(/\r\n|\r/g, "\n").trim();
-  if (!normalized) return;
-  flushMessageToSegments();
-  pushComposerSegment({ kind: "paste", text: normalized });
+  // Plain-text paste (including multiline) is handled by ComposerEditable.
   emitLayoutChange();
+  void nextTick(resizeComposerInput);
 }
 
 function selectPathPermission(decision: PathPermissionDecision) {
@@ -3331,25 +3293,46 @@ function handleKeydown(event: KeyboardEvent) {
     return;
   }
 
+  // Ctrl/Cmd+Z: programmatic composer edits (chip removal, mention truncation,
+  // setMessage) bypass the textarea's native undo stack, so replay them from the
+  // snapshot stack; when empty, fall through and let the browser undo text edits.
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
+    if (undoComposerSnapshot()) {
+      event.preventDefault();
+    }
+    return;
+  }
+
   if ((event.key === "Backspace" || event.key === "Delete") && !showModelPicker.value) {
-    const input = inputRef.value;
-    const caretAtStart = Boolean(input) && input!.selectionStart === 0 && input!.selectionEnd === 0;
+    const sel = composerRef.value?.getSelection();
+    const caretAtStart = Boolean(sel) && sel!.start === 0 && sel!.end === 0;
     const empty = message.value.length === 0;
-    // Backspace at start (or empty) / Delete when empty removes file / text / selection tags.
     const shouldRemoveTag =
       (event.key === "Backspace" && caretAtStart) || (event.key === "Delete" && empty);
-    if (shouldRemoveTag && removeTrailingAttachment()) {
-      event.preventDefault();
-      return;
+    if (shouldRemoveTag) {
+      const before = captureComposerSnapshot();
+      if (removeTrailingAttachment()) {
+        composerUndo.push(before);
+        event.preventDefault();
+        return;
+      }
     }
   }
 
-  if (
-    props.appearance === "workbench" &&
-    event.key === "Enter" &&
-    event.shiftKey &&
-    !interactivePickerOpen.value
-  ) {
+  if (event.key === "Enter" && event.shiftKey && !interactivePickerOpen.value) {
+    // Shift+Enter inserts a newline (workbench + Alt+Alt).
+    event.preventDefault();
+    const sel = composerRef.value?.getSelection() ?? {
+      start: message.value.length,
+      end: message.value.length,
+    };
+    const next = `${message.value.slice(0, sel.start)}\n${message.value.slice(sel.end)}`;
+    composerRef.value?.setText(next, sel.start + 1);
+    void nextTick(() => {
+      resizeComposerInput();
+      syncComposerCaret();
+      emitLayoutChange();
+    });
     return;
   }
 
@@ -3686,8 +3669,7 @@ function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
       const mention = activeFileMention.value;
-      if (mention) message.value = message.value.slice(0, mention.start);
-      selectedIndex.value = 0;
+      if (mention) suppressMentionSuggestions("@", mention.start);
       return;
     }
   }
@@ -3713,8 +3695,7 @@ function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
       const mention = activeHashQuery.value;
-      if (mention) message.value = message.value.slice(0, mention.start);
-      selectedIndex.value = 0;
+      if (mention) suppressMentionSuggestions("#", mention.start);
       return;
     }
   }
@@ -3741,6 +3722,7 @@ function handleKeydown(event: KeyboardEvent) {
 
     if (event.key === "Escape") {
       event.preventDefault();
+      composerUndo.push(captureComposerSnapshot());
       message.value = "";
       selectedIndex.value = 0;
       emitLayoutChange();
@@ -3761,11 +3743,17 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 function reset() {
-  message.value = "";
   clearComposerSegments();
   attachedFiles.value = [];
   attachedImages.value = [];
+  mentionSuggestSuppressed.value = null;
   selectedIndex.value = 0;
+  lastEmittedChromeHeight = 0;
+  if (composerRef.value) {
+    composerRef.value.setText("");
+  } else {
+    message.value = "";
+  }
   closeModelPicker();
   closeApprovalMenu();
   closeChatModeMenu();
@@ -3782,14 +3770,20 @@ function reset() {
 }
 
 function setMessage(text: string) {
+  composerUndo.push(captureComposerSnapshot());
   clearComposerSegments();
   attachedFiles.value = [];
   attachedImages.value = [];
+  mentionSuggestSuppressed.value = null;
   const parsed = parseComposerTextToSegments(text);
-  composerSegments.value = parsed.segments;
-  message.value = parsed.liveMessage;
+  const flat = serializeSegments(parsed.segments, parsed.liveMessage);
+  if (composerRef.value) {
+    composerRef.value.setText(flat);
+  } else {
+    message.value = flat;
+  }
   emitLayoutChange();
-  void nextTick(resizeWorkbenchInput);
+  void nextTick(resizeComposerInput);
   void focusInput();
 }
 
@@ -3900,10 +3894,8 @@ watch(
   () => props.selectionLines,
   (lines, previous) => {
     if (lines && !previous) {
-      flushMessageToSegments();
-      // Avoid duplicate selection chips if one is already present.
       if (!composerSegments.value.some((seg) => seg.kind === "selection")) {
-        pushComposerSegment({ kind: "selection", lines });
+        composerSegments.value.push({ kind: "selection", lines });
       }
       emitLayoutChange();
     }
@@ -3927,9 +3919,17 @@ watch(filteredCommands, () => {
 
 watch(
   () => activeFileMention.value,
-  (mention) => {
+  (mention, previous) => {
     selectedIndex.value = 0;
-    if (mention) void ensureWorkspaceFiles();
+    if (
+      mentionSuggestSuppressed.value?.trigger === "@" &&
+      (!mention || mention.start !== mentionSuggestSuppressed.value.start)
+    ) {
+      mentionSuggestSuppressed.value = null;
+    }
+    if (!mention) return;
+    // Force a fresh scan when `@` is newly opened; reuse a short TTL while typing.
+    void ensureWorkspaceFiles(!previous);
   },
 );
 
@@ -3943,6 +3943,12 @@ watch(
   () => activeHashQuery.value,
   (mention) => {
     selectedIndex.value = 0;
+    if (
+      mentionSuggestSuppressed.value?.trigger === "#" &&
+      (!mention || mention.start !== mentionSuggestSuppressed.value.start)
+    ) {
+      mentionSuggestSuppressed.value = null;
+    }
     if (mention) void ensureHashCatalog();
   },
 );
@@ -4002,7 +4008,7 @@ watch(
     if (showSuggestions.value && thinkingTierPickerOpen.value) {
       closeThinkingTierMenu();
     }
-    emitLayoutChange();
+    emitLayoutChange(true);
   },
   { immediate: true },
 );
@@ -4111,13 +4117,8 @@ watch(
 function insertFileMention(path: string, options?: { isDir?: boolean }) {
   const relative = toWorkspaceRelativePath(path);
   if (!relative && !options?.isDir) return;
-  flushMessageToSegments();
-  pushComposerSegment({
-    kind: "mention",
-    path: relative || normalizeMentionPath(path),
-    isDir: options?.isDir,
-  });
-  void nextTick(() => focusInput());
+  const storage = relative || normalizeMentionPath(path);
+  insertPlainToken(formatMentionPath(storage, options?.isDir));
 }
 
 watch(
@@ -4165,6 +4166,43 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   box-shadow: none;
 }
 
+/* Slash / @ / # pickers: fuse with the composer dock (same surface, no gray cap). */
+.chat-input-shell.overlay-composer.command-suggestion-open :deep(.command-list),
+.chat-input-shell.overlay-composer.file-suggestion-open :deep(.file-suggestion-list),
+.chat-input-shell.overlay-composer.hash-suggestion-open :deep(.hash-suggestion-list) {
+  --command-list-visible-rows: 5;
+  margin: 0;
+  padding: 4px 0 2px;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--peek-text) 10%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-input-shell.overlay-composer.command-suggestion-open :deep(.command-item),
+.chat-input-shell.overlay-composer.file-suggestion-open :deep(.command-item),
+.chat-input-shell.overlay-composer.hash-suggestion-open :deep(.command-item) {
+  border-radius: 6px;
+}
+
+.chat-input-shell.overlay-composer.command-suggestion-open :deep(.command-item.active),
+.chat-input-shell.overlay-composer.file-suggestion-open :deep(.command-item.active),
+.chat-input-shell.overlay-composer.hash-suggestion-open :deep(.command-item.active) {
+  background: color-mix(in srgb, var(--peek-text) 8%, var(--peek-surface));
+}
+
+.chat-input-shell.overlay-composer.command-suggestion-open :deep(.command-name) {
+  color: var(--peek-text);
+  font-weight: 600;
+}
+
+.chat-input-shell.overlay-composer.picker-open.command-suggestion-open .input-bar,
+.chat-input-shell.overlay-composer.picker-open.file-suggestion-open .input-bar,
+.chat-input-shell.overlay-composer.picker-open.hash-suggestion-open .input-bar {
+  border-top: 0;
+}
+
 /* File / hash mention lists float above the input with a visible gap, and keep
    full border so they don't visually merge with (or cover) the input frame. */
 .chat-input-shell.overlay-pickers :deep(.file-suggestion-list),
@@ -4204,8 +4242,7 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   box-shadow: none;
 }
 
-/* Ask / permission / approval: in-flow so the question header cannot be clipped
-   by the conversation pane, and the panel stays attached to the input bar. */
+/* Ask / permission / approval: fused with the input bar (top cap only). */
 .chat-input-shell.overlay-pickers.interaction-request-open :deep(.ask-user-list),
 .chat-input-shell.overlay-pickers.interaction-request-open :deep(.path-permission-list),
 .chat-input-shell.overlay-pickers.interaction-request-open :deep(.tool-approval-list) {
@@ -4219,19 +4256,34 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border: 0;
+  margin: 0;
+  /* Match .input-bar frame so fused sides read as one stroke. */
+  border: 1px solid var(--peek-border);
   border-bottom: 0;
-  border-radius: 0;
-  background: var(--peek-list-bg);
+  border-radius: 14px 14px 0 0;
+  background: var(--peek-surface);
   box-shadow: none;
 }
 
-.chat-input-shell.overlay-pickers.interaction-request-open :deep(.command-item) {
-  border-radius: 0;
+.chat-input-shell.overlay-pickers.interaction-request-open :deep(.ask-user-list) {
+  padding: 8px 10px 6px;
+}
+
+.chat-input-shell.overlay-pickers.interaction-request-open :deep(.ask-user-list .command-item) {
+  border-radius: 8px;
+}
+
+.chat-input-shell.overlay-pickers.interaction-request-open
+  :deep(.ask-user-list .picker-sticky-head),
+.chat-input-shell.overlay-pickers.interaction-request-open :deep(.ask-user-list .picker-meta) {
+  background: transparent;
 }
 
 .chat-input-shell.interaction-request-open.picker-open .input-bar {
-  border-top-color: color-mix(in srgb, var(--peek-border) 70%, transparent);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-color: var(--peek-border);
+  border-top-color: var(--peek-border);
 }
 
 .plan-mode-banner {
@@ -4343,29 +4395,14 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 6px;
+  align-content: flex-start;
+  gap: 2px 4px;
   width: 100%;
   min-width: 0;
   min-height: 28px;
-  line-height: 24px;
-  /* overflow-y:auto alone promotes overflow-x to auto and shows a
-     horizontal scrollbar when an unbroken token is wider than the bar. */
-  overflow-x: hidden;
-}
-
-.input-prefix {
-  display: inline-block;
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 24px;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: pre-wrap;
-  color: var(--peek-text);
-  font-family: var(--peek-font-sans);
-  font-size: 14px;
-  line-height: 24px;
+  line-height: 26px;
+  overflow-x: clip;
+  overflow-y: visible;
   cursor: text;
 }
 
@@ -4400,13 +4437,13 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 }
 
 .chat-input {
-  /* Sit after chips on the same row; wrap to the next row only when the
-     leftover space is too narrow to type comfortably. */
-  flex: 1 1 8rem;
+  /* Fill leftover space on the current flex line so the empty region after
+     typed text (and after chips) is still part of the focusable field. */
+  flex: 1 1 6rem;
   display: block;
-  width: auto;
-  /* Override flex min-width:auto so long unbroken tokens can shrink/wrap. */
-  min-width: 0;
+  box-sizing: border-box;
+  width: 0;
+  min-width: 4rem;
   max-width: 100%;
   height: 24px;
   margin: 0;
@@ -4422,7 +4459,14 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+/* Empty field with no selection chip: take the full row for a usable placeholder. */
+.input-content:not(.has-chips) .chat-input.is-empty {
+  flex: 1 1 100%;
+  min-width: 100%;
+  width: auto;
 }
 
 .chat-input::placeholder {
@@ -4449,29 +4493,70 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   box-shadow: 0 16px 40px color-mix(in srgb, #000 22%, transparent);
 }
 
+.workbench-composer {
+  --composer-line-height: 24px;
+}
+
 .workbench-composer .input-content {
-  min-height: 52px;
+  min-height: 28px;
   /* Hard cap so long input scrolls in place instead of growing the composer
      over whatever sits above it. */
-  max-height: min(168px, 34vh);
+  max-height: min(calc(var(--composer-line-height) * 8), 34vh);
   align-items: flex-start;
-  align-content: flex-start;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.workbench-composer .workbench-textarea {
-  flex: 1 1 8rem;
-  display: block;
-  width: auto;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 24px;
+.chat-input-shell.overlay-composer {
+  --composer-line-height: 24px;
+  --composer-max-lines: 4;
+  --composer-max-height: calc(var(--composer-line-height) * var(--composer-max-lines));
+}
+
+.chat-input-shell.overlay-composer .input-bar {
+  min-height: 82px;
+  padding: 10px 10px 8px 12px;
+  box-sizing: border-box;
+}
+
+.overlay-composer .input-content {
+  align-items: flex-start;
+  align-content: flex-start;
+  flex: 1 1 auto;
+  min-height: var(--composer-line-height);
+  max-height: var(--composer-max-height);
+  overflow: visible;
+}
+
+.overlay-composer .composer-editable,
+.overlay-composer .composer-textarea {
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 100%;
+  min-height: var(--composer-line-height);
   height: auto;
-  max-height: 144px;
+  max-height: var(--composer-max-height);
+  overflow-x: clip;
+  overflow-y: hidden;
+  align-self: flex-start;
+}
+
+.workbench-composer .composer-textarea,
+.workbench-composer .composer-editable.composer-textarea {
+  flex: 1 1 6rem;
+  display: block;
+  box-sizing: border-box;
+  /* width:0 + flex-grow fills the remainder of the line (clickable empty zone). */
+  width: 0;
+  min-width: 4rem;
+  max-width: 100%;
+  min-height: var(--composer-line-height);
+  height: auto;
+  max-height: calc(var(--composer-line-height) * 8);
+  margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: auto;
   resize: none;
   font-size: 14px;
@@ -4479,15 +4564,27 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  field-sizing: content;
-  align-self: flex-start;
+  field-sizing: fixed;
+  align-self: center;
 }
 
-/* Long drafts drop under chips so @/# tags stay in the text stream instead of
-   pinning a tall side column beside the first chip. */
-.workbench-composer .workbench-textarea.is-multiline {
+/* Selection chip precedes textarea, or field is multi-line — take a full row. */
+.input-content.has-leading .composer-textarea,
+.input-content.has-leading .composer-editable,
+.input-content .composer-textarea.is-multiline,
+.input-content .composer-editable.is-multiline {
   flex: 1 1 100%;
   min-width: 100%;
+  width: auto;
+  field-sizing: fixed;
+}
+
+.input-content:not(.has-chips):not(.has-leading) .composer-textarea.is-empty,
+.input-content:not(.has-chips):not(.has-leading) .composer-editable.is-empty {
+  flex: 1 1 100%;
+  min-width: 100%;
+  width: auto;
+  field-sizing: fixed;
 }
 
 .workbench-composer .input-footer {
@@ -4563,7 +4660,7 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   backdrop-filter: blur(12px);
 }
 
-/* Interaction requests: full-width panel attached above the composer (in-flow). */
+/* Interaction requests: fused top cap above the composer (in-flow). */
 .workbench-composer.overlay-pickers.interaction-request-open :deep(.ask-user-list),
 .workbench-composer.overlay-pickers.interaction-request-open :deep(.path-permission-list),
 .workbench-composer.overlay-pickers.interaction-request-open :deep(.tool-approval-list) {
@@ -4571,16 +4668,22 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   left: 0;
   width: 100%;
   max-height: var(--interaction-picker-max-height, min(420px, 48vh));
-  padding: 4px 0 0;
+  margin: 0;
+  /* Same stroke as .workbench-composer .input-bar */
+  border: 1px solid color-mix(in srgb, var(--peek-text) 16%, transparent);
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
-  background: var(--peek-list-bg);
+  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
   box-shadow: none;
+}
+
+.workbench-composer.overlay-pickers.interaction-request-open :deep(.ask-user-list) {
+  padding: 8px 10px 6px;
 }
 
 .workbench-composer.overlay-pickers :deep(.ask-user-list .picker-sticky-head),
 .workbench-composer.overlay-pickers :deep(.ask-user-list .picker-meta) {
-  background: var(--peek-list-bg);
+  background: transparent;
 }
 
 .workbench-composer.picker-open:not(.file-suggestion-open):not(.hash-suggestion-open):not(
@@ -4600,15 +4703,20 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 }
 
 .workbench-composer.interaction-request-open.picker-open .input-bar {
-  border-top-color: color-mix(in srgb, var(--peek-border) 70%, transparent);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  /* Keep outer frame continuous; middle seam uses the same stroke. */
+  border-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
+  border-top-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
+  box-shadow: 0 14px 36px color-mix(in srgb, #000 18%, transparent);
 }
 
 .workbench-composer.overlay-pickers :deep(.command-item) {
   border-radius: 6px;
 }
 
-.workbench-composer.interaction-request-open.overlay-pickers :deep(.command-item) {
-  border-radius: 0;
+.workbench-composer.interaction-request-open.overlay-pickers :deep(.ask-user-list .command-item) {
+  border-radius: 8px;
 }
 
 .workbench-composer.overlay-pickers :deep(.command-item.active) {
@@ -4670,24 +4778,31 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 .overlay-composer.overlay-pickers.interaction-request-open :deep(.ask-user-list),
 .overlay-composer.overlay-pickers.interaction-request-open :deep(.path-permission-list),
 .overlay-composer.overlay-pickers.interaction-request-open :deep(.tool-approval-list) {
-  padding: 4px 0 0;
-  border: 0;
-  border-radius: 0;
-  background: var(--peek-list-bg);
-  box-shadow: none;
+  margin: 0;
+  border: 1px solid var(--peek-border);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  background: var(--peek-surface);
+}
+
+.overlay-composer.overlay-pickers.interaction-request-open :deep(.ask-user-list) {
+  padding: 8px 10px 6px;
 }
 
 .overlay-composer.overlay-pickers :deep(.ask-user-list .picker-sticky-head),
 .overlay-composer.overlay-pickers :deep(.ask-user-list .picker-meta) {
-  background: var(--peek-list-bg);
+  background: transparent;
 }
 
 .overlay-composer.interaction-request-open.picker-open .input-bar {
-  border-top-color: color-mix(in srgb, var(--peek-border) 70%, transparent);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-color: var(--peek-border);
+  border-top-color: var(--peek-border);
 }
 
-.overlay-composer.interaction-request-open.overlay-pickers :deep(.command-item) {
-  border-radius: 0;
+.overlay-composer.interaction-request-open.overlay-pickers :deep(.ask-user-list .command-item) {
+  border-radius: 8px;
 }
 
 @media (max-width: 760px) {
@@ -4707,7 +4822,7 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   .workbench-composer .input-content {
     min-height: 30px;
   }
-  .workbench-composer .workbench-textarea {
+  .workbench-composer .composer-textarea {
     min-height: 28px;
     max-height: 64px;
   }
@@ -4722,7 +4837,7 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   .workbench-composer .input-content {
     min-height: 24px;
   }
-  .workbench-composer .workbench-textarea {
+  .workbench-composer .composer-textarea {
     min-height: 24px;
     max-height: 44px;
     line-height: 20px;
@@ -4823,128 +4938,6 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   transition:
     background 120ms ease,
     color 120ms ease;
-}
-
-.file-mention-tag {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  align-self: center;
-  gap: 6px;
-  max-width: min(220px, 100%);
-  min-height: 26px;
-  height: 26px;
-  margin: 0;
-  padding: 0 8px;
-  border: 1px solid var(--peek-border);
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-  color: var(--peek-text);
-  background: color-mix(in srgb, var(--peek-input-bg) 72%, var(--peek-surface));
-  white-space: nowrap;
-  vertical-align: middle;
-  overflow: visible;
-  transition:
-    max-width 160ms ease,
-    padding 120ms ease,
-    border-color 120ms ease,
-    background 120ms ease;
-}
-
-.file-mention-tag.dir-mention-tag {
-  max-width: min(320px, 100%);
-}
-
-.file-mention-tag.removable-mention-tag {
-  padding-right: 4px;
-}
-
-.file-mention-tag.removable-mention-tag:hover {
-  max-width: min(380px, 100%);
-  border-color: color-mix(in srgb, var(--peek-accent) 28%, var(--peek-border));
-  background: color-mix(in srgb, var(--peek-accent) 8%, var(--peek-input-bg));
-}
-
-.file-mention-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 18px;
-  padding: 1px 0;
-}
-
-.mention-chip-remove {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 0;
-  height: 18px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--peek-muted);
-  cursor: pointer;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
-  transition:
-    width 140ms ease,
-    opacity 120ms ease,
-    background 120ms ease,
-    color 120ms ease;
-}
-
-.removable-mention-tag:hover .mention-chip-remove,
-.removable-mention-tag:focus-within .mention-chip-remove {
-  width: 18px;
-  opacity: 0.9;
-  pointer-events: auto;
-}
-
-.mention-chip-remove:hover {
-  opacity: 1;
-  color: var(--peek-text);
-  background: color-mix(in srgb, var(--peek-muted) 16%, transparent);
-}
-
-/* Same visual language as attached-file chips in the composer. */
-.hash-mention-tag {
-  gap: 6px;
-  max-width: min(220px, 100%);
-  min-height: 26px;
-  height: 26px;
-  margin: 0;
-  padding: 0 8px;
-  border: 1px solid var(--peek-border);
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-  color: var(--peek-text);
-  background: color-mix(in srgb, var(--peek-input-bg) 72%, var(--peek-surface));
-}
-
-.hash-mention-tag.removable-mention-tag {
-  padding-right: 4px;
-}
-
-.hash-mention-tag :is(svg) {
-  flex: none;
-  color: var(--peek-muted);
-}
-
-.hash-skill-tag {
-  border-color: color-mix(in srgb, var(--peek-accent) 42%, var(--peek-border));
-}
-
-.hash-mcp-tag {
-  border-color: color-mix(in srgb, #3b82f6 48%, var(--peek-border));
 }
 
 .input-bar.drag-over {
@@ -5048,11 +5041,10 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 
 .selection-tag {
   display: inline-flex;
-  flex: none;
+  flex: 0 0 auto;
   align-items: center;
-  align-self: center;
   height: 24px;
-  margin: 0;
+  margin: 1px 0;
   padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--peek-accent) 28%, var(--peek-border));
   border-radius: 6px;
@@ -5415,23 +5407,5 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 
 .image-remove-btn:hover {
   background: rgba(239, 68, 68, 0.9) !important; /* soft red on hover */
-}
-</style>
-
-<style>
-/* Teleported chip tooltips —keep long paths inside the bubble. */
-.composer-chip-tooltip[data-slot="tooltip-content"],
-.composer-chip-tooltip {
-  display: block !important;
-  box-sizing: border-box;
-  width: max-content !important;
-  max-width: min(280px, 72vw) !important;
-  padding: 8px 10px !important;
-  white-space: normal !important;
-  overflow-wrap: anywhere !important;
-  word-break: break-word !important;
-  text-align: left !important;
-  line-height: 1.45 !important;
-  align-items: stretch !important;
 }
 </style>

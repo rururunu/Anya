@@ -188,6 +188,9 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     const compose = chatStore.ensureCompose(sessionId);
     const workspaceId = summary?.workspaceId ?? compose.draftWorkspaceId ?? null;
     activeSessionWorkspaceId.value = workspaceId;
+    if (workspaceId && compose.draftWorkspaceId !== workspaceId) {
+      chatStore.setComposeDraft(sessionId, compose.draft ?? "", { workspaceId });
+    }
     if (workspaceId) {
       await switchWorkspace(workspaceId);
     } else {

@@ -248,3 +248,15 @@ export function flushLiveMessageToSegments(
   }
   return { segments, liveMessage: "" };
 }
+
+/** Plain text (or short paste) that can be merged back into the live textarea. */
+export function isEditableTextSegment(seg: ComposerSegment): boolean {
+  if (seg.kind === "text") return Boolean(seg.text);
+  if (seg.kind === "paste") return pasteLineCount(seg.text) <= 5 && Boolean(seg.text);
+  return false;
+}
+
+export function editableTextOf(seg: ComposerSegment): string {
+  if (seg.kind === "text" || seg.kind === "paste") return seg.text;
+  return "";
+}

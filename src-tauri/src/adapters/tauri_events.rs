@@ -34,6 +34,7 @@ impl EventBus for TauriEventBus {
                 session_id,
                 user_message,
                 assistant_message,
+                resume_plan,
             } => {
                 let _ = self.app.emit(
                     "chat-started",
@@ -41,6 +42,7 @@ impl EventBus for TauriEventBus {
                         session_id,
                         user_message,
                         assistant_message,
+                        resume_plan,
                     },
                 );
             }
@@ -223,12 +225,17 @@ impl EventBus for TauriEventBus {
                     }),
                 );
             }
-            BusEvent::PlanModeChanged { session_id, active } => {
+            BusEvent::PlanModeChanged {
+                session_id,
+                active,
+                source,
+            } => {
                 let _ = self.app.emit(
                     "plan-mode-changed",
                     serde_json::json!({
                         "sessionId": session_id,
                         "active": active,
+                        "source": source,
                     }),
                 );
             }

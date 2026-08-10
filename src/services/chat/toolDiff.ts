@@ -113,7 +113,7 @@ function splitLines(value: string): string[] {
   return lines;
 }
 
-export function fileBasename(path: string): string {
-  const normalized = path.replace(/\\/g, "/");
+export function fileBasename(path: string | undefined | null): string {
+  const normalized = (path ?? "").replace(/\\/g, "/");
   return normalized.split("/").pop() || path || "file";
 }

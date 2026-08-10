@@ -1,0 +1,46 @@
+/* Markdown-like inline marks for @file / #skill / #mcp (not chip chrome). */
+
+.inline-token {
+  font-weight: 650;
+  font-style: normal;
+  text-decoration: none;
+  white-space: inherit;
+}
+
+.inline-token-file {
+  color: color-mix(in srgb, #0f766e 68%, var(--peek-text));
+}
+
+.inline-token-skill {
+  color: color-mix(in srgb, #c2410c 62%, var(--peek-text));
+}
+
+.inline-token-mcp {
+  color: color-mix(in srgb, #2563eb 68%, var(--peek-text));
+}
+
+/* Message bubbles: tiny logo sits in the text run, no pill / border / bg. */
+.inline-token-mark {
+  display: inline;
+  white-space: nowrap;
+}
+
+.inline-token-mark .inline-token-logo,
+.inline-token-mark .inline-token-logo-fallback {
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.18em;
+  vertical-align: -0.12em;
+  object-fit: contain;
+}
+
+.inline-token-mark .inline-token-logo-fallback {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.inline-token-mark .inline-token-label {
+  font-weight: inherit;
+  color: inherit;
+}

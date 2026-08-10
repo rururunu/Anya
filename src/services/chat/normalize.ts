@@ -14,6 +14,7 @@ type RawMessage = Partial<ChatMessage> & {
 export type RawChatStarted = {
   sessionId?: string;
   session_id?: string;
+  resumePlan?: boolean;
   userMessage?: RawMessage;
   user_message?: RawMessage;
   assistantMessage?: RawMessage;
@@ -102,7 +103,7 @@ export function normalizeChatStarted(raw: RawChatStarted) {
     return null;
   }
 
-  return { sessionId, userMessage, assistantMessage };
+  return { sessionId, userMessage, assistantMessage, resumePlan: raw.resumePlan === true };
 }
 
 type RawToolActivityEvent = {

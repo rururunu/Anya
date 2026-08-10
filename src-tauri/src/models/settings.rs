@@ -146,6 +146,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_false() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomProviderConfig {
@@ -305,8 +309,8 @@ pub struct AppSettings {
     pub large_context_enabled: bool,
     #[serde(default = "default_zoom")]
     pub zoom: u32,
-    /// WebView2 uses GPU rendering by default. Changing this requires restart.
-    #[serde(default = "default_true")]
+    /// WebView2 GPU rendering. Off by default for broader driver compatibility; changing requires restart.
+    #[serde(default = "default_false")]
     pub hardware_acceleration_enabled: bool,
     /// Primary overlay shortcut modifier, activated by a double tap.
     #[serde(default = "default_primary_hotkey")]
@@ -471,7 +475,7 @@ impl Default for AppSettings {
             multimodal_split_analysis: true,
             large_context_enabled: true,
             zoom: 100,
-            hardware_acceleration_enabled: true,
+            hardware_acceleration_enabled: false,
             primary_hotkey: default_primary_hotkey(),
             primary_hotkey_enabled: true,
             secondary_hotkey: default_secondary_hotkey(),
@@ -655,7 +659,7 @@ mod tests {
         assert!(!settings.minimal_coding);
         assert!(settings.chat_model_provider.is_empty());
         assert!(settings.multimodal_model_provider.is_empty());
-        assert!(settings.hardware_acceleration_enabled);
+        assert!(!settings.hardware_acceleration_enabled);
         assert!(settings.onboarding_completed);
     }
 
@@ -700,13 +704,14 @@ mod tests {
     }
 
     #[test]
-    fn hardware_acceleration_defaults_on_and_can_be_disabled() {
+    fn hardware_acceleration_defaults_off_and_can_be_enabled() {
         let settings = AppSettings::default();
+        assert!(!settings.hardware_acceleration_enabled);
         let patch = AppSettingsPatch {
-            hardware_acceleration_enabled: Some(false),
+            hardware_acceleration_enabled: Some(true),
             ..AppSettingsPatch::default()
         };
-        assert!(!settings.merge(patch).hardware_acceleration_enabled);
+        assert!(settings.merge(patch).hardware_acceleration_enabled);
     }
 
     #[test]

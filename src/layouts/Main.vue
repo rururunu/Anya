@@ -1588,13 +1588,11 @@ button {
     box-shadow 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .composer-wrap :deep(.input-content),
-.composer-wrap :deep(.workbench-textarea),
+.composer-wrap :deep(.composer-textarea),
 .composer-wrap :deep(.footer-chip) {
+  /* Do not animate min-height/line-height while typing — that reads as jitter. */
   transition:
-    min-height 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    height 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     font-size 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    line-height 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     border-radius 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     letter-spacing 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
@@ -1783,11 +1781,7 @@ button {
 .conversation-pane.empty-conversation
   .composer-wrap:has(:deep(.interaction-request-open))
   :deep(.tool-approval-list) {
-  border: 1px solid color-mix(in srgb, var(--peek-text) 16%, transparent);
-  border-bottom: 0;
-  border-radius: 18px 18px 0 0;
-  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
-  box-shadow: 0 18px 48px color-mix(in srgb, #000 18%, transparent);
+  margin: 0;
 }
 
 .conversation-pane.empty-conversation
@@ -1819,13 +1813,13 @@ button {
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-content) {
   min-height: 56px;
 }
-.conversation-pane.empty-conversation .composer-wrap :deep(.workbench-textarea) {
+.conversation-pane.empty-conversation .composer-wrap :deep(.composer-textarea) {
   min-height: 24px;
   font-size: 15px;
   line-height: 24px;
   letter-spacing: -0.01em;
 }
-.conversation-pane.empty-conversation .composer-wrap :deep(.workbench-textarea::placeholder) {
+.conversation-pane.empty-conversation .composer-wrap :deep(.composer-textarea::placeholder) {
   color: var(--peek-placeholder);
   letter-spacing: 0;
 }
@@ -1853,7 +1847,7 @@ button {
   .composer-wrap,
   .composer-wrap :deep(.input-bar),
   .composer-wrap :deep(.input-content),
-  .composer-wrap :deep(.workbench-textarea),
+  .composer-wrap :deep(.composer-textarea),
   .composer-wrap :deep(.footer-chip),
   .workbench-messages,
   .empty-hero-enter-active,

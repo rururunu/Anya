@@ -26,6 +26,10 @@ pub struct ChatSendRequest {
     /// When true, do not auto-enter plan mode for this send (e.g. approve & execute).
     #[serde(default)]
     pub skip_auto_plan: bool,
+    /// True when this send is the "approve plan & execute" continuation: the
+    /// message drives the turn prompt but is never persisted to chat history.
+    #[serde(default)]
+    pub resume_plan: bool,
 }
 
 /// Optional per-send settings that override global settings for one conversation.
@@ -36,6 +40,7 @@ pub struct ChatSendOverrides {
     pub chat_mode: Option<ChatMode>,
     pub tool_approval_mode: Option<ToolApprovalMode>,
     pub skip_auto_plan: bool,
+    pub resume_plan: bool,
 }
 
 impl ChatSendOverrides {
@@ -46,6 +51,7 @@ impl ChatSendOverrides {
             chat_mode: request.chat_mode,
             tool_approval_mode: request.tool_approval_mode,
             skip_auto_plan: request.skip_auto_plan,
+            resume_plan: request.resume_plan,
         }
     }
 }
@@ -72,6 +78,8 @@ pub struct ChatStartedEvent {
     pub session_id: String,
     pub user_message: ChatMessage,
     pub assistant_message: ChatMessage,
+    #[serde(default)]
+    pub resume_plan: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -277,6 +285,57 @@ pub struct RespondPathPermissionRequest {
 pub struct InteractionResolvedEvent {
     pub request_id: String,
     pub kind: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn send_request_defaults_resume_plan_to_false() {
+        let request: ChatSendRequest =
+            serde_json::from_str(r#"{"message":"hello"}"#).expect("request parses");
+        assert!(!request.resume_plan);
+        assert!(!request.skip_auto_plan);
+    }
+
+    #[test]
+    fn from_request_maps_resume_plan_and_skip_auto_plan() {
+        let request: ChatSendRequest = serde_json::from_str(
+            r#"{"message":"go","skipAutoPlan":true,"resumePlan":true}"#,
+        )
+        .expect("request parses");
+        let overrides = ChatSendOverrides::from_request(&request);
+        assert!(overrides.resume_plan);
+        assert!(overrides.skip_auto_plan);
+    }
+
+    #[test]
+    fn chat_started_event_serializes_resume_plan_camel_case() {
+        let message = ChatMessage {
+            id: "m1".into(),
+            session_id: "s1".into(),
+            role: crate::core::runtime::Role::User,
+            content: "go".into(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            status: crate::core::runtime::MessageStatus::Done,
+            timestamp: 0,
+            estimated_tokens: None,
+        };
+        let event = ChatStartedEvent {
+            session_id: "s1".into(),
+            user_message: message.clone(),
+            assistant_message: message,
+            resume_plan: true,
+        };
+        let value = serde_json::to_value(&event).expect("event serializes");
+        assert_eq!(value["resumePlan"], true);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

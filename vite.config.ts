@@ -19,6 +19,10 @@ export default defineConfig(async () => ({
   },
 
   build: {
+    // ECharts core alone exceeds Vite's default 500 kB once minified. ChartCard
+    // (and chartEchartsExtra / echarts-gl) are already dynamic-imported off the
+    // boot path — raise the warn so intentional chart chunks do not fail CI noise.
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       onwarn(warning, warn) {
         const id = warning.id?.replaceAll("\\", "/") ?? "";

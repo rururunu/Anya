@@ -3,7 +3,6 @@ import { onErrorCaptured, ref } from "vue";
 import { createLogger } from "@/services/logger";
 
 const log = createLogger("error-boundary");
-const isDev = import.meta.env.DEV;
 
 const props = withDefaults(
   defineProps<{
@@ -49,6 +48,19 @@ onErrorCaptured((err, _instance, info) => {
     info,
     stack: described.stack,
   });
+  try {
+    sessionStorage.setItem(
+      "anya.lastUiError",
+      JSON.stringify({
+        message: described.message,
+        info,
+        stack: described.stack,
+        at: Date.now(),
+      }),
+    );
+  } catch {
+    // ignore quota / private mode
+  }
   // Stop propagation — the fallback UI already handled this error.
   return true;
 });
@@ -63,7 +75,8 @@ function retry() {
   <div v-if="errorMessage" class="app-error-boundary" :class="{ compact: props.compact }">
     <p class="title">Something went wrong</p>
     <p class="message">{{ errorMessage }}</p>
-    <pre v-if="isDev && errorStack" class="stack">{{ errorStack }}</pre>
+    <!-- Always show stack: overlay/prod builds otherwise hide the only clue. -->
+    <pre v-if="errorStack" class="stack">{{ errorStack }}</pre>
     <button type="button" class="retry" @click="retry">Retry</button>
   </div>
   <slot v-else />

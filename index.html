@@ -7,8 +7,23 @@
     <title>Anya</title>
     <script>
       // Paint boot splash with the last known theme before settings IPC returns.
+      // Overlay / peek windows must never show the workbench logo splash — they
+      // are ~84px tall and often shown while the document is still booting.
       (function () {
         try {
+          var hash = String(location.hash || "");
+          var href = String(location.href || "");
+          var isPeek =
+            hash.indexOf("#/overlay") === 0 ||
+            hash.indexOf("#/image-preview") === 0 ||
+            /\/#\/overlay(?:\b|\/|\?|$)/.test(href) ||
+            /\/#\/image-preview(?:\b|\/|\?|$)/.test(href);
+          var root = document.documentElement;
+          if (isPeek) {
+            root.classList.add("peek-window", "peek-boot");
+            root.style.background = "transparent";
+          }
+
           var raw = localStorage.getItem("anya.colorScheme");
           var dark =
             raw === "dark" ||
@@ -26,7 +41,6 @@
             raw === "teal" ||
             raw === "ghost-pastel";
           var light = !dark;
-          var root = document.documentElement;
           root.dataset.theme = light ? "light" : "dark";
           root.classList.toggle("dark", !light);
           root.style.colorScheme = light ? "light" : "dark";
@@ -48,6 +62,16 @@
       html[data-theme="dark"] body {
         background: #1f1f1f;
         color-scheme: dark;
+      }
+
+      /* Alt+Alt / peek: transparent shell, no workbench boot animation. */
+      html.peek-boot,
+      html.peek-boot body {
+        background: transparent !important;
+      }
+
+      html.peek-boot #boot-splash {
+        display: none !important;
       }
 
       #boot-splash {
@@ -182,6 +206,18 @@
       <p class="boot-label">请稍等，正在为您准备……</p>
       <span class="boot-progress" aria-hidden="true"><i></i></span>
     </div>
+    <script>
+      // Body may parse after head script; re-assert peek splash kill before paint.
+      (function () {
+        if (!document.documentElement.classList.contains("peek-boot")) return;
+        var splash = document.getElementById("boot-splash");
+        if (splash) {
+          splash.hidden = true;
+          splash.setAttribute("aria-busy", "false");
+        }
+        document.body.style.background = "transparent";
+      })();
+    </script>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

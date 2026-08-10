@@ -273,7 +273,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { defineAsyncComponent, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import {
   AppWindow,
@@ -298,9 +298,7 @@ import AgentDebugPanel from "@/components/chat/AgentDebugPanel.vue";
 import SubagentSidebar from "@/components/chat/SubagentSidebar.vue";
 import SubagentIcon from "@/components/chat/SubagentIcon.vue";
 import ImagePreviewSidebar from "@/components/chat/ImagePreviewSidebar.vue";
-import MessageList from "@/components/chat/MessageList.vue";
 import { gsapOverlayDockReveal } from "@/services/motion/gsapPresets";
-import { refreshOverlayWindowBackground } from "@/services/overlay/appearance";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
 import { fetchChatSessions } from "@/commands/slash";
 import {
@@ -339,6 +337,9 @@ import {
   parseSelectionAttachment,
   selectionLineCount,
 } from "@/services/chat/selectionAttachment";
+
+// Lazy: keeps Markdown/echarts out of the Alt+Alt input-mode boot path.
+const MessageList = defineAsyncComponent(() => import("@/components/chat/MessageList.vue"));
 
 const props = defineProps<{
   mode: "input" | "chat";
@@ -531,12 +532,19 @@ const composerLayout = ref({
   pickerHeight: 0,
   hasImages: false,
   hasFiles: false,
+  inputBarHeight: undefined as number | undefined,
+  /** True once `.composer-dock` was measured after paint (includes in-flow pickers). */
+  dockMeasured: false,
 });
 
 function emitComposerLayout() {
+  const dockMeasured = composerLayout.value.dockMeasured;
   emit("layoutChange", {
     ...composerLayout.value,
-    hasContextPreview: Boolean(contextPreview.value),
+    hasContextPreview: dockMeasured ? false : Boolean(contextPreview.value),
+    pickerHeight: dockMeasured ? 0 : composerLayout.value.pickerHeight,
+    hasImages: dockMeasured ? false : composerLayout.value.hasImages,
+    hasFiles: dockMeasured ? false : composerLayout.value.hasFiles,
     mode: props.mode,
     diffSidebarOpen: props.mode === "chat" && diffSidebarOpen.value,
     subagentSidebarOpen: props.mode === "chat" && subagentSidebarOpen.value,
@@ -709,14 +717,62 @@ function handleLayoutChange(payload: {
   pickerHeight?: number;
   hasImages?: boolean;
   hasFiles?: boolean;
+  inputBarHeight?: number;
+  layoutReason?: "picker" | "chrome" | "other";
 }) {
   composerLayout.value = {
     ...payload,
     pickerHeight: payload.pickerHeight ?? 0,
     hasImages: payload.hasImages ?? false,
     hasFiles: payload.hasFiles ?? false,
+    inputBarHeight: payload.inputBarHeight,
+    dockMeasured: false,
   };
+
+  const shouldRemeasureDock =
+    payload.layoutReason === "picker" ||
+    payload.layoutReason === "chrome" ||
+    payload.showSuggestions ||
+    (payload.pickerRowCount ?? 0) > 0 ||
+    payload.hasImages ||
+    payload.hasFiles;
+  if (shouldRemeasureDock) {
+    // Single emit after paint — avoid shell-then-dock double resize flash.
+    scheduleDockHeightMeasure();
+    return;
+  }
   emitComposerLayout();
+}
+
+/** Re-measure after picker transitions paint so the native window includes the list. */
+let dockMeasureScheduled = false;
+function scheduleDockHeightMeasure() {
+  if (dockMeasureScheduled) return;
+  dockMeasureScheduled = true;
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        dockMeasureScheduled = false;
+        const dock = dockRef.value;
+        if (!dock) {
+          emitComposerLayout();
+          return;
+        }
+        const dockHeight = Math.ceil(dock.getBoundingClientRect().height);
+        if (dockHeight > 0) {
+          composerLayout.value = {
+            ...composerLayout.value,
+            dockMeasured: true,
+            pickerHeight: 0,
+            hasImages: false,
+            hasFiles: false,
+            inputBarHeight: dockHeight,
+          };
+        }
+        emitComposerLayout();
+      });
+    });
+  });
 }
 
 function createSessionId() {
@@ -1128,11 +1184,11 @@ watch(
 );
 
 watch(panelVisible, async (visible) => {
-  gsapOverlayDockReveal(dockRef.value, visible);
+  // Keep the dock fully painted. Native cloak/show owns window visibility;
+  // opacity hide/reveal here flashes on every Alt+Alt summon.
   if (!visible) {
     return;
   }
-  // Focus after the dock is visibility:visible (set synchronously in reveal).
   await nextTick();
   void scheduleOverlayInputFocus();
 });
@@ -1140,10 +1196,8 @@ watch(panelVisible, async (visible) => {
 onMounted(async () => {
   const window = getCurrentWebviewWindow();
   isAlwaysOnTop.value = await window.isAlwaysOnTop().catch(() => true);
-  // Hide dock until overlay-shown; avoid FOUC before first reveal tween.
-  if (!panelVisible.value) {
-    gsapOverlayDockReveal(dockRef.value, false);
-  }
+  // Ensure dock is visible even if a prior session left inline styles behind.
+  gsapOverlayDockReveal(dockRef.value, true);
 
   void listenAskUser(async (payload) => {
     if (payload.sessionId && payload.sessionId !== activeSessionId.value) {
@@ -1222,7 +1276,9 @@ onMounted(async () => {
 
   await window.listen("overlay-shown", () => {
     clearMinimizePreview();
-    void refreshOverlayWindowBackground();
+    // Do not call refreshOverlayWindowBackground here — clearEffects/setShadow
+    // on every summon forces a Win32 non-client refresh that flashes the window.
+    // Rust configure_overlay_window already applied shadow/toolwindow on show.
     panelVisible.value = true;
     void scheduleOverlayInputFocus();
   });
@@ -1264,8 +1320,7 @@ onMounted(async () => {
   if (await window.isVisible()) {
     panelVisible.value = true;
     // 动态新建窗口时，overlay-shown 在 Vue 挂载前就发出了，
-    // 这里补做相同的初始化：刷新背景透明度、聚焦输入框
-    void refreshOverlayWindowBackground();
+    // 这里补做相同的初始化：聚焦输入框（背景已由 Rust configure 处理）
     void scheduleOverlayInputFocus();
   } else {
     void scheduleOverlayInputFocus();
@@ -1657,9 +1712,7 @@ onUnmounted(() => {
 .composer-dock :deep(.chat-input-shell.interaction-request-open .ask-user-list),
 .composer-dock :deep(.chat-input-shell.interaction-request-open .path-permission-list),
 .composer-dock :deep(.chat-input-shell.interaction-request-open .tool-approval-list) {
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  margin: 0;
 }
 
 .composer-dock.expanded {

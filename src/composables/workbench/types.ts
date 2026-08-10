@@ -21,5 +21,5 @@ export type WorkspacePointerDrag = {
   startY: number;
   dragging: boolean;
   cancelled: boolean;
-  longPressTimer: number;
+  longPressTimer: ReturnType<typeof setTimeout> | null;
 };

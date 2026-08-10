@@ -153,6 +153,16 @@
           <div class="field-row">
             <label>{{ t("settings.provider.apiKey") }}</label>
             <SecretInput v-model="deepseekKey" placeholder="sk-..." @blur="saveDeepSeek" />
+            <p class="field-hint">
+              {{ t("settings.provider.getApiKey") }}
+              <button
+                type="button"
+                class="provider-key-link"
+                @click="openExternalUrl(DEEPSEEK_API_KEYS_URL)"
+              >
+                {{ DEEPSEEK_API_KEYS_URL }}
+              </button>
+            </p>
           </div>
 
           <div class="form-actions">
@@ -383,6 +393,7 @@
 import { computed, nextTick, ref } from "vue";
 import type { Component } from "vue";
 import { Globe2, ChevronLeft, ChevronRight, Plus, Trash2, Save, X, RefreshCw } from "@lucide/vue";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
 import GeminiIcon from "@/components/icons/GeminiIcon.vue";
 import { useSettingStore } from "@/stores/setting";
@@ -410,12 +421,22 @@ import {
   type ProviderPreset,
 } from "@/lib/providerPresets";
 
+const DEEPSEEK_API_KEYS_URL = "https://platform.deepseek.com/api_keys";
+
 defineProps<{
   query?: string;
 }>();
 
 const settingStore = useSettingStore();
 const chatModelStore = useChatModelStore();
+
+async function openExternalUrl(url: string) {
+  try {
+    await openUrl(url);
+  } catch (error) {
+    console.error("failed to open url in default browser:", url, error);
+  }
+}
 
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 const modelDraftInputRef = ref<{ $el?: HTMLElement } | null>(null);
@@ -994,6 +1015,24 @@ header.view-header.edit-header {
   font-size: 10px;
   line-height: 1.4;
   color: var(--muted-foreground);
+}
+
+.provider-key-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.provider-key-link:hover {
+  color: color-mix(in srgb, var(--primary) 82%, var(--foreground));
 }
 
 .oauth-status {

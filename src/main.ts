@@ -27,6 +27,7 @@ import { installBrowserGuards } from "@/services/browserGuards";
 import { createLogger, rootLogger } from "@/services/logger";
 import { recordToolActivityUsage } from "@/services/usage/resourceUsage";
 import { warmInstalledResourceIcons } from "@/services/warmIcons";
+import "@/services/motion/gsapSafe";
 import type {
   ChatContextNoticeEvent,
   ChatDeltaEvent,
@@ -337,13 +338,14 @@ async function bootstrap() {
     const sessionId = resolveSessionId(payload.sessionId, chatStore.overlayDraftSessionId);
     if (!sessionId) return;
     const active = Boolean(payload.active);
+    const source = payload.source === "auto" ? "auto" : "manual";
     chatStore.setSessionPlanMode(sessionId, active);
-    const compose = chatStore.ensureCompose(sessionId);
-    if (active && compose.chatMode === "agent") {
-      chatStore.setCompose(sessionId, { chatMode: "plan" });
-    } else if (!active && compose.chatMode === "plan") {
-      chatStore.setCompose(sessionId, { chatMode: "agent" });
-    }
+    // A rejected plan fingerprint still blocks countdown in MessageList until
+    // the checklist is new/updated — keep the trigger from the backend so a
+    // revised auto-plan can countdown again.
+    chatStore.setSessionPlanTrigger(sessionId, active ? source : "manual");
+    // Never rewrite the user's mode chip when the writer gate flips. Auto-plan
+    // and sticky gates are independent from Agent/Ask/Plan picker choice.
   });
 
   if (windowLabel.startsWith("overlay-preview-")) {

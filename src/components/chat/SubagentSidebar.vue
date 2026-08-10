@@ -1,5 +1,10 @@
 <template>
-  <aside class="subagent-sidebar" :class="{ embedded }" data-tauri-drag-region="false" :aria-label="sidebarTitle">
+  <aside
+    class="subagent-sidebar"
+    :class="{ embedded }"
+    data-tauri-drag-region="false"
+    :aria-label="sidebarTitle"
+  >
     <header v-if="!embedded" class="subagent-sidebar-header">
       <SubagentIcon :size="15" />
       <strong>{{ sidebarTitle }}</strong>
@@ -7,7 +12,13 @@
     </header>
 
     <template v-if="agentEntries.length">
-      <nav ref="tabsRef" class="subagent-tabs peek-card-tabs" role="tablist" :aria-label="sidebarTitle" @wheel="scrollTabs">
+      <nav
+        ref="tabsRef"
+        class="subagent-tabs peek-card-tabs"
+        role="tablist"
+        :aria-label="sidebarTitle"
+        @wheel="scrollTabs"
+      >
         <div
           v-for="entry in agentEntries"
           :key="entry.id"
@@ -50,7 +61,9 @@
           <div class="subagent-identity">
             <SubagentIcon :status="activeEntry.status" :size="14" />
             <strong :title="activeEntry.title">{{ activeEntry.title }}</strong>
-            <span class="agent-status" :class="activeEntry.status">{{ statusLabel(activeEntry.status) }}</span>
+            <span class="agent-status" :class="activeEntry.status">
+              {{ statusLabel(activeEntry.status) }}
+            </span>
           </div>
           <div v-if="activeEntry.model" class="subagent-model-row">
             <span>{{ modelLabel }}</span>
@@ -59,7 +72,10 @@
         </header>
 
         <div class="subagent-work">
-          <section class="subagent-task-details" :class="{ open: isTaskDetailsOpen(activeEntry.id) }">
+          <section
+            class="subagent-task-details"
+            :class="{ open: isTaskDetailsOpen(activeEntry.id) }"
+          >
             <button
               type="button"
               class="subagent-task-toggle"
@@ -86,7 +102,10 @@
             </div>
           </section>
           <Markdown v-if="activeEntry.message.content" :content="activeEntry.message.content" />
-          <p v-if="!activeEntry.children.length && !activeEntry.message.content" class="agent-waiting">
+          <p
+            v-if="!activeEntry.children.length && !activeEntry.message.content"
+            class="agent-waiting"
+          >
             {{ waitingLabel }}
           </p>
         </div>
@@ -118,13 +137,16 @@ type AgentEntry = {
   message: ChatMessage;
 };
 
-const props = withDefaults(defineProps<{
-  activities: ToolActivity[];
-  allActivities: ToolActivity[];
-  openedEntryIds?: string[];
-  selectedEntryId?: string;
-  embedded?: boolean;
-}>(), { openedEntryIds: () => [], selectedEntryId: "", embedded: false });
+const props = withDefaults(
+  defineProps<{
+    activities: ToolActivity[];
+    allActivities: ToolActivity[];
+    openedEntryIds?: string[];
+    selectedEntryId?: string;
+    embedded?: boolean;
+  }>(),
+  { openedEntryIds: () => [], selectedEntryId: "", embedded: false },
+);
 const emit = defineEmits<{ close: []; closeEntry: [entryId: string] }>();
 const settingStore = useSettingStore();
 const activeId = ref("");
@@ -167,8 +189,8 @@ const agentEntries = computed<AgentEntry[]>(() => {
   return entries.filter((entry) => opened.has(entry.id));
 });
 
-const activeEntry = computed(() =>
-  agentEntries.value.find((entry) => entry.id === activeId.value) ?? agentEntries.value[0],
+const activeEntry = computed(
+  () => agentEntries.value.find((entry) => entry.id === activeId.value) ?? agentEntries.value[0],
 );
 
 watch(
@@ -200,8 +222,14 @@ function makeAgentMessage(
 ): ChatMessage {
   const childIds = new Set(children.map((activity) => activity.id));
   const scopedActivities = props.allActivities
-    .filter((activity) => childIds.has(activity.id) || children.some((child) => activity.parentActivityId === child.id))
-    .map((activity) => childIds.has(activity.id) ? { ...activity, parentActivityId: undefined } : activity);
+    .filter(
+      (activity) =>
+        childIds.has(activity.id) ||
+        children.some((child) => activity.parentActivityId === child.id),
+    )
+    .map((activity) =>
+      childIds.has(activity.id) ? { ...activity, parentActivityId: undefined } : activity,
+    );
   return {
     id: `subagent-${id}`,
     sessionId: "subagent",
@@ -224,7 +252,11 @@ function taskLabels(activity: ToolActivity) {
   const args = activity.arguments ?? {};
   if (Array.isArray(args.tasks)) {
     return args.tasks
-      .map((value) => typeof value === "object" && value != null ? String((value as Record<string, unknown>).prompt ?? "").trim() : "")
+      .map((value) =>
+        typeof value === "object" && value != null
+          ? String((value as Record<string, unknown>).prompt ?? "").trim()
+          : "",
+      )
       .filter(Boolean);
   }
   for (const value of [args.description, args.task, args.prompt]) {
@@ -249,8 +281,11 @@ function fallbackTask(activity: ToolActivity) {
   return activity.title || tr(settingStore.language, "subagent.executeTask");
 }
 
-function shortTaskTitle(prompt: string, index: number) {
-  const lines = prompt.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+function shortTaskTitle(prompt: string | undefined | null, index: number) {
+  const lines = (prompt ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   const heading = lines.find((line) => /^#{1,6}\s+/.test(line));
   const source = heading ?? lines[0] ?? "";
   const cleaned = source
@@ -309,43 +344,247 @@ function statusLabel(status: AgentStatus) {
 </script>
 
 <style scoped>
-.subagent-sidebar { flex: none; box-sizing: border-box; width: 400px; min-width: 360px; height: 100%; display: flex; flex-direction: column; overflow: hidden; padding-top: 34px; color: var(--peek-text); background: transparent; }
-.subagent-sidebar.embedded { flex: 1; width: 100%; min-width: 0; padding-top: 0; }
-.subagent-sidebar-header { flex: none; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--peek-border); }
-.subagent-sidebar-header strong { font-size: 12px; }
-.close-button { margin-left: auto; width: 27px; height: 27px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--peek-muted); cursor: pointer; }
-.close-button:hover { color: var(--peek-text); background: var(--peek-hover-bg); }
-.subagent-tabs { flex: none; }
-.subagent-tab-shell { flex: 0 0 200px; width: 200px; min-width: 200px; max-width: 260px; }
-.subagent-tab { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 7px; padding: 0 4px 0 9px; border: 0; background: transparent; color: inherit; cursor: pointer; }
-.subagent-tab > svg { flex: none; width: 15px; height: 15px; color: color-mix(in srgb, var(--peek-accent) 82%, var(--peek-text)); }
-.subagent-tab span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
-.subagent-tab-close { position: relative; z-index: 1; flex: none; width: 24px; height: 24px; display: inline-grid; place-items: center; margin-right: 4px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--peek-faint); cursor: pointer; opacity: 0; }
-.subagent-tab-shell:hover .subagent-tab-close, .subagent-tab-shell.active .subagent-tab-close { opacity: 1; }
-.subagent-tab-close:hover { color: var(--peek-text); background: color-mix(in srgb, var(--peek-text) 8%, transparent); }
-.subagent-panel { flex: 1; min-height: 0; overflow: auto; }
-.subagent-panel-header { min-width: 0; padding: 10px 13px 9px; border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 75%, transparent); }
-.subagent-identity { min-width: 0; display: flex; align-items: center; gap: 7px; }
-.subagent-identity svg { flex: none; color: var(--peek-accent); }
-.subagent-identity strong { flex: 1; min-width: 0; overflow: hidden; color: var(--peek-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-status { flex: none; margin-left: 4px; color: var(--peek-muted); font-size: 10px; white-space: nowrap; }
-.subagent-model-row { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 7px; margin: 6px 0 0 21px; color: var(--peek-faint); font-size: 9px; line-height: 1.4; }
-.subagent-model-row > span { white-space: nowrap; }
-.subagent-model-row > code { min-width: 0; padding: 0; background: transparent; color: var(--peek-muted); font: inherit; font-family: var(--font-mono); overflow-wrap: anywhere; white-space: normal; }
-.agent-status.error { color: var(--destructive); }
-.subagent-work { padding: 10px 13px 18px; }
-.subagent-work :deep(.agent-work), .subagent-work :deep(.markdown-body) { width: 100%; max-width: none; box-sizing: border-box; }
-.subagent-task-details { margin: 0 0 9px; }
-.subagent-task-toggle { width: 100%; display: flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 5px; border: 0; border-radius: 5px; background: transparent; color: var(--peek-muted); font: inherit; font-size: 10px; text-align: left; cursor: pointer; user-select: none; }
-.subagent-task-toggle:hover { color: var(--peek-text); background: color-mix(in srgb, var(--peek-text) 4%, transparent); }
-.subagent-task-toggle:focus-visible { outline: 1px solid var(--peek-accent); outline-offset: 1px; }
-.subagent-task-toggle svg { flex: none; transition: transform 140ms ease; }
-.subagent-task-details.open > .subagent-task-toggle svg { transform: rotate(90deg); }
-.subagent-task-body { margin: 3px 0 8px 5px; padding: 7px 8px 3px 10px; border-left: 1px solid var(--peek-border); }
-.subagent-task-body > :deep(.markdown-body) { margin-bottom: 8px; color: var(--peek-muted); font-size: 11px; }
-.agent-waiting, .subagent-empty { margin: 0; padding: 24px 12px; color: var(--peek-muted); font-size: 11px; text-align: center; }
-.subagent-empty { margin: auto 0; }
+.subagent-sidebar {
+  flex: none;
+  box-sizing: border-box;
+  width: 400px;
+  min-width: 360px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: 34px;
+  color: var(--peek-text);
+  background: transparent;
+}
+.subagent-sidebar.embedded {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding-top: 0;
+}
+.subagent-sidebar-header {
+  flex: none;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--peek-border);
+}
+.subagent-sidebar-header strong {
+  font-size: 12px;
+}
+.close-button {
+  margin-left: auto;
+  width: 27px;
+  height: 27px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--peek-muted);
+  cursor: pointer;
+}
+.close-button:hover {
+  color: var(--peek-text);
+  background: var(--peek-hover-bg);
+}
+.subagent-tabs {
+  flex: none;
+}
+.subagent-tab-shell {
+  flex: 0 0 200px;
+  width: 200px;
+  min-width: 200px;
+  max-width: 260px;
+}
+.subagent-tab {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 0 9px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.subagent-tab > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: color-mix(in srgb, var(--peek-accent) 82%, var(--peek-text));
+}
+.subagent-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+.subagent-tab-close {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--peek-faint);
+  cursor: pointer;
+  opacity: 0;
+}
+.subagent-tab-shell:hover .subagent-tab-close,
+.subagent-tab-shell.active .subagent-tab-close {
+  opacity: 1;
+}
+.subagent-tab-close:hover {
+  color: var(--peek-text);
+  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
+}
+.subagent-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.subagent-panel-header {
+  min-width: 0;
+  padding: 10px 13px 9px;
+  border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 75%, transparent);
+}
+.subagent-identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.subagent-identity svg {
+  flex: none;
+  color: var(--peek-accent);
+}
+.subagent-identity strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--peek-text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-status {
+  flex: none;
+  margin-left: 4px;
+  color: var(--peek-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.subagent-model-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  margin: 6px 0 0 21px;
+  color: var(--peek-faint);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.subagent-model-row > span {
+  white-space: nowrap;
+}
+.subagent-model-row > code {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--peek-muted);
+  font: inherit;
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.agent-status.error {
+  color: var(--destructive);
+}
+.subagent-work {
+  padding: 10px 13px 18px;
+}
+.subagent-work :deep(.agent-work),
+.subagent-work :deep(.markdown-body) {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+.subagent-task-details {
+  margin: 0 0 9px;
+}
+.subagent-task-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--peek-muted);
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+.subagent-task-toggle:hover {
+  color: var(--peek-text);
+  background: color-mix(in srgb, var(--peek-text) 4%, transparent);
+}
+.subagent-task-toggle:focus-visible {
+  outline: 1px solid var(--peek-accent);
+  outline-offset: 1px;
+}
+.subagent-task-toggle svg {
+  flex: none;
+  transition: transform 140ms ease;
+}
+.subagent-task-details.open > .subagent-task-toggle svg {
+  transform: rotate(90deg);
+}
+.subagent-task-body {
+  margin: 3px 0 8px 5px;
+  padding: 7px 8px 3px 10px;
+  border-left: 1px solid var(--peek-border);
+}
+.subagent-task-body > :deep(.markdown-body) {
+  margin-bottom: 8px;
+  color: var(--peek-muted);
+  font-size: 11px;
+}
+.agent-waiting,
+.subagent-empty {
+  margin: 0;
+  padding: 24px 12px;
+  color: var(--peek-muted);
+  font-size: 11px;
+  text-align: center;
+}
+.subagent-empty {
+  margin: auto 0;
+}
 @container workspace-sidebar (max-width: 560px) {
-  .subagent-tab-shell { flex-basis: 168px; width: 168px; min-width: 168px; }
+  .subagent-tab-shell {
+    flex-basis: 168px;
+    width: 168px;
+    min-width: 168px;
+  }
 }
 </style>
