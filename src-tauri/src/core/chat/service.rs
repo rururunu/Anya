@@ -195,9 +195,9 @@ impl ChatService {
             MessageStatus::Pending,
         );
 
-        if !overrides.resume_plan {
-            self.conversation.append(&session_id, user_message.clone());
-        }
+        // Always persist the user turn (including plan approve) so Desktop /
+        // Companion history and the session inbox show the approval message.
+        self.conversation.append(&session_id, user_message.clone());
         self.conversation
             .append(&session_id, assistant_message.clone());
 
@@ -234,14 +234,11 @@ impl ChatService {
 
         let mut history = self.conversation.messages(&session_id);
         if overrides.resume_plan {
-            // Resume turns drive the prompt with the approval instruction but
-            // never persist it — the synthetic message exists for this turn only.
-            // The empty assistant just appended is the stream target, not
-            // history: trim it so the approval instruction is the final user
-            // turn. Otherwise the empty assistant lands between turns in the
-            // prompt and providers reject the request (approve & execute fails).
+            // Empty assistant is the stream target, not prompt history: trim it
+            // so the (already persisted) approval is the final user turn.
+            // Otherwise the empty assistant lands between turns and providers
+            // reject the request (approve & execute fails).
             history = compact::trim_empty_assistant_tail(history);
-            history.push(user_message.clone());
         }
         let settings = self
             .app_handle

@@ -34,10 +34,10 @@
         :open="foldOpen"
         @toggle="handleFoldToggle"
       >
-        <summary class="agent-work-fold-summary">
+        <summary class="agent-work-fold-summary" :class="{ pinned: foldOpen }">
           <ChevronRight class="agent-work-fold-chevron" :class="{ open: foldOpen }" :size="12" />
           <span>{{ foldLabel }}</span>
-          <span v-if="!foldOpen && foldMeta" class="agent-work-fold-meta">{{ foldMeta }}</span>
+          <span v-if="foldMeta" class="agent-work-fold-meta">{{ foldMeta }}</span>
         </summary>
         <div class="agent-work-fold-body">
           <AgentWorkSegment
@@ -542,6 +542,19 @@ watch(
   color: var(--peek-muted);
   list-style: none;
   user-select: none;
+}
+
+/* While expanded, keep the collapse control reachable no matter how long the
+   folded reasoning/tool timeline is — pin it to the top of the scroll
+   viewport instead of letting it scroll away with the rest of the body. */
+.agent-work-fold-summary.pinned {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--peek-bg);
+  margin: 0 -2px;
+  padding: 3px 2px;
+  border-radius: 6px;
 }
 
 .agent-work-fold-summary::-webkit-details-marker {

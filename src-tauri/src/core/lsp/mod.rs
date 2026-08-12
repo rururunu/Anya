@@ -17,6 +17,7 @@ struct LspProcess {
     stdin: ChildStdin,
     reader: BufReader<std::process::ChildStdout>,
     next_id: u64,
+    diagnostics_cache: HashMap<String, Value>,
 }
 
 impl LspProcess {
@@ -44,6 +45,7 @@ impl LspProcess {
             stdin,
             reader: BufReader::new(stdout),
             next_id: 1,
+            diagnostics_cache: HashMap::new(),
         };
         let root_uri = path_to_uri(root);
         proc.request(
@@ -75,6 +77,7 @@ impl LspProcess {
         self.write_message(&msg)?;
         loop {
             let response = self.read_message()?;
+            self.capture_notification(&response);
             if response.get("id").and_then(|v| v.as_u64()) == Some(id) {
                 if let Some(error) = response.get("error") {
                     return Err(ToolError::new(format!("LSP error: {error}")));
@@ -130,6 +133,30 @@ impl LspProcess {
             .read_exact(&mut buf)
             .map_err(|e| ToolError::new(e.to_string()))?;
         serde_json::from_slice(&buf).map_err(|e| ToolError::new(e.to_string()))
+    }
+
+    fn capture_notification(&mut self, message: &Value) {
+        if message.get("id").is_some() {
+            return;
+        }
+        let Some(method) = message.get("method").and_then(|v| v.as_str()) else {
+            return;
+        };
+        if method != "textDocument/publishDiagnostics" {
+            return;
+        }
+        let Some(params) = message.get("params") else {
+            return;
+        };
+        let Some(uri) = params.get("uri").and_then(|v| v.as_str()) else {
+            return;
+        };
+        self.diagnostics_cache
+            .insert(uri.to_string(), params.clone());
+    }
+
+    fn diagnostics_for_uri(&self, uri: &str) -> Option<Value> {
+        self.diagnostics_cache.get(uri).cloned()
     }
 }
 
@@ -279,6 +306,9 @@ impl LspManager {
                 }
             }),
         );
+        if let Some(cached) = proc.diagnostics_for_uri(&uri) {
+            return Ok(serde_json::to_string_pretty(&cached)?);
+        }
         // Pull diagnostics via textDocument/diagnostic if supported; else empty publish wait.
         match proc.request(
             "textDocument/diagnostic",
@@ -328,6 +358,152 @@ impl LspManager {
             json!({
                 "textDocument": { "uri": uri },
                 "position": { "line": line, "character": character }
+            }),
+        )?;
+        Ok(serde_json::to_string_pretty(&result)?)
+    }
+
+    pub fn references(
+        &self,
+        root: &Path,
+        path: &str,
+        line: u64,
+        character: u64,
+    ) -> Result<String, ToolError> {
+        let language = Self::language_for_path(path);
+        let key = self.ensure_server(language, root)?;
+        let abs = root.join(path);
+        let text = std::fs::read_to_string(&abs).unwrap_or_default();
+        let uri = path_to_uri(&abs);
+        let mut procs = self
+            .processes
+            .lock()
+            .map_err(|_| ToolError::new("lsp lock"))?;
+        let proc = procs
+            .get_mut(&key)
+            .ok_or_else(|| ToolError::new("LSP process missing"))?;
+        let _ = proc.notify(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": language,
+                    "version": 1,
+                    "text": text
+                }
+            }),
+        );
+        let result = proc.request(
+            "textDocument/references",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character },
+                "context": { "includeDeclaration": true }
+            }),
+        )?;
+        Ok(serde_json::to_string_pretty(&result)?)
+    }
+
+    pub fn workspace_symbol(&self, root: &Path, query: &str) -> Result<String, ToolError> {
+        let language = "rust";
+        let key = self.ensure_server(language, root)?;
+        let mut procs = self
+            .processes
+            .lock()
+            .map_err(|_| ToolError::new("lsp lock"))?;
+        let proc = procs
+            .get_mut(&key)
+            .ok_or_else(|| ToolError::new("LSP process missing"))?;
+        let result = proc.request(
+            "workspace/symbol",
+            json!({
+                "query": query
+            }),
+        )?;
+        Ok(serde_json::to_string_pretty(&result)?)
+    }
+
+    pub fn rename(
+        &self,
+        root: &Path,
+        path: &str,
+        line: u64,
+        character: u64,
+        new_name: &str,
+    ) -> Result<String, ToolError> {
+        let language = Self::language_for_path(path);
+        let key = self.ensure_server(language, root)?;
+        let abs = root.join(path);
+        let text = std::fs::read_to_string(&abs).unwrap_or_default();
+        let uri = path_to_uri(&abs);
+        let mut procs = self
+            .processes
+            .lock()
+            .map_err(|_| ToolError::new("lsp lock"))?;
+        let proc = procs
+            .get_mut(&key)
+            .ok_or_else(|| ToolError::new("LSP process missing"))?;
+        let _ = proc.notify(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": language,
+                    "version": 1,
+                    "text": text
+                }
+            }),
+        );
+        let result = proc.request(
+            "textDocument/rename",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character },
+                "newName": new_name
+            }),
+        )?;
+        Ok(serde_json::to_string_pretty(&result)?)
+    }
+
+    pub fn code_action(
+        &self,
+        root: &Path,
+        path: &str,
+        line: u64,
+        character: u64,
+    ) -> Result<String, ToolError> {
+        let language = Self::language_for_path(path);
+        let key = self.ensure_server(language, root)?;
+        let abs = root.join(path);
+        let text = std::fs::read_to_string(&abs).unwrap_or_default();
+        let uri = path_to_uri(&abs);
+        let mut procs = self
+            .processes
+            .lock()
+            .map_err(|_| ToolError::new("lsp lock"))?;
+        let proc = procs
+            .get_mut(&key)
+            .ok_or_else(|| ToolError::new("LSP process missing"))?;
+        let _ = proc.notify(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": language,
+                    "version": 1,
+                    "text": text
+                }
+            }),
+        );
+        let result = proc.request(
+            "textDocument/codeAction",
+            json!({
+                "textDocument": { "uri": uri },
+                "range": {
+                    "start": { "line": line, "character": character },
+                    "end": { "line": line, "character": character }
+                },
+                "context": { "diagnostics": [] }
             }),
         )?;
         Ok(serde_json::to_string_pretty(&result)?)

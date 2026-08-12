@@ -19,6 +19,7 @@ impl TauriEventBus {
 
 impl EventBus for TauriEventBus {
     fn emit(&self, event: BusEvent) {
+        crate::core::remote::on_bus_event(&event);
         match event {
             BusEvent::AgentEvent { event } => {
                 let _ = self.app.emit("agent-event", event);

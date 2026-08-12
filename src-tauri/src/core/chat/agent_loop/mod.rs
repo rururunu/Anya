@@ -18,6 +18,7 @@
 pub mod challenge;
 pub mod failure;
 pub mod mid_turn_compact;
+pub mod post_edit_verify;
 pub mod soft_inject;
 pub mod stream_turn;
 pub mod tools;

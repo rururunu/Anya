@@ -117,6 +117,37 @@ pub fn lookup_install_icon(
     Ok(find_existing(&dir, &key).map(|path| path.to_string_lossy().into_owned()))
 }
 
+/// Encode a cached install icon as a `data:` URL for remote clients (phone companion).
+pub fn install_icon_data_url(
+    app: &AppHandle,
+    kind: &str,
+    cache_key: &str,
+) -> Option<String> {
+    let (kind, key) = sanitize_cache_key(kind, cache_key).ok()?;
+    let dir = kind_dir(app, &kind).ok()?;
+    let path = find_existing(&dir, &key)?;
+    let bytes = std::fs::read(&path).ok()?;
+    if bytes.is_empty() || bytes.len() > 512 * 1024 {
+        return None;
+    }
+    let mime = match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("png")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        _ => "image/png",
+    };
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Some(format!("data:{mime};base64,{encoded}"))
+}
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IconLookupEntry {

@@ -299,9 +299,25 @@ pub struct AppSettings {
     /// When true, shell runs under restricted limits (Job Object, scrubbed env, shorter timeout).
     #[serde(default)]
     pub restricted_shell: bool,
-    /// Foreground shell timeout in seconds (min 5). Used always; restricted mode may use this too.
+    /// Absolute ceiling for one foreground shell command, in seconds (min 5).
+    /// Deliberately generous: a command that keeps making progress should be
+    /// allowed to finish, so this is a safety net rather than the usual way a
+    /// command ends. Stuck commands are caught by `shell_stall_timeout_secs`.
     #[serde(default = "default_shell_timeout_secs")]
     pub shell_timeout_secs: u64,
+    /// How long a foreground command may make no progress at all — no new
+    /// output and no CPU consumed by its process tree — before it is treated
+    /// as stuck, in seconds (min 5).
+    #[serde(default = "default_shell_stall_timeout_secs")]
+    pub shell_stall_timeout_secs: u64,
+    /// Automatically run one lightweight build/test verification pass after
+    /// successful file mutations in an agent turn.
+    #[serde(default = "default_true")]
+    pub auto_verify_after_edits: bool,
+    /// One-time hint flag for users migrated from settings without
+    /// `restrictedShell`. Frontend can display and clear it.
+    #[serde(default)]
+    pub pending_restricted_shell_upgrade_notice: bool,
     #[serde(default = "default_true")]
     pub multimodal_split_analysis: bool,
     /// When true, use a 1M-token context window for compaction / turn budgets.
@@ -369,6 +385,10 @@ fn default_mem0_base_url() -> String {
 }
 
 fn default_shell_timeout_secs() -> u64 {
+    3600
+}
+
+fn default_shell_stall_timeout_secs() -> u64 {
     120
 }
 
@@ -419,6 +439,9 @@ pub struct AppSettingsPatch {
     pub allow_outside_workspace_writes: Option<bool>,
     pub restricted_shell: Option<bool>,
     pub shell_timeout_secs: Option<u64>,
+    pub shell_stall_timeout_secs: Option<u64>,
+    pub auto_verify_after_edits: Option<bool>,
+    pub pending_restricted_shell_upgrade_notice: Option<bool>,
     pub multimodal_split_analysis: Option<bool>,
     pub large_context_enabled: Option<bool>,
     pub zoom: Option<u32>,
@@ -470,8 +493,11 @@ impl Default for AppSettings {
             collaboration_models: Vec::new(),
             minimal_coding: false,
             allow_outside_workspace_writes: false,
-            restricted_shell: false,
+            restricted_shell: true,
             shell_timeout_secs: default_shell_timeout_secs(),
+            shell_stall_timeout_secs: default_shell_stall_timeout_secs(),
+            auto_verify_after_edits: true,
+            pending_restricted_shell_upgrade_notice: false,
             multimodal_split_analysis: true,
             large_context_enabled: true,
             zoom: 100,
@@ -594,6 +620,16 @@ impl AppSettings {
                 .shell_timeout_secs
                 .unwrap_or(self.shell_timeout_secs)
                 .max(5),
+            shell_stall_timeout_secs: patch
+                .shell_stall_timeout_secs
+                .unwrap_or(self.shell_stall_timeout_secs)
+                .max(5),
+            auto_verify_after_edits: patch
+                .auto_verify_after_edits
+                .unwrap_or(self.auto_verify_after_edits),
+            pending_restricted_shell_upgrade_notice: patch
+                .pending_restricted_shell_upgrade_notice
+                .unwrap_or(self.pending_restricted_shell_upgrade_notice),
             multimodal_split_analysis: patch
                 .multimodal_split_analysis
                 .unwrap_or(self.multimodal_split_analysis),

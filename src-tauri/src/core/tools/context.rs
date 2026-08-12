@@ -73,6 +73,8 @@ pub struct AskQuestion {
 
 pub struct PendingAsk {
     pub sender: mpsc::Sender<String>,
+    pub session_id: String,
+    pub questions: Vec<AskQuestion>,
 }
 
 pub struct AskStore {
@@ -86,9 +88,22 @@ impl AskStore {
         }
     }
 
-    pub fn insert(&self, request_id: String, sender: mpsc::Sender<String>) {
+    pub fn insert(
+        &self,
+        request_id: String,
+        session_id: String,
+        questions: Vec<AskQuestion>,
+        sender: mpsc::Sender<String>,
+    ) {
         if let Ok(mut guard) = self.inner.lock() {
-            guard.insert(request_id, PendingAsk { sender });
+            guard.insert(
+                request_id,
+                PendingAsk {
+                    sender,
+                    session_id,
+                    questions,
+                },
+            );
         }
     }
 
@@ -104,12 +119,37 @@ impl AskStore {
         }
         false
     }
+
+    /// Snapshot of current pending asks.
+    /// Used to replay missing `ask-user` events to newly connected clients.
+    pub fn pending_items(&self) -> Vec<PendingAskSnapshot> {
+        let guard = self.inner.lock().ok();
+        guard
+            .map(|map| {
+                map.iter()
+                    .map(|(request_id, pending)| PendingAskSnapshot {
+                        request_id: request_id.clone(),
+                        session_id: pending.session_id.clone(),
+                        questions: pending.questions.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 impl Default for AskStore {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingAskSnapshot {
+    pub request_id: String,
+    pub session_id: String,
+    pub questions: Vec<AskQuestion>,
 }
 
 #[derive(Clone)]

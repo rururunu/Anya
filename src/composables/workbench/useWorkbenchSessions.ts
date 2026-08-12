@@ -109,8 +109,30 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   const hasConversationMessages = computed(() =>
     messages.value.some((message) => message.role === "user" || message.role === "assistant"),
   );
-  const sending = computed(() => Boolean(chatStore.sending[activeSessionId.value]));
-  const runningSessionIds = computed(() => Object.keys(chatStore.sending));
+  const sending = computed(
+    () =>
+      Boolean(chatStore.sending[activeSessionId.value]) ||
+      chatStore.hasActiveAssistantResponse(activeSessionId.value),
+  );
+  const runningSessionIds = computed(() => {
+    const ids = new Set(
+      Object.entries(chatStore.sending)
+        .filter(([, busy]) => Boolean(busy))
+        .map(([sessionId]) => sessionId),
+    );
+    for (const [sessionId, messages] of Object.entries(chatStore.sessions)) {
+      if (
+        messages.some(
+          (message) =>
+            String(message.role).toLowerCase() === "assistant" &&
+            (message.status === "pending" || message.status === "streaming"),
+        )
+      ) {
+        ids.add(sessionId);
+      }
+    }
+    return [...ids];
+  });
   const stagedMessages = computed(() => chatStore.stagedMessages[activeSessionId.value] ?? []);
   const contextNotice = computed(() => chatStore.contextNotices[activeSessionId.value] ?? "");
   const activeAssistantMessageId = computed(

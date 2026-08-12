@@ -1,0 +1,13 @@
+[[permission]]
+identifier = "allow-remote-commands"
+description = "Remote phone companion gateway"
+commands.allow = [
+  "remote_gateway_status",
+  "remote_gateway_start",
+  "remote_gateway_stop",
+  "remote_create_pairing",
+  "remote_list_devices",
+  "remote_revoke_device",
+  "remote_get_tunnel_prefs",
+  "remote_set_tunnel_prefs"
+]

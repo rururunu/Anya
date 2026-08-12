@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Emitter, State};
 
 use crate::app_state::AppState;
+use crate::core::remote;
 use crate::models::chat::{InteractionResolvedEvent, RespondAskUserRequest};
 
 #[tauri::command]
@@ -15,6 +16,7 @@ pub fn respond_ask_user(
         .ask_store()
         .complete(&request.request_id, request.answer);
     if ok {
+        remote::push_interaction_resolved(&request.request_id, "ask_user");
         let _ = app.emit(
             "interaction-resolved",
             InteractionResolvedEvent {

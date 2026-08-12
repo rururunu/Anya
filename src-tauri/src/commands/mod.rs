@@ -7,6 +7,7 @@ pub mod harness;
 pub mod icons;
 pub mod mcp;
 pub mod permission;
+pub mod remote;
 pub mod settings;
 pub mod skills;
 pub mod token_usage;

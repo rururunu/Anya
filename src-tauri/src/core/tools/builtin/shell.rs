@@ -17,7 +17,7 @@ impl Tool for RunShellTool {
         "run_shell"
     }
     fn description(&self) -> &str {
-        "Run a PowerShell command in the project workspace directory. Prefer dedicated file/search/git tools when they cover the task.\n\nUsage:\n- Always pass a short description (3-8 words) for the UI header.\n- Keep finite commands (Git, file reads, status checks, tests, builds, Docker inspection) in the foreground.\n- Background mode only for persistent processes: Get-Content -Wait, log following, watchers, dev servers, or foreground container services — never to avoid waiting.\n- Logs: prefer bounded reads (Get-Content -Tail N, docker logs --tail N). Use follow mode only when live monitoring is requested, then background + read_shell_output.\n- Docker: start with read-only inspection (docker ps / compose ps / inspect / bounded logs). Build/start/restart/stop only when required. Never run destructive cleanup (docker system prune, compose down -v, volume/image deletion) without explicit user authorization.\n- When rtk is installed, use it to compact large output and fall back to the native command when needed."
+        "Run a PowerShell command in the project workspace directory. Prefer dedicated file/search/git tools when they cover the task.\n\nUsage:\n- Always pass a short description (3-8 words) for the UI header.\n- Keep finite commands (Git, file reads, status checks, tests, builds, Docker inspection) in the foreground. Long builds are fine there: a command that keeps making progress is allowed to run to completion, and the result reports how long it took, so never estimate elapsed time yourself.\n- A command is only cut short when it hits the absolute ceiling, or when it makes no progress at all (no output, no CPU) and completion cannot be confirmed; both cases say so explicitly in the result.\n- Background mode only for persistent processes: Get-Content -Wait, log following, watchers, dev servers, or foreground container services — never to avoid waiting.\n- Logs: prefer bounded reads (Get-Content -Tail N, docker logs --tail N). Use follow mode only when live monitoring is requested, then background + read_shell_output.\n- Docker: start with read-only inspection (docker ps / compose ps / inspect / bounded logs). Build/start/restart/stop only when required. Never run destructive cleanup (docker system prune, compose down -v, volume/image deletion) without explicit user authorization.\n- When rtk is installed, use it to compact large output and fall back to the native command when needed."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -47,9 +47,10 @@ impl Tool for RunShellTool {
                 command.to_string(),
                 Some(&ctx.workspace_root),
                 Arc::clone(&ctx.cancelled),
+                Some(ctx.clone()),
             );
         }
-        run_foreground(command, Some(&ctx.workspace_root), &ctx.cancelled)
+        run_foreground(command, Some(&ctx.workspace_root), &ctx.cancelled, Some(ctx))
     }
 }
 

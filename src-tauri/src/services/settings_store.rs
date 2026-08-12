@@ -128,7 +128,17 @@ pub fn load_settings(app: &AppHandle) -> AppSettings {
         Err(_) => return AppSettings::default(),
     };
 
-    let settings: AppSettings = serde_json::from_str(&raw).unwrap_or_default();
+    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+    let mut settings: AppSettings = serde_json::from_value(parsed.clone()).unwrap_or_default();
+    let has_restricted_shell = parsed
+        .as_object()
+        .is_some_and(|obj| obj.contains_key("restrictedShell"));
+    if !has_restricted_shell {
+        // Preserve legacy behavior for existing users who predate this field:
+        // do not silently enable restricted shell on upgrade.
+        settings.restricted_shell = false;
+        settings.pending_restricted_shell_upgrade_notice = true;
+    }
     let before_pins = settings.mcp_servers.clone();
     let settings = normalize_settings(settings);
     // Persist package-pin migrations so disk matches the runtime spawn args.
@@ -205,6 +215,7 @@ pub fn apply_runtime_settings(settings: &AppSettings) {
         settings.allow_outside_workspace_writes,
         settings.restricted_shell,
         settings.shell_timeout_secs,
+        settings.shell_stall_timeout_secs,
     );
     crate::core::lsp::shared_lsp_manager().configure(settings);
     crate::core::mcp::shared_mcp_manager().configure(settings);
@@ -245,5 +256,23 @@ mod tests {
         let normalized = normalize_settings(settings);
 
         assert!(normalized.gemini_oauth.client_secret.is_empty());
+    }
+
+    #[test]
+    fn legacy_json_without_restricted_shell_stays_off_with_notice() {
+        let raw = serde_json::json!({
+            "language": "zhCn",
+            "chatModel": "gpt-4o"
+        });
+        let mut settings: AppSettings = serde_json::from_value(raw.clone()).unwrap_or_default();
+        let has_restricted_shell = raw
+            .as_object()
+            .is_some_and(|obj| obj.contains_key("restrictedShell"));
+        if !has_restricted_shell {
+            settings.restricted_shell = false;
+            settings.pending_restricted_shell_upgrade_notice = true;
+        }
+        assert!(!settings.restricted_shell);
+        assert!(settings.pending_restricted_shell_upgrade_notice);
     }
 }

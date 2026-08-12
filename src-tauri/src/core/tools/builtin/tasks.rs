@@ -101,7 +101,12 @@ impl Tool for AskUserTool {
         let questions: Vec<AskQuestion> = serde_json::from_value(args["questions"].clone())?;
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = std::sync::mpsc::channel();
-        ctx.ask_store.insert(request_id.clone(), tx);
+        ctx.ask_store.insert(
+            request_id.clone(),
+            ctx.root_session_id().to_string(),
+            questions.clone(),
+            tx,
+        );
         self.event_bus.emit(BusEvent::AskUser {
             session_id: ctx.root_session_id().to_string(),
             request_id: request_id.clone(),

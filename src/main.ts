@@ -39,6 +39,7 @@ import type {
 } from "@/types/chat";
 import { useChatStore } from "@/stores/chat";
 import { applyTheme, bootstrapThemeHint, useSettingStore } from "@/stores/setting";
+import { tr } from "@/services/i18n";
 import "./styles/index.css";
 
 installBrowserGuards();
@@ -178,9 +179,12 @@ async function bootstrap() {
 
   await listenChatStarted((payload) => {
     const sId = payload.sessionId;
-    if (sId && sId === chatStore.overlayDraftSessionId) {
-      chatStore.applyChatStarted(payload);
+    if (!sId) {
+      return;
     }
+    // Apply for overlay drafts and workbench sessions alike — remote Companion
+    // sends never touch overlayDraftSessionId, but still need sending/sidebar state.
+    chatStore.applyChatStarted(payload);
   });
 
   await listenChatContextNotice((payload) => {
@@ -347,6 +351,47 @@ async function bootstrap() {
     // Never rewrite the user's mode chip when the writer gate flips. Auto-plan
     // and sticky gates are independent from Agent/Ask/Plan picker choice.
   });
+
+  // Companion ↔ desktop compose / plan sync (Remote Gateway).
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    await listen<{
+      sessionId?: string;
+      compose?: {
+        chatMode?: "ask" | "agent" | "plan";
+        toolApprovalMode?: "ask" | "auto" | "alwaysAllow";
+        chatModel?: string;
+        chatModelProvider?: string;
+      };
+      source?: string;
+    }>("remote-compose-changed", (event) => {
+      const payload = event.payload;
+      const sessionId = payload.sessionId;
+      if (!sessionId || !payload.compose) {
+        return;
+      }
+      chatStore.applyComposeFromRemote(sessionId, {
+        chatMode: payload.compose.chatMode,
+        toolApprovalMode: payload.compose.toolApprovalMode,
+        chatModel: payload.compose.chatModel,
+        chatModelProvider: payload.compose.chatModelProvider,
+      });
+    });
+    await listen<{ sessionId?: string }>("remote-plan-approve", (event) => {
+      const sessionId = event.payload.sessionId;
+      if (!sessionId) {
+        return;
+      }
+      // Mirror desktop "批准并执行": leave plan gate and resume execution.
+      // Approval text is persisted into history / Companion inbox.
+      void chatStore.send(tr(settingStore.language, "planModeExecuteMessage"), sessionId, {
+        resumePlan: true,
+        skipAutoPlan: true,
+      });
+    });
+  } catch (error) {
+    bootLog.warn("remote compose listeners unavailable", error);
+  }
 
   if (windowLabel.startsWith("overlay-preview-")) {
     document.documentElement.classList.add("peek-window");

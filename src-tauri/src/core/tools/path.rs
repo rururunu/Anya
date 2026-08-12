@@ -114,7 +114,7 @@ mod tests {
             fn emit(&self, _event: BusEvent) {}
         }
 
-        crate::core::tools::sandbox::configure(false, false, 120);
+        crate::core::tools::sandbox::configure(false, false, 120, 120);
         let db = std::env::temp_dir().join(format!("peek-path-{}.db", uuid::Uuid::new_v4()));
         let ws = std::env::temp_dir().join(format!("peek-ws-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&ws);

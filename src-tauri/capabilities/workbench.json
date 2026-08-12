@@ -28,6 +28,7 @@
     "allow-settings-commands",
     "allow-app-commands",
     "allow-chat-commands",
+    "allow-remote-commands",
     "updater:default",
     "process:default"
   ]

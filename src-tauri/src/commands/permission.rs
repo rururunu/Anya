@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Emitter, State};
 
 use crate::app_state::AppState;
+use crate::core::remote;
 use crate::models::chat::{InteractionResolvedEvent, RespondPathPermissionRequest};
 
 #[tauri::command]
@@ -15,6 +16,7 @@ pub fn respond_path_permission(
         .path_permission_store()
         .complete(&request.request_id, &request.decision);
     if ok {
+        remote::push_interaction_resolved(&request.request_id, "path_permission");
         let _ = app.emit(
             "interaction-resolved",
             InteractionResolvedEvent {

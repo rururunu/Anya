@@ -8,19 +8,26 @@ use std::sync::OnceLock;
 use super::error::ToolError;
 use super::path::normalize_path;
 
+#[cfg(windows)]
+#[path = "sandbox/restricted_process.rs"]
+pub(crate) mod restricted_process;
+
 static ALLOW_OUTSIDE_WRITES: AtomicBool = AtomicBool::new(false);
 static RESTRICTED_SHELL: AtomicBool = AtomicBool::new(false);
-static SHELL_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(120);
+static SHELL_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(3600);
+static SHELL_STALL_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(120);
 
 /// Process-wide sandbox knobs — updated from settings without AppHandle.
 pub fn configure(
     allow_outside_workspace_writes: bool,
     restricted_shell: bool,
     shell_timeout_secs: u64,
+    shell_stall_timeout_secs: u64,
 ) {
     ALLOW_OUTSIDE_WRITES.store(allow_outside_workspace_writes, Ordering::Relaxed);
     RESTRICTED_SHELL.store(restricted_shell, Ordering::Relaxed);
     SHELL_TIMEOUT_SECS.store(shell_timeout_secs.max(5), Ordering::Relaxed);
+    SHELL_STALL_TIMEOUT_SECS.store(shell_stall_timeout_secs.max(5), Ordering::Relaxed);
 }
 
 pub fn allow_outside_workspace_writes() -> bool {
@@ -31,13 +38,29 @@ pub fn restricted_shell() -> bool {
     RESTRICTED_SHELL.load(Ordering::Relaxed)
 }
 
+/// Absolute ceiling for a single foreground command.
 pub fn shell_timeout_secs() -> u64 {
     SHELL_TIMEOUT_SECS.load(Ordering::Relaxed)
 }
 
+/// How long a foreground command may make no progress before it is treated
+/// as stuck (no new output and no CPU consumed by its process tree).
+pub fn shell_stall_timeout_secs() -> u64 {
+    SHELL_STALL_TIMEOUT_SECS.load(Ordering::Relaxed)
+}
+
 /// Reject clearly destructive / privilege-escalating shell commands.
 pub fn reject_dangerous_shell(command: &str) -> Result<(), ToolError> {
-    let normalized = command.to_lowercase();
+    let normalized = normalize_shell_command(command);
+
+    // PowerShell has `-EncodedCommand <base64>` which can trivially hide a
+    // dangerous payload from simple substring filters. Decode when present
+    // (best-effort) and append to the scan input.
+    let decoded = extract_powershell_encodedcommand(&normalized)
+        .and_then(|payload| base64_decode_utf16le_or_utf8(&payload).ok());
+    let scan_input = decoded
+        .map(|d| format!("{normalized}\n# decoded -EncodedCommand\n{d}"))
+        .unwrap_or(normalized.clone());
     let denied = [
         "git reset --hard",
         "git clean -fd",
@@ -76,21 +99,99 @@ pub fn reject_dangerous_shell(command: &str) -> Result<(), ToolError> {
         "takeown /f",
         "icacls .* /grant everyone",
     ];
-    if let Some(rule) = denied.iter().find(|rule| normalized.contains(*rule)) {
+    if let Some(rule) = denied.iter().find(|rule| scan_input.contains(*rule)) {
         return Err(ToolError::new(format!(
             "rule denied dangerous shell command: {rule}"
         )));
     }
     // PowerShell Remove-Item with -Recurse anywhere in the token stream.
-    if normalized.contains("remove-item")
-        && (normalized.contains("-recurse") || normalized.contains("-r "))
-        && (normalized.contains("-force") || normalized.contains("-f "))
+    if scan_input.contains("remove-item")
+        && (scan_input.contains("-recurse") || scan_input.contains(" -r "))
+        && (scan_input.contains("-force") || scan_input.contains(" -f "))
     {
         return Err(ToolError::new(
             "rule denied dangerous shell command: Remove-Item -Recurse -Force",
         ));
     }
     Ok(())
+}
+
+fn normalize_shell_command(command: &str) -> String {
+    // 1) Lowercase for stable matching.
+    // 2) Remove PowerShell backtick escape (`) which often appears in obfuscation.
+    // 3) Collapse whitespace so `git   reset --hard` still matches
+    //    `git reset --hard`.
+    let lower = command.to_lowercase().replace('`', "");
+    let mut out = String::with_capacity(lower.len());
+    let mut prev_space = false;
+    for ch in lower.chars() {
+        if ch.is_whitespace() {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+        } else {
+            out.push(ch);
+            prev_space = false;
+        }
+    }
+    out.trim().to_string()
+}
+
+fn extract_powershell_encodedcommand(normalized_lower: &str) -> Option<String> {
+    // Expect already-normalized lowercase string.
+    // Match both `-encodedcommand <token>` and `-encodedcommand:"<token>"` styles.
+    let marker = "-encodedcommand";
+    let idx = normalized_lower.find(marker)?;
+    let after = normalized_lower[idx + marker.len()..].trim_start();
+    if after.is_empty() {
+        return None;
+    }
+    // Drop a leading ':' if input is like `-EncodedCommand:<payload>`.
+    let after = after.strip_prefix(':').unwrap_or(after).trim_start();
+    let token = if after.starts_with('"') && after.len() >= 2 {
+        let rest = &after[1..];
+        let end = rest.find('"')?;
+        rest[..end].trim().to_string()
+    } else if after.starts_with('\'') && after.len() >= 2 {
+        let rest = &after[1..];
+        let end = rest.find('\'')?;
+        rest[..end].trim().to_string()
+    } else {
+        // Read until whitespace or common PowerShell separators.
+        let end = after
+            .find(|c: char| c.is_whitespace() || matches!(c, ';' | '|' | '&'))
+            .unwrap_or(after.len());
+        after[..end].trim().to_string()
+    };
+    if token.is_empty() { None } else { Some(token) }
+}
+
+fn base64_decode_utf16le_or_utf8(payload: &str) -> Result<String, ToolError> {
+    // PowerShell's `-EncodedCommand` uses UTF-16LE for the base64 payload in
+    // typical scenarios, but we accept UTF-8 as a best-effort fallback.
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+
+    let bytes = STANDARD
+        .decode(payload)
+        .map_err(|e| ToolError::new(format!("failed to decode -EncodedCommand base64: {e}")))?;
+
+    // Try UTF-16LE first.
+    if bytes.len() % 2 == 0 {
+        let mut u16s = Vec::with_capacity(bytes.len() / 2);
+        for chunk in bytes.chunks_exact(2) {
+            u16s.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+        if let Ok(s) = String::from_utf16(&u16s) {
+            return Ok(s);
+        }
+    }
+
+    // Fallback to UTF-8.
+    let s = String::from_utf8(bytes)
+        .map_err(|e| ToolError::new(format!("decoded payload is not UTF-8: {e}")))?;
+    Ok(s)
 }
 
 /// Heuristic: block redirects / copy targets that clearly write outside the workspace.
@@ -208,9 +309,13 @@ fn assign_job_windows(child: &mut std::process::Child) -> Result<(), String> {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        SetInformationJobObject, JobObjectBasicUIRestrictions,
+        JOBOBJECT_BASIC_LIMIT_INFORMATION,
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
         JOB_OBJECT_LIMIT_PROCESS_TIME, JOB_OBJECT_LIMIT_WORKINGSET,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+        JOBOBJECT_BASIC_UI_RESTRICTIONS, JOB_OBJECT_UILIMIT_HANDLES,
+        JOB_OBJECT_UILIMIT_READCLIPBOARD, JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
     };
 
     static JOB: OnceLock<isize> = OnceLock::new();
@@ -222,24 +327,50 @@ fn assign_job_windows(child: &mut std::process::Child) -> Result<(), String> {
         if job.is_invalid() {
             return 0;
         }
+        // Keep the kernel-side CPU cap aligned with the configured ceiling,
+        // otherwise a legitimately long build would be killed here while the
+        // in-process guard rails still consider it healthy.
+        let cpu_limit_ticks = (shell_timeout_secs() as i64).saturating_mul(10_000_000);
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
             BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
-                PerProcessUserTimeLimit: 120i64 * 10_000_000,
+                PerProcessUserTimeLimit: cpu_limit_ticks,
                 MinimumWorkingSetSize: 16 * 1024 * 1024,
                 MaximumWorkingSetSize: 512 * 1024 * 1024,
+                ActiveProcessLimit: 32,
                 LimitFlags: JOB_OBJECT_LIMIT_PROCESS_MEMORY
                     | JOB_OBJECT_LIMIT_WORKINGSET
                     | JOB_OBJECT_LIMIT_PROCESS_TIME,
                 ..Default::default()
             },
+            // Hard kill on job handle close to avoid lingering child processes.
+            // (Set here even if the OS ignores some fields; best-effort.)
             ProcessMemoryLimit: 512 * 1024 * 1024,
             ..Default::default()
         };
+        // Extend LimitFlags with KILL_ON_JOB_CLOSE + ACTIVE_PROCESS.
+        // NOTE: `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` uses `LimitFlags` in
+        // `BasicLimitInformation`, and `ActiveProcessLimit` in the outer struct.
+        info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
         let _ = SetInformationJobObject(
             job,
             JobObjectExtendedLimitInformation,
             &mut info as *mut _ as *mut _,
             std::mem::size_of_val(&info) as u32,
+        );
+
+        // Reduce cross-process / UI surface. This is best-effort: some
+        // systems/versions may ignore parts of the restrictions.
+        let mut ui = JOBOBJECT_BASIC_UI_RESTRICTIONS {
+            UIRestrictionsClass: JOB_OBJECT_UILIMIT_HANDLES
+                | JOB_OBJECT_UILIMIT_READCLIPBOARD
+                | JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
+        };
+        let _ = SetInformationJobObject(
+            job,
+            JobObjectBasicUIRestrictions,
+            &mut ui as *mut _ as *mut _,
+            std::mem::size_of_val(&ui) as u32,
         );
         job.0 as isize
     });
@@ -257,6 +388,7 @@ fn assign_job_windows(child: &mut std::process::Child) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
     use std::path::PathBuf;
 
     #[test]
@@ -268,6 +400,21 @@ mod tests {
     }
 
     #[test]
+    fn blocks_encodedcommand_payload() {
+        // PowerShell -EncodedCommand typically uses UTF-16LE base64.
+        // Payload: "git reset --hard HEAD~1"
+        let payload = "git reset --hard HEAD~1";
+        let mut utf16le = Vec::new();
+        for u in payload.encode_utf16() {
+            utf16le.extend_from_slice(&u.to_le_bytes());
+        }
+        let encoded = base64::engine::general_purpose::STANDARD.encode(utf16le);
+
+        let cmd = format!("-EncodedCommand {}", encoded);
+        assert!(reject_dangerous_shell(&cmd).is_err());
+    }
+
+    #[test]
     fn rejects_write_redirects_outside_workspace() {
         let ws = PathBuf::from(r"C:\projects\app");
         assert!(
@@ -275,5 +422,28 @@ mod tests {
                 .is_err()
         );
         assert!(reject_workspace_escape_writes(r#"echo hi > .\out.txt"#, Some(&ws)).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn job_object_assignment_is_best_effort() {
+        // Smoke test: ensure assigning a process to the restricted Job Object
+        // doesn't crash and returns Ok (or logs a warning internally).
+        //
+        // We keep stdout/stderr detached; this is purely for safety wiring.
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Sleep -Seconds 1",
+        ]);
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let mut child = cmd.spawn().expect("spawn");
+        let _ = assign_restricted_job(&mut child);
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }

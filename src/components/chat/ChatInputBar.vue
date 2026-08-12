@@ -4477,10 +4477,10 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 }
 
 .workbench-composer .input-bar {
-  min-height: 116px;
+  min-height: 100px;
   max-height: min(280px, 100%);
-  padding: 13px 13px 10px;
-  gap: 9px;
+  padding: 12px 12px 8px;
+  gap: 8px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--peek-text) 16%, transparent);
   border-radius: 16px;
@@ -4498,6 +4498,7 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 }
 
 .workbench-composer .input-content {
+  flex: 1 1 auto;
   min-height: 28px;
   /* Hard cap so long input scrolls in place instead of growing the composer
      over whatever sits above it. */
@@ -4588,9 +4589,11 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 }
 
 .workbench-composer .input-footer {
+  flex: none;
   min-height: 30px;
   align-items: flex-end;
-  padding-top: 2px;
+  padding-top: 0;
+  margin-top: auto;
 }
 
 .workbench-composer .input-footer-primary {
@@ -4817,7 +4820,7 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
 @media (max-height: 700px) {
   .workbench-composer .input-bar {
     min-height: 88px;
-    padding-top: 9px;
+    padding: 9px 10px 7px;
   }
   .workbench-composer .input-content {
     min-height: 30px;

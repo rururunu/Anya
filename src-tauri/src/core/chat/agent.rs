@@ -19,6 +19,7 @@ use super::agent_loop::challenge::{ChallengeOutcome, CompletionGate};
 use super::agent_loop::failure::{FailureAction, FailureBreaker};
 use super::agent_loop::challenge::push_challenge_message;
 use super::agent_loop::mid_turn_compact;
+use super::agent_loop::post_edit_verify::maybe_run_post_edit_verification;
 use super::agent_loop::soft_inject::drain_soft_injects;
 use super::agent_loop::stream_turn::{self, StreamTurnResult};
 use super::agent_loop::tools::ToolExecutor;
@@ -269,6 +270,36 @@ impl AgentRunner {
                 if outcome.user_denied {
                     user_denied = true;
                 }
+            }
+
+            // Optional hard verification pass after successful file mutations.
+            if let Some(verify_outcome) = maybe_run_post_edit_verification(&outcomes, &tool_ctx) {
+                completion_gate.record_tool_outcome(&self.tools, &verify_outcome);
+                used_tokens += estimate_tokens(&verify_outcome.result);
+                tool_ctx.conversation.journal().record_tool_outcome(
+                    tool_ctx.root_session_id(),
+                    &request.request_id,
+                    &tool_ctx.assistant_message_id,
+                    &verify_outcome.tool_name,
+                    &verify_outcome.arguments,
+                    verify_outcome.success,
+                    &verify_outcome.result,
+                );
+                request.messages.push(ChatMessage {
+                    id: format!("msg-{}", now_millis()),
+                    session_id: request.session_id.clone(),
+                    role: Role::Tool,
+                    content: verify_outcome.result.clone(),
+                    reasoning: None,
+                    work_timeline: None,
+                    tool_activities: None,
+                    tool_calls: None,
+                    tool_call_id: Some(verify_outcome.call_id.clone()),
+                    name: Some(verify_outcome.tool_name.clone()),
+                    status: MessageStatus::Done,
+                    timestamp: now_millis(),
+                    estimated_tokens: None,
+                });
             }
 
             match failure_breaker.check(&outcomes) {

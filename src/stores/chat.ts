@@ -119,6 +119,28 @@ function persistComposeCache(): void {
   }
 }
 
+async function syncComposeToRemote(sessionId: string, compose: SessionCompose): Promise<void> {
+  try {
+    const { remoteSyncSessionCompose } = await import("@/commands/remote");
+    const { useChatModelStore } = await import("@/stores/chatModel");
+    const chatModelStore = useChatModelStore();
+    const match = chatModelStore.models.find(
+      (model) =>
+        model.id === compose.chatModel &&
+        (!compose.chatModelProvider || model.provider === compose.chatModelProvider),
+    );
+    await remoteSyncSessionCompose(sessionId, {
+      chatMode: compose.chatMode,
+      toolApprovalMode: compose.toolApprovalMode,
+      chatModel: compose.chatModel,
+      chatModelProvider: compose.chatModelProvider,
+      chatModelLabel: match?.displayName ?? match?.id ?? null,
+    });
+  } catch {
+    // Gateway may be stopped — compose still lives in Pinia.
+  }
+}
+
 function loadRejectedPlanFingerprints(): Record<string, string> {
   try {
     const raw = localStorage.getItem(REJECTED_PLAN_STORAGE_KEY);
@@ -369,6 +391,32 @@ export const useChatStore = defineStore("chat", {
     },
     /** Persist one conversation's option change without touching others. */
     setCompose(
+      sessionId: string,
+      patch: Partial<
+        Pick<SessionCompose, "chatModel" | "chatModelProvider" | "chatMode" | "toolApprovalMode">
+      >,
+    ) {
+      if (!sessionId) {
+        return;
+      }
+      const current = this.ensureCompose(sessionId);
+      const next = sanitizeCompose({ ...current, ...patch });
+      if (
+        current.chatModel === next.chatModel &&
+        current.chatModelProvider === next.chatModelProvider &&
+        current.chatMode === next.chatMode &&
+        current.toolApprovalMode === next.toolApprovalMode
+      ) {
+        return;
+      }
+      this.sessionCompose = { ...this.sessionCompose, [sessionId]: next };
+      composeCache.entries[sessionId] = next;
+      composeCache.last = sessionId;
+      persistComposeCache();
+      void syncComposeToRemote(sessionId, next);
+    },
+    /** Apply compose patch originating from Companion (skip remote echo). */
+    applyComposeFromRemote(
       sessionId: string,
       patch: Partial<
         Pick<SessionCompose, "chatModel" | "chatModelProvider" | "chatMode" | "toolApprovalMode">
@@ -840,7 +888,17 @@ export const useChatStore = defineStore("chat", {
       }
 
       const eventSessionId = normalized.sessionId;
-      const targetSessionId = this.resolveOverlaySessionId(eventSessionId);
+      // Prefer the event session when it is already known (workbench / history).
+      // Only remap through overlayDraftSessionId for the Alt+Alt draft flow.
+      const isOverlayEvent =
+        Boolean(this.overlayDraftSessionId) &&
+        (eventSessionId === this.overlayDraftSessionId || !this.sessions[eventSessionId]);
+      const targetSessionId = isOverlayEvent
+        ? this.resolveOverlaySessionId(eventSessionId)
+        : eventSessionId || this.resolveOverlaySessionId(eventSessionId);
+      if (!targetSessionId) {
+        return;
+      }
       const userMessage = {
         ...normalized.userMessage,
         sessionId: targetSessionId,
@@ -850,26 +908,25 @@ export const useChatStore = defineStore("chat", {
         sessionId: targetSessionId,
       };
 
-      if (eventSessionId !== targetSessionId) {
+      if (eventSessionId && eventSessionId !== targetSessionId) {
         this.mergeSession(eventSessionId, targetSessionId);
       }
 
       const messages = [...(this.sessions[targetSessionId] ?? [])];
 
-      if (!normalized.resumePlan) {
-        const localUserIndex = findLastMessageIndex(
-          messages,
-          (item) => item.id.startsWith("local-user-") && item.content === userMessage.content,
-        );
-        if (localUserIndex !== -1) {
-          messages[localUserIndex] = userMessage;
+      // Always surface the user turn (including plan approve) in the thread.
+      const localUserIndex = findLastMessageIndex(
+        messages,
+        (item) => item.id.startsWith("local-user-") && item.content === userMessage.content,
+      );
+      if (localUserIndex !== -1) {
+        messages[localUserIndex] = userMessage;
+      } else {
+        const existingUserIndex = messages.findIndex((item) => item.id === userMessage.id);
+        if (existingUserIndex === -1) {
+          messages.push(userMessage);
         } else {
-          const existingUserIndex = messages.findIndex((item) => item.id === userMessage.id);
-          if (existingUserIndex === -1) {
-            messages.push(userMessage);
-          } else {
-            messages[existingUserIndex] = userMessage;
-          }
+          messages[existingUserIndex] = userMessage;
         }
       }
 
@@ -887,8 +944,10 @@ export const useChatStore = defineStore("chat", {
       }
 
       this.setSessionMessages(targetSessionId, messages);
-      this.overlayDraftSessionId = targetSessionId;
-      this.sending[targetSessionId] = true;
+      if (isOverlayEvent) {
+        this.overlayDraftSessionId = targetSessionId;
+      }
+      this.sending = { ...this.sending, [targetSessionId]: true };
     },
     reconcileOptimisticIds(sessionId: string, userMessageId: string, assistantMessageId: string) {
       const messages = [...(this.sessions[sessionId] ?? [])];
@@ -1508,8 +1567,7 @@ export const useChatStore = defineStore("chat", {
         fromQueue?: boolean;
         /** Skip complexity auto-plan (approve & execute follow-up). */
         skipAutoPlan?: boolean;
-        /** Approve & execute continuation: no optimistic user bubble, and the
-         * backend never persists the approval message to history. */
+        /** Approve & execute continuation: unlocks writers; message is persisted. */
         resumePlan?: boolean;
       },
     ) {
@@ -1544,7 +1602,7 @@ export const useChatStore = defineStore("chat", {
       if (!options?.staged) {
         if (softInject) {
           this.stageSoftInject(sessionId, trimmed);
-        } else if (!options?.resumePlan) {
+        } else {
           this.stageTurn(sessionId, trimmed);
         }
       }

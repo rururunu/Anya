@@ -148,7 +148,7 @@ impl Tool for LspTool {
         "lsp"
     }
     fn description(&self) -> &str {
-        "Language-aware navigation via LSP: hover, definition, or diagnostics. Prefer when available for precise symbol navigation; fall back to search_files / list_symbols / read_file when LSP is off or unavailable. Requires LSP enabled in Settings."
+        "Language-aware navigation via LSP: hover, definition, diagnostics, references, workspace symbols, rename preview, and code actions. Prefer when available for precise symbol navigation; fall back to search_files / list_symbols / read_file when LSP is off or unavailable. Requires LSP enabled in Settings."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -156,12 +156,14 @@ impl Tool for LspTool {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["hover", "definition", "diagnostics"],
-                    "description": "hover: symbol info at a position; definition: go-to-definition; diagnostics: file problems"
+                    "enum": ["hover", "definition", "diagnostics", "references", "workspace_symbol", "rename", "code_action"],
+                    "description": "hover/definition/diagnostics/references/workspace_symbol/rename/code_action"
                 },
                 "path": { "type": "string", "description": "File path relative to workspace root" },
+                "query": { "type": "string", "description": "Query for workspace_symbol action" },
                 "line": { "type": "integer" },
-                "character": { "type": "integer" }
+                "character": { "type": "integer" },
+                "new_name": { "type": "string", "description": "New symbol name for rename action" }
             },
             "required": ["action", "path"]
         })
@@ -189,6 +191,28 @@ impl Tool for LspTool {
                 args["character"].as_u64().unwrap_or(0),
             ),
             "diagnostics" => manager.diagnostics(&ctx.workspace_root, path),
+            "references" => manager.references(
+                &ctx.workspace_root,
+                path,
+                args["line"].as_u64().unwrap_or(0),
+                args["character"].as_u64().unwrap_or(0),
+            ),
+            "workspace_symbol" => {
+                manager.workspace_symbol(&ctx.workspace_root, args["query"].as_str().unwrap_or(""))
+            }
+            "rename" => manager.rename(
+                &ctx.workspace_root,
+                path,
+                args["line"].as_u64().unwrap_or(0),
+                args["character"].as_u64().unwrap_or(0),
+                args["new_name"].as_str().unwrap_or(""),
+            ),
+            "code_action" => manager.code_action(
+                &ctx.workspace_root,
+                path,
+                args["line"].as_u64().unwrap_or(0),
+                args["character"].as_u64().unwrap_or(0),
+            ),
             other => Err(ToolError::new(format!("unsupported lsp action: {other}"))),
         }
     }

@@ -13,6 +13,7 @@ pub mod event;
 pub mod lsp;
 pub mod mcp;
 pub mod office;
+pub mod remote;
 pub mod rules;
 pub mod runtime;
 pub mod token;

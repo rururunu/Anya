@@ -4,6 +4,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::app_state::AppState;
 use crate::core::checkpoint::{shared_checkpoint_store, Checkpoint, CheckpointStore};
 use crate::core::event::PlanModeSource;
+use crate::core::remote;
 use crate::core::tools::plan_mode::shared_plan_mode_store;
 use crate::core::tools::tool_approval::shared_tool_approval_store;
 use crate::models::chat::InteractionResolvedEvent;
@@ -60,6 +61,7 @@ pub fn respond_tool_approval(
 ) -> Result<(), String> {
     let ok = shared_tool_approval_store().complete(&request.request_id, &request.decision);
     if ok {
+        remote::push_interaction_resolved(&request.request_id, "tool_approval");
         let _ = app.emit(
             "interaction-resolved",
             InteractionResolvedEvent {

@@ -144,6 +144,23 @@
             <Cable :size="15" :stroke-width="1.75" />
             <span>{{ navigationLabels.mcp }}</span>
           </button>
+          <button
+            type="button"
+            class="nav-shortcut-button"
+            :class="{ active: extensionView === 'phone' }"
+            @click.stop="openExtensionView('phone')"
+          >
+            <span class="nav-shortcut-icon">
+              <Smartphone :size="15" :stroke-width="1.75" />
+              <span
+                v-if="remoteGatewayRunning"
+                class="nav-status-dot"
+                :title="navigationLabels.connectPhone"
+                aria-hidden="true"
+              />
+            </span>
+            <span>{{ navigationLabels.connectPhone }}</span>
+          </button>
         </div>
 
         <nav class="session-list peek-scrollbar" :aria-label="labels.conversations" @click.stop>
@@ -334,6 +351,7 @@
             <div class="extension-panel">
               <SkillsSettings v-if="extensionView === 'skills'" />
               <McpSettings v-else-if="extensionView === 'mcp'" />
+              <ConnectPhonePanel v-else-if="extensionView === 'phone'" />
             </div>
           </div>
         </div>
@@ -553,7 +571,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from "vue";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   ArrowUpCircle,
@@ -576,6 +595,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  Smartphone,
   SquarePen,
   Trash2,
   X,
@@ -610,6 +630,7 @@ import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import { useChatStore } from "@/stores/chat";
 import { useSettingStore, applyZoom, applyTheme } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
+import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
 import type { Workspace } from "@/commands/workspace";
 import type { ChatSessionSummary } from "@/types/chat";
 
@@ -618,9 +639,14 @@ const SkillsSettings = defineAsyncComponent(
   () => import("@/components/settings/SkillsSettings.vue"),
 );
 const McpSettings = defineAsyncComponent(() => import("@/components/settings/McpSettings.vue"));
+const ConnectPhonePanel = defineAsyncComponent(
+  () => import("@/components/workbench/ConnectPhonePanel.vue"),
+);
 
-type ExtensionView = "skills" | "mcp";
+type ExtensionView = "skills" | "mcp" | "phone";
 const extensionView = ref<ExtensionView | null>(null);
+const remoteGatewayRunning = ref(false);
+let remoteGatewayUnlisten: UnlistenFn | null = null;
 
 const chatStore = useChatStore();
 const settingStore = useSettingStore();
@@ -862,6 +888,7 @@ const activeTitle = computed(() => {
   if (settingsOpen.value) return labels.value.settings;
   if (extensionView.value === "skills") return navigationLabels.value.skills;
   if (extensionView.value === "mcp") return navigationLabels.value.mcp;
+  if (extensionView.value === "phone") return navigationLabels.value.connectPhone;
   if (!hasConversationMessages.value) return labels.value.untitled;
   const preview =
     sessions.value.find((session) => session.sessionId === activeSessionId.value)?.preview || "";
@@ -899,6 +926,31 @@ useWorkbenchLifecycle({
   moveWorkspacePointerDrag,
   finishWorkspacePointerDrag,
   cancelWorkspacePointerDrag,
+});
+
+async function refreshRemoteGatewayRunning() {
+  try {
+    const status = await remoteGatewayStatus();
+    remoteGatewayRunning.value = status.running;
+  } catch {
+    remoteGatewayRunning.value = false;
+  }
+}
+
+onMounted(async () => {
+  await refreshRemoteGatewayRunning();
+  try {
+    remoteGatewayUnlisten = await listen<GatewayStatus>("remote-gateway-status", (event) => {
+      remoteGatewayRunning.value = Boolean(event.payload?.running);
+    });
+  } catch {
+    /* event bridge unavailable in some shells */
+  }
+});
+
+onUnmounted(() => {
+  remoteGatewayUnlisten?.();
+  remoteGatewayUnlisten = null;
 });
 
 watch(
@@ -1257,8 +1309,29 @@ button {
   flex: none;
   color: var(--peek-muted);
 }
+.nav-shortcut-icon {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  color: var(--peek-muted);
+}
+.nav-shortcut-icon > svg {
+  display: block;
+}
+.nav-status-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1f9d55;
+  box-shadow: 0 0 0 2px var(--peek-bg, #fff);
+}
 .nav-shortcut-button:hover > svg,
-.nav-shortcut-button.active > svg {
+.nav-shortcut-button.active > svg,
+.nav-shortcut-button:hover .nav-shortcut-icon,
+.nav-shortcut-button.active .nav-shortcut-icon {
   color: var(--peek-text);
 }
 .session-list {
@@ -1517,7 +1590,8 @@ button {
   box-sizing: border-box;
 }
 .extension-panel > :deep(.skills-settings),
-.extension-panel > :deep(.mcp-settings) {
+.extension-panel > :deep(.mcp-settings),
+.extension-panel > :deep(.connect-phone) {
   flex: 1;
   min-height: 0;
   width: 100%;

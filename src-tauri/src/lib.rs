@@ -21,8 +21,8 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use app_state::AppState;
 use commands::{
-    app, ask, chat, diff, gemini, harness, icons, mcp, permission, settings, skills, token_usage,
-    updater, window, workspace,
+    app, ask, chat, diff, gemini, harness, icons, mcp, permission, remote, settings, skills,
+    token_usage, updater, window, workspace,
 };
 use services::app_lifecycle;
 use services::overlay_native::clear_minimize_pending;
@@ -172,6 +172,7 @@ pub fn run() {
             }
             start_hotkey_listener(app.handle().clone());
             show_workbench_window(app.handle());
+            crate::core::remote::restore_gateway_if_enabled(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -303,6 +304,16 @@ pub fn run() {
             harness::get_plan_mode,
             harness::list_checkpoints,
             harness::rewind_session,
+            remote::remote_gateway_status,
+            remote::remote_gateway_start,
+            remote::remote_gateway_stop,
+            remote::remote_create_pairing,
+            remote::remote_list_devices,
+            remote::remote_revoke_device,
+            remote::remote_get_tunnel_prefs,
+            remote::remote_set_tunnel_prefs,
+            remote::remote_sync_session_compose,
+            remote::remote_get_session_compose,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -31,6 +31,23 @@ impl ApprovalDecision {
 
 struct PendingApproval {
     sender: mpsc::Sender<ApprovalDecision>,
+    session_id: String,
+    request_id: String,
+    tool_name: String,
+    title: String,
+    arguments: Value,
+    preview: Option<ToolPreview>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingToolApprovalSnapshot {
+    pub request_id: String,
+    pub session_id: String,
+    pub tool_name: String,
+    pub title: String,
+    pub arguments: Value,
+    pub preview: Option<ToolPreview>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,15 +179,27 @@ impl ToolApprovalStore {
 
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = mpsc::channel();
+
+        let title = crate::core::tools::display::build_activity_view(tool.name(), args, None).title;
         {
             let mut pending = self
                 .pending
                 .lock()
                 .map_err(|_| ToolError::new("approval lock poisoned"))?;
-            pending.insert(request_id.clone(), PendingApproval { sender: tx });
+            pending.insert(
+                request_id.clone(),
+                PendingApproval {
+                    sender: tx,
+                    session_id: session_id.to_string(),
+                    request_id: request_id.clone(),
+                    tool_name: tool.name().to_string(),
+                    title: title.clone(),
+                    arguments: args.clone(),
+                    preview: preview.clone(),
+                },
+            );
         }
 
-        let title = crate::core::tools::display::build_activity_view(tool.name(), args, None).title;
         ctx.event_bus.emit(BusEvent::ToolApprovalRequest {
             session_id: session_id.to_string(),
             request_id: request_id.clone(),
@@ -192,6 +221,26 @@ impl ToolApprovalStore {
             }
             ApprovalDecision::Deny => Err(ToolError::user_denied("user denied tool execution")),
         }
+    }
+
+    /// Snapshot of current pending tool approval requests.
+    /// Used to replay missing `tool-approval` events to newly connected clients.
+    pub fn pending_items(&self) -> Vec<PendingToolApprovalSnapshot> {
+        let guard = self.pending.lock().ok();
+        guard
+            .map(|map| {
+                map.values()
+                    .map(|p| PendingToolApprovalSnapshot {
+                        request_id: p.request_id.clone(),
+                        session_id: p.session_id.clone(),
+                        tool_name: p.tool_name.clone(),
+                        title: p.title.clone(),
+                        arguments: p.arguments.clone(),
+                        preview: p.preview.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
