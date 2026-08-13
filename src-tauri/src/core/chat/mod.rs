@@ -21,6 +21,7 @@ pub mod prompt;
 pub mod prompts;
 mod selection;
 pub mod service;
+pub mod session_origin;
 pub mod stream;
 pub mod telemetry;
 pub mod trajectory;

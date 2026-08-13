@@ -15,6 +15,8 @@ export interface PairingSessionInfo {
   hosts: string[];
   port: number;
   scheme: string;
+  lanHosts?: string[];
+  lanPort?: number;
   qrPayload: string;
   qrDataUrl: string;
   expiresAtEpochMs: number;

@@ -12,12 +12,12 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.8                                             |
+| **Version** | v0.2.9                                             |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
 
-**Related:** [Release](./release.md) · [Docs index](./README.md)
+**Related:** [Release](./release.md) · [Docs index](./README.md) · [Companion (Android)](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.md)
 
 ---
 
@@ -32,6 +32,7 @@ to locate code paths and reason about change impact.
 - Persistence (SQLite, journal, work timeline)
 - Frontend stream projection and session model
 - Extension points (providers, tools, skills, MCP)
+- Companion / Remote Gateway (pairing, LAN vs tunnel, wire protocol)
 
 **Out of scope**
 
@@ -49,6 +50,7 @@ Rust host owns OS integration; WebViews own presentation and local UI state.
 ```mermaid
 flowchart LR
   User((User)) -->|hotkey / tray / input| Host[Anya process]
+  Phone[Anya Companion] -->|WebSocket /remote/v1| Host
   IDE[IDE plugins] -->|context push| Host
   Host -->|COM| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[Model providers]
@@ -56,14 +58,15 @@ flowchart LR
   Host --> Disk[(SQLite · settings · checkpoints)]
 ```
 
-| Actor / system      | Interaction                                                       |
-| ------------------- | ----------------------------------------------------------------- |
-| User                | Global hotkey, tray, composer, review UI                          |
-| IDE plugins         | Best-effort local context push (file, workspace, selection)       |
-| Microsoft Office    | COM for document context and `word_*` / `excel_*` / `ppt_*` tools |
-| Model providers     | Authenticated HTTPS; streaming where supported                    |
-| MCP / search / mem0 | Optional; enabled explicitly in settings                          |
-| Local disk          | Chat DB, settings store, updater pubkey, checkpoint undo data     |
+| Actor / system      | Interaction                                                         |
+| ------------------- | ------------------------------------------------------------------- |
+| User                | Global hotkey, tray, composer, review UI                            |
+| Anya Companion      | Android remote console; LAN `ws` or Cloudflare `wss` to the gateway |
+| IDE plugins         | Best-effort local context push (file, workspace, selection)         |
+| Microsoft Office    | COM for document context and `word_*` / `excel_*` / `ppt_*` tools   |
+| Model providers     | Authenticated HTTPS; streaming where supported                      |
+| MCP / search / mem0 | Optional; enabled explicitly in settings                            |
+| Local disk          | Chat DB, settings store, updater pubkey, checkpoint undo data       |
 
 ---
 
@@ -100,6 +103,7 @@ flowchart TB
   subgraph Adapters["L4 Adapters"]
     Rt["crate::runtime<br/>git · search · browser · shell"]
     OfficeCore["core/office · core/mcp · core/lsp"]
+    Remote["core/remote<br/>gateway · pairing · tunnel"]
     Svc["services/<br/>window · hotkey · settings · oauth · pin_badge"]
   end
 
@@ -115,16 +119,17 @@ flowchart TB
   Chat --> Persist
   Tools --> Rt
   Tools --> OfficeCore
+  Remote --> Chat
   Bus --> FeIpc
   Chat --> Bus
 ```
 
-| Layer           | Location                                            | Responsibility                                          | Must not                        |
-| --------------- | --------------------------------------------------- | ------------------------------------------------------- | ------------------------------- |
-| L1 Presentation | `src/{layouts,components,composables,stores,pages}` | Render, local UX state, RAF-batched stream merge        | Call providers or execute tools |
-| L2 Bridge       | `src/services/ipc`, `commands/`, `adapters/`        | Serialize IPC DTOs; map `BusEvent` → Tauri emits        | Own business policy             |
-| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`              | Chat lifecycle, agent loop, tools, prompts, persistence | Depend on Vue / DOM             |
-| L4 Adapters     | `runtime/`, `services/`, `core/{office,mcp,lsp}`    | OS, COM, HTTP clients, MCP transport                    | Drive the agent loop            |
+| Layer           | Location                                                | Responsibility                                          | Must not                        |
+| --------------- | ------------------------------------------------------- | ------------------------------------------------------- | ------------------------------- |
+| L1 Presentation | `src/{layouts,components,composables,stores,pages}`     | Render, local UX state, RAF-batched stream merge        | Call providers or execute tools |
+| L2 Bridge       | `src/services/ipc`, `commands/`, `adapters/`            | Serialize IPC DTOs; map `BusEvent` → Tauri emits        | Own business policy             |
+| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                  | Chat lifecycle, agent loop, tools, prompts, persistence | Depend on Vue / DOM             |
+| L4 Adapters     | `runtime/`, `services/`, `core/{office,mcp,lsp,remote}` | OS, COM, HTTP clients, MCP transport, Companion WS      | Drive the agent loop            |
 
 ### 3.2 Frontend dependency rule
 
@@ -157,17 +162,20 @@ One OS process, multiple WebView labels. Domain state is shared in-process.
 ```mermaid
 flowchart TB
   subgraph Process["Anya.exe"]
-    Rust["Rust host<br/>hotkey · tray · COM · SQLite · AgentRuntime"]
+    Rust["Rust host<br/>hotkey · tray · COM · SQLite · AgentRuntime · Gateway"]
     WV1["WebView: workbench"]
     WV2["WebView: overlay"]
     WV3["WebView: settings"]
     WV4["WebView: image-preview"]
   end
 
+  Phone[Anya Companion]
+
   WV1 <-->|invoke / events| Rust
   WV2 <-->|invoke / events| Rust
   WV3 <-->|invoke / events| Rust
   WV4 <-->|invoke / events| Rust
+  Phone -->|ws / wss /remote/v1| Rust
 ```
 
 | Surface   | Label               | Role                                            |
@@ -178,7 +186,67 @@ flowchart TB
 | Preview   | `overlay-preview-*` | Image preview windows                           |
 
 Session identity (`session_id`) is owned by the Rust conversation store. Overlay
-and Workbench may attach to the **same** session concurrently.
+and Workbench may attach to the **same** session concurrently. Companion attaches
+over the gateway and projects the same store — it does not own a second Agent.
+
+### 4.1 Remote Gateway & Companion
+
+Phone app: [AnyaAndroid](https://github.com/rururunu/AnyaAndroid). Desktop code:
+`src-tauri/src/core/remote/`. Companion is a **projection + RPC client**; this
+process still owns tools, SQLite, and model keys.
+
+```mermaid
+flowchart TB
+  subgraph Phone["Anya Companion"]
+    UI[Compose UI]
+    Client[RemoteGatewayClient]
+    UI --> Client
+  end
+
+  subgraph Path["Reachability"]
+    LAN["Same Wi-Fi<br/>ws://lanHost:8787/remote/v1"]
+    CF["Away<br/>wss://*.trycloudflare.com/remote/v1"]
+  end
+
+  subgraph Desktop["Anya.exe"]
+    GW[gateway.rs :8787]
+    Tunnel[cloudflared Quick Tunnel]
+    Pair[pairing.rs]
+    Bridge[bridge.rs → EventBus]
+    Chat[ChatService / AgentRunner]
+    GW --> Pair
+    GW --> Bridge
+    Bridge --> Chat
+    Tunnel --> GW
+  end
+
+  Client -->|"1. LAN first"| LAN --> GW
+  Client -->|"2. public fallback"| CF --> Tunnel
+```
+
+```mermaid
+sequenceDiagram
+  participant D as Desktop
+  participant P as Companion
+  D->>D: pairing token + QR (anya://pair)
+  P->>D: WebSocket /remote/v1
+  P->>D: hello { deviceId, credential }
+  D-->>P: hello.ok
+  D-->>P: event session.snapshot
+  P->>D: chat.send / approval.respond / file.upload.*
+  D-->>P: event (deltas, approvals, file.offer)
+```
+
+| Topic           | Contract                                                                |
+| --------------- | ----------------------------------------------------------------------- |
+| Path / port     | `/remote/v1` on **8787** (LAN `ws`, tunnel `wss`)                       |
+| Auth            | Short-lived QR token, then stored device credential                     |
+| Keep-alive      | Application `ping` / `pong` (proxies drop native WS pings)              |
+| Phone → desktop | Chunked `file.upload.*`, 512KB slices, **500MB** cap                    |
+| Desktop → phone | `share_to_companion` card + `workspace.readFile` `mode=download` slices |
+| Previews        | HTTP `/p/{id}/` reverse proxy on the same gateway                       |
+
+Phone-side diagrams: [Companion architecture](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.md).
 
 ---
 
@@ -205,6 +273,7 @@ and Workbench may attach to the **same** session concurrently.
 | MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`     | External protocol adapters                                            |
 | Protocol types      | `core/runtime/`                           | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                      |
 | Event bus           | `core/event/`                             | Domain events                                                         |
+| Remote gateway      | `core/remote/`                            | Companion WS `/remote/v1`, pairing, tunnel, upload, preview proxy     |
 
 ### 5.2 Naming: three “runtime” modules
 
@@ -553,8 +622,10 @@ Details: [release.md](./release.md).
 | New window surface      | Tauri window label + `src/main.ts` bootstrap branch     |
 | External context source | `core/context` provider                                 |
 | New skill               | `src-tauri/prompts/skills/*.md` (+ assets if needed)    |
+| Companion RPC / event   | `core/remote/protocol.rs` + phone client in AnyaAndroid |
 
 Avoid introducing a parallel agent loop beside `AgentRunner`.
+Companion must not grow a second Agent runtime.
 
 ---
 
@@ -572,3 +643,6 @@ Avoid introducing a parallel agent loop beside `AgentRunner`.
 | Frontend IPC + stream batch      | `src/services/ipc/`, `src/main.ts`, `src/stores/chat.ts`      |
 | Timeline UI                      | `src/components/chat/AgentWorkDetails.vue`                    |
 | Plan approval card               | `src/components/chat/PlanApprovalCard.vue`, `MessageList.vue` |
+| Remote gateway / pairing         | `core/remote/gateway.rs`, `pairing.rs`, `tunnel.rs`           |
+| Companion file transfer          | `core/remote/upload.rs`, `workspace.readFile` download mode   |
+| Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)        |

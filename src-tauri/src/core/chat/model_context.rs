@@ -16,6 +16,17 @@ pub fn model_native_context_window(model_id: &str) -> Option<usize> {
         return None;
     }
 
+    // DeepSeek V4 (Pro / Flash): official 1M context. Must run before the
+    // generic `deepseek` 128k cap and before the Gemini `v4-flash` heuristic.
+    if id.contains("deepseek-v4") || id.contains("deepseek_v4") {
+        return Some(LARGE_MAX_TURN_TOKENS);
+    }
+
+    // DeepSeek V3 chat / reasoner: 128k.
+    if id.contains("deepseek") {
+        return Some(128_000);
+    }
+
     // Modern Gemini / long-context flash (incl. Antigravity "v4-flash" style ids).
     if id.contains("gemini")
         || id.contains("antigravity")
@@ -40,10 +51,6 @@ pub fn model_native_context_window(model_id: &str) -> Option<usize> {
     }
 
     if id.contains("gpt-4") || id.contains("gpt-3.5") {
-        return Some(128_000);
-    }
-
-    if id.contains("deepseek") {
         return Some(128_000);
     }
 
@@ -74,10 +81,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn large_context_respects_deepseek_cap() {
+    fn large_context_respects_deepseek_v3_cap() {
         assert_eq!(
             effective_context_window(true, "deepseek-chat"),
             128_000
+        );
+        assert_eq!(
+            effective_context_window(true, "deepseek-reasoner"),
+            128_000
+        );
+    }
+
+    #[test]
+    fn large_context_allows_deepseek_v4_1m() {
+        assert_eq!(
+            effective_context_window(true, "deepseek-v4-pro"),
+            LARGE_MAX_TURN_TOKENS
+        );
+        assert_eq!(
+            effective_context_window(true, "deepseek-v4-flash"),
+            LARGE_MAX_TURN_TOKENS
+        );
+        assert_eq!(
+            effective_context_window(true, "deepseek-ai/DeepSeek-V4-Pro"),
+            LARGE_MAX_TURN_TOKENS
         );
     }
 
@@ -98,6 +125,10 @@ mod tests {
     fn large_context_off_stays_at_64k() {
         assert_eq!(
             effective_context_window(false, "gemini-2.5-pro"),
+            DEFAULT_MAX_TURN_TOKENS
+        );
+        assert_eq!(
+            effective_context_window(false, "deepseek-v4-pro"),
             DEFAULT_MAX_TURN_TOKENS
         );
     }

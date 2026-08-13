@@ -21,21 +21,28 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.8-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.9-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
+</p>
+
+<p align="center">
+  本仓库
+  &nbsp;·&nbsp;
+  手机端：<a href="https://github.com/rururunu/AnyaAndroid">rururunu/AnyaAndroid</a>
 </p>
 
 ---
 
 ## 一览
 
-|              |                                                                       |
-| ------------ | --------------------------------------------------------------------- |
-| **悬浮窗**   | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                 |
-| **工作台**   | 完整桌面界面：置顶会话、项目工作区与变更审查。                        |
-| **Agent**    | Ask / Agent / Plan；工具、Skills、MCP、Office；复杂任务可自动进计划。 |
-| **本地优先** | 密钥、历史与设置默认保存在本机。                                      |
+|               |                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------- |
+| **悬浮窗**    | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                                          |
+| **工作台**    | 完整桌面界面：置顶会话、项目工作区与变更审查。                                                 |
+| **Agent**     | Ask / Agent / Plan；工具、Skills、MCP、Office；复杂任务可自动进计划。                          |
+| **Companion** | [安卓远程](https://github.com/rururunu/AnyaAndroid) — 扫码后即可在手机上对话、审批、收发文件。 |
+| **本地优先**  | 密钥、历史与设置默认保存在本机。                                                               |
 
 **文档：** [架构](./docs/architecture-overview.zh-CN.md) · [发布](./docs/release.zh-CN.md) · [索引](./docs/README.zh-CN.md)
 
@@ -69,6 +76,27 @@ Anya 会尝试读取当前文本选区或资源管理器选中项；也可将图
 
 - [Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=Anya.anya-ide-context)
 - [IntelliJ Platform](https://plugins.jetbrains.com/plugin/33163-anya-ide-context)
+
+---
+
+## Companion — 手机远程
+
+[Anya Companion](https://github.com/rururunu/AnyaAndroid) 是本桌面应用的安卓控制台。Agent 仍在电脑上跑；手机是遥控台——对话、工具审批、工作区文件，以及分片文件传输（上限 500MB）。
+
+1. 在 Anya 中打开 **连接手机**，等到二维码出现局域网地址（若已开启公网隧道，还会有公网主机名）。
+2. 安装 Companion 后扫码（或填写主机 / 令牌）。深度链接：`anya://pair`。
+3. 同一 Wi-Fi 走 `ws://电脑:8787/remote/v1`；外出走 Cloudflare Quick Tunnel `wss://`。
+
+```mermaid
+flowchart LR
+  Phone[Companion] -->|同网优先| LAN["ws://电脑:8787/remote/v1"]
+  Phone -->|回退| CF["wss://*.trycloudflare.com/remote/v1"]
+  LAN --> GW[Remote Gateway]
+  CF --> GW
+  GW --> Agent[ChatService / AgentRunner]
+```
+
+文档：[Companion README](https://github.com/rururunu/AnyaAndroid) · [Companion 架构](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.zh-CN.md)
 
 ---
 
@@ -138,6 +166,7 @@ Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（�
 | **子 Agent**         | 复杂任务可拆给子 Agent，进度仍汇总在主对话                                                 |
 | **记忆**             | 本地记忆工具；可选 mem0 云同步                                                             |
 | **网页搜索**         | 配置 Serper 或 Tavily API Key 后可用                                                       |
+| **Companion**        | [安卓远程](https://github.com/rururunu/AnyaAndroid)，局域网或 Cloudflare 隧道              |
 
 ### 模型服务商
 
@@ -171,6 +200,8 @@ Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（�
 
 API Key、OAuth 令牌、设置与聊天记录默认保存在本机。选区与文件采集也在本地完成；只有发送消息后，消息及其附带上下文才会发往你配置的模型服务商。
 
+配对 [Companion](https://github.com/rururunu/AnyaAndroid) 后，对话事件与你分享的文件还会经局域网或 Cloudflare 隧道到达该手机。
+
 启用网页搜索、MCP 或 mem0 云同步时，相关内容还会发给对应第三方服务，请按其隐私政策决定是否开启。
 
 崩溃恢复使用本地 SQLite journal：下次启动会结算中断的流式回合，避免界面卡在「执行中」。
@@ -194,6 +225,7 @@ flowchart TB
     CMD[commands / EventBus]
     CHAT[ChatService · StreamManager · AgentRunner]
     TOOLS[ToolRegistry · plan gate · Skills · MCP · Office]
+    GW[Remote Gateway /remote/v1]
     STORE[(SQLite + journal)]
   end
 
@@ -201,15 +233,18 @@ flowchart TB
     LLM[模型服务商]
     IDE[IDE 插件]
     OFFICE[Word / Excel / PPT]
+    PH[Anya Companion]
   end
 
   WB & OV & ST & PV <-->|IPC invoke + events| CMD
   CMD --> CHAT
   CHAT --> TOOLS
   CHAT --> STORE
+  GW --> CHAT
   CHAT -->|HTTPS 流式| LLM
   IDE -->|上下文推送| Host
   TOOLS -->|COM| OFFICE
+  PH -->|局域网 ws 或 Cloudflare wss| GW
 ```
 
 主路径：
@@ -245,7 +280,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.8_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.9_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 

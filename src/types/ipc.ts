@@ -3,6 +3,7 @@ export const IPC_COMMANDS = {
   openSessionInOverlay: "open_session_in_overlay",
   openSessionInWorkbench: "open_session_in_workbench",
   showInteractionNotification: "show_interaction_notification",
+  dismissInteractionNotification: "dismiss_interaction_notification",
   setWindowSessionView: "set_window_session_view",
   hideOverlay: "hide_overlay_window",
   minimizeOverlay: "minimize_overlay_window",
@@ -37,6 +38,7 @@ export const IPC_COMMANDS = {
   getPlanMode: "get_plan_mode",
   listCheckpoints: "list_checkpoints",
   rewindSession: "rewind_session",
+  revealInExplorer: "reveal_in_explorer",
 } as const;
 
 export const IPC_EVENTS = {
@@ -64,6 +66,8 @@ export const IPC_EVENTS = {
   toolStarted: "tool-started",
   toolFinished: "tool-finished",
   taskListUpdated: "task-list-updated",
+  fileOffer: "file-offer",
+  urlOffer: "url-offer",
 } as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[keyof typeof IPC_COMMANDS];

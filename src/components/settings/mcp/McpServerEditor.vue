@@ -12,35 +12,19 @@
       </label>
       <label>
         <span>{{ metaLabels.displayName }}</span>
-        <Input
-          v-model="title"
-          class="h-8"
-          :placeholder="metaLabels.displayNamePlaceholder"
-        />
+        <Input v-model="title" class="h-8" :placeholder="metaLabels.displayNamePlaceholder" />
       </label>
       <label class="full">
         <span>{{ metaLabels.blurb }}</span>
-        <Input
-          v-model="description"
-          class="h-8"
-          :placeholder="metaLabels.blurbPlaceholder"
-        />
+        <Input v-model="description" class="h-8" :placeholder="metaLabels.blurbPlaceholder" />
       </label>
       <label>
         <span>{{ copy.command }}</span>
-        <Input
-          v-model="command"
-          class="h-8"
-          :placeholder="copy.commandPlaceholder"
-        />
+        <Input v-model="command" class="h-8" :placeholder="copy.commandPlaceholder" />
       </label>
       <label class="full">
         <span>{{ copy.args }}</span>
-        <Input
-          v-model="argsText"
-          class="h-8"
-          :placeholder="copy.argsPlaceholder"
-        />
+        <Input v-model="argsText" class="h-8" :placeholder="copy.argsPlaceholder" />
       </label>
       <label class="full">
         <span>{{ copy.env }}</span>
@@ -185,7 +169,7 @@ const envText = field("envText");
   color: inherit;
   padding: 8px 10px;
   font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
   line-height: 1.45;
 }
 

@@ -233,7 +233,7 @@ const fallbackLetter = computed(() => {
 
 .card-vendor {
   margin: 3px 0 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
   font-size: 12px;
   font-weight: 550;
   color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));

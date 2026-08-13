@@ -14,22 +14,21 @@ fn window_sessions() -> &'static Mutex<HashMap<String, String>> {
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn session_is_being_viewed(app: &AppHandle, session_id: &str) -> bool {
-    let labels = window_sessions()
-        .lock()
-        .map(|sessions| {
-            sessions
-                .iter()
-                .filter(|(_, viewed_session)| viewed_session.as_str() == session_id)
-                .map(|(label, _)| label.clone())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+#[derive(Clone)]
+struct TrackedToast {
+    title: String,
+    body: String,
+}
 
-    labels.into_iter().any(|label| {
-        app.get_webview_window(&label).is_some_and(|window| {
-            window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false)
-        })
+fn tracked_toasts() -> &'static Mutex<HashMap<String, TrackedToast>> {
+    static TOASTS: OnceLock<Mutex<HashMap<String, TrackedToast>>> = OnceLock::new();
+    TOASTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// System toasts only when the workbench is closed (hidden to tray / not on screen).
+fn workbench_is_open(app: &AppHandle) -> bool {
+    app.get_webview_window("workbench").is_some_and(|window| {
+        window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
     })
 }
 
@@ -80,10 +79,63 @@ fn dismiss_matching_notification(
     Ok(())
 }
 
+fn remember_toast(keys: &[String], title: &str, body: &str) {
+    if keys.is_empty() {
+        return;
+    }
+    let toast = TrackedToast {
+        title: title.to_string(),
+        body: body.to_string(),
+    };
+    if let Ok(mut guard) = tracked_toasts().lock() {
+        for key in keys {
+            if !key.is_empty() {
+                guard.insert(key.clone(), toast.clone());
+            }
+        }
+    }
+}
+
+fn take_tracked_toasts(request_id: Option<&str>, session_id: Option<&str>) -> Vec<TrackedToast> {
+    let mut out = Vec::new();
+    let Ok(mut guard) = tracked_toasts().lock() else {
+        return out;
+    };
+    if let Some(id) = request_id.map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(toast) = guard.remove(id) {
+            out.push(toast);
+        }
+    }
+    if let Some(id) = session_id.map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(toast) = guard.remove(id) {
+            if !out.iter().any(|t| t.title == toast.title && t.body == toast.body) {
+                out.push(toast);
+            }
+        }
+    }
+    out
+}
+
+/// Hide a previously shown interaction toast (e.g. phone answered the ask/approval).
+pub fn dismiss_tracked_interaction_notifications(
+    app: &AppHandle,
+    request_id: Option<&str>,
+    session_id: Option<&str>,
+) {
+    let app_id = app.config().identifier.clone();
+    for toast in take_tracked_toasts(request_id, session_id) {
+        if let Err(error) = dismiss_matching_notification(&app_id, &toast.title, &toast.body) {
+            tracing::warn!(%error, "failed to dismiss interaction notification");
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InteractionNotificationRequest {
     session_id: String,
+    #[serde(default)]
+    request_id: Option<String>,
     title: String,
     body: String,
     ignore_label: String,
@@ -92,14 +144,52 @@ pub struct InteractionNotificationRequest {
     persistent: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DismissInteractionNotificationRequest {
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+#[tauri::command]
+pub fn dismiss_interaction_notification(
+    app: AppHandle,
+    request: DismissInteractionNotificationRequest,
+) -> Result<(), String> {
+    dismiss_tracked_interaction_notifications(
+        &app,
+        request.request_id.as_deref(),
+        request.session_id.as_deref(),
+    );
+    Ok(())
+}
+
 #[tauri::command]
 pub fn show_interaction_notification(
     app: AppHandle,
     request: InteractionNotificationRequest,
 ) -> Result<(), String> {
-    if session_is_being_viewed(&app, &request.session_id) {
+    // Only notify when the workbench is closed (tray). Open / minimized-on-taskbar
+    // means the user can already see the conversation UI.
+    if workbench_is_open(&app) {
         return Ok(());
     }
+    let mut keys = Vec::new();
+    if let Some(request_id) = request
+        .request_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        keys.push(request_id.to_string());
+    }
+    if !request.session_id.trim().is_empty() {
+        keys.push(request.session_id.clone());
+    }
+    remember_toast(&keys, &request.title, &request.body);
+
     std::thread::spawn(move || {
         let mut notification = notify_rust::Notification::new();
         notification
@@ -131,13 +221,11 @@ pub fn show_interaction_notification(
                                 | notify_rust::NotificationResponse::Action(_)
                         );
                         if should_dismiss {
-                            if let Err(error) = dismiss_matching_notification(
-                                &app.config().identifier,
-                                &request.title,
-                                &request.body,
-                            ) {
-                                tracing::warn!(%error, "failed to dismiss interaction notification");
-                            }
+                            dismiss_tracked_interaction_notifications(
+                                &app,
+                                request.request_id.as_deref(),
+                                Some(request.session_id.as_str()),
+                            );
                         }
                         if !should_open {
                             return;

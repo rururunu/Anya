@@ -9,6 +9,7 @@ use crate::core::chat::error::ChatError;
 use crate::core::chat::preferences::SendPreferences;
 use crate::core::chat::prompt::{PromptBuildInput, PromptBuilder, PromptPreferences};
 use crate::core::context::ContextResolver;
+use crate::core::chat::session_origin::{shared_session_origin_store, RequestOrigin};
 use crate::core::event::{BusEvent, EventBus, PlanModeSource};
 use crate::core::runtime::{ChatMessage, MessageStatus, Role, DEFAULT_SESSION_ID};
 use crate::core::tools::context::{AskStore, PathPermissionStore, TaskItem};
@@ -116,6 +117,7 @@ impl ChatService {
         workspace_id: Option<String>,
         quick_ask: bool,
         overrides: ChatSendOverrides,
+        origin: RequestOrigin,
     ) -> Result<ChatSendResult, ChatError> {
         let content = content.trim().to_string();
         if content.is_empty() {
@@ -123,6 +125,7 @@ impl ChatService {
         }
 
         let session_id = session_id.unwrap_or_else(|| DEFAULT_SESSION_ID.to_string());
+        shared_session_origin_store().mark(&session_id, origin);
 
         // Mid-turn soft inject: queue into the active agent loop (tool boundary).
         if let Some(assistant_message_id) =
@@ -136,7 +139,18 @@ impl ChatService {
         // solely on IDE/window inference for an already-bound conversation —
         // approve/queue/resume paths often omit workspace_id and would otherwise
         // silently bind the foreground IDE (e.g. this app's own repo).
-        let workspace = if quick_ask {
+        let explicit_workspace = workspace_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty());
+        let already_bound = self.conversation.workspace_for_session(&session_id);
+        let inbox_root = self.app_handle.as_ref().and_then(|app| {
+            crate::core::remote::inbox_root_if_exists(app, &session_id)
+        });
+        let using_inbox = explicit_workspace.is_none()
+            && already_bound.is_none()
+            && inbox_root.is_some();
+        let workspace = if using_inbox || quick_ask {
             None
         } else {
             self.resolve_send_workspace(&session_id, workspace_id.as_deref(), &known_workspaces)
@@ -162,16 +176,22 @@ impl ChatService {
         // An explicitly selected / session-bound workspace owns the turn. IDE
         // context is still useful for files and selection, but must not switch
         // the active project root.
-        if let Some(workspace) = workspace.as_ref() {
+        if using_inbox {
+            if let Some(root) = inbox_root.as_ref() {
+                context.set_workspace("Uploads".to_string(), root);
+            }
+        } else if let Some(workspace) = workspace.as_ref() {
             context.set_workspace(workspace.name.clone(), &workspace.root);
         }
         if quick_ask {
             context.workspace = None;
         }
-        self.remember_ide_workspace(&context).await;
+        if !using_inbox {
+            self.remember_ide_workspace(&context).await;
+        }
         let known_workspaces = self.workspace_manager.list();
         let is_new_session = self.conversation.messages(&session_id).is_empty();
-        if is_new_session && !quick_ask {
+        if !using_inbox && is_new_session && !quick_ask {
             if let Some(resolved) = context.workspace.as_ref() {
                 let workspace_id = known_workspaces
                     .iter()
@@ -180,7 +200,7 @@ impl ChatService {
                     .unwrap_or_else(|| resolved.root.clone());
                 self.conversation.bind_workspace(&session_id, &workspace_id);
             }
-        } else if !quick_ask {
+        } else if !using_inbox && !quick_ask {
             // Keep the session sticky even when later turns omit workspace_id.
             if let Some(workspace) = workspace.as_ref() {
                 self.conversation
@@ -355,6 +375,7 @@ impl ChatService {
             collaboration_models,
             minimal_coding,
             plan_mode,
+            companion_origin: shared_session_origin_store().is_companion(&session_id),
         };
         let request = PromptBuilder::build(PromptBuildInput {
             request_id: &assistant_message.id,

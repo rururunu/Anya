@@ -50,7 +50,7 @@ description: 表驱动生成「综合评分技术部分」技术标 .docx。用�
 
 ### A. 读懂输入
 
-1. 读取招标文件与参考文件（`read_file` 对 docx 可能不适用时：用 `run_shell` 跑 `bid_tech.docx_inspect.inspect_docx` 摘要，或先转文本）。
+1. 读取招标文件与参考文件：`read_file` 会从 `.docx` 抽出纯文本；需要结构摘要时再用 `run_shell` 跑 `bid_tech.docx_inspect.inspect_docx`。
 2. 抽出综合评分表技术部分章节与分值；若无法抽出，使用默认十章骨架并在正文注明「章节结构按招标评分表，分值以招标文件为准」。
 3. 生成对齐清单：`align.save_checklist(align.default_checklist_for_study_tour(), ...)`，再按招标附件增删项。
 

@@ -40,14 +40,21 @@ export interface UseWorkbenchLifecycleOptions {
   refreshCheckpoints: () => Promise<void>;
   clearSessionUnread: (sessionId: string) => void;
   markSessionUnread: (sessionId: string) => void;
-  isSessionBeingViewed: (sessionId: string) => Promise<boolean>;
+  isWorkbenchClosed: () => Promise<boolean>;
   showActionableWindowsNotification: (
     sessionId: string,
     title: string,
     body: string,
     persistent?: boolean,
+    requestId?: string,
   ) => Promise<void>;
-  notifyWhenNotViewed: (sessionId: string, title: string, body: string) => Promise<boolean>;
+  notifyWhenNotViewed: (
+    sessionId: string,
+    title: string,
+    body: string,
+    requestId?: string,
+  ) => Promise<boolean>;
+  dismissNotificationForInteraction: (requestId?: string, sessionId?: string) => Promise<void>;
   pendingInteractions: Ref<Record<string, PendingInteraction>>;
   setPendingInteraction: (sessionId: string, interaction: PendingInteraction) => void;
   removePendingInteraction: (sessionId: string, requestId?: string) => boolean;
@@ -84,9 +91,10 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     refreshCheckpoints,
     clearSessionUnread,
     markSessionUnread,
-    isSessionBeingViewed,
+    isWorkbenchClosed,
     showActionableWindowsNotification,
     notifyWhenNotViewed,
+    dismissNotificationForInteraction,
     pendingInteractions,
     setPendingInteraction,
     removePendingInteraction,
@@ -160,7 +168,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
         if (!payload.sessionId || payload.finishReason === "cancelled") return;
         if (payload.sessionId === activeSessionId.value) void refreshCheckpoints();
         void (async () => {
-          if (await isSessionBeingViewed(payload.sessionId)) {
+          if (!(await isWorkbenchClosed())) {
             clearSessionUnread(payload.sessionId);
             return;
           }
@@ -218,6 +226,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
           sessionId,
           tr(settingStore.language, "notification.needsInput"),
           payload.questions[0]?.question || sessionDisplayName(sessionId),
+          payload.requestId,
         );
       }),
     );
@@ -229,6 +238,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
           sessionId,
           tr(settingStore.language, "notification.pathPermission"),
           payload.path,
+          payload.requestId,
         );
       }),
     );
@@ -246,6 +256,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
           sessionId,
           tr(settingStore.language, "notification.approval"),
           payload.title || payload.toolName,
+          payload.requestId,
         );
       }),
     );
@@ -254,6 +265,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
         const matchedSessionId = Object.entries(pendingInteractions.value).find(
           ([, interaction]) => interaction.value.requestId === payload.requestId,
         )?.[0];
+        void dismissNotificationForInteraction(payload.requestId, matchedSessionId);
         if (!matchedSessionId) return;
         removePendingInteraction(matchedSessionId, payload.requestId);
         if (matchedSessionId === activeSessionId.value)

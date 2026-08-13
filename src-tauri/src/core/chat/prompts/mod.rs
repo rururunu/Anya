@@ -29,6 +29,10 @@ pub const MINIMAL_CODING_PROMPT: &str = include_str!("../../../../prompts/minima
 /// Injected while session plan mode is active (auto or manual).
 pub const PLAN_MODE_PROMPT: &str = include_str!("../../../../prompts/plan-mode.md");
 
+/// Injected when the current turn was sent from the paired phone (Companion app).
+pub const COMPANION_ORIGIN_PROMPT: &str =
+    include_str!("../../../../prompts/companion-origin.md");
+
 #[cfg(test)]
 mod tests {
     use super::*;

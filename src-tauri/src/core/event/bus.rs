@@ -100,6 +100,25 @@ pub enum BusEvent {
         request_id: String,
         questions: Vec<crate::core::tools::context::AskQuestion>,
     },
+    /// Offer a workspace file to Companion / desktop for preview (metadata only).
+    FileOffer {
+        session_id: String,
+        offer_id: String,
+        path: String,
+        absolute_path: String,
+        name: String,
+        mime: String,
+        size: u64,
+        workspace_id: Option<String>,
+    },
+    /// Offer a reverse-proxied local preview URL.
+    UrlOffer {
+        session_id: String,
+        offer_id: String,
+        label: String,
+        origin_url: String,
+        public_url: String,
+    },
     PathPermissionRequest {
         session_id: String,
         request_id: String,

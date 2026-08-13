@@ -96,6 +96,8 @@ pub fn register_all(
     registry.register(Arc::new(LspTool));
     registry.register(Arc::new(SearchCodebaseTool));
     registry.register(Arc::new(RebuildCodebaseIndexTool));
+    registry.register(Arc::new(ShareToCompanionTool));
+    registry.register(Arc::new(SharePreviewUrlTool));
     registry.register(Arc::new(ListFailureCandidatesTool {
         conversation: Arc::clone(&conversation),
     }));

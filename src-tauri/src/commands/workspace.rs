@@ -4,6 +4,8 @@ use std::process::Command;
 use crate::app_state::AppState;
 use crate::core::workspace::Workspace;
 use tauri::{AppHandle, Emitter, State};
+#[cfg(not(target_os = "windows"))]
+use tauri_plugin_opener::OpenerExt;
 use walkdir::{DirEntry, WalkDir};
 
 const MAX_WORKSPACE_FILES: usize = 5_000;
@@ -127,6 +129,38 @@ pub fn open_workspace_folder(state: State<'_, AppState>, id: String) -> Result<(
         .spawn()
         .map_err(|error| format!("Failed to open workspace folder: {error}"))?;
     Ok(())
+}
+
+#[tauri::command]
+#[cfg_attr(target_os = "windows", allow(unused_variables))]
+pub fn reveal_in_explorer(app: AppHandle, path: String) -> Result<(), String> {
+    let target = PathBuf::from(path.trim());
+    if !target.exists() {
+        return Err("Path no longer exists".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        Command::new("explorer.exe")
+            .raw_arg(format!(r#"/select,"{}""#, target.display()))
+            .spawn()
+            .map_err(|error| format!("Failed to reveal in Explorer: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let folder = if target.is_file() {
+            target.parent().unwrap_or(target.as_path()).to_path_buf()
+        } else {
+            target
+        };
+        app.opener()
+            .open_path(folder.to_string_lossy(), None::<&str>)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
 }
 
 #[tauri::command]

@@ -1,5 +1,6 @@
 //! File read/write builtin tools and shared helpers.
 
+mod office;
 mod read;
 mod write;
 

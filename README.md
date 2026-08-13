@@ -21,21 +21,28 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.8-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.9-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
+</p>
+
+<p align="center">
+  This repo
+  &nbsp;·&nbsp;
+  Phone: <a href="https://github.com/rururunu/AnyaAndroid">rururunu/AnyaAndroid</a>
 </p>
 
 ---
 
 ## At a glance
 
-|                 |                                                                              |
-| --------------- | ---------------------------------------------------------------------------- |
-| **Overlay**     | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.     |
-| **Workbench**   | Full desktop UI for pinned chats, project workspaces, and review.            |
-| **Agent**       | Ask / Agent / Plan; tools, Skills, MCP, Office; complex tasks may auto-plan. |
-| **Local-first** | Keys, history, and settings stay on your machine by default.                 |
+|                 |                                                                                                                             |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Overlay**     | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                    |
+| **Workbench**   | Full desktop UI for pinned chats, project workspaces, and review.                                                           |
+| **Agent**       | Ask / Agent / Plan; tools, Skills, MCP, Office; complex tasks may auto-plan.                                                |
+| **Companion**   | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone. |
+| **Local-first** | Keys, history, and settings stay on your machine by default.                                                                |
 
 **Docs:** [Architecture](./docs/architecture-overview.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
 
@@ -69,6 +76,27 @@ Companion plugins push active file, workspace, language, and selection to the lo
 
 - [Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=Anya.anya-ide-context)
 - [IntelliJ Platform](https://plugins.jetbrains.com/plugin/33163-anya-ide-context)
+
+---
+
+## Companion — phone remote
+
+[Anya Companion](https://github.com/rururunu/AnyaAndroid) is the Android console for this desktop app. The Agent still runs here; the phone is a remote — chat, tool approvals, workspace files, and chunked file transfer (up to 500MB).
+
+1. Open **Connect phone** in Anya and wait for the QR (LAN address, and a public tunnel host if you enabled it).
+2. Install Companion and scan (or paste host / token). Deep link: `anya://pair`.
+3. Same Wi-Fi uses `ws://PC:8787/remote/v1`. Away from home, Cloudflare Quick Tunnel `wss://`.
+
+```mermaid
+flowchart LR
+  Phone[Companion] -->|same Wi-Fi first| LAN["ws://PC:8787/remote/v1"]
+  Phone -->|fallback| CF["wss://*.trycloudflare.com/remote/v1"]
+  LAN --> GW[Remote Gateway]
+  CF --> GW
+  GW --> Agent[ChatService / AgentRunner]
+```
+
+Docs: [Companion README](https://github.com/rururunu/AnyaAndroid) · [Companion architecture](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.md)
 
 ---
 
@@ -138,6 +166,7 @@ Assistant turns interleave **reasoning**, **reply text**, and **tool activity** 
 | **Sub-agents**         | Split larger work while progress stays visible on the main thread                                  |
 | **Memory**             | Local memory tools; optional mem0 cloud sync                                                       |
 | **Web search**         | Serper or Tavily when an API key is set                                                            |
+| **Companion**          | [Android remote](https://github.com/rururunu/AnyaAndroid) over LAN or Cloudflare Tunnel            |
 
 ### Model providers
 
@@ -171,6 +200,8 @@ For image input with a text-only primary model, set a vision model or enable mul
 
 API keys, OAuth tokens, settings, and chat history stay on your machine by default. Context capture is local; the message and attached context leave the device only when you send them to your configured provider.
 
+When [Companion](https://github.com/rururunu/AnyaAndroid) is paired, chat events and files you share also travel to that phone over LAN or your Cloudflare tunnel.
+
 Web search, MCP, and mem0 cloud sync send data to those services — enable them only if you accept their policies.
 
 Crash recovery uses a local SQLite journal so interrupted streaming turns can settle on next launch instead of leaving the UI stuck “executing”.
@@ -194,6 +225,7 @@ flowchart TB
     CMD[commands / EventBus]
     CHAT[ChatService · StreamManager · AgentRunner]
     TOOLS[ToolRegistry · plan gate · Skills · MCP · Office]
+    GW[Remote Gateway /remote/v1]
     STORE[(SQLite + journal)]
   end
 
@@ -201,15 +233,18 @@ flowchart TB
     LLM[Model providers]
     IDE[IDE plugins]
     OFFICE[Word / Excel / PPT]
+    PH[Anya Companion]
   end
 
   WB & OV & ST & PV <-->|IPC invoke + events| CMD
   CMD --> CHAT
   CHAT --> TOOLS
   CHAT --> STORE
+  GW --> CHAT
   CHAT -->|HTTPS stream| LLM
   IDE -->|context push| Host
   TOOLS -->|COM| OFFICE
+  PH -->|LAN ws or Cloudflare wss| GW
 ```
 
 Primary path:
@@ -245,7 +280,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.8_x64.msi`.
+The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.9_x64.msi`.
 
 For signing, `latest.json`, and GitHub Releases, see [Releases and remote updates](./docs/release.md).
 

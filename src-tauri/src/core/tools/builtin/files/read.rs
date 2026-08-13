@@ -14,7 +14,7 @@ use crate::runtime::terminal::prepare_command;
 use crate::core::tools::context::{Tool, ToolContext};
 use crate::core::tools::error::ToolError;
 
-use super::{resolve_read, run_command_cancellable, should_skip};
+use super::{office, resolve_read, run_command_cancellable, should_skip};
 
 pub struct ReadFileTool;
 pub struct ListFolderTool;
@@ -27,7 +27,7 @@ impl Tool for ReadFileTool {
         "read_file"
     }
     fn description(&self) -> &str {
-        "Read a text file by path (relative to workspace root). Prefer this over shell cat/Get-Content/type. Use offset/limit for large files instead of loading everything. For unknown paths, find_files or search_files first; for directory structure use list_folder."
+        "Read a file by path (relative to workspace root). Prefer this over shell cat/Get-Content/type. Text files return numbered lines. .docx/.xlsx/.pptx are extracted to plain text automatically — do not ask the user to open Word, and do not use Word COM just to read an on-disk Office file. Use offset/limit for large files instead of loading everything. For unknown paths, find_files or search_files first; for directory structure use list_folder."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -48,6 +48,10 @@ impl Tool for ReadFileTool {
         let offset = args["offset"].as_u64().unwrap_or(1).max(1) as usize;
         let limit = args["limit"].as_u64().unwrap_or(200) as usize;
         let resolved = resolve_read(ctx, self.name(), path)?;
+        if office::is_office_document(&resolved) {
+            let extracted = office::extract_office_plain_text(&resolved)?;
+            return Ok(numbered_slice(&extracted, offset, limit));
+        }
         let file = fs::File::open(&resolved)?;
         let reader = BufReader::new(file);
         let mut out = String::new();
@@ -64,6 +68,29 @@ impl Tool for ReadFileTool {
         }
         Ok(out)
     }
+}
+
+fn numbered_slice(text: &str, offset: usize, limit: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let total = lines.len();
+    let mut out = String::new();
+    for (idx, line) in lines.iter().enumerate() {
+        let line_no = idx + 1;
+        if line_no < offset {
+            continue;
+        }
+        if line_no >= offset + limit {
+            break;
+        }
+        out.push_str(&format!("{line_no:>6}|{line}\n"));
+    }
+    let next = offset.saturating_add(limit);
+    if next <= total {
+        out.push_str(&format!(
+            "… {total} lines total; pass offset={next} to continue\n"
+        ));
+    }
+    out
 }
 
 impl Tool for ListFolderTool {

@@ -20,6 +20,8 @@ import type {
   TaskListUpdatedEvent,
   ToolActivityEvent,
   ToolApprovalEvent,
+  FileOfferEvent,
+  UrlOfferEvent,
 } from "@/types/chat";
 import { IPC_EVENTS, type IpcEvent } from "@/types/ipc";
 import type { AppSettings } from "@/types/setting";
@@ -72,23 +74,15 @@ export function listenChatFinished(handler: (payload: ChatFinishedEvent) => void
 export function listenChatSessionTitleUpdated(
   handler: (payload: ChatSessionTitleUpdatedEvent) => void,
 ) {
-  return listenIpcEvent<ChatSessionTitleUpdatedEvent>(
-    IPC_EVENTS.chatSessionTitleUpdated,
-    handler,
-  );
+  return listenIpcEvent<ChatSessionTitleUpdatedEvent>(IPC_EVENTS.chatSessionTitleUpdated, handler);
 }
 
 export function listenChatError(handler: (payload: ChatErrorEvent) => void) {
   return listenIpcEvent<ChatErrorEvent>(IPC_EVENTS.chatError, handler);
 }
 
-export function listenChatContextNotice(
-  handler: (payload: ChatContextNoticeEvent) => void,
-) {
-  return listenIpcEvent<ChatContextNoticeEvent>(
-    IPC_EVENTS.chatContextNotice,
-    handler,
-  );
+export function listenChatContextNotice(handler: (payload: ChatContextNoticeEvent) => void) {
+  return listenIpcEvent<ChatContextNoticeEvent>(IPC_EVENTS.chatContextNotice, handler);
 }
 
 export function listenOverlayShown(handler: () => void) {
@@ -115,9 +109,7 @@ export function listenToolApproval(handler: (payload: ToolApprovalEvent) => void
   return listenIpcEvent<ToolApprovalEvent>(IPC_EVENTS.toolApproval, handler);
 }
 
-export function listenInteractionResolved(
-  handler: (payload: InteractionResolvedEvent) => void,
-) {
+export function listenInteractionResolved(handler: (payload: InteractionResolvedEvent) => void) {
   return listenIpcEvent<InteractionResolvedEvent>(IPC_EVENTS.interactionResolved, handler);
 }
 
@@ -135,4 +127,12 @@ export function listenToolFinished(handler: (payload: ToolActivityEvent) => void
 
 export function listenTaskListUpdated(handler: (payload: TaskListUpdatedEvent) => void) {
   return listenIpcEvent<TaskListUpdatedEvent>(IPC_EVENTS.taskListUpdated, handler);
+}
+
+export function listenFileOffer(handler: (payload: FileOfferEvent) => void) {
+  return listenIpcEvent<FileOfferEvent>(IPC_EVENTS.fileOffer, handler);
+}
+
+export function listenUrlOffer(handler: (payload: UrlOfferEvent) => void) {
+  return listenIpcEvent<UrlOfferEvent>(IPC_EVENTS.urlOffer, handler);
 }

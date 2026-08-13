@@ -8,9 +8,12 @@ mod bridge;
 mod tunnel;
 mod compose;
 mod gateway;
+mod http_proxy;
 mod pairing;
+pub mod preview;
 mod protocol;
 mod state;
+mod upload;
 
 pub use compose::SessionCompose;
 pub use bridge::{on_bus_event, push_interaction_resolved};
@@ -20,6 +23,7 @@ pub use state::{
     gateway_status, list_paired_devices, restore_gateway_if_enabled, revoke_device, stop_gateway,
     GatewayStatus, PairedDevice, PairingSessionInfo, TunnelPrefs, remote_state,
 };
+pub use upload::{cleanup_session_uploads, inbox_root_if_exists, MAX_UPLOAD_BYTES};
 
 pub fn get_session_compose(session_id: &str) -> SessionCompose {
     compose::get(session_id)

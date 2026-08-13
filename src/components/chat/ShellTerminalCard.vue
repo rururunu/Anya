@@ -12,6 +12,7 @@
         :size="12"
         aria-hidden="true"
       />
+      <span class="shell-terminal-dot" :class="status" aria-hidden="true"></span>
       <span class="shell-terminal-prompt" aria-hidden="true">&gt;_</span>
       <span class="shell-terminal-title">{{ title }}</span>
       <span v-if="status === 'running'" class="shell-terminal-status">{{ runningLabel }}</span>
@@ -19,23 +20,32 @@
         {{ failedLabel }}
       </span>
     </button>
-    <pre
-      v-if="expanded && body"
-      class="shell-terminal-body peek-scrollbar"
-    ><code>{{ body }}</code></pre>
-    <pre
-      v-else-if="expanded && status === 'running'"
-      class="shell-terminal-body muted peek-scrollbar"
-    ><code>{{ waitingLabel }}</code></pre>
+    <div v-if="expanded" class="shell-terminal-screen">
+      <div v-if="command" class="shell-terminal-cmdline">
+        <span class="shell-terminal-ps1" aria-hidden="true">$</span>
+        <span class="shell-terminal-cmd">{{ command }}</span>
+      </div>
+      <pre v-if="outputSpans.length" class="shell-terminal-body peek-scrollbar"><code><span
+        v-for="(span, index) in outputSpans"
+        :key="index"
+        :style="spanStyle(span)"
+      >{{ span.text }}</span></code></pre>
+      <pre
+        v-else-if="status === 'running'"
+        class="shell-terminal-body muted peek-scrollbar"
+      ><code>{{ waitingLabel }}</code></pre>
+      <div v-if="exitBadge" class="shell-terminal-exit">{{ exitBadge }}</div>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch, type CSSProperties } from "vue";
 import { ChevronRight } from "@lucide/vue";
 import type { ToolActivity } from "@/types/chat";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
+import { parseAnsi, type AnsiSpan } from "@/services/chat/ansi";
 
 const props = withDefaults(
   defineProps<{
@@ -77,18 +87,34 @@ const title = computed(() => {
   return raw || props.activity.title;
 });
 
-const body = computed(() => {
-  const command = String(props.activity.arguments?.command ?? "").trim();
-  const output = (props.activity.result ?? extractOutputFromDetail(props.activity.detail)).trim();
-  if (output) {
-    if (command && !output.includes(command.slice(0, Math.min(40, command.length)))) {
-      return `$ ${command}\n\n${output}`;
-    }
-    return output;
-  }
-  if (command) return `$ ${command}`;
+const command = computed(() => String(props.activity.arguments?.command ?? "").trim());
+
+const output = computed(() =>
+  (props.activity.result ?? extractOutputFromDetail(props.activity.detail)).trim(),
+);
+
+const outputSpans = computed<AnsiSpan[]>(() => {
+  if (!output.value) return [];
+  return parseAnsi(output.value);
+});
+
+const exitBadge = computed(() => {
+  const match = output.value.match(/exit code:?\s*(-?\d+)/i);
+  if (match && match[1] !== "0") return `exit ${match[1]}`;
+  if (status.value === "error" && !match) return "exit 1";
   return "";
 });
+
+function spanStyle(span: AnsiSpan): CSSProperties | undefined {
+  const style: CSSProperties = {};
+  if (span.color) style.color = span.color;
+  if (span.background) style.backgroundColor = span.background;
+  if (span.bold) style.fontWeight = 700;
+  if (span.dim) style.opacity = 0.65;
+  if (span.italic) style.fontStyle = "italic";
+  if (span.underline) style.textDecoration = "underline";
+  return Object.keys(style).length ? style : undefined;
+}
 
 function extractOutputFromDetail(detail?: string | null): string {
   if (!detail) return "";
@@ -100,20 +126,28 @@ function extractOutputFromDetail(detail?: string | null): string {
 </script>
 
 <style scoped>
+/* 真实终端观感：不随主题变浅，始终深色屏幕底。 */
 .shell-terminal-card {
+  --term-bg: #0d1117;
+  --term-header-bg: #161b22;
+  --term-border: #2b3138;
+  --term-fg: #c9d1d9;
+  --term-muted: #8b949e;
+  --term-green: #3fb950;
+  --term-red: #f85149;
   width: 100%;
   box-sizing: border-box;
   margin: 4px 0 8px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
+  border: 1px solid var(--term-border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--peek-input-bg) 92%, #0b0d10);
+  background: var(--term-bg);
   overflow: hidden;
 }
 .shell-terminal-card.running {
-  border-color: color-mix(in srgb, var(--peek-accent) 35%, var(--peek-border));
+  border-color: color-mix(in srgb, var(--peek-accent) 45%, var(--term-border));
 }
 .shell-terminal-card.error {
-  border-color: color-mix(in srgb, var(--destructive) 40%, var(--peek-border));
+  border-color: color-mix(in srgb, var(--term-red) 45%, var(--term-border));
 }
 .shell-terminal-header {
   display: flex;
@@ -124,9 +158,9 @@ function extractOutputFromDetail(detail?: string | null): string {
   margin: 0;
   padding: 7px 12px;
   border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
-  background: color-mix(in srgb, var(--peek-panel) 55%, transparent);
-  color: color-mix(in srgb, var(--peek-text) 88%, var(--peek-muted));
+  border-bottom: 1px solid var(--term-border);
+  background: var(--term-header-bg);
+  color: var(--term-fg);
   font: inherit;
   font-size: 12px;
   line-height: 1.35;
@@ -138,18 +172,41 @@ function extractOutputFromDetail(detail?: string | null): string {
 }
 .shell-terminal-chevron {
   flex: none;
-  color: var(--peek-faint);
+  color: var(--term-muted);
   transition: transform 140ms ease;
 }
 .shell-terminal-chevron.open {
   transform: rotate(90deg);
+}
+.shell-terminal-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--term-green);
+}
+.shell-terminal-dot.running {
+  background: var(--peek-accent);
+  animation: shell-terminal-pulse 1.2s ease-in-out infinite;
+}
+.shell-terminal-dot.error {
+  background: var(--term-red);
+}
+@keyframes shell-terminal-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 .shell-terminal-prompt {
   flex: none;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
-  color: var(--peek-muted);
+  color: var(--term-muted);
   letter-spacing: -0.04em;
 }
 .shell-terminal-title {
@@ -163,29 +220,57 @@ function extractOutputFromDetail(detail?: string | null): string {
 .shell-terminal-status {
   flex: none;
   font-size: 10px;
-  color: var(--peek-muted);
+  color: var(--term-muted);
 }
 .shell-terminal-status.error {
-  color: var(--destructive);
+  color: var(--term-red);
+}
+.shell-terminal-screen {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
+}
+.shell-terminal-cmdline {
+  display: flex;
+  gap: 8px;
+  padding: 9px 12px 0;
+  color: var(--term-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.shell-terminal-ps1 {
+  flex: none;
+  font-weight: 700;
+  color: var(--term-green);
+}
+.shell-terminal-cmd {
+  min-width: 0;
+  font-weight: 550;
 }
 .shell-terminal-body {
   margin: 0;
   max-height: var(--agent-card-max-height, 240px);
   overflow: auto;
-  padding: 10px 12px 12px;
-  color: color-mix(in srgb, var(--peek-text) 82%, #c8d0d8);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.55;
+  padding: 8px 12px 12px;
+  color: var(--term-fg);
+  font: inherit;
   white-space: pre-wrap;
   word-break: break-word;
 }
 .shell-terminal-body.muted {
-  color: var(--peek-muted);
+  color: var(--term-muted);
 }
 .shell-terminal-body code {
   font: inherit;
   color: inherit;
   background: transparent;
+}
+.shell-terminal-exit {
+  padding: 4px 12px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--term-red);
 }
 </style>

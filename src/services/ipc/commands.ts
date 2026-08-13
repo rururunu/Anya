@@ -57,6 +57,7 @@ export function openSessionInWorkbench(sessionId: string, overlayLabel: string) 
 
 export function showInteractionNotification(request: {
   sessionId: string;
+  requestId?: string;
   title: string;
   body: string;
   ignoreLabel: string;
@@ -64,6 +65,13 @@ export function showInteractionNotification(request: {
   persistent?: boolean;
 }) {
   return ipcInvoke<void>(IPC_COMMANDS.showInteractionNotification, { request });
+}
+
+export function dismissInteractionNotification(request: {
+  sessionId?: string;
+  requestId?: string;
+}) {
+  return ipcInvoke<void>(IPC_COMMANDS.dismissInteractionNotification, { request });
 }
 
 export function setWindowSessionView(sessionId?: string) {
@@ -244,6 +252,10 @@ export function rewindSession(request: RewindSessionRequest) {
   return ipcInvoke<RewindSessionResponse>(IPC_COMMANDS.rewindSession, {
     request,
   });
+}
+
+export function revealInExplorer(path: string) {
+  return ipcInvoke<void>(IPC_COMMANDS.revealInExplorer, { path });
 }
 
 export type {

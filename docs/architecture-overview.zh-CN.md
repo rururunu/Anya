@@ -10,12 +10,12 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.8                             |
+| **版本**   | v0.2.9                             |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
 
-**相关文档：** [发布](./release.zh-CN.md) · [文档索引](./README.zh-CN.md)
+**相关文档：** [发布](./release.zh-CN.md) · [文档索引](./README.zh-CN.md) · [Companion（安卓）](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.zh-CN.md)
 
 ---
 
@@ -30,6 +30,7 @@
 - 持久化（SQLite、journal、work timeline）
 - 前端流式投影与会话模型
 - 扩展点（Provider、工具、Skills、MCP）
+- Companion / Remote Gateway（配对、局域网 vs 隧道、线路协议）
 
 **范围外**
 
@@ -46,6 +47,7 @@ Anya 以**单个原生进程**托管多个 WebView 窗口。Rust 宿主负责 OS
 ```mermaid
 flowchart LR
   User((用户)) -->|热键 / 托盘 / 输入| Host[Anya 进程]
+  Phone[Anya Companion] -->|WebSocket /remote/v1| Host
   IDE[IDE 插件] -->|上下文推送| Host
   Host -->|COM| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[模型服务商]
@@ -53,14 +55,15 @@ flowchart LR
   Host --> Disk[(SQLite · 设置 · 检查点)]
 ```
 
-| 参与方            | 交互方式                                              |
-| ----------------- | ----------------------------------------------------- |
-| 用户              | 全局热键、托盘、输入栏、Diff 审查                     |
-| IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）        |
-| Microsoft Office  | COM：文档上下文与 `word_*` / `excel_*` / `ppt_*` 工具 |
-| 模型服务商        | 鉴权 HTTPS；支持处使用流式                            |
-| MCP / 搜索 / mem0 | 可选；在设置中显式启用                                |
-| 本地磁盘          | 聊天库、设置、更新公钥、检查点撤销数据                |
+| 参与方            | 交互方式                                               |
+| ----------------- | ------------------------------------------------------ |
+| 用户              | 全局热键、托盘、输入栏、Diff 审查                      |
+| Anya Companion    | 安卓远程控制台；局域网 `ws` 或 Cloudflare `wss` 连网关 |
+| IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）         |
+| Microsoft Office  | COM：文档上下文与 `word_*` / `excel_*` / `ppt_*` 工具  |
+| 模型服务商        | 鉴权 HTTPS；支持处使用流式                             |
+| MCP / 搜索 / mem0 | 可选；在设置中显式启用                                 |
+| 本地磁盘          | 聊天库、设置、更新公钥、检查点撤销数据                 |
 
 ---
 
@@ -96,6 +99,7 @@ flowchart TB
   subgraph Adapters["L4 Adapters"]
     Rt["crate::runtime<br/>git · search · browser · shell"]
     OfficeCore["core/office · core/mcp · core/lsp"]
+    Remote["core/remote<br/>gateway · pairing · tunnel"]
     Svc["services/<br/>window · hotkey · settings · oauth · pin_badge"]
   end
 
@@ -111,16 +115,17 @@ flowchart TB
   Chat --> Persist
   Tools --> Rt
   Tools --> OfficeCore
+  Remote --> Chat
   Bus --> FeIpc
   Chat --> Bus
 ```
 
-| 层              | 位置                                                | 职责                                            | 禁止                     |
-| --------------- | --------------------------------------------------- | ----------------------------------------------- | ------------------------ |
-| L1 Presentation | `src/{layouts,components,composables,stores,pages}` | 渲染、本地 UX 状态、RAF 合并流式增量            | 调用 Provider 或执行工具 |
-| L2 Bridge       | `src/services/ipc`、`commands/`、`adapters/`        | 序列化 IPC DTO；将 `BusEvent` 投影为 Tauri emit | 承载业务策略             |
-| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`              | 聊天生命周期、Agent 循环、工具、提示词、持久化  | 依赖 Vue / DOM           |
-| L4 Adapters     | `runtime/`、`services/`、`core/{office,mcp,lsp}`    | OS、COM、HTTP 客户端、MCP 传输                  | 驱动 Agent 主循环        |
+| 层              | 位置                                                    | 职责                                            | 禁止                     |
+| --------------- | ------------------------------------------------------- | ----------------------------------------------- | ------------------------ |
+| L1 Presentation | `src/{layouts,components,composables,stores,pages}`     | 渲染、本地 UX 状态、RAF 合并流式增量            | 调用 Provider 或执行工具 |
+| L2 Bridge       | `src/services/ipc`、`commands/`、`adapters/`            | 序列化 IPC DTO；将 `BusEvent` 投影为 Tauri emit | 承载业务策略             |
+| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                  | 聊天生命周期、Agent 循环、工具、提示词、持久化  | 依赖 Vue / DOM           |
+| L4 Adapters     | `runtime/`、`services/`、`core/{office,mcp,lsp,remote}` | OS、COM、HTTP 客户端、MCP 传输、Companion WS    | 驱动 Agent 主循环        |
 
 ### 3.2 前端依赖规则
 
@@ -152,17 +157,20 @@ services（window、hotkey、settings）→ 按需依赖 core
 ```mermaid
 flowchart TB
   subgraph Process["Anya.exe"]
-    Rust["Rust 宿主<br/>hotkey · tray · COM · SQLite · AgentRuntime"]
+    Rust["Rust 宿主<br/>hotkey · tray · COM · SQLite · AgentRuntime · Gateway"]
     WV1["WebView: workbench"]
     WV2["WebView: overlay"]
     WV3["WebView: settings"]
     WV4["WebView: image-preview"]
   end
 
+  Phone[Anya Companion]
+
   WV1 <-->|invoke / events| Rust
   WV2 <-->|invoke / events| Rust
   WV3 <-->|invoke / events| Rust
   WV4 <-->|invoke / events| Rust
+  Phone -->|ws / wss /remote/v1| Rust
 ```
 
 | 表面      | Label               | 职责                               |
@@ -172,7 +180,64 @@ flowchart TB
 | Settings  | `settings`          | 服务商 / Agent / 扩展配置          |
 | Preview   | `overlay-preview-*` | 图片预览窗口                       |
 
-会话标识（`session_id`）由 Rust 会话存储拥有。Overlay 与 Workbench 可同时附着到**同一**会话。
+会话标识（`session_id`）由 Rust 会话存储拥有。Overlay 与 Workbench 可同时附着到**同一**会话。Companion 经网关附着并投影同一存储——它不拥有第二套 Agent。
+
+### 4.1 Remote Gateway 与 Companion
+
+手机应用：[AnyaAndroid](https://github.com/rururunu/AnyaAndroid)。桌面代码：`src-tauri/src/core/remote/`。Companion 是 **投影 + RPC 客户端**；工具、SQLite 与模型密钥仍在本进程。
+
+```mermaid
+flowchart TB
+  subgraph Phone["Anya Companion"]
+    UI[Compose UI]
+    Client[RemoteGatewayClient]
+    UI --> Client
+  end
+
+  subgraph Path["可达性"]
+    LAN["同一 Wi-Fi<br/>ws://lanHost:8787/remote/v1"]
+    CF["外出<br/>wss://*.trycloudflare.com/remote/v1"]
+  end
+
+  subgraph Desktop["Anya.exe"]
+    GW[gateway.rs :8787]
+    Tunnel[cloudflared Quick Tunnel]
+    Pair[pairing.rs]
+    Bridge[bridge.rs → EventBus]
+    Chat[ChatService / AgentRunner]
+    GW --> Pair
+    GW --> Bridge
+    Bridge --> Chat
+    Tunnel --> GW
+  end
+
+  Client -->|"1. 局域网优先"| LAN --> GW
+  Client -->|"2. 公网回退"| CF --> Tunnel
+```
+
+```mermaid
+sequenceDiagram
+  participant D as 桌面
+  participant P as Companion
+  D->>D: 配对令牌 + 二维码（anya://pair）
+  P->>D: WebSocket /remote/v1
+  P->>D: hello { deviceId, credential }
+  D-->>P: hello.ok
+  D-->>P: event session.snapshot
+  P->>D: chat.send / approval.respond / file.upload.*
+  D-->>P: event（增量、审批、file.offer）
+```
+
+| 主题        | 约定                                                                  |
+| ----------- | --------------------------------------------------------------------- |
+| 路径 / 端口 | `/remote/v1`，端口 **8787**（局域网 `ws`，隧道 `wss`）                |
+| 鉴权        | 短时二维码令牌，随后存储设备凭证                                      |
+| 保活        | 应用层 `ping` / `pong`（代理常丢原生 WS ping）                        |
+| 手机 → 桌面 | 分片 `file.upload.*`，512KB，上限 **500MB**                           |
+| 桌面 → 手机 | `share_to_companion` 卡片 + `workspace.readFile` `mode=download` 分片 |
+| 预览        | 同一网关上的 HTTP `/p/{id}/` 反向代理                                 |
+
+手机侧图示：[Companion 架构](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.zh-CN.md)。
 
 ---
 
@@ -199,6 +264,7 @@ flowchart TB
 | MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/office`     | 外部协议适配                                                 |
 | 协议类型           | `core/runtime/`                           | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`             |
 | Event bus          | `core/event/`                             | 领域事件                                                     |
+| Remote gateway     | `core/remote/`                            | Companion WS `/remote/v1`、配对、隧道、上传、预览代理        |
 
 ### 5.2 命名：三处 “runtime”
 
@@ -519,16 +585,18 @@ flowchart LR
 
 ## 15. 扩展点
 
-| 目标         | 首选挂接点                                         |
-| ------------ | -------------------------------------------------- |
-| 新模型厂商   | `core/ai` 实现 `AIProvider` + 设置接线             |
-| 新内置工具   | `core/tools` 注册表 + 可选 `runtime/` 适配         |
-| 新回合策略   | `core/chat/agent_loop` 模块，由 `AgentRunner` 调用 |
-| 新窗口表面   | Tauri window label + `src/main.ts` 启动分支        |
-| 外部上下文源 | `core/context` provider                            |
-| 新 Skill     | `src-tauri/prompts/skills/*.md`（按需加资源）      |
+| 目标                 | 首选挂接点                                         |
+| -------------------- | -------------------------------------------------- |
+| 新模型厂商           | `core/ai` 实现 `AIProvider` + 设置接线             |
+| 新内置工具           | `core/tools` 注册表 + 可选 `runtime/` 适配         |
+| 新回合策略           | `core/chat/agent_loop` 模块，由 `AgentRunner` 调用 |
+| 新窗口表面           | Tauri window label + `src/main.ts` 启动分支        |
+| 外部上下文源         | `core/context` provider                            |
+| 新 Skill             | `src-tauri/prompts/skills/*.md`（按需加资源）      |
+| Companion RPC / 事件 | `core/remote/protocol.rs` + AnyaAndroid 手机客户端 |
 
 避免在 `AgentRunner` 之外平行再造一套 Agent 循环。
+Companion 不得再长出第二套 Agent 运行时。
 
 ---
 
@@ -546,3 +614,6 @@ flowchart LR
 | 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/main.ts`、`src/stores/chat.ts`      |
 | 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                    |
 | 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue` |
+| Remote gateway / 配对       | `core/remote/gateway.rs`、`pairing.rs`、`tunnel.rs`           |
+| Companion 文件传输          | `core/remote/upload.rs`、`workspace.readFile` download 模式   |
+| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)        |

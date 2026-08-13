@@ -46,6 +46,7 @@ tokio-tungstenite = { version = "0.26", default-features = false, features = ["h
 qrcode = { version = "0.14", default-features = false, features = ["image"] }
 rdev = "0.5"
 glob = "0.3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 walkdir = "2"
 regex = "1"
 similar = "2"

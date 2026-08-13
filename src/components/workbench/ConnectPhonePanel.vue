@@ -2,8 +2,13 @@
   <section class="connect-phone">
     <div class="connect-shell">
       <header class="connect-header">
-        <h2>{{ copy.title }}</h2>
-        <p>{{ copy.subtitle }}</p>
+        <div class="connect-header-main">
+          <h2>{{ copy.title }}</h2>
+          <p>{{ copy.subtitle }}</p>
+        </div>
+        <button type="button" class="tunnel-settings-btn" @click="tunnelConfigOpen = true">
+          {{ copy.publicTunnelConfigButton }}
+        </button>
       </header>
 
       <div class="status-line" :data-running="status?.running ? '1' : '0'">
@@ -52,17 +57,6 @@
         >
           {{ copy.tabCode }}
         </button>
-      </div>
-
-      <div class="public-tunnel-trigger">
-        <Button
-          variant="outline"
-          size="sm"
-          class="h-8 gap-1.5 public-tunnel-trigger-button"
-          @click="tunnelConfigOpen = true"
-        >
-          {{ copy.publicTunnelConfigButton }}
-        </Button>
       </div>
 
       <DialogRoot :open="tunnelConfigOpen" @update:open="tunnelConfigOpen = $event">
@@ -223,36 +217,45 @@
         </template>
 
         <template v-else>
-          <div class="hero">
-            <p class="eyebrow">{{ copy.pairingCode }}</p>
-            <div class="code-block">
-              <code>{{ displayCode }}</code>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="size-8 shrink-0"
-                :disabled="!pairing"
-                :title="copy.copy"
-                :aria-label="copy.copy"
-                @click="copyText(displayCode)"
-              >
-                <Copy :size="14" :stroke-width="1.75" />
-              </Button>
+          <div class="code-panel">
+            <div class="token-block">
+              <span class="field-label">{{ copy.fillToken }}</span>
+              <div class="token-row">
+                <code>{{ displayCode }}</code>
+                <button
+                  type="button"
+                  class="icon-copy"
+                  :disabled="!pairing"
+                  :title="copy.copy"
+                  :aria-label="copy.copy"
+                  @click="copyText(pairing?.pairingCode || '')"
+                >
+                  <Copy :size="14" :stroke-width="1.75" />
+                </button>
+              </div>
             </div>
-            <p class="hint">{{ copy.pairingCodeHint }}</p>
-            <p v-if="connectionSummary" class="meta">{{ connectionSummary }}</p>
-            <p v-if="expiresLabel" class="expires">{{ expiresLabel }}</p>
-            <div class="hero-actions">
-              <Button
-                variant="outline"
-                size="sm"
-                class="h-8 gap-1.5"
-                :disabled="!pairing"
-                @click="copyText(pairing?.token || '')"
-              >
-                <Copy :size="13" :stroke-width="1.75" />
-                {{ copy.copyToken }}
-              </Button>
+
+            <div v-if="pairing" class="field-list">
+              <button type="button" class="field-item" @click="copyText(pairing.host)">
+                <span class="field-label">{{ copy.fillHost }}</span>
+                <span class="field-value wrap">{{ pairing.host }}</span>
+                <Copy class="field-copy" :size="12" :stroke-width="1.75" aria-hidden="true" />
+              </button>
+              <button type="button" class="field-item" @click="copyText(String(pairing.port))">
+                <span class="field-label">{{ copy.fillPort }}</span>
+                <span class="field-value">{{ pairing.port }}</span>
+                <Copy class="field-copy" :size="12" :stroke-width="1.75" aria-hidden="true" />
+              </button>
+              <button type="button" class="field-item" @click="copyText(pairing.scheme)">
+                <span class="field-label">{{ copy.fillScheme }}</span>
+                <span class="field-value">{{ pairing.scheme }}</span>
+                <Copy class="field-copy" :size="12" :stroke-width="1.75" aria-hidden="true" />
+              </button>
+            </div>
+
+            <p v-if="lanFillSummary" class="meta">{{ lanFillSummary }}</p>
+            <div class="code-footer">
+              <p v-if="expiresLabel" class="expires">{{ expiresLabel }}</p>
               <Button size="sm" class="h-8 gap-1.5" :disabled="busy" @click="refreshPairing">
                 <Loader2 v-if="busy" :size="13" :stroke-width="1.75" class="spin" />
                 <RefreshCw v-else :size="13" :stroke-width="1.75" />
@@ -359,10 +362,12 @@ const copy = computed(() =>
         qrEmpty: "点击下方生成二维码",
         generateCode: "生成",
         refreshCode: "刷新",
-        pairingCode: "配对码",
-        pairingCodeHint: "在手机端「配对令牌」中填写此短码",
+        fillHost: "主机",
+        fillPort: "端口",
+        fillScheme: "协议",
+        fillToken: "配对令牌",
+        lanFillHint: "同一 Wi‑Fi 也可填内网主机 {host}、端口 {port}、协议 ws",
         copy: "复制",
-        copyToken: "复制完整令牌",
         devices: "已配对设备",
         connectedCount: "在线 {n}",
         noDevices: "还没有手机连上",
@@ -386,7 +391,7 @@ const copy = computed(() =>
         advanced: "高级选项",
         save: "保存",
         cancel: "取消",
-        publicTunnelConfigButton: "公网连接设置",
+        publicTunnelConfigButton: "公网设置",
         publicTunnelConfigTitle: "公网连接",
         publicTunnelConfigDesc: "让手机在任意网络下连上这台电脑。",
         tunnelConnecting: "正在建立公网隧道，可能需要几秒到 25 秒，请稍候…",
@@ -406,10 +411,12 @@ const copy = computed(() =>
         qrEmpty: "Generate a QR code below",
         generateCode: "Generate",
         refreshCode: "Refresh",
-        pairingCode: "Pairing code",
-        pairingCodeHint: "Enter this short code as the pairing token",
+        fillHost: "Host",
+        fillPort: "Port",
+        fillScheme: "Scheme",
+        fillToken: "Pairing token",
+        lanFillHint: "On the same Wi‑Fi: host {host}, port {port}, scheme ws",
         copy: "Copy",
-        copyToken: "Copy full token",
         devices: "Paired devices",
         connectedCount: "{n} online",
         noDevices: "No phones paired yet",
@@ -433,7 +440,7 @@ const copy = computed(() =>
         advanced: "Advanced",
         save: "Save",
         cancel: "Cancel",
-        publicTunnelConfigButton: "Public tunnel settings",
+        publicTunnelConfigButton: "Public settings",
         publicTunnelConfigTitle: "Public access",
         publicTunnelConfigDesc: "Let your phone connect from any network.",
         tunnelConnecting: "Setting up the public tunnel — this can take up to 25s…",
@@ -451,16 +458,13 @@ const displayCode = computed(() => {
   return code || "————";
 });
 
-const connectionSummary = computed(() => {
+// Same Wi‑Fi fallback hint when a public tunnel host is shown as the primary fill values.
+const lanFillSummary = computed(() => {
   const p = pairing.value;
-  if (!p?.host || !p.port) return "";
-  // Gateway WebSocket path is fixed in remote gateway.
-  const path = "/remote/v1";
-  if (p.scheme === "wss") {
-    // Default TLS port can be omitted for readability.
-    return p.port === 443 ? `wss://${p.host}${path}` : `wss://${p.host}:${p.port}${path}`;
-  }
-  return `ws://${p.host}:${p.port}${path}`;
+  const lanHost = p?.lanHosts?.[0];
+  if (!lanHost || !p?.lanPort) return "";
+  if (p.host === lanHost) return "";
+  return copy.value.lanFillHint.replace("{host}", lanHost).replace("{port}", String(p.lanPort));
 });
 
 const expiresLabel = computed(() => {
@@ -637,8 +641,22 @@ function formatTime(epochMs: number) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   text-align: center;
+}
+
+.connect-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.connect-header-main {
+  min-width: 0;
+  flex: 1;
 }
 
 .connect-header h2 {
@@ -649,10 +667,29 @@ function formatTime(epochMs: number) {
 }
 
 .connect-header p {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--muted-foreground);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.tunnel-settings-btn {
+  flex: none;
+  margin-top: 1px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--border, var(--peek-border)) 90%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tunnel-settings-btn:hover {
+  background: color-mix(in srgb, var(--muted-foreground) 8%, transparent);
 }
 
 .status-line {
@@ -809,9 +846,8 @@ function formatTime(epochMs: number) {
   place-items: center;
   background: #fff;
   border: 1px solid color-mix(in srgb, var(--border, var(--peek-border)) 85%, transparent);
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 10px 28px color-mix(in srgb, #000 6%, transparent);
 }
 
 .qr-frame img {
@@ -826,35 +862,133 @@ function formatTime(epochMs: number) {
   padding: 20px;
 }
 
-.eyebrow {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted-foreground);
+.code-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+  text-align: left;
 }
 
-.code-block {
+.token-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.token-row {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 10px 10px 10px 18px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--muted-foreground) 8%, transparent);
+  gap: 6px;
 }
 
-.code-block code {
-  font-size: 32px;
+.token-row code {
+  font-size: 30px;
   font-weight: 650;
-  letter-spacing: 0.16em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.14em;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
   line-height: 1;
+  color: var(--foreground);
 }
 
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
+.icon-copy {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  gap: 8px;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.icon-copy:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--muted-foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.icon-copy:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.field-list {
+  width: 100%;
+  border-top: 1px solid color-mix(in srgb, var(--border, var(--peek-border)) 85%, transparent);
+}
+
+.field-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 2px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, var(--peek-border)) 85%, transparent);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.field-item:hover {
+  background: color-mix(in srgb, var(--muted-foreground) 4%, transparent);
+}
+
+.field-item:hover .field-copy {
+  opacity: 0.7;
+}
+
+.field-label {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  padding-top: 1px;
+}
+
+.field-value {
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--foreground);
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-value.wrap {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.field-copy {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  opacity: 0.3;
+  transition: opacity 120ms ease;
+}
+
+.code-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
 .devices {
@@ -931,33 +1065,6 @@ function formatTime(epochMs: number) {
 .revoke:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-.tunnel-config {
-  width: 100%;
-  padding-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  align-items: center;
-}
-
-.tunnel-config-button {
-  max-width: 560px;
-  margin: 0 auto;
-  align-self: center;
-  width: fit-content;
-}
-
-.public-tunnel-trigger {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  margin-top: 8px;
-}
-
-.public-tunnel-trigger-button {
-  max-width: 560px;
 }
 
 .public-tunnel-overlay {
@@ -1041,7 +1148,7 @@ function formatTime(epochMs: number) {
   color: var(--foreground);
   font-size: 11px;
   line-height: 1.4;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
   word-break: break-all;
   text-align: left;
 }

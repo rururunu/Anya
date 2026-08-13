@@ -57,6 +57,13 @@ pub const STALL_CHALLENGE: &str = concat!(
     "and report the blocker.",
 );
 
+pub const SHARE_DELIVERABLE_CHALLENGE: &str = concat!(
+    "[System] This turn edited files or started a local web server, but you have ",
+    "not shared the deliverable. Before finishing, call `share_to_companion` for ",
+    "the files the user should open, and/or `share_preview_url` for a local ",
+    "http://127.0.0.1:... preview. Do not wrap files in HTML. Then answer.",
+);
+
 /// Global ablation switch used by the eval harness (`--no-challenge`).
 static CHALLENGES_DISABLED: AtomicBool = AtomicBool::new(false);
 
@@ -98,6 +105,10 @@ pub struct CompletionGate {
     /// Success fingerprints: tool|args → count (no-progress loop detection).
     success_repeats: HashMap<String, u32>,
     stalled: bool,
+    wrote_files: bool,
+    started_local_server: bool,
+    shared_deliverable: bool,
+    share_nudge_retries: u32,
     /// Disable all challenges for this gate instance (eval ablation).
     disabled: bool,
 }
@@ -145,6 +156,15 @@ impl CompletionGate {
         if !outcome.success {
             return;
         }
+        if is_share_tool(&outcome.tool_name) {
+            self.shared_deliverable = true;
+        }
+        if is_write_tool(&outcome.tool_name) {
+            self.wrote_files = true;
+        }
+        if looks_like_local_dev_server(&outcome.tool_name, &outcome.arguments) {
+            self.started_local_server = true;
+        }
         if self.mutation_succeeded && provides_verification_evidence(tools, outcome) {
             self.verification_succeeded = true;
         } else if provides_completion_evidence(tools, outcome) {
@@ -184,6 +204,23 @@ impl CompletionGate {
                 content,
                 reasoning: non_empty(reasoning),
                 finish_reason,
+            };
+        }
+
+        if (self.wrote_files || self.started_local_server)
+            && !self.shared_deliverable
+            && self.share_nudge_retries < MAX_COMPLETION_RETRIES
+        {
+            self.share_nudge_retries += 1;
+            push_completion_feedback(
+                request,
+                user_msg_index,
+                content,
+                reasoning,
+                SHARE_DELIVERABLE_CHALLENGE,
+            );
+            return ChallengeOutcome::ContinueWithChallenge {
+                status_kind: "share_deliverable".to_string(),
             };
         }
 
@@ -270,6 +307,52 @@ impl CompletionGate {
                 .any(|mutated| paths_match(goal, mutated))
         })
     }
+}
+
+fn is_write_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "write_file"
+            | "replace_in_file"
+            | "replace_many_in_file"
+            | "apply_patch"
+            | "edit_notebook_cell"
+    )
+}
+
+fn is_share_tool(name: &str) -> bool {
+    matches!(name, "share_to_companion" | "share_preview_url")
+}
+
+fn looks_like_local_dev_server(tool_name: &str, arguments: &str) -> bool {
+    if tool_name != "run_shell" {
+        return false;
+    }
+    let value: serde_json::Value = serde_json::from_str(arguments).unwrap_or(serde_json::Value::Null);
+    let background = value
+        .get("run_in_background")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !background {
+        return false;
+    }
+    let command = value
+        .get("command")
+        .and_then(|v| v.as_str())
+        .unwrap_or(arguments)
+        .to_ascii_lowercase();
+    const MARKERS: &[&str] = &[
+        "npm ",
+        "npm.cmd",
+        "pnpm ",
+        "yarn ",
+        "vite",
+        "next dev",
+        "nuxt",
+        "webpack-dev-server",
+        "npx ",
+    ];
+    MARKERS.iter().any(|marker| command.contains(marker))
 }
 
 fn paths_match(goal: &str, mutated: &str) -> bool {
@@ -571,5 +654,19 @@ mod tests {
             gate.record_tool_outcome(&tools, &outcome);
         }
         assert!(gate.stalled);
+    }
+
+    #[test]
+    fn detects_background_vite_as_local_server() {
+        assert!(looks_like_local_dev_server(
+            "run_shell",
+            r#"{"command":"npx vite --host","run_in_background":true}"#
+        ));
+        assert!(!looks_like_local_dev_server(
+            "run_shell",
+            r#"{"command":"npx vite --host","run_in_background":false}"#
+        ));
+        assert!(is_write_tool("write_file"));
+        assert!(is_share_tool("share_preview_url"));
     }
 }

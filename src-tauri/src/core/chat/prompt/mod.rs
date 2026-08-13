@@ -26,6 +26,8 @@ pub struct PromptPreferences {
     pub minimal_coding: bool,
     /// Inject plan-mode instructions while writer tools are gated.
     pub plan_mode: bool,
+    /// True when this turn was sent from the paired phone (Companion app).
+    pub companion_origin: bool,
 }
 
 pub struct PromptBuildInput<'a> {
@@ -98,6 +100,7 @@ impl PromptBuilder {
             &preferences.collaboration_models,
             preferences.minimal_coding,
             preferences.plan_mode,
+            preferences.companion_origin,
         );
 
         // [5..] History（排除 pending 的空 assistant）

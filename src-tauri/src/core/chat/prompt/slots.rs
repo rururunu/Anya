@@ -6,7 +6,8 @@ use crate::core::chat::limits::{
 use crate::core::runtime::{ChatMessage, MessageStatus, RequestContext, Role};
 
 use crate::core::chat::prompts::{
-    MINIMAL_CODING_PROMPT, MULTI_MODEL_COLLABORATION_PROMPT, PLAN_MODE_PROMPT, SYSTEM_PROMPT,
+    COMPANION_ORIGIN_PROMPT, MINIMAL_CODING_PROMPT, MULTI_MODEL_COLLABORATION_PROMPT,
+    PLAN_MODE_PROMPT, SYSTEM_PROMPT,
 };
 
 /// Slot [4]: optional strategies in fixed relative order. Disabled strategies
@@ -17,7 +18,16 @@ pub(super) fn inject_optional_policy_suffix(
     collaboration_models: &[String],
     minimal_coding: bool,
     plan_mode: bool,
+    companion_origin: bool,
 ) {
+    if companion_origin {
+        inject_system_block(
+            messages,
+            session_id,
+            "companion-origin",
+            Some(COMPANION_ORIGIN_PROMPT),
+        );
+    }
     if !collaboration_models.is_empty() {
         let list = collaboration_models
             .iter()

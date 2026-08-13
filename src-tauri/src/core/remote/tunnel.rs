@@ -1,13 +1,78 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::runtime::terminal::prepare_command;
 
-use super::state::{remote_state, TunnelPrefs, TunnelPublicInfo, TunnelRuntime};
+use super::state::{
+    gateway_status, remote_state, TunnelChildHealth, TunnelPrefs, TunnelPublicInfo, TunnelRuntime,
+};
+
+/// 看护代际：每次安装新隧道运行时自增，旧看护线程据此退出。
+static WATCHDOG_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+const WATCHDOG_POLL: Duration = Duration::from_secs(5);
+const RESTART_BACKOFF_INITIAL: Duration = Duration::from_secs(2);
+const RESTART_BACKOFF_MAX: Duration = Duration::from_secs(60);
+
+/// 安装隧道运行时并启动看护线程：cloudflared 意外退出时指数退避自动重建。
+fn install_tunnel_runtime(app: &AppHandle, runtime: TunnelRuntime, local_port: u16) {
+    remote_state(app).set_tunnel_runtime(runtime);
+    spawn_tunnel_watchdog(app.clone(), local_port);
+}
+
+fn spawn_tunnel_watchdog(app: AppHandle, local_port: u16) {
+    let generation = WATCHDOG_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    std::thread::spawn(move || {
+        let state = remote_state(&app);
+        loop {
+            std::thread::sleep(WATCHDOG_POLL);
+            if WATCHDOG_GENERATION.load(Ordering::SeqCst) != generation {
+                return; // 新隧道已由新一代看护接管
+            }
+            match state.tunnel_child_health() {
+                TunnelChildHealth::Running => continue,
+                TunnelChildHealth::Missing => return, // 被主动停止
+                TunnelChildHealth::Exited => break,
+            }
+        }
+
+        tracing::warn!("cloudflared exited unexpectedly; scheduling restart");
+        let _ = state.take_tunnel_runtime();
+
+        let mut backoff = RESTART_BACKOFF_INITIAL;
+        loop {
+            if WATCHDOG_GENERATION.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            let prefs = state.tunnel_prefs();
+            if !prefs.cloudflared_enabled || !state.is_running() {
+                return;
+            }
+            match ensure_cloudflared_tunnel(&app, local_port, true) {
+                Ok(public) => {
+                    tracing::info!(host = %public.host, "cloudflared tunnel restarted");
+                    // Quick Tunnel 域名会变化：广播状态让前端刷新二维码/连接信息。
+                    let _ = app.emit("remote-gateway-status", gateway_status(&app));
+                    return; // ensure 内部已启动新一代看护
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        backoff_secs = backoff.as_secs(),
+                        "cloudflared restart failed; retrying"
+                    );
+                    std::thread::sleep(backoff);
+                    backoff = (backoff * 2).min(RESTART_BACKOFF_MAX);
+                }
+            }
+        }
+    });
+}
 
 fn extract_trycloudflare_url(line: &str) -> Option<String> {
     // cloudflared generally prints a URL like:
@@ -115,6 +180,11 @@ fn cloudflared_command(prefs: &TunnelPrefs, local_port: u16) -> Result<Command, 
         "--no-autoupdate",
         "--loglevel",
         "info",
+        // QUIC (default auto) often drops WebSocket frames ~1s after 101 in China /
+        // behind DPI. HTTP/2 over TCP 443 keeps Upgrade + subsequent frames intact.
+        // See cloudflared#1652.
+        "--protocol",
+        "http2",
         "tunnel",
     ]);
 
@@ -130,8 +200,10 @@ fn cloudflared_command(prefs: &TunnelPrefs, local_port: u16) -> Result<Command, 
         return Ok(cmd);
     }
 
-    // Named tunnel using token, but still override local origin with --url.
-    cmd.args(["--url", origin.as_str(), "run", "--token", token]);
+    // Remotely-managed named tunnel: ingress/origin come from the Cloudflare
+    // dashboard. Do not put `--url` before `run` — that is the Quick Tunnel
+    // flag and can make cloudflared treat the session as short-lived HTTP.
+    cmd.args(["run", "--token", token]);
     Ok(cmd)
 }
 
@@ -232,10 +304,14 @@ pub fn ensure_cloudflared_tunnel(
         match spawn_cloudflared(&prefs, local_port) {
             Ok(mut child) => {
                 attach_output_drainers(&mut child);
-                state.set_tunnel_runtime(TunnelRuntime {
-                    child,
-                    public: public.clone(),
-                });
+                install_tunnel_runtime(
+                    app,
+                    TunnelRuntime {
+                        child,
+                        public: public.clone(),
+                    },
+                    local_port,
+                );
             }
             Err(err) => {
                 tracing::warn!(error = %err, "cloudflared spawn failed; using saved hostname");
@@ -365,10 +441,14 @@ pub fn ensure_cloudflared_tunnel(
 
     let public = public_info_from_host(host);
 
-    state.set_tunnel_runtime(TunnelRuntime {
-        child,
-        public: public.clone(),
-    });
+    install_tunnel_runtime(
+        app,
+        TunnelRuntime {
+            child,
+            public: public.clone(),
+        },
+        local_port,
+    );
     Ok(public)
 }
 

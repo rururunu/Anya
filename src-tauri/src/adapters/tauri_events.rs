@@ -188,6 +188,48 @@ impl EventBus for TauriEventBus {
                     },
                 );
             }
+            BusEvent::FileOffer {
+                session_id,
+                offer_id,
+                path,
+                absolute_path,
+                name,
+                mime,
+                size,
+                workspace_id,
+            } => {
+                let _ = self.app.emit(
+                    "file-offer",
+                    serde_json::json!({
+                        "sessionId": session_id,
+                        "offerId": offer_id,
+                        "path": path,
+                        "absolutePath": absolute_path,
+                        "name": name,
+                        "mime": mime,
+                        "size": size,
+                        "workspaceId": workspace_id,
+                    }),
+                );
+            }
+            BusEvent::UrlOffer {
+                session_id,
+                offer_id,
+                label,
+                origin_url,
+                public_url,
+            } => {
+                let _ = self.app.emit(
+                    "url-offer",
+                    serde_json::json!({
+                        "sessionId": session_id,
+                        "offerId": offer_id,
+                        "label": label,
+                        "originUrl": origin_url,
+                        "publicUrl": public_url,
+                    }),
+                );
+            }
             BusEvent::PathPermissionRequest {
                 session_id,
                 request_id,

@@ -296,6 +296,8 @@ fn build_title(tool_name: &str, args: &Value) -> String {
             }
         }
         "ask_user" => "Ask user".into(),
+        "share_to_companion" => "Share file".into(),
+        "share_preview_url" => "Share preview URL".into(),
         "update_tasks" | "todo_write" => "Update tasks".into(),
         "complete_plan_step" => "Complete plan step".into(),
 

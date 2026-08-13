@@ -7,6 +7,7 @@ import {
   respondPathPermission,
   respondToolApproval,
   showInteractionNotification,
+  dismissInteractionNotification,
 } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
@@ -87,6 +88,13 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     unreadSessionIds.value = next;
   }
 
+  async function isWorkbenchClosed() {
+    const visible = await appWindow.isVisible();
+    const minimized = await appWindow.isMinimized();
+    return !visible || minimized;
+  }
+
+  /** Kept for callers that still want “this session is on screen & focused”. */
   async function isSessionBeingViewed(sessionId: string) {
     if (
       sessionId !== activeSessionId.value ||
@@ -94,7 +102,8 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
       document.visibilityState !== "visible"
     )
       return false;
-    return (await appWindow.isVisible()) && (await appWindow.isFocused());
+    if (await isWorkbenchClosed()) return false;
+    return await appWindow.isFocused();
   }
 
   function sessionDisplayName(sessionId: string) {
@@ -108,9 +117,11 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     title: string,
     body: string,
     persistent = false,
+    requestId?: string,
   ) {
     await showInteractionNotification({
       sessionId,
+      requestId,
       title,
       body,
       ignoreLabel: tr(settingStore.language, "notification.ignore"),
@@ -119,10 +130,24 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     });
   }
 
-  async function notifyWhenNotViewed(sessionId: string, title: string, body: string) {
-    if (await isSessionBeingViewed(sessionId)) return false;
-    await showActionableWindowsNotification(sessionId, title, body, true);
+  /** System toast only when the workbench is closed (tray). */
+  async function notifyWhenNotViewed(
+    sessionId: string,
+    title: string,
+    body: string,
+    requestId?: string,
+  ) {
+    if (!(await isWorkbenchClosed())) return false;
+    await showActionableWindowsNotification(sessionId, title, body, true, requestId);
     return true;
+  }
+
+  async function dismissNotificationForInteraction(requestId?: string, sessionId?: string) {
+    try {
+      await dismissInteractionNotification({ requestId, sessionId });
+    } catch (error) {
+      console.warn("dismiss_interaction_notification failed:", error);
+    }
   }
 
   function isAlreadyResolvedError(error: unknown) {
@@ -134,6 +159,7 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     if (!session) return;
     const sessionId = activeSessionId.value;
     removePendingInteraction(sessionId, session.requestId);
+    void dismissNotificationForInteraction(session.requestId, sessionId);
     try {
       await respondAskUser({ requestId: session.requestId, answer });
       chatStore.completeAskUserToolActivities(sessionId, answer);
@@ -150,6 +176,7 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     if (!session) return;
     const sessionId = activeSessionId.value;
     removePendingInteraction(sessionId, session.requestId);
+    void dismissNotificationForInteraction(session.requestId, sessionId);
     try {
       await respondPathPermission({ requestId: session.requestId, decision });
     } catch (error) {
@@ -165,6 +192,7 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     if (!session) return;
     const sessionId = activeSessionId.value;
     removePendingInteraction(sessionId, session.requestId);
+    void dismissNotificationForInteraction(session.requestId, sessionId);
     try {
       await respondToolApproval({ requestId: session.requestId, decision });
     } catch (error) {
@@ -189,9 +217,11 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     markSessionUnread,
     clearSessionUnread,
     isSessionBeingViewed,
+    isWorkbenchClosed,
     sessionDisplayName,
     showActionableWindowsNotification,
     notifyWhenNotViewed,
+    dismissNotificationForInteraction,
     isAlreadyResolvedError,
     completeAskUser,
     completePathPermission,

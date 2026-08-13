@@ -205,7 +205,7 @@ function rowTitle(item: HashMentionItem): string {
 .hash-vendor {
   flex: 1;
   min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
   font-size: 11px;
   font-weight: 500;
   color: var(--peek-muted);

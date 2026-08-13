@@ -18,6 +18,8 @@ import {
   listenToolStarted,
   listenTaskListUpdated,
   listenPlanModeChanged,
+  listenFileOffer,
+  listenUrlOffer,
 } from "@/services/ipc";
 import { normalizeToolActivityEvent, resolveSessionId } from "@/services/chat/normalize";
 import { createRafBatch } from "@/services/chat/rafBatch";
@@ -332,6 +334,13 @@ async function bootstrap() {
   await listenToolStarted((payload) => handleToolActivity(payload, { recordUsage: true }));
   await listenToolFinished(handleToolActivity);
 
+  await listenFileOffer((payload) => {
+    chatStore.applyFileOffer(payload, chatStore.overlayDraftSessionId);
+  });
+  await listenUrlOffer((payload) => {
+    chatStore.applyUrlOffer(payload, chatStore.overlayDraftSessionId);
+  });
+
   await listenTaskListUpdated((payload) => {
     const sessionId = resolveSessionId(payload.sessionId, chatStore.overlayDraftSessionId);
     if (!sessionId) return;
@@ -376,6 +385,13 @@ async function bootstrap() {
         chatModel: payload.compose.chatModel,
         chatModelProvider: payload.compose.chatModelProvider,
       });
+    });
+    await listen<{ sessionId?: string }>("remote-compose-needed", (event) => {
+      const sessionId = event.payload.sessionId;
+      if (!sessionId) {
+        return;
+      }
+      chatStore.ensureCompose(sessionId);
     });
     await listen<{ sessionId?: string }>("remote-plan-approve", (event) => {
       const sessionId = event.payload.sessionId;

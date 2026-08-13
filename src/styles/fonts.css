@@ -1,13 +1,20 @@
-/* 拉丁与 CJK 分栈：英文使用更克制的正文体，中文保持 Noto Sans SC。 */
-@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap");
+/*
+ * 全部字体本地打包（@fontsource），不再依赖 Google Fonts 网络加载。
+ * 拉丁字符优先走 Inter，CJK 回退到 Noto Sans SC；等宽走 JetBrains Mono。
+ */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/noto-sans-sc/400.css";
+@import "@fontsource/noto-sans-sc/500.css";
+@import "@fontsource/noto-sans-sc/700.css";
 
 :root {
-  --font-sans-latin: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", sans-serif;
-  --font-sans-cjk: "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "微软雅黑",
-    sans-serif;
+  --font-sans-latin:
+    "Inter Variable", "Segoe UI Variable Text", "Segoe UI", "Noto Sans SC", sans-serif;
+  --font-sans-cjk:
+    "Inter Variable", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "微软雅黑", sans-serif;
   --peek-font-sans: var(--font-sans-cjk);
-  --font-mono: "Cascadia Mono", "Cascadia Code", "Consolas", "Noto Sans Mono CJK SC",
-    monospace;
+  --font-mono: "JetBrains Mono Variable", "Cascadia Mono", "Consolas", "Noto Sans SC", monospace;
 }
 
 html[lang="en-US"] {
@@ -22,6 +29,14 @@ html {
   text-rendering: optimizeLegibility;
 }
 
+body {
+  /* Inter 可变字体按字号自动调整视觉尺寸；cv05 让 l 带尾以区分 I/l。 */
+  font-optical-sizing: auto;
+  font-feature-settings:
+    "kern" 1,
+    "cv05" 1;
+}
+
 html[lang="zh-CN"] {
   -webkit-font-smoothing: subpixel-antialiased;
   -moz-osx-font-smoothing: auto;
@@ -34,5 +49,4 @@ html[lang="en-US"] {
 
 html[lang="zh-CN"] body {
   letter-spacing: 0.01em;
-  font-feature-settings: "kern" 1;
 }

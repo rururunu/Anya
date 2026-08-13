@@ -3,6 +3,7 @@ use tauri::{AppHandle, State};
 use crate::app_state::AppState;
 use crate::core::agent::AgentDebugEvent;
 use crate::core::ai::deepseek;
+use crate::core::chat::session_origin::RequestOrigin;
 use crate::core::chat::SendPreferences;
 use crate::models::chat::{
     ChatCancelRequest, ChatHistoryRequest, ChatHistoryResponse, ChatModelInfo, ChatSendOverrides,
@@ -40,6 +41,7 @@ pub async fn chat(
             request.workspace_id,
             request.quick_ask,
             overrides,
+            RequestOrigin::Desktop,
         )
         .await
         .map_err(|error| error.to_string())?;
@@ -199,7 +201,18 @@ pub async fn list_custom_provider_models(
 }
 
 #[tauri::command]
-pub fn delete_chat_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+pub fn delete_chat_session(app: AppHandle, state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let bound = state.core.chat().conversation().workspace_for_session(&session_id);
+    let workspace_root = bound.and_then(|id| {
+        state
+            .core
+            .workspaces()
+            .list()
+            .into_iter()
+            .find(|w| w.id == id)
+            .map(|w| w.root)
+    });
+    crate::core::remote::cleanup_session_uploads(&app, &session_id, workspace_root.as_deref());
     state.core.chat().conversation().delete_session(&session_id);
     Ok(())
 }

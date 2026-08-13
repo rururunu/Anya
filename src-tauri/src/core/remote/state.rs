@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -73,9 +73,30 @@ pub struct TunnelPublicInfo {
     pub scheme: String,
 }
 
+/// Loopback origin registered for `/p/{id}/` reverse-proxy.
+#[derive(Debug, Clone)]
+pub struct PreviewOrigin {
+    pub id: String,
+    pub host: String,
+    pub port: u16,
+    pub origin_url: String,
+    #[allow(dead_code)]
+    pub session_id: String,
+}
+
+const MAX_PREVIEWS: usize = 32;
+
 pub(crate) struct TunnelRuntime {
     pub child: Child,
     pub public: TunnelPublicInfo,
+}
+
+/// 看护线程眼中的隧道子进程状态。
+pub(crate) enum TunnelChildHealth {
+    Running,
+    Exited,
+    /// 运行时已被移除（主动停止或已被重建）。
+    Missing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +118,10 @@ pub struct PairingSessionInfo {
     pub hosts: Vec<String>,
     pub port: u16,
     pub scheme: String,
+    /// LAN addresses stay reachable even when a public tunnel replaces `host`,
+    /// so the UI can offer both entry points at once.
+    pub lan_hosts: Vec<String>,
+    pub lan_port: u16,
     pub qr_payload: String,
     pub qr_data_url: String,
     pub expires_at_epoch_ms: i64,
@@ -139,10 +164,15 @@ struct RuntimeInner {
     pairing: Option<ActivePairing>,
     devices: HashMap<String, PairedDevice>,
     connected: HashMap<String, SocketAddr>,
+    /// Latest connection for a device; sending on the previous sender kicks the old WS.
+    session_kicks: HashMap<String, oneshot::Sender<()>>,
     pub(crate) tunnel: Option<TunnelRuntime>,
     devices_path: PathBuf,
     prefs_path: PathBuf,
     pub(crate) prefs: GatewayPrefs,
+    previews: HashMap<String, PreviewOrigin>,
+    preview_order: VecDeque<String>,
+    last_preview_id: Option<String>,
 }
 
 pub struct RemoteGatewayState {
@@ -170,13 +200,52 @@ impl RemoteGatewayState {
                 pairing: None,
                 devices,
                 connected: HashMap::new(),
+                session_kicks: HashMap::new(),
                 tunnel: None,
                 devices_path,
                 prefs_path,
                 prefs,
+                previews: HashMap::new(),
+                preview_order: VecDeque::new(),
+                last_preview_id: None,
             }),
             running: AtomicBool::new(false),
             port: AtomicU16::new(DEFAULT_PORT),
+        }
+    }
+
+    pub fn register_preview(&self, origin: PreviewOrigin) {
+        let Ok(mut guard) = self.inner.lock() else {
+            return;
+        };
+        let id = origin.id.clone();
+        if guard.previews.insert(id.clone(), origin).is_none() {
+            guard.preview_order.push_back(id.clone());
+            while guard.preview_order.len() > MAX_PREVIEWS {
+                if let Some(old) = guard.preview_order.pop_front() {
+                    guard.previews.remove(&old);
+                }
+            }
+        }
+        guard.last_preview_id = Some(id);
+    }
+
+    pub fn lookup_preview(&self, id: &str) -> Option<PreviewOrigin> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|g| g.previews.get(id).cloned())
+    }
+
+    pub fn last_preview_id(&self) -> Option<String> {
+        self.inner.lock().ok().and_then(|g| g.last_preview_id.clone())
+    }
+
+    pub fn clear_previews(&self) {
+        if let Ok(mut guard) = self.inner.lock() {
+            guard.previews.clear();
+            guard.preview_order.clear();
+            guard.last_preview_id = None;
         }
     }
 
@@ -259,6 +328,21 @@ impl RemoteGatewayState {
 
     pub(crate) fn take_tunnel_runtime(&self) -> Option<TunnelRuntime> {
         self.inner.lock().ok().and_then(|mut g| g.tunnel.take())
+    }
+
+    /// 隧道子进程健康探测（供看护线程轮询）。
+    pub(crate) fn tunnel_child_health(&self) -> TunnelChildHealth {
+        let Ok(mut guard) = self.inner.lock() else {
+            return TunnelChildHealth::Missing;
+        };
+        match guard.tunnel.as_mut() {
+            None => TunnelChildHealth::Missing,
+            Some(runtime) => match runtime.child.try_wait() {
+                Ok(None) => TunnelChildHealth::Running,
+                // 已退出或状态不可查都按退出处理，交给看护重建。
+                Ok(Some(_)) | Err(_) => TunnelChildHealth::Exited,
+            },
+        }
     }
 
     pub(crate) fn set_tunnel_runtime(&self, runtime: TunnelRuntime) {
@@ -344,10 +428,35 @@ impl RemoteGatewayState {
         }
     }
 
-    pub fn mark_disconnected(&self, device_id: &str) {
+    /// Close any existing Companion session for this device. The new connection
+    /// holds `rx` and should exit when it is signalled (a newer socket claimed the slot).
+    pub fn claim_session(&self, device_id: &str) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
         if let Ok(mut guard) = self.inner.lock() {
-            guard.connected.remove(device_id);
+            if let Some(previous) = guard.session_kicks.insert(device_id.to_string(), tx) {
+                let _ = previous.send(());
+            }
         }
+        rx
+    }
+
+    /// Drop the device from the connected set only if `addr` is still the recorded peer
+    /// (a newer connection from the same device must not be unmarked).
+    pub fn mark_disconnected(&self, device_id: &str, addr: SocketAddr) {
+        if let Ok(mut guard) = self.inner.lock() {
+            if guard.connected.get(device_id) == Some(&addr) {
+                guard.connected.remove(device_id);
+            }
+        }
+    }
+
+    pub fn connected_peer(&self, device_id: &str) -> Option<SocketAddr> {
+        self.inner
+            .lock()
+            .ok()?
+            .connected
+            .get(device_id)
+            .copied()
     }
 
     pub fn connected_count(&self) -> usize {
@@ -426,6 +535,7 @@ pub fn stop_gateway(app: &AppHandle) {
         let _ = tx.send(());
     }
     state.set_pairing(None);
+    state.clear_previews();
     state.set_running(false, state.port());
     state.set_enabled_preference(false, None);
     let _ = app.emit("remote-gateway-status", gateway_status(app));
@@ -461,12 +571,13 @@ pub fn build_pairing_info(
     let state = remote_state(app);
     let local_port = state.port();
 
-    // Default: LAN pairing over plain WS.
-    let mut hosts = super::pairing::local_ipv4_hosts();
-    let mut host = hosts
-        .first()
-        .cloned()
-        .unwrap_or_else(|| "127.0.0.1".into());
+    // Default: LAN pairing over plain WS (never advertise loopback as the phone's host).
+    let lan_hosts: Vec<String> = super::pairing::local_ipv4_hosts()
+        .into_iter()
+        .filter(|h| !super::pairing::is_loopback_host(h))
+        .collect();
+    let mut hosts = lan_hosts.clone();
+    let mut host = hosts.first().cloned().unwrap_or_default();
     let mut port = local_port;
     let mut scheme = "ws".to_string();
 
@@ -492,8 +603,27 @@ pub fn build_pairing_info(
         }
     }
 
+    if host.is_empty() {
+        tracing::warn!(
+            "no reachable LAN IP and no public tunnel host; pairing QR has no usable address"
+        );
+    }
+
+    // When the public tunnel host differs from LAN, advertise the LAN endpoint so
+    // the phone can prefer a same-Wi-Fi path (more stable than Cloudflare in CN).
+    let lan_qs = lan_hosts
+        .iter()
+        .find(|lan| *lan != &host && !super::pairing::is_loopback_host(lan))
+        .map(|lan| {
+            format!(
+                "&lanHost={}&lanPort={}",
+                urlencoding::encode(lan),
+                local_port
+            )
+        })
+        .unwrap_or_default();
     let qr_payload = format!(
-        "anya://pair?v=1&host={host}&port={port}&token={token}&scheme={scheme}&code={code}",
+        "anya://pair?v=1&host={host}&port={port}&token={token}&scheme={scheme}&code={code}{lan_qs}",
         token = urlencoding::encode(&pairing.token),
         code = urlencoding::encode(&pairing.pairing_code),
     );
@@ -510,6 +640,8 @@ pub fn build_pairing_info(
         hosts,
         port,
         scheme,
+        lan_hosts,
+        lan_port: local_port,
         qr_payload,
         qr_data_url,
         expires_at_epoch_ms,

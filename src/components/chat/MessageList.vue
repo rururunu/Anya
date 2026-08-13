@@ -235,6 +235,7 @@
             @undo="confirmAssistantRewind(item.message)"
             @review="$emit('reviewChanges')"
           />
+          <SharedOfferCards :message="item.message" />
           <PlanApprovalCard
             v-if="showPlanCardFor(item.message)"
             :tasks="planTasksForMessage(item.message, isApprovedPlan(item.message))"
@@ -309,6 +310,7 @@ import {
 import { lookupInstallIcon, peekInstallIcon, warmInstallIcons } from "@/services/iconCache";
 import AgentWorkDetails from "@/components/chat/AgentWorkDetails.vue";
 import CodeChangesSummary from "@/components/chat/CodeChangesSummary.vue";
+import SharedOfferCards from "@/components/chat/SharedOfferCards.vue";
 import PlanApprovalCard from "@/components/chat/PlanApprovalCard.vue";
 import AssistantActivityIndicator from "@/components/chat/AssistantActivityIndicator.vue";
 import AskUserAnswerCard from "@/components/chat/AskUserAnswerCard.vue";

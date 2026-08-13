@@ -59,7 +59,9 @@ fn status_store() -> &'static Mutex<StatusStore> {
 pub fn outbound_sender() -> broadcast::Sender<String> {
     OUTBOUND
         .get_or_init(|| {
-            let (tx, _) = broadcast::channel(256);
+            // 流式输出下 chat.delta 频率很高；容量过小会让慢客户端频繁 Lagged。
+            // Lagged 时网关会补发全量快照兜底（见 gateway.rs）。
+            let (tx, _) = broadcast::channel(2048);
             tx
         })
         .clone()
@@ -308,21 +310,73 @@ pub fn on_bus_event(event: &BusEvent) {
                 .unwrap_or_default(),
             });
         }
+        BusEvent::FileOffer {
+            session_id,
+            offer_id,
+            path,
+            absolute_path: _,
+            name,
+            mime,
+            size,
+            workspace_id,
+        } => {
+            broadcast_server_message(&ServerMessage::Event {
+                name: "file.offer".into(),
+                data: json!({
+                    "sessionId": session_id,
+                    "offerId": offer_id,
+                    "path": path,
+                    "name": name,
+                    "mime": mime,
+                    "size": size,
+                    "workspaceId": workspace_id,
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            });
+        }
+        BusEvent::UrlOffer {
+            session_id,
+            offer_id,
+            label,
+            origin_url,
+            public_url,
+        } => {
+            broadcast_server_message(&ServerMessage::Event {
+                name: "url.offer".into(),
+                data: json!({
+                    "sessionId": session_id,
+                    "offerId": offer_id,
+                    "label": label,
+                    "originUrl": origin_url,
+                    "publicUrl": public_url,
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            });
+        }
         BusEvent::PathPermissionRequest {
             session_id,
             request_id,
             path,
+            operation,
             tool_name,
-            ..
         } => {
-            set_run_state(session_id, RemoteRunState::WaitingAskUser);
+            // Same interaction surface as tool approval on Companion (allow once /
+            // always / deny). Dedicated event so phone does not treat it as AskUser
+            // with empty questions.
+            set_run_state(session_id, RemoteRunState::WaitingApproval);
             broadcast_server_message(&ServerMessage::Event {
-                name: "ask-user".into(),
+                name: "path.permission".into(),
                 data: json!({
                     "sessionId": session_id,
                     "requestId": request_id,
+                    "toolName": tool_name,
                     "title": format!("路径权限 · {tool_name}"),
                     "preview": path,
+                    "operation": operation,
                 })
                 .as_object()
                 .cloned()

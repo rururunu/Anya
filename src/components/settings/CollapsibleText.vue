@@ -94,7 +94,7 @@ watch(
   font-size: 13px;
   line-height: 1.5;
   color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground));
-  font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-family: var(--peek-font-sans);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }

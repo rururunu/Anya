@@ -275,7 +275,7 @@ const officeSelectionPreview = computed(() => {
 .summary-value {
   overflow: hidden;
   color: var(--peek-text);
-  font-family: var(--peek-font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
   line-height: 1.4;
   text-overflow: ellipsis;
@@ -326,7 +326,7 @@ const officeSelectionPreview = computed(() => {
 
 .path-secondary {
   color: var(--peek-muted);
-  font-family: var(--peek-font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
 }
 
@@ -406,7 +406,7 @@ pre {
 
 pre code {
   color: var(--peek-text);
-  font-family: var(--peek-font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11.5px;
   line-height: 1.55;
 }

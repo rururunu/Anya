@@ -59,6 +59,8 @@ fn plan_mode_allowed(tool_name: &str, read_only: bool) -> bool {
         tool_name,
         "update_tasks"
             | "ask_user"
+            | "share_to_companion"
+            | "share_preview_url"
             | "complete_plan_step"
             | "todo_write"
     )

@@ -31,6 +31,13 @@ pub enum ClientMessage {
         #[serde(rename = "sessionId")]
         session_id: String,
     },
+    #[serde(rename = "session.delete")]
+    SessionDelete {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
     #[serde(rename = "chat.send")]
     ChatSend {
         #[serde(rename = "requestId")]
@@ -126,13 +133,22 @@ pub enum ClientMessage {
     WorkspaceReadFile {
         #[serde(rename = "requestId")]
         request_id: String,
-        /// Wire-contract fields for a request the gateway still rejects as
-        /// "not enabled yet"; they become live when the handler lands.
-        #[allow(dead_code)]
         path: String,
         #[serde(rename = "maxBytes", default = "default_max_bytes")]
-        #[allow(dead_code)]
         max_bytes: i32,
+        #[serde(rename = "sessionId", default)]
+        session_id: Option<String>,
+        #[serde(rename = "workspaceId", default)]
+        workspace_id: Option<String>,
+        /// "text" (default) returns UTF-8 content; "download" returns one base64 slice.
+        #[serde(default)]
+        mode: Option<String>,
+        /// Download-mode byte offset. Defaults to 0; each RPC returns one slice.
+        #[serde(default)]
+        offset: Option<u64>,
+        /// Requested slice length in bytes; server caps this at 512KB.
+        #[serde(default)]
+        length: Option<u64>,
     },
     #[serde(rename = "workspace.files")]
     WorkspaceFiles {
@@ -152,6 +168,45 @@ pub enum ClientMessage {
     McpList {
         #[serde(rename = "requestId")]
         request_id: String,
+    },
+    #[serde(rename = "file.upload.begin")]
+    FileUploadBegin {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId", default)]
+        session_id: Option<String>,
+        #[serde(rename = "workspaceId", default)]
+        workspace_id: Option<String>,
+        #[serde(rename = "fileName")]
+        file_name: String,
+        size: u64,
+        #[serde(default)]
+        #[allow(dead_code)]
+        mime: Option<String>,
+    },
+    #[serde(rename = "file.upload.chunk")]
+    FileUploadChunk {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "uploadId")]
+        upload_id: String,
+        offset: u64,
+        #[serde(rename = "dataBase64")]
+        data_base64: String,
+    },
+    #[serde(rename = "file.upload.finish")]
+    FileUploadFinish {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "uploadId")]
+        upload_id: String,
+    },
+    #[serde(rename = "file.upload.abort")]
+    FileUploadAbort {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "uploadId")]
+        upload_id: String,
     },
 }
 

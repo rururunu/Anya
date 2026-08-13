@@ -17,6 +17,11 @@ pub fn respond_path_permission(
         .complete(&request.request_id, &request.decision);
     if ok {
         remote::push_interaction_resolved(&request.request_id, "path_permission");
+        crate::commands::window::dismiss_tracked_interaction_notifications(
+            &app,
+            Some(&request.request_id),
+            None,
+        );
         let _ = app.emit(
             "interaction-resolved",
             InteractionResolvedEvent {

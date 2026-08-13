@@ -11,6 +11,23 @@ use super::state::{
 };
 
 /// Best-effort LAN IPv4 addresses (excludes loopback / link-local).
+/// Rejects addresses that peers on the LAN cannot actually reach:
+/// loopback, link-local, and 198.18.0.0/15 (benchmark range that proxy
+/// TUN adapters like Clash/mihomo fake-ip claim — routing 8.8.8.8 through
+/// them makes the probe below report e.g. 198.18.0.1 as "our" address).
+fn is_advertisable(v4: &std::net::Ipv4Addr) -> bool {
+    let o = v4.octets();
+    !v4.is_loopback() && !v4.is_unspecified() && !v4.is_link_local() && !(o[0] == 198 && (o[1] & 0xfe) == 18)
+}
+
+pub(crate) fn is_loopback_host(host: &str) -> bool {
+    let h = host
+        .trim()
+        .trim_matches(|c| c == '[' || c == ']')
+        .to_ascii_lowercase();
+    h == "localhost" || h == "::1" || h == "0.0.0.0" || h.starts_with("127.")
+}
+
 pub fn local_ipv4_hosts() -> Vec<String> {
     let mut hosts = Vec::new();
     for probe in ["8.8.8.8:80", "1.1.1.1:80", "192.168.0.1:80"] {
@@ -18,7 +35,7 @@ pub fn local_ipv4_hosts() -> Vec<String> {
             if socket.connect(probe).is_ok() {
                 if let Ok(addr) = socket.local_addr() {
                     if let std::net::IpAddr::V4(v4) = addr.ip() {
-                        if !v4.is_loopback() && !v4.is_unspecified() {
+                        if is_advertisable(&v4) {
                             let s = v4.to_string();
                             if !hosts.contains(&s) {
                                 hosts.push(s);
@@ -28,9 +45,6 @@ pub fn local_ipv4_hosts() -> Vec<String> {
                 }
             }
         }
-    }
-    if hosts.is_empty() {
-        hosts.push("127.0.0.1".into());
     }
     hosts
 }

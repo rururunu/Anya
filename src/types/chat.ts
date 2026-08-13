@@ -176,6 +176,54 @@ export interface ChatMessage {
   estimatedTokens?: number;
   /** UI-side completion time used to freeze the processing duration. */
   completedAt?: number;
+  /** UI-only: files the agent offered this turn. */
+  sharedFiles?: SharedFileOffer[];
+  /** UI-only: proxied preview URLs the agent offered this turn. */
+  sharedUrls?: SharedUrlOffer[];
+}
+
+export interface SharedFileOffer {
+  offerId: string;
+  path: string;
+  absolutePath?: string;
+  name: string;
+  mime: string;
+  size: number;
+  workspaceId?: string;
+}
+
+export interface SharedUrlOffer {
+  offerId: string;
+  label: string;
+  originUrl: string;
+  publicUrl: string;
+}
+
+export interface FileOfferEvent {
+  sessionId?: string;
+  session_id?: string;
+  offerId?: string;
+  offer_id?: string;
+  path: string;
+  absolutePath?: string;
+  absolute_path?: string;
+  name: string;
+  mime?: string;
+  size?: number;
+  workspaceId?: string;
+  workspace_id?: string;
+}
+
+export interface UrlOfferEvent {
+  sessionId?: string;
+  session_id?: string;
+  offerId?: string;
+  offer_id?: string;
+  label?: string;
+  originUrl?: string;
+  origin_url?: string;
+  publicUrl?: string;
+  public_url?: string;
 }
 
 export type WorkTimelineItem =

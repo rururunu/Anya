@@ -23,9 +23,13 @@ import type {
   AskUserAnswerItem,
   ChatMessage,
   ContextUsageSnapshot,
+  FileOfferEvent,
+  SharedFileOffer,
+  SharedUrlOffer,
   TaskItem,
   ToolActivity,
   ToolPreviewPayload,
+  UrlOfferEvent,
   WorkTimelineItem,
 } from "@/types/chat";
 
@@ -346,48 +350,45 @@ export const useChatStore = defineStore("chat", {
 
       // A compose record is a per-conversation snapshot. Once created or
       // restored, it must never be recomputed from another conversation.
+      let resolved: SessionCompose;
       if (existing) {
-        return existing;
-      }
-      if (cached) {
-        const sanitized = sanitizeCompose(cached);
-        this.sessionCompose = { ...this.sessionCompose, [sessionId]: sanitized };
-        return sanitized;
-      }
-
-      const isStarted = Boolean(this.startedSessionIds[sessionId]);
-      if (isStarted) {
-        const next = sanitizeCompose({
+        resolved = existing;
+      } else if (cached) {
+        resolved = sanitizeCompose(cached);
+        this.sessionCompose = { ...this.sessionCompose, [sessionId]: resolved };
+      } else if (this.startedSessionIds[sessionId]) {
+        resolved = sanitizeCompose({
           chatModel: settingStore.chatModel ?? "",
           chatModelProvider: settingStore.chatModelProvider ?? "",
           chatMode: settingStore.chatMode ?? "agent",
           toolApprovalMode: settingStore.toolApprovalMode ?? "ask",
           draft: "",
         });
-        this.sessionCompose = { ...this.sessionCompose, [sessionId]: next };
-        composeCache.entries[sessionId] = next;
+        this.sessionCompose = { ...this.sessionCompose, [sessionId]: resolved };
+        composeCache.entries[sessionId] = resolved;
         persistComposeCache();
-        return next;
+      } else {
+        const source =
+          composeCache.last && composeCache.entries[composeCache.last]
+            ? composeCache.entries[composeCache.last]
+            : undefined;
+        resolved = sanitizeCompose({
+          chatModel: source?.chatModel ?? settingStore.chatModel ?? "",
+          chatModelProvider: source?.chatModelProvider ?? settingStore.chatModelProvider ?? "",
+          // Plan is session-gated live state — never inherit a stale plan chip.
+          chatMode: source?.chatMode === "ask" ? "ask" : "agent",
+          toolApprovalMode: source?.toolApprovalMode ?? settingStore.toolApprovalMode ?? "ask",
+          draft: "",
+        });
+        this.sessionCompose = { ...this.sessionCompose, [sessionId]: resolved };
+        composeCache.entries[sessionId] = resolved;
+        composeCache.last = sessionId;
+        persistComposeCache();
       }
-
-      const source =
-        composeCache.last && composeCache.entries[composeCache.last]
-          ? composeCache.entries[composeCache.last]
-          : undefined;
-      const next = sanitizeCompose({
-        chatModel: source?.chatModel ?? settingStore.chatModel ?? "",
-        chatModelProvider: source?.chatModelProvider ?? settingStore.chatModelProvider ?? "",
-        // Plan is session-gated live state — never inherit a stale plan chip.
-        chatMode: source?.chatMode === "ask" ? "ask" : "agent",
-        toolApprovalMode: source?.toolApprovalMode ?? settingStore.toolApprovalMode ?? "ask",
-        draft: "",
-      });
-
-      this.sessionCompose = { ...this.sessionCompose, [sessionId]: next };
-      composeCache.entries[sessionId] = next;
-      composeCache.last = sessionId;
-      persistComposeCache();
-      return next;
+      // Keep the gateway mirror warm so Companion can read the desktop model
+      // even if this session was never edited after the last app launch.
+      void syncComposeToRemote(sessionId, resolved);
+      return resolved;
     },
     /** Persist one conversation's option change without touching others. */
     setCompose(
@@ -619,7 +620,11 @@ export const useChatStore = defineStore("chat", {
       };
     },
     resolveOverlaySessionId(preferred?: string) {
-      return resolveSessionId(this.overlayDraftSessionId, preferred);
+      // Prefer the event/request session id. Only fall back to the overlay draft
+      // when the payload omitted a session (legacy / incomplete IPC).
+      // Preferring overlayDraft first remapped Companion "new chat" turns into
+      // whatever conversation was last sent from the desktop.
+      return resolveSessionId(preferred, this.overlayDraftSessionId);
     },
     upsertMessage(message: ChatMessage) {
       const sessionId = message.sessionId;
@@ -888,11 +893,13 @@ export const useChatStore = defineStore("chat", {
       }
 
       const eventSessionId = normalized.sessionId;
-      // Prefer the event session when it is already known (workbench / history).
-      // Only remap through overlayDraftSessionId for the Alt+Alt draft flow.
+      // Overlay draft remap is ONLY for the Alt+Alt draft conversation itself.
+      // Do NOT treat every unknown sessionId as overlay — Companion new chats mint
+      // fresh ids that are not yet in `sessions`, and must stay independent even
+      // while another desktop turn is still marked sending.
       const isOverlayEvent =
         Boolean(this.overlayDraftSessionId) &&
-        (eventSessionId === this.overlayDraftSessionId || !this.sessions[eventSessionId]);
+        (!eventSessionId || eventSessionId === this.overlayDraftSessionId);
       const targetSessionId = isOverlayEvent
         ? this.resolveOverlaySessionId(eventSessionId)
         : eventSessionId || this.resolveOverlaySessionId(eventSessionId);
@@ -1370,6 +1377,76 @@ export const useChatStore = defineStore("chat", {
             ? "streaming"
             : current.status,
       };
+      this.setSessionMessages(resolvedSessionId, next);
+    },
+    applyFileOffer(payload: FileOfferEvent, fallbackSessionId?: string) {
+      const offer: SharedFileOffer = {
+        offerId: payload.offerId || payload.offer_id || "",
+        path: payload.path,
+        absolutePath: payload.absolutePath || payload.absolute_path,
+        name: payload.name,
+        mime: payload.mime || "",
+        size: payload.size ?? 0,
+        workspaceId: payload.workspaceId || payload.workspace_id,
+      };
+      this.attachOfferToAssistant(
+        payload.sessionId || payload.session_id,
+        fallbackSessionId,
+        (message) => {
+          const files = message.sharedFiles ?? [];
+          if (offer.offerId && files.some((item) => item.offerId === offer.offerId)) {
+            return message;
+          }
+          return { ...message, sharedFiles: [...files, offer] };
+        },
+      );
+    },
+    applyUrlOffer(payload: UrlOfferEvent, fallbackSessionId?: string) {
+      const offer: SharedUrlOffer = {
+        offerId: payload.offerId || payload.offer_id || "",
+        label: payload.label || "Preview",
+        originUrl: payload.originUrl || payload.origin_url || "",
+        publicUrl: payload.publicUrl || payload.public_url || "",
+      };
+      if (!offer.publicUrl) {
+        return;
+      }
+      this.attachOfferToAssistant(
+        payload.sessionId || payload.session_id,
+        fallbackSessionId,
+        (message) => {
+          const urls = message.sharedUrls ?? [];
+          if (offer.offerId && urls.some((item) => item.offerId === offer.offerId)) {
+            return message;
+          }
+          return { ...message, sharedUrls: [...urls, offer] };
+        },
+      );
+    },
+    attachOfferToAssistant(
+      sessionId: string | undefined,
+      fallbackSessionId: string | undefined,
+      update: (message: ChatMessage) => ChatMessage,
+    ) {
+      const resolvedSessionId = this.resolveOverlaySessionId(
+        resolveSessionId(sessionId, fallbackSessionId),
+      );
+      const messages = this.sessions[resolvedSessionId];
+      if (!messages?.length) {
+        return;
+      }
+      let index = -1;
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        if (messages[i].role === "assistant") {
+          index = i;
+          break;
+        }
+      }
+      if (index < 0) {
+        index = messages.length - 1;
+      }
+      const next = [...messages];
+      next[index] = update(messages[index]);
       this.setSessionMessages(resolvedSessionId, next);
     },
     attachToolApprovalPreview(
