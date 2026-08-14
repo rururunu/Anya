@@ -12,7 +12,7 @@
 
 | 文档                                                         | 读者          | 适用场景                                                                                                               |
 | ------------------------------------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| [技术架构总览](./architecture-overview.zh-CN.md)             | 贡献者        | 分层、进程拓扑、Ask/Agent/Plan、Companion 网关、时间线、持久化、事件                                                   |
+| [技术架构总览](./architecture-overview.zh-CN.md)             | 贡献者        | 分层、进程拓扑、Ask/Agent/Plan、Companion 网关与文件 HTTP、RAG、时间线、持久化                                         |
 | [发布与远程更新](./release.zh-CN.md)                         | 发版负责人    | 签名、`latest.json`、GitHub Releases、CI                                                                               |
 | [Companion（安卓）](https://github.com/rururunu/AnyaAndroid) | 用户 / 手机   | 手机远程：配对、对话、审批、文件。[架构](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.zh-CN.md) |
 | 截图资源（`image/`）                                         | 用户 / README | 根目录 README 引用的截图                                                                                               |

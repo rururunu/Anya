@@ -1,13 +1,8 @@
 <template>
   <AppConfirmDialog ref="confirmDialogRef" />
-  <div class="history-page select-none">
-    <div class="history-header flex items-center justify-between">
-      <div>
-        <h2>{{ historyText.title }}</h2>
-        <p>{{ historySummary }}</p>
-      </div>
-
-      <div class="flex items-center gap-2">
+  <div class="settings-page is-wide history-page select-none">
+    <SettingsPageHeader :title="historyText.title">
+      <template #actions>
         <Button
           variant="ghost"
           size="sm"
@@ -30,7 +25,9 @@
           @click="deleteSelectedSessions"
         >
           <Trash2 class="size-3" />
-          <span>{{ historyText.deleteSelected.replace("{count}", String(selectedSessionIds.length)) }}</span>
+          <span>
+            {{ historyText.deleteSelected.replace("{count}", String(selectedSessionIds.length)) }}
+          </span>
         </Button>
 
         <Button
@@ -42,8 +39,8 @@
           <AlertTriangle class="size-3" />
           <span>{{ historyText.clearAll }}</span>
         </Button>
-      </div>
-    </div>
+      </template>
+    </SettingsPageHeader>
 
     <div v-if="pageError" class="history-error">{{ pageError }}</div>
 
@@ -59,16 +56,23 @@
             class="flex min-w-0 flex-1 items-center gap-2 py-1 text-left"
             @click="toggleHistoryGroup(group.id)"
           >
-            <ChevronDown v-if="isHistoryGroupExpanded(group.id)" class="size-3.5 text-muted-foreground" />
+            <ChevronDown
+              v-if="isHistoryGroupExpanded(group.id)"
+              class="size-3.5 text-muted-foreground"
+            />
             <ChevronRight v-else class="size-3.5 text-muted-foreground" />
             <Globe2 v-if="group.public" class="size-4 text-muted-foreground" />
             <Folder v-else class="size-4 text-primary" />
             <span class="min-w-0 flex-1">
               <strong class="block truncate text-xs font-semibold">{{ group.name }}</strong>
-              <small v-if="group.root" class="block truncate text-[10px] text-muted-foreground">{{ group.root }}</small>
+              <small v-if="group.root" class="block truncate text-[10px] text-muted-foreground">
+                {{ group.root }}
+              </small>
             </span>
           </button>
-          <span class="text-[11px] tabular-nums text-muted-foreground">{{ group.sessions.length }}</span>
+          <span class="text-[11px] tabular-nums text-muted-foreground">
+            {{ group.sessions.length }}
+          </span>
           <Button
             variant="ghost"
             size="sm"
@@ -111,20 +115,39 @@
             />
             <div class="min-w-0 flex-1 space-y-1">
               <p class="text-[11px] text-muted-foreground">{{ formatTime(session.updatedAt) }}</p>
-              <h3 class="truncate text-sm font-medium cursor-pointer hover:text-primary" @click="openSession(session)">
+              <h3
+                class="truncate text-sm font-medium cursor-pointer hover:text-primary"
+                @click="openSession(session)"
+              >
                 {{ session.preview }}
               </h3>
               <p class="text-xs text-muted-foreground">
                 {{ historyText.messages.replace("{count}", String(session.messageCount)) }}
-                <span v-if="session.estimatedTokens"> · ≈{{ formatTokenCount(session.estimatedTokens, settingStore.language) }} tokens</span>
+                <span v-if="session.estimatedTokens">
+                  · ≈{{ formatTokenCount(session.estimatedTokens, settingStore.language) }} tokens
+                </span>
               </p>
             </div>
           </div>
           <div class="flex justify-end gap-2">
-            <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-foreground" :title="historyText.open" :aria-label="historyText.open" @click="openSession(session)">
+            <Button
+              variant="ghost"
+              size="icon"
+              class="size-8 text-muted-foreground hover:text-foreground"
+              :title="historyText.open"
+              :aria-label="historyText.open"
+              @click="openSession(session)"
+            >
               <FolderOpen class="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" :title="historyText.deleteLabel" :aria-label="historyText.deleteLabel" @click="deleteSingleSession(session.sessionId)">
+            <Button
+              variant="ghost"
+              size="icon"
+              class="size-8 text-muted-foreground hover:text-destructive"
+              :title="historyText.deleteLabel"
+              :aria-label="historyText.deleteLabel"
+              @click="deleteSingleSession(session.sessionId)"
+            >
               <Trash2 class="size-3.5" />
             </Button>
           </div>
@@ -137,11 +160,25 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { emit as tauriEmit } from "@tauri-apps/api/event";
-import { AlertTriangle, ChevronDown, ChevronRight, Folder, FolderOpen, Globe2, Trash2 } from "@lucide/vue";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  Globe2,
+  Trash2,
+} from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
 import { listWorkspaces, switchWorkspace, type Workspace } from "@/commands/workspace";
-import { listChatSessions, deleteChatSession, clearAllChatSessions, openSessionInOverlay } from "@/services/ipc";
+import {
+  listChatSessions,
+  deleteChatSession,
+  clearAllChatSessions,
+  openSessionInOverlay,
+} from "@/services/ipc";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
 import type { SettingsI18nKey } from "@/services/locales/settings";
@@ -177,7 +214,10 @@ const historyText = computed(() => {
   };
 });
 
-function historyConfirm(key: Extract<SettingsI18nKey, `settings.historyConfirm.${string}`>, values: Record<string, string | number> = {}) {
+function historyConfirm(
+  key: Extract<SettingsI18nKey, `settings.historyConfirm.${string}`>,
+  values: Record<string, string | number> = {},
+) {
   return tr(settingStore.language, key, values);
 }
 
@@ -238,11 +278,6 @@ const historyGroups = computed<HistoryGroup[]>(() => {
     .sort((left, right) => Number(left.public) - Number(right.public));
 });
 
-const historySummary = computed(() => tr(settingStore.language, "history.summary", {
-  count: historySessions.value.length,
-  groups: historyGroups.value.filter((group) => group.sessions.length > 0).length,
-}));
-
 const filteredHistorySessions = computed(() =>
   historyGroups.value.flatMap((group) => group.sessions),
 );
@@ -267,8 +302,9 @@ function isHistoryGroupSelected(group: HistoryGroup) {
 }
 
 function isHistoryGroupPartiallySelected(group: HistoryGroup) {
-  const selectedCount = historyGroupSessionIds(group)
-    .filter((id) => selectedSessionIds.value.includes(id)).length;
+  const selectedCount = historyGroupSessionIds(group).filter((id) =>
+    selectedSessionIds.value.includes(id),
+  ).length;
   return selectedCount > 0 && selectedCount < historyGroupSessionIds(group).length;
 }
 
@@ -283,8 +319,10 @@ function toggleHistoryGroupSelection(group: HistoryGroup) {
 }
 
 const isAllSelected = computed(() => {
-  return filteredHistorySessions.value.length > 0 &&
-    filteredHistorySessions.value.every((s) => selectedSessionIds.value.includes(s.sessionId));
+  return (
+    filteredHistorySessions.value.length > 0 &&
+    filteredHistorySessions.value.every((s) => selectedSessionIds.value.includes(s.sessionId))
+  );
 });
 
 function toggleSelectAll() {
@@ -296,10 +334,7 @@ function toggleSelectAll() {
 }
 
 async function loadSessions() {
-  const [sessionsList, workspaces] = await Promise.all([
-    listChatSessions(),
-    listWorkspaces(),
-  ]);
+  const [sessionsList, workspaces] = await Promise.all([listChatSessions(), listWorkspaces()]);
   historySessions.value = sessionsList.sessions ?? [];
   historyWorkspaces.value = workspaces;
 }
@@ -308,7 +343,9 @@ async function deleteSelectedSessions() {
   if (selectedSessionIds.value.length === 0) return;
   const confirmed = await confirmDialogRef.value?.ask({
     title: historyConfirm("settings.historyConfirm.deleteTitle"),
-    description: historyConfirm("settings.historyConfirm.deleteSelectedDesc", { count: selectedSessionIds.value.length }),
+    description: historyConfirm("settings.historyConfirm.deleteSelectedDesc", {
+      count: selectedSessionIds.value.length,
+    }),
     confirmLabel: historyText.value.deleteLabel,
     cancelLabel: historyText.value.cancel,
   });
@@ -328,7 +365,10 @@ async function deleteHistoryGroup(group: HistoryGroup) {
   if (sessionIds.length === 0) return;
   const confirmed = await confirmDialogRef.value?.ask({
     title: historyConfirm("settings.historyConfirm.deleteGroupTitle"),
-    description: historyConfirm("settings.historyConfirm.deleteGroupDesc", { name: group.name, count: sessionIds.length }),
+    description: historyConfirm("settings.historyConfirm.deleteGroupDesc", {
+      name: group.name,
+      count: sessionIds.length,
+    }),
     confirmLabel: historyConfirm("settings.historyConfirm.deleteAllLabel"),
     cancelLabel: historyText.value.cancel,
   });
@@ -421,29 +461,104 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.history-page { max-width: 920px; padding: 22px 24px 42px; color: var(--peek-text); }
-.history-header { min-height: 49px; gap: 18px; padding: 0 0 15px; border-bottom: 1px solid var(--peek-border); }
-.history-header h2 { margin: 0; color: var(--peek-text); font-size: 16px; font-weight: 680; letter-spacing: 0; text-transform: none; }
-.history-header p { margin: 4px 0 0; color: var(--peek-muted); font-size: 11px; }
-.history-header > div:last-child { gap: 4px; }
-.history-header :deep([data-slot="button"]) { height: 29px; border-radius: 5px; font-size: 10px; }
-.history-groups { border-bottom: 1px solid var(--peek-border); }
-.history-error { margin: 12px 0 0; padding: 9px 10px; border-radius: 6px; background: color-mix(in srgb, var(--destructive) 8%, transparent); color: var(--destructive); font-size: 11px; }
-.history-empty { min-height: 280px; display: grid; place-items: center; color: var(--peek-muted); font-size: 12px; }
-.history-group { border-bottom: 1px solid var(--peek-border); }
-.history-group:last-child { border-bottom: 0; }
-.group-header { min-height: 43px; padding: 4px 2px; }
-.group-header:hover { background: transparent; }
-.group-header > button:first-child { border-radius: 5px; padding: 5px; }
-.group-header > button:first-child:hover { background: var(--peek-hover-bg); }
-.group-header > button:first-child strong { color: var(--peek-text); font-size: 11px; }
-.group-header > button:first-child small { color: var(--peek-faint); font-size: 9px; }
-.group-header :deep([data-slot="button"]) { border-radius: 5px; }
-.session-row { min-height: 54px; padding: 7px 3px 7px 34px; border-top: 1px solid color-mix(in srgb, var(--peek-border) 72%, transparent); }
-.session-row:hover { background: color-mix(in srgb, var(--peek-text) 3%, transparent); }
-.session-row h3 { color: var(--peek-text); font-size: 11px; font-weight: 600; }
-.session-row p { margin: 0; color: var(--peek-muted); font-size: 9px; }
-.session-row > div:last-child { gap: 3px; }
-.session-row :deep([data-slot="button"]) { height: 29px; border-radius: 5px; font-size: 10px; }
-@media (max-width: 640px) { .history-header { align-items: flex-start; flex-direction: column; }.session-row { grid-template-columns: minmax(0, 1fr); padding-left: 8px; }.session-row > div:last-child { justify-content: flex-start; padding-left: 27px; } }
+.history-page {
+  color: var(--peek-text);
+}
+.history-header {
+  min-height: 49px;
+  gap: 18px;
+  padding: 0 0 15px;
+  border-bottom: 1px solid var(--peek-border);
+}
+.history-groups {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
+  border-radius: 10px;
+}
+.history-error {
+  margin: 12px 0 0;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+  color: var(--destructive);
+  font-size: 11px;
+}
+.history-empty {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  color: var(--peek-muted);
+  font-size: 12px;
+}
+.history-group {
+  border-bottom: 1px solid var(--peek-border);
+}
+.history-group:last-child {
+  border-bottom: 0;
+}
+.group-header {
+  min-height: 43px;
+  padding: 4px 2px;
+}
+.group-header:hover {
+  background: transparent;
+}
+.group-header > button:first-child {
+  border-radius: 5px;
+  padding: 5px;
+}
+.group-header > button:first-child:hover {
+  background: var(--peek-hover-bg);
+}
+.group-header > button:first-child strong {
+  color: var(--peek-text);
+  font-size: 11px;
+}
+.group-header > button:first-child small {
+  color: var(--peek-faint);
+  font-size: 9px;
+}
+.group-header :deep([data-slot="button"]) {
+  border-radius: 5px;
+}
+.session-row {
+  min-height: 54px;
+  padding: 7px 3px 7px 34px;
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 72%, transparent);
+}
+.session-row:hover {
+  background: color-mix(in srgb, var(--peek-text) 3%, transparent);
+}
+.session-row h3 {
+  color: var(--peek-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.session-row p {
+  margin: 0;
+  color: var(--peek-muted);
+  font-size: 9px;
+}
+.session-row > div:last-child {
+  gap: 3px;
+}
+.session-row :deep([data-slot="button"]) {
+  height: 29px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+@media (max-width: 640px) {
+  .history-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .session-row {
+    grid-template-columns: minmax(0, 1fr);
+    padding-left: 8px;
+  }
+  .session-row > div:last-child {
+    justify-content: flex-start;
+    padding-left: 27px;
+  }
+}
 </style>

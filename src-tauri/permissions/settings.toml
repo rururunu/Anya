@@ -26,4 +26,8 @@ commands.allow = [
   "gemini_oauth_cancel_login",
   "gemini_oauth_logout",
   "gemini_import_client_secrets",
+  "get_semantic_search_status",
+  "set_semantic_search",
+  "test_semantic_search_api",
+  "fetch_semantic_search_models",
 ]

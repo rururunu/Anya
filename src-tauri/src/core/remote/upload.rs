@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -24,7 +24,9 @@ struct ActiveUpload {
     dest: PathBuf,
     rel_path: String,
     expected: u64,
-    written: u64,
+    /// Total bytes received so far. Chunks may arrive out of order (client
+    /// sends them concurrently), so this is a running total, not a cursor.
+    received: u64,
     file: File,
 }
 
@@ -102,7 +104,7 @@ pub fn begin(
             dest,
             rel_path: rel_path.clone(),
             expected: size,
-            written: 0,
+            received: 0,
             file,
         },
     );
@@ -121,6 +123,15 @@ pub fn chunk(upload_id: &str, offset: u64, data_base64: &str) -> Result<Value, S
     let bytes = B64
         .decode(data_base64.trim())
         .map_err(|_| "invalid base64 chunk".to_string())?;
+    write_chunk(upload_id, offset, &bytes)
+}
+
+/// Write a raw binary chunk (arrives as a WebSocket binary frame, no base64).
+pub fn chunk_bytes(upload_id: &str, offset: u64, data: &[u8]) -> Result<Value, String> {
+    write_chunk(upload_id, offset, data)
+}
+
+fn write_chunk(upload_id: &str, offset: u64, bytes: &[u8]) -> Result<Value, String> {
     if bytes.len() > MAX_CHUNK_BYTES {
         return Err(format!(
             "chunk too large: {} bytes (max {MAX_CHUNK_BYTES})",
@@ -131,27 +142,25 @@ pub fn chunk(upload_id: &str, offset: u64, data_base64: &str) -> Result<Value, S
     let upload = map
         .get_mut(upload_id)
         .ok_or_else(|| "unknown uploadId".to_string())?;
-    if offset != upload.written {
-        return Err(format!(
-            "offset mismatch: got {offset}, expected {}",
-            upload.written
-        ));
-    }
-    let next = upload
-        .written
+    let end = offset
         .checked_add(bytes.len() as u64)
         .ok_or_else(|| "upload overflow".to_string())?;
-    if next > upload.expected {
+    if end > upload.expected {
         return Err("chunk exceeds declared size".into());
     }
+    // Write at the declared offset so concurrent (out-of-order) chunks work.
     upload
         .file
-        .write_all(&bytes)
+        .seek(SeekFrom::Start(offset))
+        .map_err(|e| format!("seek file: {e}"))?;
+    upload
+        .file
+        .write_all(bytes)
         .map_err(|e| format!("write chunk: {e}"))?;
-    upload.written = next;
+    upload.received = upload.received.saturating_add(bytes.len() as u64);
     Ok(json!({
         "uploadId": upload_id,
-        "written": upload.written,
+        "written": upload.received,
         "expected": upload.expected,
     }))
 }
@@ -161,14 +170,14 @@ pub fn finish(upload_id: &str) -> Result<Value, String> {
     let upload = map
         .remove(upload_id)
         .ok_or_else(|| "unknown uploadId".to_string())?;
-    if upload.written != upload.expected {
+    if upload.received != upload.expected {
         let dest = upload.dest.clone();
-        let written = upload.written;
+        let received = upload.received;
         let expected = upload.expected;
         drop(upload);
         let _ = fs::remove_file(dest);
         return Err(format!(
-            "incomplete upload: wrote {written} of {expected} bytes"
+            "incomplete upload: received {received} of {expected} bytes"
         ));
     }
     upload
@@ -184,7 +193,7 @@ pub fn finish(upload_id: &str) -> Result<Value, String> {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "file".into()),
-        "size": upload.written,
+        "size": upload.received,
     }))
 }
 

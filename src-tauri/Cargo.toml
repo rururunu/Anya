@@ -1,6 +1,6 @@
 [package]
 name = "peek"
-version = "0.2.9"
+version = "0.2.10"
 description = "Hand your work & questions to Anya anytime."
 authors = ["you"]
 edition = "2021"
@@ -90,6 +90,7 @@ tracing-appender = "0.2"
 tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 tiktoken-rs = "0.12"
 tauri-plugin-process = "2"
+fastembed = "5.17.4"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

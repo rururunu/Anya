@@ -80,9 +80,19 @@ impl ToolExecutor {
             let tool_args = started.args.clone();
             let max_chars = self.tool_output_max_chars;
             async move {
+                let span = tracing::info_span!(
+                    target: "peek.tool",
+                    "tool_dispatch",
+                    tool = %tool_name,
+                    call_id = %started.call_id,
+                    session_id = %execution_context.session_id,
+                );
+                tracing::debug!(parent: &span, "tool start");
                 let execution = tools
                     .dispatch_async(&execution_context, &tool_name, tool_args)
+                    .instrument(span.clone())
                     .await;
+                tracing::debug!(parent: &span, success = execution.is_ok(), "tool done");
                 (started, execution, max_chars)
             }
         });
@@ -108,7 +118,9 @@ impl ToolExecutor {
             "tool_dispatch",
             tool = %call.name,
             call_id = %call.id,
+            session_id = %tool_ctx.session_id,
         );
+        tracing::debug!(parent: &span, "tool start");
 
         let started = self.begin_tool_activity(call, tool_ctx);
         let tools = Arc::clone(&self.tools);
@@ -118,8 +130,9 @@ impl ToolExecutor {
         let tool_args = started.args.clone();
         let execution = tools
             .dispatch_async(&execution_context, &tool_name, tool_args)
-            .instrument(span)
+            .instrument(span.clone())
             .await;
+        tracing::debug!(parent: &span, success = execution.is_ok(), "tool done");
         if tool_ctx.is_cancelled()
             || execution
                 .as_ref()

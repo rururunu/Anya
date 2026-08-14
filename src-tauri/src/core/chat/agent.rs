@@ -19,7 +19,9 @@ use super::agent_loop::challenge::{ChallengeOutcome, CompletionGate};
 use super::agent_loop::failure::{FailureAction, FailureBreaker};
 use super::agent_loop::challenge::push_challenge_message;
 use super::agent_loop::mid_turn_compact;
-use super::agent_loop::post_edit_verify::maybe_run_post_edit_verification;
+use super::agent_loop::post_edit_verify::{
+    maybe_run_post_edit_verification, verify_feedback_content,
+};
 use super::agent_loop::soft_inject::drain_soft_injects;
 use super::agent_loop::stream_turn::{self, StreamTurnResult};
 use super::agent_loop::tools::ToolExecutor;
@@ -113,6 +115,7 @@ impl AgentRunner {
             .schemas_for_request(&request, tool_ctx.root_session_id());
         let tool_executor = ToolExecutor::new(Arc::clone(&self.tools), self.tool_output_max_chars);
         let mut steps = 0u32;
+        let mut context_compacted = false;
         let mut failure_breaker = FailureBreaker::new();
         let mut completion_gate = CompletionGate::new();
         completion_gate.capture_goal_from_request(&request);
@@ -155,9 +158,16 @@ impl AgentRunner {
             let (turn_tx, turn_rx) = mpsc::channel::<StreamEvent>(64);
             let provider = Arc::clone(&self.provider);
             let turn_request = request.clone();
+            let stream_turn_span = tracing::info_span!(
+                target: "peek.agent",
+                "agent.stream_turn",
+                session_id = %request.session_id,
+                step = steps,
+            );
             let provider_task =
                 tauri::async_runtime::spawn(
-                    async move { provider.stream(turn_request, turn_tx).await },
+                    async move { provider.stream(turn_request, turn_tx).await }
+                        .instrument(stream_turn_span.clone()),
                 );
 
             let StreamTurnResult {
@@ -165,11 +175,33 @@ impl AgentRunner {
                 reasoning,
                 tool_calls,
                 finish_reason,
-            } = stream_turn::collect_stream_turn(turn_rx, &tx, &cancelled).await?;
+            } = stream_turn::collect_stream_turn(turn_rx, &tx, &cancelled)
+                .instrument(stream_turn_span)
+                .await?;
 
-            provider_task.await.map_err(|error| {
+            let provider_result = provider_task.await.map_err(|error| {
                 ProviderError::message(format!("provider task failed: {error}"))
-            })??;
+            })?;
+            if let Err(error) = provider_result {
+                // Reactive compaction: the provider rejected the request for
+                // exceeding the context window. Fold prior history once and retry
+                // instead of hard-failing the turn.
+                if error.is_context_window_exceeded() && !context_compacted {
+                    context_compacted = true;
+                    if mid_turn_compact::force_compact(
+                        &self.provider,
+                        &mut request,
+                        &mut user_msg_index,
+                        &mut used_tokens,
+                        &tx,
+                    )
+                    .await
+                    {
+                        continue;
+                    }
+                }
+                return Err(error);
+            }
 
             used_tokens += estimate_tokens(&content) + estimate_tokens(&reasoning);
 
@@ -288,14 +320,14 @@ impl AgentRunner {
                 request.messages.push(ChatMessage {
                     id: format!("msg-{}", now_millis()),
                     session_id: request.session_id.clone(),
-                    role: Role::Tool,
-                    content: verify_outcome.result.clone(),
+                    role: Role::User,
+                    content: verify_feedback_content(&verify_outcome),
                     reasoning: None,
                     work_timeline: None,
                     tool_activities: None,
                     tool_calls: None,
-                    tool_call_id: Some(verify_outcome.call_id.clone()),
-                    name: Some(verify_outcome.tool_name.clone()),
+                    tool_call_id: None,
+                    name: None,
                     status: MessageStatus::Done,
                     timestamp: now_millis(),
                     estimated_tokens: None,

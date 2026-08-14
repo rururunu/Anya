@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.9                                             |
+| **Version** | v0.2.10                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -31,8 +31,8 @@ to locate code paths and reason about change impact.
 - Agent turn orchestration and policy hooks (Ask / Agent / Plan gate)
 - Persistence (SQLite, journal, work timeline)
 - Frontend stream projection and session model
-- Extension points (providers, tools, skills, MCP)
-- Companion / Remote Gateway (pairing, LAN vs tunnel, wire protocol)
+- Extension points (providers, tools, skills, MCP, RAG embeddings)
+- Companion / Remote Gateway (pairing, LAN vs tunnel, wire protocol, file HTTP)
 
 **Out of scope**
 
@@ -50,23 +50,25 @@ Rust host owns OS integration; WebViews own presentation and local UI state.
 ```mermaid
 flowchart LR
   User((User)) -->|hotkey / tray / input| Host[Anya process]
-  Phone[Anya Companion] -->|WebSocket /remote/v1| Host
+  Phone[Anya Companion] -->|WS /remote/v1 · HTTP /f /p| Host
   IDE[IDE plugins] -->|context push| Host
   Host -->|COM| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[Model providers]
   Host -->|HTTPS / stdio| Aux[MCP · search · mem0]
-  Host --> Disk[(SQLite · settings · checkpoints)]
+  Host -.->|optional /embeddings| Emb[Embeddings API]
+  Host --> Disk[(SQLite · settings · index · models)]
 ```
 
-| Actor / system      | Interaction                                                         |
-| ------------------- | ------------------------------------------------------------------- |
-| User                | Global hotkey, tray, composer, review UI                            |
-| Anya Companion      | Android remote console; LAN `ws` or Cloudflare `wss` to the gateway |
-| IDE plugins         | Best-effort local context push (file, workspace, selection)         |
-| Microsoft Office    | COM for document context and `word_*` / `excel_*` / `ppt_*` tools   |
-| Model providers     | Authenticated HTTPS; streaming where supported                      |
-| MCP / search / mem0 | Optional; enabled explicitly in settings                            |
-| Local disk          | Chat DB, settings store, updater pubkey, checkpoint undo data       |
+| Actor / system      | Interaction                                                                    |
+| ------------------- | ------------------------------------------------------------------------------ |
+| User                | Global hotkey, tray, composer, review UI, embedded settings                    |
+| Anya Companion      | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`      |
+| IDE plugins         | Best-effort local context push (file, workspace, selection)                    |
+| Microsoft Office    | COM for document context and `word_*` / `excel_*` / `ppt_*` tools              |
+| Model providers     | Authenticated HTTPS; streaming where supported                                 |
+| Embeddings          | Optional RAG: OpenAI-compatible `/embeddings` or local ONNX (`fastembed`)      |
+| MCP / search / mem0 | Optional; enabled explicitly in settings                                       |
+| Local disk          | Chat DB, settings, `.anya/index`, embedding cache, updater pubkey, checkpoints |
 
 ---
 
@@ -80,7 +82,7 @@ Dependencies point **downward only**. Cross-layer calls that skip a boundary
 ```mermaid
 flowchart TB
   subgraph Presentation["L1 Presentation"]
-    Win["Window surfaces<br/>workbench · overlay · settings · preview"]
+    Win["Window surfaces<br/>workbench (+ settings) · overlay · preview"]
     UI["Vue layouts / components / composables"]
     Store["Pinia stores"]
   end
@@ -94,7 +96,7 @@ flowchart TB
   subgraph Domain["L3 Domain core"]
     Chat["core/chat<br/>ChatService · StreamManager · AgentRunner"]
     AgentShell["core/agent<br/>AgentRuntime · run lifecycle"]
-    Ai["core/ai<br/>Provider trait + implementations"]
+    Ai["core/ai<br/>providers · embed / RAG"]
     Tools["core/tools<br/>registry · approval · plan gate · sandbox"]
     Ctx["core/context · workspace · rules · token"]
     Persist["conversation_manager · db · journal"]
@@ -103,7 +105,7 @@ flowchart TB
   subgraph Adapters["L4 Adapters"]
     Rt["crate::runtime<br/>git · search · browser · shell"]
     OfficeCore["core/office · core/mcp · core/lsp"]
-    Remote["core/remote<br/>gateway · pairing · tunnel"]
+    Remote["core/remote<br/>gateway · upload · download · preview"]
     Svc["services/<br/>window · hotkey · settings · oauth · pin_badge"]
   end
 
@@ -124,12 +126,12 @@ flowchart TB
   Chat --> Bus
 ```
 
-| Layer           | Location                                                | Responsibility                                          | Must not                        |
-| --------------- | ------------------------------------------------------- | ------------------------------------------------------- | ------------------------------- |
-| L1 Presentation | `src/{layouts,components,composables,stores,pages}`     | Render, local UX state, RAF-batched stream merge        | Call providers or execute tools |
-| L2 Bridge       | `src/services/ipc`, `commands/`, `adapters/`            | Serialize IPC DTOs; map `BusEvent` → Tauri emits        | Own business policy             |
-| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                  | Chat lifecycle, agent loop, tools, prompts, persistence | Depend on Vue / DOM             |
-| L4 Adapters     | `runtime/`, `services/`, `core/{office,mcp,lsp,remote}` | OS, COM, HTTP clients, MCP transport, Companion WS      | Drive the agent loop            |
+| Layer           | Location                                                | Responsibility                                            | Must not                        |
+| --------------- | ------------------------------------------------------- | --------------------------------------------------------- | ------------------------------- |
+| L1 Presentation | `src/{layouts,components,composables,stores,pages}`     | Render, local UX state, RAF-batched stream merge          | Call providers or execute tools |
+| L2 Bridge       | `src/services/ipc`, `commands/`, `adapters/`            | Serialize IPC DTOs; map `BusEvent` → Tauri emits          | Own business policy             |
+| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                  | Chat lifecycle, agent loop, tools, prompts, persistence   | Depend on Vue / DOM             |
+| L4 Adapters     | `runtime/`, `services/`, `core/{office,mcp,lsp,remote}` | OS, COM, HTTP clients, MCP transport, Companion WS / HTTP | Drive the agent loop            |
 
 ### 3.2 Frontend dependency rule
 
@@ -163,9 +165,8 @@ One OS process, multiple WebView labels. Domain state is shared in-process.
 flowchart TB
   subgraph Process["Anya.exe"]
     Rust["Rust host<br/>hotkey · tray · COM · SQLite · AgentRuntime · Gateway"]
-    WV1["WebView: workbench"]
+    WV1["WebView: workbench<br/>chat · review · embedded settings"]
     WV2["WebView: overlay"]
-    WV3["WebView: settings"]
     WV4["WebView: image-preview"]
   end
 
@@ -173,17 +174,20 @@ flowchart TB
 
   WV1 <-->|invoke / events| Rust
   WV2 <-->|invoke / events| Rust
-  WV3 <-->|invoke / events| Rust
   WV4 <-->|invoke / events| Rust
-  Phone -->|ws / wss /remote/v1| Rust
+  Phone -->|ws / wss /remote/v1<br/>HTTP /f /p| Rust
 ```
 
-| Surface   | Label               | Role                                            |
-| --------- | ------------------- | ----------------------------------------------- |
-| Workbench | `workbench`         | Full session management, review, settings embed |
-| Overlay   | `overlay*`          | Floating composer; Quick Ask or workspace-bound |
-| Settings  | `settings`          | Provider / agent / extension configuration      |
-| Preview   | `overlay-preview-*` | Image preview windows                           |
+| Surface   | Label               | Role                                                                  |
+| --------- | ------------------- | --------------------------------------------------------------------- |
+| Workbench | `workbench`         | Sessions, review, **embedded settings** (no separate settings window) |
+| Overlay   | `overlay*`          | Floating composer; Quick Ask or workspace-bound                       |
+| Preview   | `overlay-preview-*` | Image preview windows                                                 |
+
+Tray **Settings** shows the workbench and emits `open-workbench-settings`. Optional
+**frosted-glass chrome** (`services/workbench_glass.rs`) uses the DWM backdrop on
+the titlebar and sidebars; the conversation pane stays opaque. Maximized /
+fullscreen skips native blur.
 
 Session identity (`session_id`) is owned by the Rust conversation store. Overlay
 and Workbench may attach to the **same** session concurrently. Companion attaches
@@ -209,7 +213,7 @@ flowchart TB
   end
 
   subgraph Desktop["Anya.exe"]
-    GW[gateway.rs :8787]
+    GW[http_proxy.rs :8787]
     Tunnel[cloudflared Quick Tunnel]
     Pair[pairing.rs]
     Bridge[bridge.rs → EventBus]
@@ -224,29 +228,69 @@ flowchart TB
   Client -->|"2. public fallback"| CF --> Tunnel
 ```
 
+Same port **8787** splits three HTTP surfaces:
+
+```mermaid
+flowchart TB
+  TCP[TCP :8787] --> Disp[http_proxy::dispatch]
+  Disp -->|Upgrade /remote/v1| WS[Companion WebSocket]
+  Disp -->|GET /f/:id| DL[Range download ticket]
+  Disp -->|/p/:id/ cookie Referer| PX[Preview reverse proxy]
+```
+
 ```mermaid
 sequenceDiagram
   participant D as Desktop
   participant P as Companion
   D->>D: pairing token + QR (anya://pair)
   P->>D: WebSocket /remote/v1
-  P->>D: hello { deviceId, credential }
+  P->>D: hello deviceId + credential
   D-->>P: hello.ok
   D-->>P: event session.snapshot
   P->>D: chat.send / approval.respond / file.upload.*
   D-->>P: event (deltas, approvals, file.offer)
+  P->>D: file.download.begin
+  D-->>P: url /f/:id size name
+  P->>D: GET /f/:id Range
+  D-->>P: 206 Partial Content
 ```
 
-| Topic           | Contract                                                                |
-| --------------- | ----------------------------------------------------------------------- |
-| Path / port     | `/remote/v1` on **8787** (LAN `ws`, tunnel `wss`)                       |
-| Auth            | Short-lived QR token, then stored device credential                     |
-| Keep-alive      | Application `ping` / `pong` (proxies drop native WS pings)              |
-| Phone → desktop | Chunked `file.upload.*`, 512KB slices, **500MB** cap                    |
-| Desktop → phone | `share_to_companion` card + `workspace.readFile` `mode=download` slices |
-| Previews        | HTTP `/p/{id}/` reverse proxy on the same gateway                       |
+| Topic           | Contract                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Path / port     | `/remote/v1` on **8787** (LAN `ws`, tunnel `wss`)                                                                                     |
+| Auth            | Short-lived QR token, then stored device credential                                                                                   |
+| Keep-alive      | Application `ping` / `pong` (proxies drop native WS pings)                                                                            |
+| Phone → desktop | Chunked `file.upload.*` (JSON+b64 **or** binary WS frames), out-of-order, 512KB, **500MB** cap                                        |
+| Desktop → phone | Offer card → `file.download.begin` → HTTP `/f/{id}` with `Range` (10 min ticket). Legacy: `workspace.readFile` `mode=download` slices |
+| Previews        | HTTP `/p/{id}/` reverse proxy on the same gateway (cookie / Referer fallback)                                                         |
+| Unbound phone   | FAB / `chat.send` without `workspaceId` is Quick Ask — **never** inherit the desktop workspace                                        |
 
 Phone-side diagrams: [Companion architecture](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.md).
+
+### 4.2 Companion file transfer
+
+Workspace chats land under `{workspace}/.anya/uploads/{sessionId}/`. Unbound Ask
+chats land in `{config}/companion-inbox/{sessionId}/`.
+
+```mermaid
+sequenceDiagram
+  participant P as Companion
+  participant GW as Gateway
+  participant Disk as Disk
+  Note over P,Disk: Phone → desktop
+  P->>GW: file.upload.begin size name
+  GW->>Disk: create dest
+  loop concurrent slices
+    P->>GW: chunk JSON+b64 or binary frame
+    GW->>Disk: Seek + write at offset
+  end
+  P->>GW: file.upload.finish
+  Note over P,Disk: Desktop → phone
+  P->>GW: file.download.begin path
+  GW-->>P: url /f/:ticket TTL 10m
+  P->>GW: GET /f/:ticket Range
+  GW-->>P: 200 / 206 stream
+```
 
 ---
 
@@ -254,26 +298,28 @@ Phone-side diagrams: [Companion architecture](https://github.com/rururunu/AnyaAn
 
 ### 5.1 Rust domain (`src-tauri/src/core`)
 
-| Module              | Path                                      | Role                                                                  |
-| ------------------- | ----------------------------------------- | --------------------------------------------------------------------- |
-| Chat service        | `core/chat/service.rs`                    | Entry: persist messages, resolve context/model, start or soft-inject  |
-| Stream manager      | `core/chat/stream.rs`                     | Background task, cancel, stream aggregation, UI events, timeline text |
-| Agent runner        | `core/chat/agent.rs`                      | **Primary** model↔tools loop                                          |
-| Agent loop policies | `core/chat/agent_loop/`                   | stream_turn, tools, challenge, compact, soft_inject, failure          |
-| Conversation store  | `core/chat/conversation_manager.rs`       | In-memory sessions + async SQLite; work timeline                      |
-| DB / journal        | `core/chat/db.rs`, `core/chat/journal.rs` | Schema, save/load, crash recovery                                     |
-| Prompts             | `core/chat/prompts/`, `prompts/*.md`      | System / tools / policies / skills markdown                           |
-| Agent runtime       | `core/agent/runtime/`                     | Run state machine, cancel, soft-inject queue, debug                   |
-| AI providers        | `core/ai/`                                | DeepSeek, Gemini/Antigravity, multimodal helpers                      |
-| Tools               | `core/tools/`                             | Registry, approval, plan gate, files, shell, skills, agent tools      |
-| Plan mode           | `core/tools/plan_mode.rs`                 | Session write gate; Agent auto-enter heuristic for complex tasks      |
-| Context             | `core/context/`                           | IDE, selection, clipboard, environment, Office hints                  |
-| Checkpoint          | `core/checkpoint/`                        | Undo / review of applied file changes                                 |
-| Token               | `core/token/`                             | Accounting, usage persistence                                         |
-| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`     | External protocol adapters                                            |
-| Protocol types      | `core/runtime/`                           | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                      |
-| Event bus           | `core/event/`                             | Domain events                                                         |
-| Remote gateway      | `core/remote/`                            | Companion WS `/remote/v1`, pairing, tunnel, upload, preview proxy     |
+| Module              | Path                                       | Role                                                                           |
+| ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------ |
+| Chat service        | `core/chat/service.rs`                     | Entry: persist messages, resolve context/model, start or soft-inject           |
+| Stream manager      | `core/chat/stream.rs`                      | Background task, cancel, stream aggregation, UI events, timeline text          |
+| Agent runner        | `core/chat/agent.rs`                       | **Primary** model↔tools loop                                                   |
+| Agent loop policies | `core/chat/agent_loop/`                    | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure |
+| Conversation store  | `core/chat/conversation_manager.rs`        | In-memory sessions + async SQLite; work timeline                               |
+| DB / journal        | `core/chat/db.rs`, `core/chat/journal.rs`  | Schema, save/load, crash recovery                                              |
+| Prompts             | `core/chat/prompts/`, `prompts/*.md`       | System / tools / policies / skills markdown                                    |
+| Agent runtime       | `core/agent/runtime/`                      | Run state machine, cancel, soft-inject queue, debug                            |
+| AI providers        | `core/ai/`                                 | DeepSeek, Gemini/Antigravity, multimodal helpers                               |
+| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs` | Optional retrieve-then-rerank; API or local ONNX                               |
+| Tools               | `core/tools/`                              | Registry, approval, plan gate, files, shell, skills, agent tools               |
+| Workspace index     | `core/tools/workspace_index.rs`            | Chunked keyword index under `.anya/index` (incremental JSONL)                  |
+| Plan mode           | `core/tools/plan_mode.rs`                  | Session write gate; Agent auto-enter heuristic for complex tasks               |
+| Context             | `core/context/`                            | IDE, selection, clipboard, environment, Office hints                           |
+| Checkpoint          | `core/checkpoint/`                         | Undo / review of applied file changes                                          |
+| Token               | `core/token/`                              | Accounting (incl. cache-read / reasoning tokens), usage persistence            |
+| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                     |
+| Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                               |
+| Event bus           | `core/event/`                              | Domain events                                                                  |
+| Remote gateway      | `core/remote/`                             | WS `/remote/v1`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`    |
 
 ### 5.2 Naming: three “runtime” modules
 
@@ -285,14 +331,14 @@ Phone-side diagrams: [Companion architecture](https://github.com/rururunu/AnyaAn
 
 ### 5.3 Frontend (`src/`)
 
-| Area                        | Path                                           | Role                                                        |
-| --------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
-| Overlay / Workbench layouts | `layouts/Overlay.vue`, `layouts/Main.vue`      | Window shells                                               |
-| Chat UI                     | `components/chat/*`                            | Message list, timeline, tool cards, plan approval, composer |
-| Stores                      | `stores/chat.ts`, `setting.ts`, `chatModel.ts` | Session messages, plan gate, tasks, settings, models        |
-| IPC                         | `services/ipc/`                                | Typed invoke + event subscription                           |
-| Stream batching             | `services/chat/rafBatch.ts`, `main.ts`         | RAF coalesce for deltas                                     |
-| Settings pages              | `pages/Settings/`                              | Provider / agent / MCP / skills UI                          |
+| Area                        | Path                                                           | Role                                                        |
+| --------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
+| Overlay / Workbench layouts | `layouts/Overlay.vue`, `layouts/Main.vue`                      | Window shells; workbench embeds SettingsPage                |
+| Chat UI                     | `components/chat/*`                                            | Message list, timeline, tool cards, plan approval, composer |
+| Stores                      | `stores/chat.ts`, `setting.ts`, `chatModel.ts`                 | Session messages, plan gate, tasks, settings, models        |
+| IPC                         | `services/ipc/`                                                | Typed invoke + event subscription                           |
+| Stream batching             | `services/chat/rafBatch.ts`, `composables/chat/wireChatIpc.ts` | RAF coalesce; chat IPC wiring extracted from `main.ts`      |
+| Settings pages              | `pages/Settings/`                                              | Provider / agent / MCP / skills / **RAG Search**            |
 
 ---
 
@@ -345,7 +391,7 @@ Mid-turn follow-up takes the `soft_inject` branch and does not create a new assi
 
 ```mermaid
 flowchart LR
-  Emit[Tauri emit] --> Listen[src/main.ts listeners]
+  Emit[Tauri emit] --> Listen[wireChatIpc listeners]
   Listen -->|delta / reasoning| RAF[createRafBatch]
   Listen -->|tool / finish / error| Sync[Immediate store update]
   RAF --> Store[chatStore.applyStreamDeltas]
@@ -369,7 +415,7 @@ commands/chat.rs::chat
               → agent_loop::collect_stream_turn
               → AIProvider::stream
               → agent_loop::tools::{execute_serial, execute_parallel}
-              → agent_loop::{challenge, mid_turn_compact, soft_inject, failure}
+              → agent_loop::{challenge, mid_turn_compact, post_edit_verify, soft_inject, failure}
 ```
 
 ---
@@ -398,14 +444,15 @@ stateDiagram-v2
   StopBreaker --> [*]
 ```
 
-| Module             | Concern                                                                           |
-| ------------------ | --------------------------------------------------------------------------------- |
-| `stream_turn`      | Fold one provider stream into content / reasoning / tool_calls; forward UI events |
-| `tools`            | Serial vs parallel dispatch; tool activity events                                 |
-| `challenge`        | Empty-completion / verification gate before accepting a final answer              |
-| `mid_turn_compact` | Context-window pressure compaction                                                |
-| `soft_inject`      | Merge queued user follow-ups at a safe boundary                                   |
-| `failure`          | Consecutive / identical tool-error circuit breaker                                |
+| Module             | Concern                                                                                               |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| `stream_turn`      | Fold one provider stream into content / reasoning / tool_calls; forward UI events                     |
+| `tools`            | Serial vs parallel dispatch; tool activity events                                                     |
+| `challenge`        | Empty-completion / verification gate before accepting a final answer                                  |
+| `mid_turn_compact` | Context-window pressure compaction                                                                    |
+| `post_edit_verify` | After a successful file mutation, run a light check; feed result as **system text** (not `role=tool`) |
+| `soft_inject`      | Merge queued user follow-ups at a safe boundary                                                       |
+| `failure`          | Consecutive / identical tool-error circuit breaker                                                    |
 
 ### Ask / Agent / Plan
 
@@ -509,7 +556,7 @@ flowchart TB
 | `chat_messages`       | Messages: content, reasoning, tool_activities, **work_timeline**, tool_calls, status, tokens |
 | `chat_journal_events` | Compacted delta snapshots for in-flight recovery                                             |
 | Session metadata      | Titles, workspace bindings                                                                   |
-| Token usage records   | Per-run accounting when providers report usage                                               |
+| Token usage records   | Per-run accounting when providers report usage; DeepSeek cache-read / reasoning tokens       |
 
 On boot, orphaned `pending` / `streaming` messages are hydrated from the journal
 and settled to a terminal state so the UI cannot stick on “executing”.
@@ -559,6 +606,41 @@ Skills are markdown playbooks under `src-tauri/prompts/skills/` (plus vendor
 assets). Invoking a skill typically injects the playbook and may run a subagent
 with optional `read_only`.
 
+### 11.1 Workspace index & RAG
+
+`search_codebase` always hits the keyword index. Semantic re-rank is **off by
+default** (Settings → RAG Search). Nothing is downloaded or requested until enabled.
+
+```mermaid
+flowchart TB
+  Q[search_codebase query] --> KW[WorkspaceIndex.refresh + keyword score]
+  KW --> Hits[candidate hits ≤ 80]
+  Hits --> Ready{SemanticSearchEngine Ready?}
+  Ready -->|no| Out[return keyword ranking]
+  Ready -->|yes| Emb[embed query + snippets]
+  Emb --> Cos[cosine rerank]
+  Cos --> Out[truncate to limit]
+```
+
+```mermaid
+flowchart LR
+  UI[RagSettings.vue] --> Cmd[set_semantic_search]
+  Cmd --> Eng[SemanticSearchEngine singleton]
+  Eng -->|backend=api| API["OpenAI-compatible POST /embeddings"]
+  Eng -->|backend=local| ONNX["fastembed ONNX<br/>app_data/models/"]
+```
+
+| Piece          | Location                                                                                                             |
+| -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Keyword index  | `core/tools/workspace_index.rs` — overlapping chunks + symbols / paths / ADR; JSONL under `{workspace}/.anya/index/` |
+| Search tool    | `search_codebase` in `core/tools/builtin/misc.rs` — retrieve then rerank                                             |
+| Engine         | `core/ai/embed.rs` — API (`reqwest::blocking`) or local `fastembed`                                                  |
+| IPC / settings | `commands/semantic.rs`, Settings category **RAG Search**                                                             |
+| Local models   | E5-Small (~120MB, default), BGE-Small zh/en, Jina code (~500MB), BGE-M3 (~2.3GB)                                     |
+
+The API path sends **query + candidate snippets** to the configured embeddings
+host. The local path stays on disk after the first download.
+
 ---
 
 ## 12. Event contract (domain → UI)
@@ -585,14 +667,15 @@ event-driven.
 
 ## 13. Session / workspace model
 
-| Kind              | Binding       | Typical entry                   |
-| ----------------- | ------------- | ------------------------------- |
-| Quick Ask         | No workspace  | Overlay outside IDE             |
-| Workspace session | Bound folder  | IDE foreground, `/work`, picker |
-| Pinned            | User pin flag | Workbench sidebar               |
+| Kind                           | Binding       | Typical entry                                                        |
+| ------------------------------ | ------------- | -------------------------------------------------------------------- |
+| Quick Ask                      | No workspace  | Overlay outside IDE                                                  |
+| Workspace session              | Bound folder  | IDE foreground, `/work`, picker                                      |
+| Pinned                         | User pin flag | Workbench sidebar                                                    |
+| Companion FAB (no workspaceId) | No workspace  | Phone new chat — **must not** inherit the desktop selected workspace |
 
 Overlay and workbench share the conversation store; “open in workbench” reuses
-the same `session_id`.
+the same `session_id`. Companion projects that store over the gateway.
 
 ---
 
@@ -623,6 +706,7 @@ Details: [release.md](./release.md).
 | External context source | `core/context` provider                                 |
 | New skill               | `src-tauri/prompts/skills/*.md` (+ assets if needed)    |
 | Companion RPC / event   | `core/remote/protocol.rs` + phone client in AnyaAndroid |
+| RAG embedding backend   | `core/ai/embed.rs` + Settings RAG page                  |
 
 Avoid introducing a parallel agent loop beside `AgentRunner`.
 Companion must not grow a second Agent runtime.
@@ -631,18 +715,22 @@ Companion must not grow a second Agent runtime.
 
 ## 16. Related source entry points
 
-| Concern                          | Start here                                                    |
-| -------------------------------- | ------------------------------------------------------------- |
-| App bootstrap / tray / hotkey    | `src-tauri/src/lib.rs`                                        |
-| Chat IPC                         | `commands/chat.rs`                                            |
-| Send + context / plan gate       | `core/chat/service.rs`, `core/tools/plan_mode.rs`             |
-| Stream lifecycle + timeline text | `core/chat/stream.rs`                                         |
-| Work timeline persistence        | `core/chat/conversation_manager.rs`, `core/chat/db.rs`        |
-| Agent loop                       | `core/chat/agent.rs`, `core/chat/agent_loop/`                 |
-| Run shell                        | `core/agent/runtime/`                                         |
-| Frontend IPC + stream batch      | `src/services/ipc/`, `src/main.ts`, `src/stores/chat.ts`      |
-| Timeline UI                      | `src/components/chat/AgentWorkDetails.vue`                    |
-| Plan approval card               | `src/components/chat/PlanApprovalCard.vue`, `MessageList.vue` |
-| Remote gateway / pairing         | `core/remote/gateway.rs`, `pairing.rs`, `tunnel.rs`           |
-| Companion file transfer          | `core/remote/upload.rs`, `workspace.readFile` download mode   |
-| Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)        |
+| Concern                          | Start here                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| App bootstrap / tray / hotkey    | `src-tauri/src/lib.rs`                                                           |
+| Chat IPC                         | `commands/chat.rs`                                                               |
+| Send + context / plan gate       | `core/chat/service.rs`, `core/tools/plan_mode.rs`                                |
+| Stream lifecycle + timeline text | `core/chat/stream.rs`                                                            |
+| Work timeline persistence        | `core/chat/conversation_manager.rs`, `core/chat/db.rs`                           |
+| Agent loop                       | `core/chat/agent.rs`, `core/chat/agent_loop/`                                    |
+| Run shell                        | `core/agent/runtime/`                                                            |
+| Frontend IPC + stream batch      | `src/services/ipc/`, `src/composables/chat/wireChatIpc.ts`, `src/stores/chat.ts` |
+| Timeline UI                      | `src/components/chat/AgentWorkDetails.vue`                                       |
+| Plan approval card               | `src/components/chat/PlanApprovalCard.vue`, `MessageList.vue`                    |
+| Embedded settings / RAG          | `pages/Settings/`, `components/settings/RagSettings.vue`                         |
+| Workbench glass                  | `services/workbench_glass.rs`, `overlay/appearance.ts`                           |
+| Remote gateway / pairing         | `core/remote/gateway.rs`, `pairing.rs`, `tunnel.rs`                              |
+| Gateway HTTP split               | `core/remote/http_proxy.rs` (`/remote/v1`, `/f/`, `/p/`)                         |
+| Companion file transfer          | `core/remote/upload.rs`, `download.rs`                                           |
+| Workspace index / RAG            | `core/tools/workspace_index.rs`, `core/ai/embed.rs`                              |
+| Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                           |

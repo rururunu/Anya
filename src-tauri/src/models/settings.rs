@@ -213,6 +213,34 @@ fn default_gemini_oauth_client_secret() -> String {
     String::new()
 }
 
+/// Local embedding model used for optional semantic workspace search.
+/// The model is downloaded lazily on first enable (never bundled).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum SemanticSearchModel {
+    #[default]
+    #[serde(rename = "multilingual-e5-small")]
+    MultilingualE5Small,
+    #[serde(rename = "bge-small-zh-v1.5")]
+    BGESmallZHV15,
+    #[serde(rename = "bge-small-en-v1.5")]
+    BGESmallENV15,
+    #[serde(rename = "jina-embeddings-v2-base-code")]
+    JinaEmbeddingsV2BaseCode,
+    #[serde(rename = "bge-m3")]
+    BGEM3,
+}
+
+/// Embedding backend for semantic workspace search.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SemanticSearchBackend {
+    /// OpenAI-compatible `/embeddings` endpoint (SiliconFlow / OpenAI / local).
+    #[default]
+    Api,
+    /// Local ONNX model downloaded lazily via fastembed.
+    Local,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -257,6 +285,9 @@ pub struct AppSettings {
     pub enabled_builtin_skills: Vec<String>,
     #[serde(default = "default_opacity")]
     pub opacity: u32,
+    /// Frosted-glass titlebar and sidebars on the workbench.
+    #[serde(default)]
+    pub chrome_frosted_glass: bool,
     #[serde(default = "default_chat_model")]
     pub chat_model: String,
     #[serde(default)]
@@ -348,6 +379,20 @@ pub struct AppSettings {
     /// Show an AI button on Snipaste pin windows (bottom-right).
     #[serde(default = "default_true")]
     pub snipaste_pin_ai_enabled: bool,
+    /// Semantic workspace search via embeddings. Off by default; enabling loads
+    /// the chosen backend (API or local model).
+    #[serde(default)]
+    pub semantic_search_enabled: bool,
+    #[serde(default)]
+    pub semantic_search_backend: SemanticSearchBackend,
+    #[serde(default)]
+    pub semantic_search_model: SemanticSearchModel,
+    #[serde(default)]
+    pub semantic_search_api_base_url: String,
+    #[serde(default)]
+    pub semantic_search_api_key: String,
+    #[serde(default)]
+    pub semantic_search_api_model: String,
     /// First-run welcome wizard. Missing from older settings files → treat as done.
     #[serde(default = "default_onboarding_completed_existing")]
     pub onboarding_completed: bool,
@@ -423,6 +468,7 @@ pub struct AppSettingsPatch {
     pub smithery_api_key: Option<String>,
     pub enabled_builtin_skills: Option<Vec<String>>,
     pub opacity: Option<u32>,
+    pub chrome_frosted_glass: Option<bool>,
     pub chat_model: Option<String>,
     pub chat_model_provider: Option<String>,
     pub multimodal_model: Option<String>,
@@ -453,6 +499,12 @@ pub struct AppSettingsPatch {
     pub custom_providers: Option<Vec<CustomProviderConfig>>,
     pub pixpin_pin_ai_enabled: Option<bool>,
     pub snipaste_pin_ai_enabled: Option<bool>,
+    pub semantic_search_enabled: Option<bool>,
+    pub semantic_search_backend: Option<SemanticSearchBackend>,
+    pub semantic_search_model: Option<SemanticSearchModel>,
+    pub semantic_search_api_base_url: Option<String>,
+    pub semantic_search_api_key: Option<String>,
+    pub semantic_search_api_model: Option<String>,
     pub onboarding_completed: Option<bool>,
 }
 
@@ -479,6 +531,7 @@ impl Default for AppSettings {
             smithery_api_key: String::new(),
             enabled_builtin_skills: Vec::new(),
             opacity: 100,
+            chrome_frosted_glass: false,
             chat_model: default_chat_model(),
             chat_model_provider: String::new(),
             multimodal_model: default_multimodal_model(),
@@ -509,6 +562,12 @@ impl Default for AppSettings {
             custom_providers: Vec::new(),
             pixpin_pin_ai_enabled: true,
             snipaste_pin_ai_enabled: true,
+            semantic_search_enabled: false,
+            semantic_search_backend: SemanticSearchBackend::default(),
+            semantic_search_model: SemanticSearchModel::default(),
+            semantic_search_api_base_url: String::new(),
+            semantic_search_api_key: String::new(),
+            semantic_search_api_model: String::new(),
             onboarding_completed: false,
         }
     }
@@ -585,6 +644,9 @@ impl AppSettings {
                 .enabled_builtin_skills
                 .unwrap_or_else(|| self.enabled_builtin_skills.clone()),
             opacity: patch.opacity.unwrap_or(self.opacity),
+            chrome_frosted_glass: patch
+                .chrome_frosted_glass
+                .unwrap_or(self.chrome_frosted_glass),
             chat_model: patch.chat_model.unwrap_or_else(|| self.chat_model.clone()),
             chat_model_provider: patch
                 .chat_model_provider
@@ -663,6 +725,24 @@ impl AppSettings {
             snipaste_pin_ai_enabled: patch
                 .snipaste_pin_ai_enabled
                 .unwrap_or(self.snipaste_pin_ai_enabled),
+            semantic_search_enabled: patch
+                .semantic_search_enabled
+                .unwrap_or(self.semantic_search_enabled),
+            semantic_search_backend: patch
+                .semantic_search_backend
+                .unwrap_or(self.semantic_search_backend),
+            semantic_search_model: patch
+                .semantic_search_model
+                .unwrap_or(self.semantic_search_model),
+            semantic_search_api_base_url: patch
+                .semantic_search_api_base_url
+                .unwrap_or_else(|| self.semantic_search_api_base_url.clone()),
+            semantic_search_api_key: patch
+                .semantic_search_api_key
+                .unwrap_or_else(|| self.semantic_search_api_key.clone()),
+            semantic_search_api_model: patch
+                .semantic_search_api_model
+                .unwrap_or_else(|| self.semantic_search_api_model.clone()),
             onboarding_completed: patch
                 .onboarding_completed
                 .unwrap_or(self.onboarding_completed),

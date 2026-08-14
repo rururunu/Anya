@@ -206,8 +206,13 @@ impl DeepSeekProvider {
             continue_thinking_after_tools,
             include_thinking,
         );
+        // Only DeepSeek models get the reactive "context window exceeded →
+        // compact and retry" path; custom OpenAI-compatible providers keep the
+        // existing surface-error behavior.
+        let is_deepseek = model.trim().to_ascii_lowercase().starts_with("deepseek");
         match run_chat_stream(&client, &url, &api_key, &body, &tx).await {
             Ok(()) => Ok(()),
+            Err(error) if is_deepseek && error.is_context_window_exceeded() => Err(error),
             Err(error) => emit_stream_error(&tx, error).await,
         }
     }
@@ -393,14 +398,98 @@ mod tests {
             estimated_tokens: None,
         };
 
-        let assistant_json = message_to_api_json(&assistant, true);
+        let assistant_json = message_to_api_json(&assistant, true, true);
         assert_eq!(assistant_json["role"], "assistant");
         assert!(assistant_json["tool_calls"].is_array());
         assert_eq!(assistant_json["reasoning_content"], " ");
 
-        let tool_json = message_to_api_json(&tool, true);
+        let tool_json = message_to_api_json(&tool, true, true);
         assert_eq!(tool_json["role"], "tool");
         assert_eq!(tool_json["tool_call_id"], "call-1");
+        assert_eq!(tool_json["name"], "read_file");
+    }
+
+    fn msg(
+        id: &str,
+        role: Role,
+        content: &str,
+        tool_calls: Option<Vec<crate::core::runtime::ToolCallPayload>>,
+        tool_call_id: Option<&str>,
+    ) -> ChatMessage {
+        ChatMessage {
+            id: id.into(),
+            session_id: "default".into(),
+            role,
+            content: content.into(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls,
+            tool_call_id: tool_call_id.map(str::to_string),
+            name: None,
+            status: MessageStatus::Done,
+            timestamp: 1,
+            estimated_tokens: None,
+        }
+    }
+
+    #[test]
+    fn build_api_body_drops_orphan_tool_messages() {
+        use crate::core::runtime::ToolCallPayload;
+
+        let body = build_api_body(
+            &sample_request(vec![
+                msg("u1", Role::User, "edit the file", None, None),
+                msg(
+                    "a1",
+                    Role::Assistant,
+                    "",
+                    Some(vec![ToolCallPayload {
+                        id: "call-1".into(),
+                        name: "write_file".into(),
+                        arguments: r#"{"path":"a.rs"}"#.into(),
+                        thought_signature: None,
+                    }]),
+                    None,
+                ),
+                msg("t1", Role::Tool, "wrote a.rs", None, Some("call-1")),
+                // Auto-verify used to be injected as role=tool with a fresh id.
+                msg("t2", Role::Tool, "cargo check ok", None, Some("auto-verify-1")),
+            ]),
+            "deepseek-chat",
+            true,
+            ReasoningEffort::Disabled,
+            false,
+            true,
+            false,
+        );
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0]["role"], "user");
+        assert_eq!(messages[1]["role"], "assistant");
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "call-1");
+    }
+
+    #[test]
+    fn build_api_body_drops_tool_without_preceding_tool_calls() {
+        let body = build_api_body(
+            &sample_request(vec![
+                msg("u1", Role::User, "hi", None, None),
+                msg("t1", Role::Tool, "orphan result", None, Some("call-1")),
+                msg("a1", Role::Assistant, "done", None, None),
+            ]),
+            "deepseek-chat",
+            true,
+            ReasoningEffort::Disabled,
+            false,
+            true,
+            false,
+        );
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["role"], "user");
+        assert_eq!(messages[1]["role"], "assistant");
     }
 
     #[test]
@@ -536,14 +625,80 @@ mod tests {
             estimated_tokens: None,
         };
 
-        let enabled = message_to_api_json(&assistant, true);
+        let enabled = message_to_api_json(&assistant, true, true);
         assert_eq!(enabled["reasoning_content"], "need to read the file first");
 
-        let disabled = message_to_api_json(&assistant, false);
+        let disabled = message_to_api_json(&assistant, false, true);
         assert!(!disabled
             .as_object()
             .unwrap()
             .contains_key("reasoning_content"));
+    }
+
+    #[test]
+    fn deepseek_scopes_content_and_tool_placeholder() {
+        use crate::core::runtime::ToolCallPayload;
+
+        let assistant = ChatMessage {
+            id: "a1".into(),
+            session_id: "default".into(),
+            role: Role::Assistant,
+            content: String::new(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: Some(vec![ToolCallPayload {
+                id: "call-1".into(),
+                name: "read_file".into(),
+                arguments: r#"{"path":"a"}"#.into(),
+                thought_signature: None,
+            }]),
+            tool_call_id: None,
+            name: None,
+            status: MessageStatus::Done,
+            timestamp: 1,
+            estimated_tokens: None,
+        };
+        let empty_tool = ChatMessage {
+            id: "t1".into(),
+            session_id: "default".into(),
+            role: Role::Tool,
+            content: String::new(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: None,
+            tool_call_id: Some("call-1".into()),
+            name: Some("read_file".into()),
+            status: MessageStatus::Done,
+            timestamp: 2,
+            estimated_tokens: None,
+        };
+
+        // DeepSeek: text-less tool-call turns send "" (never null).
+        let ds_assistant = message_to_api_json(&assistant, true, true);
+        assert_eq!(ds_assistant["content"], json!(""));
+        // Non-DeepSeek keeps the legacy null.
+        let other_assistant = message_to_api_json(&assistant, true, false);
+        assert!(other_assistant["content"].is_null());
+
+        // DeepSeek: empty tool output becomes a placeholder.
+        let ds_tool = message_to_api_json(&empty_tool, true, true);
+        assert_eq!(ds_tool["content"], json!("(no output)"));
+        // Non-DeepSeek keeps empty string.
+        let other_tool = message_to_api_json(&empty_tool, true, false);
+        assert_eq!(other_tool["content"], json!(""));
+    }
+
+    #[test]
+    fn provider_error_detects_context_window_exceeded() {
+        let exceeded = ProviderError::message(
+            "DeepSeek API 400: This model's maximum context length is 65536 tokens. However, you requested 70000 tokens.",
+        );
+        assert!(exceeded.is_context_window_exceeded());
+        let normal = ProviderError::message("DeepSeek API 500: internal error");
+        assert!(!normal.is_context_window_exceeded());
+        assert!(!ProviderError::cancelled().is_context_window_exceeded());
     }
 
     #[test]

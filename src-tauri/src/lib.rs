@@ -21,8 +21,8 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use app_state::AppState;
 use commands::{
-    app, ask, chat, diff, gemini, harness, icons, mcp, permission, remote, settings, skills,
-    token_usage, updater, window, workspace,
+    app, ask, chat, diff, gemini, harness, icons, mcp, permission, remote, semantic, settings,
+    skills, token_usage, updater, window, workspace,
 };
 use services::app_lifecycle;
 use services::overlay_native::clear_minimize_pending;
@@ -166,6 +166,18 @@ pub fn run() {
             app.manage(AppState::new(app.handle().clone()));
             crate::core::context::providers::local_api::start_server(app.handle().clone());
             register_enabled_mcp_tools(app.handle());
+            if settings.semantic_search_enabled {
+                crate::core::ai::embed::SemanticSearchEngine::enable(
+                    crate::core::ai::embed::EmbeddingConfig {
+                        backend: settings.semantic_search_backend,
+                        local_model: settings.semantic_search_model,
+                        api_base_url: settings.semantic_search_api_base_url.clone(),
+                        api_key: settings.semantic_search_api_key.clone(),
+                        api_model: settings.semantic_search_api_model.clone(),
+                    },
+                    crate::commands::semantic::model_cache_dir(app.handle()),
+                );
+            }
             setup_tray(app)?;
             if let Some(window) = app.get_webview_window("overlay") {
                 configure_overlay_window(&window);
@@ -186,6 +198,10 @@ pub fn run() {
                         api.prevent_close();
                         let _ = window.hide();
                     }
+                    return;
+                }
+                if matches!(event, tauri::WindowEvent::Resized(_)) {
+                    crate::services::workbench_glass::sync_covering(window.app_handle());
                     return;
                 }
             }
@@ -253,6 +269,10 @@ pub fn run() {
             window::get_preview_image,
             settings::get_app_settings,
             settings::set_app_settings,
+            semantic::get_semantic_search_status,
+            semantic::set_semantic_search,
+            semantic::test_semantic_search_api,
+            semantic::fetch_semantic_search_models,
             gemini::gemini_auth_status,
             gemini::gemini_oauth_login,
             gemini::gemini_oauth_cancel_login,
@@ -274,6 +294,8 @@ pub fn run() {
             icons::lookup_install_icons,
             icons::clear_install_icon,
             app::get_app_info,
+            app::webview_gpu_disabled,
+            app::relaunch_app,
             updater::download_and_install_update,
             diff::build_code_diff,
             chat::chat,

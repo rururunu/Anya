@@ -93,10 +93,6 @@ export function listenOverlayHidden(handler: () => void) {
   return listenIpcEvent(IPC_EVENTS.overlayHidden, handler);
 }
 
-export function listenSettingsOpened(handler: () => void) {
-  return listenIpcEvent(IPC_EVENTS.settingsOpened, handler);
-}
-
 export function listenAskUser(handler: (payload: AskUserEvent) => void) {
   return listenIpcEvent<AskUserEvent>(IPC_EVENTS.askUser, handler);
 }

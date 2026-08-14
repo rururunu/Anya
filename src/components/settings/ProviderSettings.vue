@@ -1,15 +1,10 @@
 <template>
-  <section class="provider-settings">
+  <section class="settings-page">
     <AppConfirmDialog ref="confirmDialogRef" />
 
     <Transition name="fade-slide" mode="out-in">
       <div v-if="currentView === 'list'" key="list" class="view-container">
-        <header class="view-header">
-          <div>
-            <h2>{{ t("settings.provider.title") }}</h2>
-            <p>{{ t("settings.provider.description") }}</p>
-          </div>
-        </header>
+        <SettingsPageHeader :title="t('settings.provider.title')" />
 
         <div class="cards-list">
           <button type="button" class="provider-nav-card" @click="currentView = 'deepseek'">
@@ -402,6 +397,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
 import {
   geminiOauthCancelLogin,
   geminiOauthLogin,
@@ -764,8 +760,10 @@ async function deleteCustom(id: string | null) {
   flex-direction: column;
   gap: 16px;
   width: 100%;
-  max-width: 520px;
-  margin: 0 auto;
+}
+
+.view-container > .settings-page-header {
+  margin-bottom: 0;
 }
 
 header.view-header {
@@ -797,10 +795,10 @@ header.view-header p {
 
 .add-section-title {
   margin: 0;
+  padding: 0 2px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--muted-foreground);
-  letter-spacing: 0.02em;
+  font-weight: 650;
+  color: var(--peek-faint);
 }
 
 .models-header-row {
@@ -823,7 +821,10 @@ header.view-header p {
 .cards-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
+  border-radius: 10px;
+  background: var(--peek-list-bg);
 }
 
 .provider-nav-card {
@@ -831,27 +832,26 @@ header.view-header p {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--sidebar) 55%, transparent);
+  padding: 11px 12px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
+  border-radius: 0;
+  background: transparent;
   cursor: pointer;
   text-align: left;
-  transition:
-    background-color 0.2s,
-    border-color 0.2s,
-    transform 0.15s;
   width: 100%;
 }
 
+.provider-nav-card:first-child {
+  border-top: 0;
+}
+
 .provider-nav-card.is-add {
-  border-style: dashed;
   background: transparent;
 }
 
 .provider-nav-card:hover {
-  background: color-mix(in srgb, var(--sidebar) 85%, transparent);
-  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+  background: color-mix(in srgb, var(--peek-text) 3.5%, transparent);
 }
 
 .provider-nav-card.is-add:hover {

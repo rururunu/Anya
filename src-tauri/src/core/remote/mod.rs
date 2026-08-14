@@ -7,6 +7,7 @@
 mod bridge;
 mod tunnel;
 mod compose;
+mod download;
 mod gateway;
 mod http_proxy;
 mod pairing;

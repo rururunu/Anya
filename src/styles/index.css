@@ -1,7 +1,7 @@
-
 @import "./fonts.css";
 @import "./scrollbars.css";
 @import "./motion.css";
+@import "./settings-page.css";
 
 @import "tailwindcss";
 @import "../services/theme/themes.css";
@@ -50,6 +50,38 @@ html.peek-window.frosted-glass .thread-panel.has-messages.glass {
 
 html.peek-window.frosted-glass .composer-dock.glass {
   background: color-mix(in srgb, var(--peek-surface) calc(var(--peek-opacity) * 100%), transparent);
+}
+
+html.chrome-frosted-glass {
+  color-scheme: normal !important;
+  --workbench-glass-fill: rgb(255 255 255 / 0.7);
+  --workbench-glass-fill-covering: rgb(255 255 255 / 0.94);
+}
+
+html.chrome-frosted-glass[data-theme="dark"] {
+  --workbench-glass-fill: rgb(10 10 12 / 0.72);
+  --workbench-glass-fill-covering: rgb(12 12 14 / 0.94);
+}
+
+html.chrome-frosted-glass,
+html.chrome-frosted-glass body,
+html.chrome-frosted-glass #app,
+html.chrome-frosted-glass #app > * {
+  background: transparent !important;
+  background-image: none !important;
+  background-color: rgba(0, 0, 0, 0) !important;
+}
+
+html.chrome-frosted-glass[data-theme="light"] body,
+html.chrome-frosted-glass[data-theme="light"] .workbench,
+html.chrome-frosted-glass[data-theme="light"] .settings-workbench {
+  color-scheme: light;
+}
+
+html.chrome-frosted-glass[data-theme="dark"] body,
+html.chrome-frosted-glass[data-theme="dark"] .workbench,
+html.chrome-frosted-glass[data-theme="dark"] .settings-workbench {
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -166,7 +198,9 @@ html.peek-window .chat-input-shell {
   border: 2px solid var(--background);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   cursor: pointer;
-  transition: transform 0.1s ease, background-color 0.1s ease;
+  transition:
+    transform 0.1s ease,
+    background-color 0.1s ease;
 }
 
 .setting-slider::-webkit-slider-thumb:hover {
@@ -185,7 +219,9 @@ html.peek-window .chat-input-shell {
   border: 2px solid var(--background);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   cursor: pointer;
-  transition: transform 0.1s ease, background-color 0.1s ease;
+  transition:
+    transform 0.1s ease,
+    background-color 0.1s ease;
 }
 
 .setting-slider::-moz-range-thumb:hover {
@@ -210,7 +246,9 @@ html.peek-window .chat-input-shell {
   scrollbar-width: none;
 }
 
-.peek-card-tabs::-webkit-scrollbar { display: none; }
+.peek-card-tabs::-webkit-scrollbar {
+  display: none;
+}
 
 .peek-card-tab {
   position: relative;
@@ -223,7 +261,10 @@ html.peek-window .chat-input-shell {
   background: color-mix(in srgb, var(--peek-surface) 82%, transparent);
   color: var(--peek-muted);
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .peek-card-tab:hover {
@@ -233,7 +274,11 @@ html.peek-window .chat-input-shell {
 }
 
 .peek-card-tab.active {
-  border-color: color-mix(in srgb, var(--peek-accent) 55%, var(--peek-strong-border, var(--peek-border)));
+  border-color: color-mix(
+    in srgb,
+    var(--peek-accent) 55%,
+    var(--peek-strong-border, var(--peek-border))
+  );
   background: color-mix(in srgb, var(--peek-accent) 10%, var(--peek-surface));
   color: var(--peek-active-fg, var(--peek-text));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--peek-accent) 8%, transparent);

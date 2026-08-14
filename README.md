@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.9-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.10-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -39,9 +39,10 @@
 |                 |                                                                                                                             |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | **Overlay**     | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                    |
-| **Workbench**   | Full desktop UI for pinned chats, project workspaces, and review.                                                           |
+| **Workbench**   | Full desktop UI for pinned chats, project workspaces, review, and embedded settings.                                        |
 | **Agent**       | Ask / Agent / Plan; tools, Skills, MCP, Office; complex tasks may auto-plan.                                                |
 | **Companion**   | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone. |
+| **RAG**         | Optional semantic workspace search (API or local embeddings). Off until you enable it.                                      |
 | **Local-first** | Keys, history, and settings stay on your machine by default.                                                                |
 
 **Docs:** [Architecture](./docs/architecture-overview.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
@@ -81,17 +82,18 @@ Companion plugins push active file, workspace, language, and selection to the lo
 
 ## Companion — phone remote
 
-[Anya Companion](https://github.com/rururunu/AnyaAndroid) is the Android console for this desktop app. The Agent still runs here; the phone is a remote — chat, tool approvals, workspace files, and chunked file transfer (up to 500MB).
+[Anya Companion](https://github.com/rururunu/AnyaAndroid) is the Android console for this desktop app. The Agent still runs here; the phone is a remote — chat, tool approvals, workspace files, and file transfer (up to 500MB).
 
 1. Open **Connect phone** in Anya and wait for the QR (LAN address, and a public tunnel host if you enabled it).
 2. Install Companion and scan (or paste host / token). Deep link: `anya://pair`.
 3. Same Wi-Fi uses `ws://PC:8787/remote/v1`. Away from home, Cloudflare Quick Tunnel `wss://`.
+4. Phone → desktop uses chunked upload. Desktop → phone: tap the offer card, then HTTP `/f/{id}` with Range (resumable). A new chat from the phone FAB stays unbound — it does not inherit the desktop workspace.
 
 ```mermaid
 flowchart LR
   Phone[Companion] -->|same Wi-Fi first| LAN["ws://PC:8787/remote/v1"]
   Phone -->|fallback| CF["wss://*.trycloudflare.com/remote/v1"]
-  LAN --> GW[Remote Gateway]
+  LAN --> GW["Gateway :8787<br/>WS · /f download · /p preview"]
   CF --> GW
   GW --> Agent[ChatService / AgentRunner]
 ```
@@ -128,13 +130,13 @@ When Agent edits files, Anya shows a per-file summary and a focused Diff view.
 
 ### Settings
 
-Configure models, providers, agent behavior, and extensions from the embedded settings page.
+Configure models, providers, agent behavior, RAG search, and extensions from the embedded settings page (no separate settings window). Optional frosted-glass chrome blurs the titlebar and sidebars.
 
 <p align="center">
   <img src="./docs/image/workspace-settings.png" alt="Anya settings" width="900" />
 </p>
 
-Common controls include default chat model, vision / multimodal fallback, reasoning effort and language, tool approval mode, Agent display density, and context-window budget.
+Common controls include default chat model, vision / multimodal fallback, reasoning effort and language, tool approval mode, Agent display density, context-window budget, and **RAG Search** (API or local embeddings; off by default).
 
 ---
 
@@ -166,6 +168,7 @@ Assistant turns interleave **reasoning**, **reply text**, and **tool activity** 
 | **Sub-agents**         | Split larger work while progress stays visible on the main thread                                  |
 | **Memory**             | Local memory tools; optional mem0 cloud sync                                                       |
 | **Web search**         | Serper or Tavily when an API key is set                                                            |
+| **RAG Search**         | Optional semantic re-rank on `search_codebase` (OpenAI-compatible `/embeddings` or local ONNX)     |
 | **Companion**          | [Android remote](https://github.com/rururunu/AnyaAndroid) over LAN or Cloudflare Tunnel            |
 
 ### Model providers
@@ -202,7 +205,7 @@ API keys, OAuth tokens, settings, and chat history stay on your machine by defau
 
 When [Companion](https://github.com/rururunu/AnyaAndroid) is paired, chat events and files you share also travel to that phone over LAN or your Cloudflare tunnel.
 
-Web search, MCP, and mem0 cloud sync send data to those services — enable them only if you accept their policies.
+Web search, MCP, mem0 cloud sync, and the optional **RAG API** backend send data to those services — enable them only if you accept their policies. Local RAG models stay on disk after the first download.
 
 Crash recovery uses a local SQLite journal so interrupted streaming turns can settle on next launch instead of leaving the UI stuck “executing”.
 
@@ -215,9 +218,8 @@ Anya is a single-process **Tauri 2** app: WebView2 (Vue 3 + Pinia) for presentat
 ```mermaid
 flowchart TB
   subgraph Surfaces["Window surfaces"]
-    WB[Workbench]
+    WB["Workbench<br/>chat · review · settings"]
     OV[Overlay]
-    ST[Settings]
     PV[Image preview]
   end
 
@@ -225,20 +227,24 @@ flowchart TB
     CMD[commands / EventBus]
     CHAT[ChatService · StreamManager · AgentRunner]
     TOOLS[ToolRegistry · plan gate · Skills · MCP · Office]
-    GW[Remote Gateway /remote/v1]
-    STORE[(SQLite + journal)]
+    RAG[WorkspaceIndex · SemanticSearchEngine]
+    GW["Remote Gateway :8787<br/>/remote/v1 · /f · /p"]
+    STORE[(SQLite + journal + .anya/index)]
   end
 
   subgraph External["External"]
     LLM[Model providers]
+    EMB[Embeddings API]
     IDE[IDE plugins]
     OFFICE[Word / Excel / PPT]
     PH[Anya Companion]
   end
 
-  WB & OV & ST & PV <-->|IPC invoke + events| CMD
+  WB & OV & PV <-->|IPC invoke + events| CMD
   CMD --> CHAT
   CHAT --> TOOLS
+  TOOLS --> RAG
+  RAG -.->|optional| EMB
   CHAT --> STORE
   GW --> CHAT
   CHAT -->|HTTPS stream| LLM
@@ -280,7 +286,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.9_x64.msi`.
+The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.10_x64.msi`.
 
 For signing, `latest.json`, and GitHub Releases, see [Releases and remote updates](./docs/release.md).
 

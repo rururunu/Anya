@@ -1,5 +1,16 @@
 <template>
-  <main class="workbench" :data-theme="builtInTheme" @click="workspaceMenuId = ''">
+  <main
+    class="workbench"
+    :class="{
+      'is-glass': settingStore.chromeFrostedGlass,
+      'navigation-closed': !navigationOpen,
+      'is-settings': settingsOpen,
+      'is-maximized': isMaximized,
+    }"
+    :data-theme="builtInTheme"
+    @click="workspaceMenuId = ''"
+  >
+    <div class="glass-chrome" aria-hidden="true" />
     <AppConfirmDialog ref="confirmDialogRef" />
     <Transition name="workbench-ready">
       <WorkbenchLoading v-if="initializing" />
@@ -7,6 +18,18 @@
     <header class="titlebar" data-tauri-drag-region>
       <div class="titlebar-leading" data-tauri-drag-region="false">
         <button
+          v-if="settingsOpen"
+          type="button"
+          class="titlebar-back"
+          :title="labels.backToChat"
+          :aria-label="labels.backToChat"
+          @click="closeSettings"
+        >
+          <ArrowLeft :size="15" />
+          <span>{{ labels.backToChat }}</span>
+        </button>
+        <button
+          v-else
           type="button"
           class="icon-button nav-toggle"
           :title="labels.toggleNavigation"
@@ -94,7 +117,7 @@
     </header>
 
     <div v-if="settingsOpen" class="embedded-settings">
-      <SettingsPage embedded :category="settingsCategory" @back="closeSettings" />
+      <SettingsPage embedded :category="settingsCategory" />
     </div>
 
     <div
@@ -452,7 +475,7 @@
         <div
           v-if="reviewOpen"
           class="review-shell"
-          :style="{ width: `${reviewWidth + REVIEW_RESIZE_HANDLE_WIDTH}px` }"
+          :style="{ '--review-pane-width': `${reviewWidth + REVIEW_RESIZE_HANDLE_WIDTH}px` }"
         >
           <div
             class="review-resize-handle"
@@ -575,6 +598,7 @@ import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } fr
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
+  ArrowLeft,
   ArrowUpCircle,
   BookOpen,
   Cable,
@@ -985,6 +1009,8 @@ watch(settingsOpen, (open) => {
 <style scoped>
 .workbench {
   --workbench-chrome-bg: color-mix(in srgb, var(--peek-sidebar) 92%, var(--peek-bg));
+  --nav-col: 250px;
+  --titlebar-h: 42px;
   /*
    * Scale via transform (not CSS zoom): WebView2/Chromium zoom on a subtree
    * shrinks layout without reliably expanding paint into the leftover space,
@@ -999,11 +1025,15 @@ watch(settingsOpen, (open) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-radius: 0;
   background: var(--workbench-chrome-bg);
   color: var(--peek-text);
   font-family: var(--font-sans);
   container-type: size;
   container-name: workbench;
+}
+.workbench.navigation-closed:not(.is-settings) {
+  --nav-col: 42px;
 }
 .workbench-ready-leave-active {
   transition: opacity 280ms ease;
@@ -1038,12 +1068,65 @@ watch(settingsOpen, (open) => {
 
 .titlebar {
   flex: none;
-  height: 42px;
+  height: var(--titlebar-h);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   background: var(--workbench-chrome-bg);
   user-select: none;
+}
+
+.glass-chrome {
+  display: none;
+}
+
+.workbench.is-glass,
+.workbench.is-glass .workspace-grid,
+.workbench.is-glass .embedded-settings,
+.workbench.is-glass .titlebar,
+.workbench.is-glass .navigation-pane {
+  background: transparent;
+  box-shadow: none;
+}
+
+.workbench.is-glass .review-shell,
+.workbench.is-glass .conversation-pane {
+  background: var(--peek-list-bg);
+}
+
+.workbench.is-glass {
+  transform: none;
+  width: 100%;
+  height: 100%;
+}
+
+.workbench.is-glass .glass-chrome {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--workbench-glass-fill);
+}
+
+/* Fullscreen / maximized: native blur is off (it ghosts icons). Use a
+   smooth opaque tint so chrome does not fall through to black. */
+.workbench.is-glass.is-maximized .glass-chrome {
+  background: var(--workbench-glass-fill-covering);
+}
+
+.workbench.is-glass .titlebar,
+.workbench.is-glass .workspace-grid,
+.workbench.is-glass .embedded-settings {
+  position: relative;
+  z-index: 1;
+}
+
+.workbench.is-glass :deep(.settings-nav),
+.workbench.is-glass :deep([data-slot="sidebar"]),
+.workbench.is-glass :deep([data-slot="sidebar-wrapper"]) {
+  background: transparent !important;
+  box-shadow: none;
 }
 
 button {
@@ -1060,8 +1143,27 @@ button {
 .titlebar-leading {
   display: flex;
   align-items: center;
-  justify-self: start;
+  align-self: stretch;
+  box-sizing: border-box;
+  min-width: 0;
   padding: 0 8px 0 10px;
+}
+.titlebar-back {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--peek-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.titlebar-back:hover {
+  color: var(--peek-text);
+  background: var(--peek-hover-bg);
 }
 .nav-toggle {
   width: 30px;
@@ -1179,16 +1281,30 @@ button {
      briefly mismatch the review-shell's v-if mount/unmount timing during
      the enter/leave transition, so the panel got auto-placed onto a new row
      (appearing below the content) instead of into the missing 3rd column. */
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   background: var(--workbench-chrome-bg);
+}
+.workspace-grid > .navigation-pane {
+  grid-column: 1;
+  grid-row: 1;
+}
+.workspace-grid > .conversation-pane {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+.workspace-grid > .review-shell {
+  grid-column: 3;
+  grid-row: 1;
 }
 .embedded-settings {
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  background: var(--workbench-chrome-bg);
 }
 
 .navigation-pane {
@@ -1552,13 +1668,20 @@ button {
 
 .conversation-pane {
   position: relative;
+  z-index: 1;
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  border-radius: 12px 12px 0 0;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 12px 0 0 0;
   background: var(--peek-list-bg);
+  box-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
   container-type: size;
   container-name: conversation;
 }
@@ -1601,17 +1724,23 @@ button {
 .workbench-messages {
   box-sizing: border-box;
   flex: 1 1 0;
-  width: min(100%, 900px);
+  width: 100%;
   min-height: 0;
-  margin: 0 auto;
+  margin: 0;
   overflow: hidden;
   padding-top: 18px;
   padding-bottom: 148px;
   transition: padding-bottom 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .workbench-messages :deep(.message-list) {
-  padding: 18px 40px 28px;
+  padding: 18px max(40px, calc((100% - 900px) / 2)) 28px;
   gap: 20px;
+}
+.workbench-messages :deep(.message-preview-rail) {
+  right: 8px;
+}
+.workbench-messages :deep(.scroll-to-bottom) {
+  bottom: 158px;
 }
 .workbench-messages :deep(.assistant-bubble) {
   max-width: 100%;
@@ -1655,6 +1784,7 @@ button {
 .composer-wrap :deep(.input-bar) {
   width: 100%;
   max-height: 100%;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
   transition:
     min-height 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     padding 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
@@ -1662,6 +1792,9 @@ button {
     border-color 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     background 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     box-shadow 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.composer-wrap :deep(.input-bar:focus-within) {
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--peek-shadow) 32%, transparent);
 }
 .composer-wrap :deep(.input-content),
 .composer-wrap :deep(.composer-textarea),
@@ -1835,8 +1968,8 @@ button {
   padding: 16px 16px 12px;
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--peek-text) 16%, transparent);
-  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
-  box-shadow: 0 18px 48px color-mix(in srgb, #000 18%, transparent);
+  background: var(--peek-list-bg);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
 }
 
 /* Ask / permission panels should merge into the composer, not stack as a second card. */
@@ -1880,11 +2013,12 @@ button {
   .conversation-pane.empty-conversation
   .composer-wrap
   :deep(.input-bar) {
-  box-shadow: 0 18px 48px color-mix(in srgb, #000 28%, transparent);
+  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--peek-shadow) 36%, transparent);
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-bar:focus-within) {
   border-color: color-mix(in srgb, var(--peek-text) 28%, transparent);
-  box-shadow: 0 20px 52px color-mix(in srgb, #000 22%, transparent);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--peek-shadow) 32%, transparent);
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-content) {
   min-height: 56px;
@@ -1962,12 +2096,16 @@ button {
 }
 
 .review-shell {
+  grid-column: 3;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
+  width: min(var(--review-pane-width, 527px), 48cqw);
+  max-width: 100%;
   display: flex;
   overflow: hidden;
-  background: var(--workbench-chrome-bg);
-  box-shadow: -12px 0 34px color-mix(in srgb, #000 9%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
+  background: var(--peek-list-bg);
 }
 .review-panel-enter-active,
 .review-panel-leave-active {
@@ -2072,7 +2210,11 @@ button {
     width: 210px;
   }
   .workspace-grid.review-open .navigation-pane {
-    display: none;
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 }
 
@@ -2096,7 +2238,11 @@ button {
     width: 210px;
   }
   .workspace-grid.review-open .navigation-pane {
-    display: none;
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 }
 

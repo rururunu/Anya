@@ -47,11 +47,27 @@ pub async fn maybe_compact(
     if compact_at == 0 || *used_tokens < compact_at {
         return;
     }
+    force_compact(provider, request, user_msg_index, used_tokens, tx).await;
+}
+
+/// Compact prior history unconditionally (ignoring the token threshold), used
+/// when the provider already rejected the request for exceeding the context
+/// window. Returns true when history was actually folded.
+pub async fn force_compact(
+    provider: &Arc<dyn AIProvider>,
+    request: &mut ChatRequest,
+    user_msg_index: &mut Option<usize>,
+    used_tokens: &mut usize,
+    tx: &mpsc::Sender<StreamEvent>,
+) -> bool {
+    if COMPACT_DISABLED.load(Ordering::Relaxed) {
+        return false;
+    }
     let Some(user_idx) = *user_msg_index else {
-        return;
+        return false;
     };
     if user_idx == 0 {
-        return;
+        return false;
     }
 
     let prior = &request.messages[..user_idx];
@@ -61,7 +77,7 @@ pub async fn maybe_compact(
         crate::core::chat::compact::compact_prior(prior, &request.session_id, Some(&summarizer))
             .await
     else {
-        return;
+        return false;
     };
 
     let mut new_messages = outcome.messages;
@@ -75,4 +91,5 @@ pub async fn maybe_compact(
             kind: "context_compacted".to_string(),
         })
         .await;
+    true
 }

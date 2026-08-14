@@ -3,7 +3,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { DEFAULT_CHAT_MODEL } from "@/constants/chat";
 import { getAppSettings, setAppSettings } from "@/services/ipc";
-import { applyOpacity } from "@/services/overlay/appearance";
+import { applyOpacity, applyChromeFrostedGlass } from "@/services/overlay/appearance";
 import {
   normalizeColorScheme,
   normalizeChatMode,
@@ -40,6 +40,7 @@ const defaultSettings: AppSettings = {
   smitheryApiKey: "",
   enabledBuiltinSkills: [],
   opacity: 100,
+  chromeFrostedGlass: false,
   chatModel: DEFAULT_CHAT_MODEL,
   chatModelProvider: "",
   multimodalModel: "gpt-4o",
@@ -64,8 +65,36 @@ const defaultSettings: AppSettings = {
   customProviders: [],
   pixpinPinAiEnabled: true,
   snipastePinAiEnabled: true,
+  semanticSearchEnabled: false,
+  semanticSearchBackend: "api",
+  semanticSearchModel: "multilingual-e5-small",
+  semanticSearchApiBaseUrl: "",
+  semanticSearchApiKey: "",
+  semanticSearchApiModel: "",
   onboardingCompleted: false,
 };
+
+function applyColorSchemeToDocument(colorScheme: ColorScheme, glass: boolean) {
+  const root = document.documentElement;
+  const body = document.body;
+  if (glass) {
+    // Chromium paints an opaque canvas for `color-scheme` on <html>, which
+    // hides DWM Acrylic behind the WebView. Keep the scheme on <body> instead.
+    root.style.colorScheme = "normal";
+    root.style.background = "transparent";
+    if (body) {
+      body.style.colorScheme = colorScheme;
+      body.style.background = "transparent";
+    }
+    return;
+  }
+  root.style.colorScheme = colorScheme;
+  root.style.removeProperty("background");
+  if (body) {
+    body.style.removeProperty("color-scheme");
+    body.style.removeProperty("background");
+  }
+}
 
 export function applyTheme(settings: Pick<AppSettings, "colorScheme" | "language">) {
   const colorScheme = normalizeColorScheme(settings.colorScheme);
@@ -76,18 +105,19 @@ export function applyTheme(settings: Pick<AppSettings, "colorScheme" | "language
   }
   const root = document.documentElement;
   const nextDark = colorScheme === "dark";
+  const glass = root.classList.contains("chrome-frosted-glass");
   const sameTheme =
     root.dataset.theme === colorScheme &&
     root.classList.contains("dark") === nextDark &&
-    root.style.colorScheme === colorScheme &&
-    root.lang === settings.language;
+    root.lang === settings.language &&
+    (glass ? root.style.colorScheme === "normal" : root.style.colorScheme === colorScheme);
   if (sameTheme) {
     return;
   }
   root.lang = settings.language;
   root.dataset.theme = colorScheme;
   root.classList.toggle("dark", nextDark);
-  root.style.colorScheme = colorScheme;
+  applyColorSchemeToDocument(colorScheme, glass);
 }
 
 /** Theme to paint before settings finish loading (matches boot splash). */
@@ -99,6 +129,7 @@ export function applyZoom(zoom: number) {
   const normalized = Math.max(zoom, 1) / 100;
   const root = document.documentElement;
   root.style.setProperty("--ui-zoom", String(normalized));
+  root.dataset.uiZoomed = normalized === 1 ? "false" : "true";
 
   // Workbench uses transform:scale on `.workbench` (see Main.vue).
   // Overlay/Settings keep document zoom paired with window resize.
@@ -120,8 +151,11 @@ export function applyZoom(zoom: number) {
 
 function normalizeOpacityValue(settings: AppSettings): number {
   let opacityVal = settings.opacity;
-  if (opacityVal === undefined && (settings as any).frostedGlass !== undefined) {
-    opacityVal = (settings as any).frostedGlass ? 80 : 100;
+  if (opacityVal === undefined) {
+    const legacy = settings as AppSettings & { frostedGlass?: boolean };
+    if (legacy.frostedGlass !== undefined) {
+      opacityVal = legacy.frostedGlass ? 80 : 100;
+    }
   }
   return opacityVal ?? 100;
 }
@@ -138,6 +172,7 @@ function applyCommonSettings(target: AppSettings, settings: AppSettings) {
   target.colorScheme = normalizeColorScheme(settings.colorScheme);
   target.language = settings.language;
   target.opacity = normalizeOpacityValue(settings);
+  target.chromeFrostedGlass = settings.chromeFrostedGlass ?? false;
   target.chatModel = settings.chatModel ?? DEFAULT_CHAT_MODEL;
   target.chatModelProvider = settings.chatModelProvider ?? "";
   target.multimodalModel = settings.multimodalModel ?? "gpt-4o";
@@ -173,6 +208,12 @@ function applyCommonSettings(target: AppSettings, settings: AppSettings) {
   target.customProviders = settings.customProviders ?? [];
   target.pixpinPinAiEnabled = settings.pixpinPinAiEnabled ?? true;
   target.snipastePinAiEnabled = settings.snipastePinAiEnabled ?? true;
+  target.semanticSearchEnabled = settings.semanticSearchEnabled ?? false;
+  target.semanticSearchBackend = settings.semanticSearchBackend ?? "api";
+  target.semanticSearchModel = settings.semanticSearchModel ?? "multilingual-e5-small";
+  target.semanticSearchApiBaseUrl = settings.semanticSearchApiBaseUrl ?? "";
+  target.semanticSearchApiKey = settings.semanticSearchApiKey ?? "";
+  target.semanticSearchApiModel = settings.semanticSearchApiModel ?? "";
   target.onboardingCompleted = settings.onboardingCompleted ?? true;
 }
 
@@ -193,6 +234,7 @@ export const useSettingStore = defineStore("setting", {
       applyTheme(settings);
       applyZoom(this.zoom);
       void applyOpacity(this.opacity);
+      void applyChromeFrostedGlass(this.chromeFrostedGlass);
     },
     applySettings(settings: AppSettings) {
       applyCommonSettings(this, settings);
@@ -200,6 +242,7 @@ export const useSettingStore = defineStore("setting", {
       applyTheme(settings);
       applyZoom(this.zoom);
       void applyOpacity(this.opacity);
+      void applyChromeFrostedGlass(this.chromeFrostedGlass);
     },
     async load() {
       try {

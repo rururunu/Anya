@@ -54,6 +54,30 @@ export type AgentWorkDisplay = "detailed" | "compact";
 
 export type WebSearchProvider = "serper" | "tavily";
 
+export type SemanticSearchModel =
+  | "multilingual-e5-small"
+  | "bge-small-zh-v1.5"
+  | "bge-small-en-v1.5"
+  | "jina-embeddings-v2-base-code"
+  | "bge-m3";
+
+export type SemanticSearchBackend = "api" | "local";
+
+export type SemanticSearchState =
+  | { status: "idle" }
+  | { status: "downloading" }
+  | { status: "ready" }
+  | { status: "error"; message: string };
+
+export interface SemanticSearchConfig {
+  enabled: boolean;
+  backend: SemanticSearchBackend;
+  model: SemanticSearchModel;
+  apiBaseUrl: string;
+  apiKey: string;
+  apiModel: string;
+}
+
 export type ToolApprovalMode = "ask" | "auto" | "alwaysAllow";
 
 /** Chat interaction mode: Agent can mutate; Ask exposes read-only tools only. */
@@ -80,7 +104,11 @@ export type CategoryId =
   | "history"
   | "usage"
   | "about"
-  | "provider";
+  | "provider"
+  | "rag";
+
+/** First item in the settings sidebar (Appearance). */
+export const DEFAULT_SETTINGS_CATEGORY: CategoryId = "appearance";
 
 export interface LspServerConfig {
   id: string;
@@ -177,6 +205,7 @@ export interface AppSettings {
   /** Built-in skill names opted in for the agent. Empty = none enabled. */
   enabledBuiltinSkills: string[];
   opacity: number;
+  chromeFrostedGlass: boolean;
   chatModel: string;
   chatModelProvider: string;
   multimodalModel: string;
@@ -215,6 +244,13 @@ export interface AppSettings {
   pixpinPinAiEnabled: boolean;
   /** Show AI button on Snipaste pin windows. */
   snipastePinAiEnabled: boolean;
+  /** Semantic workspace search via embeddings (API or local model). */
+  semanticSearchEnabled: boolean;
+  semanticSearchBackend: SemanticSearchBackend;
+  semanticSearchModel: SemanticSearchModel;
+  semanticSearchApiBaseUrl: string;
+  semanticSearchApiKey: string;
+  semanticSearchApiModel: string;
   /** First-run welcome wizard completed. */
   onboardingCompleted: boolean;
 }
@@ -240,6 +276,7 @@ export interface AppSettingsPatch {
   smitheryApiKey?: string;
   enabledBuiltinSkills?: string[];
   opacity?: number;
+  chromeFrostedGlass?: boolean;
   chatModel?: string;
   chatModelProvider?: string;
   multimodalModel?: string;
@@ -264,6 +301,12 @@ export interface AppSettingsPatch {
   customProviders?: CustomProviderConfig[];
   pixpinPinAiEnabled?: boolean;
   snipastePinAiEnabled?: boolean;
+  semanticSearchEnabled?: boolean;
+  semanticSearchBackend?: SemanticSearchBackend;
+  semanticSearchModel?: SemanticSearchModel;
+  semanticSearchApiBaseUrl?: string;
+  semanticSearchApiKey?: string;
+  semanticSearchApiModel?: string;
   onboardingCompleted?: boolean;
 }
 
@@ -397,6 +440,35 @@ export const webSearchProviderOptions: SelectOption<WebSearchProvider>[] = [
   {
     value: "tavily",
     label: { "zh-CN": "Tavily", "en-US": "Tavily" },
+  },
+];
+
+export const semanticSearchModelOptions: SelectOption<SemanticSearchModel>[] = [
+  {
+    value: "multilingual-e5-small",
+    label: {
+      "zh-CN": "多语言 E5-Small（推荐，约 120MB）",
+      "en-US": "Multilingual E5-Small (recommended, ~120MB)",
+    },
+  },
+  {
+    value: "bge-small-zh-v1.5",
+    label: { "zh-CN": "BGE-Small 中文（约 95MB）", "en-US": "BGE-Small Chinese (~95MB)" },
+  },
+  {
+    value: "bge-small-en-v1.5",
+    label: { "zh-CN": "BGE-Small 英文（约 130MB）", "en-US": "BGE-Small English (~130MB)" },
+  },
+  {
+    value: "jina-embeddings-v2-base-code",
+    label: { "zh-CN": "Jina 代码嵌入（约 500MB）", "en-US": "Jina Code embeddings (~500MB)" },
+  },
+  {
+    value: "bge-m3",
+    label: {
+      "zh-CN": "BGE-M3 多语言（约 2.3GB，较慢）",
+      "en-US": "BGE-M3 multilingual (~2.3GB, slower)",
+    },
   },
 ];
 

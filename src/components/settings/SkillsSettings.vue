@@ -1,12 +1,12 @@
 <template>
-  <section class="skills-settings" :class="{ 'is-smithery': tab === 'smithery' }">
+  <section
+    class="settings-page is-wide skills-settings"
+    :class="{ 'is-smithery': tab === 'smithery' }"
+  >
     <AppConfirmDialog ref="confirmDialogRef" />
 
-    <header>
-      <div>
-        <h2>{{ copy.title }}</h2>
-      </div>
-      <div v-if="tab === 'installed'" class="header-actions">
+    <SettingsPageHeader :title="copy.title">
+      <template v-if="tab === 'installed'" #actions>
         <Button
           variant="ghost"
           size="icon"
@@ -26,15 +26,15 @@
           <FolderPlus class="size-3.5" />
           {{ copy.installFolder }}
         </Button>
-      </div>
-    </header>
+      </template>
+    </SettingsPageHeader>
 
-    <div class="tabs" role="tablist">
+    <div class="settings-tabs" role="tablist">
       <button
         type="button"
         role="tab"
-        class="tab"
-        :class="{ active: tab === 'installed' }"
+        class="settings-tab"
+        :class="{ on: tab === 'installed' }"
         :aria-selected="tab === 'installed'"
         @click="tab = 'installed'"
       >
@@ -43,8 +43,8 @@
       <button
         type="button"
         role="tab"
-        class="tab"
-        :class="{ active: tab === 'builtin' }"
+        class="settings-tab"
+        :class="{ on: tab === 'builtin' }"
         :aria-selected="tab === 'builtin'"
         @click="tab = 'builtin'"
       >
@@ -53,8 +53,8 @@
       <button
         type="button"
         role="tab"
-        class="tab"
-        :class="{ active: tab === 'smithery' }"
+        class="settings-tab"
+        :class="{ on: tab === 'smithery' }"
         :aria-selected="tab === 'smithery'"
         @click="openSmithery"
       >
@@ -237,6 +237,7 @@ import {
 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
 import SettingsSearchField from "@/components/settings/SettingsSearchField.vue";
 import InfiniteScrollSentinel from "@/components/settings/InfiniteScrollSentinel.vue";
 import CatalogItemCard from "@/components/settings/CatalogItemCard.vue";
@@ -594,8 +595,7 @@ onMounted(() => {
 .skills-settings {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px 16px 8px;
+  gap: 0;
 }
 
 .skills-settings.is-smithery {
@@ -604,61 +604,6 @@ onMounted(() => {
   height: 100%;
   overflow: hidden;
   padding-bottom: 4px;
-}
-
-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-header h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-header p {
-  margin: 4px 0 0;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.5;
-  max-width: 48ch;
-}
-
-.header-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--muted-foreground) 10%, transparent);
-  width: fit-content;
-  flex-shrink: 0;
-}
-
-.tab {
-  border: 0;
-  background: transparent;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.tab.active {
-  background: var(--background);
-  color: var(--foreground);
 }
 
 .form-error,

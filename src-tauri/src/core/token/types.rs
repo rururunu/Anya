@@ -52,6 +52,13 @@ pub struct TokenUsage {
     pub accuracy: TokenAccuracy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// Provider-reported prompt-cache reads (DeepSeek's `prompt_tokens` includes
+    /// these; they are subtracted out of `input_tokens`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<usize>,
+    /// Provider-reported reasoning tokens (`completion_tokens_details.reasoning_tokens`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<usize>,
 }
 
 impl TokenUsage {
@@ -62,6 +69,25 @@ impl TokenUsage {
             total_tokens: input_tokens.saturating_add(output_tokens),
             accuracy: TokenAccuracy::Exact,
             source: Some(source.into()),
+            ..Self::default()
+        }
+    }
+
+    pub fn exact_with_breakdown(
+        input_tokens: usize,
+        output_tokens: usize,
+        source: impl Into<String>,
+        cache_read_tokens: Option<usize>,
+        reasoning_tokens: Option<usize>,
+    ) -> Self {
+        Self {
+            input_tokens,
+            output_tokens,
+            total_tokens: input_tokens.saturating_add(output_tokens),
+            accuracy: TokenAccuracy::Exact,
+            source: Some(source.into()),
+            cache_read_tokens,
+            reasoning_tokens,
             ..Self::default()
         }
     }

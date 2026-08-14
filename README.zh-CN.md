@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.9-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.10-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -39,9 +39,10 @@
 |               |                                                                                                |
 | ------------- | ---------------------------------------------------------------------------------------------- |
 | **悬浮窗**    | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                                          |
-| **工作台**    | 完整桌面界面：置顶会话、项目工作区与变更审查。                                                 |
+| **工作台**    | 完整桌面界面：置顶会话、项目工作区、变更审查与内嵌设置。                                       |
 | **Agent**     | Ask / Agent / Plan；工具、Skills、MCP、Office；复杂任务可自动进计划。                          |
 | **Companion** | [安卓远程](https://github.com/rururunu/AnyaAndroid) — 扫码后即可在手机上对话、审批、收发文件。 |
+| **RAG**       | 可选语义工作区检索（API 或本地嵌入）。关闭前不下载、不发请求。                                 |
 | **本地优先**  | 密钥、历史与设置默认保存在本机。                                                               |
 
 **文档：** [架构](./docs/architecture-overview.zh-CN.md) · [发布](./docs/release.zh-CN.md) · [索引](./docs/README.zh-CN.md)
@@ -81,17 +82,18 @@ Anya 会尝试读取当前文本选区或资源管理器选中项；也可将图
 
 ## Companion — 手机远程
 
-[Anya Companion](https://github.com/rururunu/AnyaAndroid) 是本桌面应用的安卓控制台。Agent 仍在电脑上跑；手机是遥控台——对话、工具审批、工作区文件，以及分片文件传输（上限 500MB）。
+[Anya Companion](https://github.com/rururunu/AnyaAndroid) 是本桌面应用的安卓控制台。Agent 仍在电脑上跑；手机是遥控台——对话、工具审批、工作区文件，以及文件传输（上限 500MB）。
 
 1. 在 Anya 中打开 **连接手机**，等到二维码出现局域网地址（若已开启公网隧道，还会有公网主机名）。
 2. 安装 Companion 后扫码（或填写主机 / 令牌）。深度链接：`anya://pair`。
 3. 同一 Wi-Fi 走 `ws://电脑:8787/remote/v1`；外出走 Cloudflare Quick Tunnel `wss://`。
+4. 手机 → 桌面走分片上传。桌面 → 手机：点卡片后经 HTTP `/f/{id}` Range 拉取（可断点）。手机 FAB 新建会话保持未绑定——不会继承桌面当前工作区。
 
 ```mermaid
 flowchart LR
   Phone[Companion] -->|同网优先| LAN["ws://电脑:8787/remote/v1"]
   Phone -->|回退| CF["wss://*.trycloudflare.com/remote/v1"]
-  LAN --> GW[Remote Gateway]
+  LAN --> GW["Gateway :8787<br/>WS · /f 下载 · /p 预览"]
   CF --> GW
   GW --> Agent[ChatService / AgentRunner]
 ```
@@ -128,13 +130,13 @@ Agent 修改文件后，Anya 会给出按文件汇总，并提供 Diff 视图。
 
 ### 设置
 
-在内嵌设置页配置模型、服务商、Agent 行为与扩展。
+在工作台内嵌设置页配置模型、服务商、Agent 行为、RAG 检索与扩展（没有独立设置窗口）。可选毛玻璃顶栏与侧栏。
 
 <p align="center">
   <img src="./docs/image/workspace-settings.png" alt="Anya 设置" width="900" />
 </p>
 
-常用项包括：默认对话模型、视觉 / 多模态回退、思考力度与语言、工具审批模式、Agent 展示密度，以及上下文窗口预算。
+常用项包括：默认对话模型、视觉 / 多模态回退、思考力度与语言、工具审批模式、Agent 展示密度、上下文窗口预算，以及 **RAG 检索**（API 或本地嵌入；默认关闭）。
 
 ---
 
@@ -166,6 +168,7 @@ Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（�
 | **子 Agent**         | 复杂任务可拆给子 Agent，进度仍汇总在主对话                                                 |
 | **记忆**             | 本地记忆工具；可选 mem0 云同步                                                             |
 | **网页搜索**         | 配置 Serper 或 Tavily API Key 后可用                                                       |
+| **RAG 检索**         | 可选：对 `search_codebase` 做语义重排（OpenAI 兼容 `/embeddings` 或本地 ONNX）             |
 | **Companion**        | [安卓远程](https://github.com/rururunu/AnyaAndroid)，局域网或 Cloudflare 隧道              |
 
 ### 模型服务商
@@ -202,7 +205,7 @@ API Key、OAuth 令牌、设置与聊天记录默认保存在本机。选区与�
 
 配对 [Companion](https://github.com/rururunu/AnyaAndroid) 后，对话事件与你分享的文件还会经局域网或 Cloudflare 隧道到达该手机。
 
-启用网页搜索、MCP 或 mem0 云同步时，相关内容还会发给对应第三方服务，请按其隐私政策决定是否开启。
+启用网页搜索、MCP、mem0 云同步或可选的 **RAG API** 后端时，相关内容还会发给对应第三方服务，请按其隐私政策决定是否开启。本地 RAG 模型首次下载后离线可用。
 
 崩溃恢复使用本地 SQLite journal：下次启动会结算中断的流式回合，避免界面卡在「执行中」。
 
@@ -215,9 +218,8 @@ Anya 为单进程 **Tauri 2** 应用：WebView2（Vue 3 + Pinia）负责呈现�
 ```mermaid
 flowchart TB
   subgraph Surfaces["窗口表面"]
-    WB[工作台]
+    WB["工作台<br/>对话 · 审查 · 设置"]
     OV[悬浮窗]
-    ST[设置]
     PV[图片预览]
   end
 
@@ -225,20 +227,24 @@ flowchart TB
     CMD[commands / EventBus]
     CHAT[ChatService · StreamManager · AgentRunner]
     TOOLS[ToolRegistry · plan gate · Skills · MCP · Office]
-    GW[Remote Gateway /remote/v1]
-    STORE[(SQLite + journal)]
+    RAG[WorkspaceIndex · SemanticSearchEngine]
+    GW["Remote Gateway :8787<br/>/remote/v1 · /f · /p"]
+    STORE[(SQLite + journal + .anya/index)]
   end
 
   subgraph External["外部"]
     LLM[模型服务商]
+    EMB[嵌入 API]
     IDE[IDE 插件]
     OFFICE[Word / Excel / PPT]
     PH[Anya Companion]
   end
 
-  WB & OV & ST & PV <-->|IPC invoke + events| CMD
+  WB & OV & PV <-->|IPC invoke + events| CMD
   CMD --> CHAT
   CHAT --> TOOLS
+  TOOLS --> RAG
+  RAG -.->|可选| EMB
   CHAT --> STORE
   GW --> CHAT
   CHAT -->|HTTPS 流式| LLM
@@ -280,7 +286,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.9_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.10_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 

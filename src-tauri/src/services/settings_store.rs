@@ -1,10 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::models::settings::AppSettings;
+
+static WEBVIEW_GPU_DISABLED: AtomicBool = AtomicBool::new(false);
 
 const SETTINGS_FILE: &str = "settings.json";
 const RELEASE_APP_IDENTIFIER: &str = "ai.anya.desktop";
@@ -22,12 +25,24 @@ pub struct SettingsState {
     pub settings: Mutex<AppSettings>,
 }
 
-/// Read the one setting needed before Tauri creates the WebView2 environment.
-/// Hardware acceleration defaults off; only the enabled path skips browser args.
+pub fn webview_gpu_disabled() -> bool {
+    WEBVIEW_GPU_DISABLED.load(Ordering::Relaxed)
+}
+
+fn should_disable_webview_gpu(
+    hardware_acceleration_enabled: bool,
+    chrome_frosted_glass: bool,
+) -> bool {
+    !hardware_acceleration_enabled && !chrome_frosted_glass
+}
+
+/// Read the settings needed before Tauri creates the WebView2 environment.
+/// Hardware acceleration defaults off. Frosted-glass chrome also needs GPU
+/// compositing, otherwise transparent regions cannot blend with DWM Acrylic.
 pub fn configure_prestart_webview() {
     let Some(app_data) = std::env::var_os("APPDATA") else {
         // No settings file yet — apply the default (GPU off).
-        apply_disable_gpu_args();
+        disable_webview_gpu();
         return;
     };
     let app_data = PathBuf::from(app_data);
@@ -44,19 +59,29 @@ pub fn configure_prestart_webview() {
     } else {
         legacy_path
     };
-    let hardware_acceleration_enabled = fs::read_to_string(&settings_file)
+    let parsed = fs::read_to_string(&settings_file)
         .ok()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|settings| {
-            settings
-                .get("hardwareAccelerationEnabled")
-                .and_then(serde_json::Value::as_bool)
-        })
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+    let hardware_acceleration_enabled = parsed
+        .as_ref()
+        .and_then(|settings| settings.get("hardwareAccelerationEnabled"))
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    if hardware_acceleration_enabled {
+    let chrome_frosted_glass = parsed
+        .as_ref()
+        .and_then(|settings| settings.get("chromeFrostedGlass"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if should_disable_webview_gpu(hardware_acceleration_enabled, chrome_frosted_glass) {
+        disable_webview_gpu();
         return;
     }
+    WEBVIEW_GPU_DISABLED.store(false, Ordering::Relaxed);
+}
+
+fn disable_webview_gpu() {
     apply_disable_gpu_args();
+    WEBVIEW_GPU_DISABLED.store(true, Ordering::Relaxed);
 }
 
 fn apply_disable_gpu_args() {
@@ -197,6 +222,7 @@ pub fn set_settings(app: &AppHandle, next: AppSettings) -> Result<AppSettings, S
     }
 
     apply_runtime_settings(&next);
+    crate::services::workbench_glass::apply_from_settings(app, &next);
     register_enabled_mcp_tools(app);
 
     broadcast_settings(app, &next);
@@ -256,6 +282,14 @@ mod tests {
         let normalized = normalize_settings(settings);
 
         assert!(normalized.gemini_oauth.client_secret.is_empty());
+    }
+
+    #[test]
+    fn frosted_glass_keeps_webview_gpu_enabled() {
+        assert!(super::should_disable_webview_gpu(false, false));
+        assert!(!super::should_disable_webview_gpu(true, false));
+        assert!(!super::should_disable_webview_gpu(false, true));
+        assert!(!super::should_disable_webview_gpu(true, true));
     }
 
     #[test]

@@ -6,6 +6,7 @@ export const settingsFieldIds = [
   "zoom",
   "hardwareAccelerationEnabled",
   "opacity",
+  "chromeFrostedGlass",
   "primaryHotkey",
   "secondaryHotkey",
   "deepseekApiKey",
@@ -26,6 +27,8 @@ export const settingsFieldIds = [
   "webSearchProvider",
   "serperApiKey",
   "tavilyApiKey",
+  "semanticSearchEnabled",
+  "semanticSearchModel",
   "toolApprovalMode",
   "agentWorkDisplay",
   "lspEnabled",
@@ -39,6 +42,16 @@ export const settingsFieldIds = [
 ] as const;
 export type SettingFieldId = (typeof settingsFieldIds)[number];
 
+export const settingsFieldHelpIds = [
+  "hardwareAccelerationEnabled",
+  "chromeFrostedGlass",
+  "primaryHotkey",
+  "secondaryHotkey",
+  "passToolReasoning",
+  "continueThinkingAfterTools",
+] as const;
+export type SettingHelpFieldId = (typeof settingsFieldHelpIds)[number];
+
 type CategoryKey =
   | "appearance"
   | "ai"
@@ -51,8 +64,26 @@ type CategoryKey =
   | "workspace"
   | "history"
   | "about"
-  | "provider";
-type GroupKey = "appearance" | "ai" | "memory" | "search" | "agent" | "plugins" | "about";
+  | "provider"
+  | "rag";
+type GroupKey =
+  | "themeLanguage"
+  | "window"
+  | "hotkeys"
+  | "performance"
+  | "modelSelection"
+  | "context"
+  | "reasoning"
+  | "memory"
+  | "mem0"
+  | "webSearch"
+  | "searchKeys"
+  | "agentSafety"
+  | "agentDisplay"
+  | "agentCapabilities"
+  | "plugins"
+  | "about";
+type PageDescKey = "appearance" | "ai" | "agent" | "memory" | "search" | "plugins";
 type HistoryKey =
   | "search"
   | "title"
@@ -76,6 +107,39 @@ type HistoryConfirmKey =
   | "clearTitle"
   | "clearDesc"
   | "deleteAllLabel";
+
+type RagKey =
+  | "title"
+  | "description"
+  | "enableLabel"
+  | "enableHint"
+  | "backendLabel"
+  | "backendApi"
+  | "backendLocal"
+  | "apiBaseUrlLabel"
+  | "apiBaseUrlHint"
+  | "apiKeyLabel"
+  | "apiModelLabel"
+  | "apiModelPlaceholder"
+  | "fetchModels"
+  | "fetchingModels"
+  | "testConnection"
+  | "testing"
+  | "testOk"
+  | "testOkDetail"
+  | "modelLabel"
+  | "modelHint"
+  | "save"
+  | "saving"
+  | "idle"
+  | "on"
+  | "downloading"
+  | "ready"
+  | "error"
+  | "unsaved"
+  | "fetchOk"
+  | "fetchFail"
+  | "incomplete";
 
 export type SettingsI18nKey =
   | "settings.title"
@@ -136,10 +200,13 @@ export type SettingsI18nKey =
   | "settings.provider.deleteConfirm"
   | `settings.categories.${CategoryKey}`
   | `settings.groups.${GroupKey}`
+  | `settings.pages.${PageDescKey}.description`
   | `settings.fields.${SettingFieldId}.title`
   | `settings.fields.${SettingFieldId}.description`
+  | `settings.fields.${SettingHelpFieldId}.help`
   | `settings.history.${HistoryKey}`
-  | `settings.historyConfirm.${HistoryConfirmKey}`;
+  | `settings.historyConfirm.${HistoryConfirmKey}`
+  | `settings.rag.${RagKey}`;
 
 export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.title": "Settings",
@@ -205,7 +272,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.delete": "Delete Provider",
   "settings.provider.deleteConfirm": "Are you sure you want to delete this provider?",
 
-  "settings.categories.appearance": "Theme",
+  "settings.categories.appearance": "Appearance",
   "settings.categories.ai": "Model",
   "settings.categories.memory": "Memory",
   "settings.categories.search": "Search",
@@ -213,18 +280,72 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.categories.mcp": "MCP",
   "settings.categories.skills": "Skills",
   "settings.categories.plugins": "Pin tools",
-  "settings.categories.workspace": "Space",
+  "settings.categories.workspace": "Workspace",
   "settings.categories.history": "History",
   "settings.categories.about": "About",
   "settings.categories.provider": "Provider",
+  "settings.categories.rag": "RAG Search",
 
-  "settings.groups.appearance": "Appearance",
-  "settings.groups.ai": "DeepSeek",
-  "settings.groups.memory": "mem0",
-  "settings.groups.search": "Web Search",
-  "settings.groups.agent": "Coding harness",
-  "settings.groups.plugins": "PixPin / Snipaste",
+  "settings.rag.title": "RAG Search",
+  "settings.rag.description":
+    "Semantic workspace search so the agent can find relevant code across files, via an OpenAI-compatible embeddings API or a local model.",
+  "settings.rag.enableLabel": "Enable semantic search",
+  "settings.rag.enableHint": "Nothing is downloaded or requested while off.",
+  "settings.rag.backendLabel": "Embedding backend",
+  "settings.rag.backendApi": "API (OpenAI-compatible)",
+  "settings.rag.backendLocal": "Local model",
+  "settings.rag.apiBaseUrlLabel": "API base URL",
+  "settings.rag.apiBaseUrlHint": "Requests go to this URL's /embeddings endpoint.",
+  "settings.rag.apiKeyLabel": "API Key",
+  "settings.rag.apiModelLabel": "Model",
+  "settings.rag.apiModelPlaceholder": "Qwen/Qwen3-VL-Embedding-8B or BAAI/bge-m3",
+  "settings.rag.fetchModels": "Fetch models",
+  "settings.rag.fetchingModels": "Fetching…",
+  "settings.rag.testConnection": "Test connection",
+  "settings.rag.testing": "Testing…",
+  "settings.rag.testOk": "Connected",
+  "settings.rag.testOkDetail": "Connected · dim {dim}",
+  "settings.rag.modelLabel": "Local model",
+  "settings.rag.modelHint": "Downloaded on first apply, then works offline.",
+  "settings.rag.save": "Save & apply",
+  "settings.rag.saving": "Saving…",
+  "settings.rag.idle": "Off",
+  "settings.rag.on": "On",
+  "settings.rag.downloading": "Downloading model…",
+  "settings.rag.ready": "Ready",
+  "settings.rag.error": "Error",
+  "settings.rag.unsaved": "Unsaved changes",
+  "settings.rag.fetchOk": "Fetched {count} models",
+  "settings.rag.fetchFail": "Could not fetch models",
+  "settings.rag.incomplete": "Fill in the API URL, key, and model.",
+
+  "settings.groups.themeLanguage": "Theme & language",
+  "settings.groups.window": "Window",
+  "settings.groups.hotkeys": "Shortcuts",
+  "settings.groups.performance": "Performance",
+  "settings.groups.modelSelection": "Models",
+  "settings.groups.context": "Context",
+  "settings.groups.reasoning": "Reasoning",
+  "settings.groups.memory": "Memory",
+  "settings.groups.mem0": "mem0",
+  "settings.groups.webSearch": "Web search",
+  "settings.groups.searchKeys": "API keys",
+  "settings.groups.agentSafety": "Safety",
+  "settings.groups.agentDisplay": "Display",
+  "settings.groups.agentCapabilities": "Capabilities",
+  "settings.groups.plugins": "Badges",
   "settings.groups.about": "Application",
+
+  "settings.pages.appearance.description": "Theme, window, and the shortcuts that wake Anya.",
+  "settings.pages.ai.description":
+    "Default chat model, vision fallback, and reasoning. Configure API keys under Provider.",
+  "settings.pages.agent.description": "Tool approval, work display, and coding behavior.",
+  "settings.pages.memory.description":
+    "Long-term preferences and project conventions. Leave the API key empty to use local memory.",
+  "settings.pages.search.description":
+    "Give the model web_search. Use RAG Search for workspace semantics.",
+  "settings.pages.plugins.description":
+    "Show an AI badge on PixPin / Snipaste pins to attach the image to a message.",
 
   "settings.fields.colorScheme.title": "Color Scheme",
   "settings.fields.colorScheme.description": "Choose the built-in light or dark theme.",
@@ -235,22 +356,33 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Adjust the scale of interface elements and fonts for high-DPI displays.",
   "settings.fields.hardwareAccelerationEnabled.title": "Hardware acceleration",
   "settings.fields.hardwareAccelerationEnabled.description":
-    "Use the GPU for WebView2 rendering. Disabled by default for broader driver compatibility; changing this setting requires a full application restart.",
+    "Requires a full app restart to take effect.",
+  "settings.fields.hardwareAccelerationEnabled.help":
+    "Use the GPU for WebView2 rendering. Disabled by default for broader driver compatibility.",
   "settings.fields.opacity.title": "Opacity",
   "settings.fields.opacity.description":
     "Adjust window opacity and enable frosted glass background.",
+  "settings.fields.chromeFrostedGlass.title": "Frosted glass chrome",
+  "settings.fields.chromeFrostedGlass.description":
+    "The first time you turn this on, the app restarts.",
+  "settings.fields.chromeFrostedGlass.help":
+    "Use a translucent frosted-glass titlebar and sidebars. The conversation area stays opaque.",
   "settings.fields.primaryHotkey.title": "Primary shortcut",
   "settings.fields.primaryHotkey.description":
-    "Record the modifier to open Anya with two quick taps (short presses). Turn off the switch to stop listening for this global shortcut. Default: double Alt.",
+    "Two quick taps on the modifier. Default: double Alt.",
+  "settings.fields.primaryHotkey.help":
+    "Record the modifier to open Anya. Turn off the switch to stop listening for this global shortcut.",
   "settings.fields.secondaryHotkey.title": "Secondary shortcut",
   "settings.fields.secondaryHotkey.description":
-    "Record a backup shortcut for apps that steal double-Alt (e.g. IDEA). Turn off the switch to stop listening for this global shortcut. Default: Ctrl+Alt+Space.",
+    "Backup for apps that steal double-Alt. Default: Ctrl+Alt+Space.",
+  "settings.fields.secondaryHotkey.help":
+    "Record a backup shortcut for apps that steal double-Alt (e.g. IDEA). Turn off the switch to stop listening.",
   "settings.fields.deepseekApiKey.title": "API Key",
   "settings.fields.deepseekApiKey.description":
     "Used for DeepSeek chat requests. Stored locally only. Get a key: https://platform.deepseek.com/api_keys",
   "settings.fields.defaultModel.title": "Default model",
   "settings.fields.defaultModel.description":
-    "The model used for new chats. Available models are loaded from the DeepSeek API.",
+    "The model used for new chats. The list is loaded from configured providers.",
   "settings.fields.multimodalModel.title": "Multimodal model",
   "settings.fields.multimodalModel.description":
     "Fallback vision model used only when the primary chat model cannot see images (e.g. DeepSeek-R1). Gemini / GPT-4o already see images natively and ignore this.",
@@ -270,11 +402,13 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.showReasoning.description":
     "Show model reasoning in chat when the provider supplies it.",
   "settings.fields.passToolReasoning.title": "Pass tool-turn reasoning",
-  "settings.fields.passToolReasoning.description":
-    "Include reasoning text on assistant turns with tool calls (needed for thinking + tools; turning off may cause request errors).",
+  "settings.fields.passToolReasoning.description": "Turning off may cause request errors.",
+  "settings.fields.passToolReasoning.help":
+    "Include reasoning text on assistant turns with tool calls. Needed for thinking + tools.",
   "settings.fields.continueThinkingAfterTools.title": "Continue thinking after tools",
-  "settings.fields.continueThinkingAfterTools.description":
-    "Keep thinking on for every agent round after tools (default). Turn off to skip thinking on later rounds and save tokens.",
+  "settings.fields.continueThinkingAfterTools.description": "Turn off to save tokens.",
+  "settings.fields.continueThinkingAfterTools.help":
+    "Keep thinking on for every agent round after tools (default). Turn off to skip thinking on later rounds.",
   "settings.fields.memoryEnabled.title": "Enable memory",
   "settings.fields.memoryEnabled.description":
     "Recall relevant memories and save durable preferences and project rules.",
@@ -299,9 +433,15 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.tavilyApiKey.title": "Tavily API Key",
   "settings.fields.tavilyApiKey.description":
     "Used for Tavily search. Stored locally only. Get a key: https://app.tavily.com",
+  "settings.fields.semanticSearchEnabled.title": "Semantic workspace search",
+  "settings.fields.semanticSearchEnabled.description":
+    "Index workspace files with a local embedding model so the agent can find relevant code across files. The model downloads on first enable (offline after).",
+  "settings.fields.semanticSearchModel.title": "Embedding model",
+  "settings.fields.semanticSearchModel.description":
+    "Model used for semantic ranking. Larger models are more accurate but slower to download and run.",
   "settings.fields.toolApprovalMode.title": "Tool approval mode",
   "settings.fields.toolApprovalMode.description":
-    "Ask / Auto / Always allow. Always allow still blocks dangerous shell via rules.",
+    "Always allow still blocks dangerous shell via rules.",
   "settings.fields.agentWorkDisplay.title": "Agent work display",
   "settings.fields.agentWorkDisplay.description":
     "Detailed shows shell and code diffs inline in the chat timeline. Compact folds them into process details (collapsed by default). Read tools always stay in process details.",
@@ -374,13 +514,47 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.memory": "记忆",
     "settings.categories.search": "搜索",
     "settings.categories.agent": "代理",
-    "settings.categories.mcp": "插件",
+    "settings.categories.mcp": "MCP",
     "settings.categories.skills": "技能",
     "settings.categories.plugins": "贴图工具",
-    "settings.categories.workspace": "工作",
+    "settings.categories.workspace": "工作区",
     "settings.categories.history": "历史",
     "settings.categories.about": "关于",
     "settings.categories.provider": "提供商",
+    "settings.categories.rag": "RAG 检索",
+
+    "settings.rag.title": "RAG 检索",
+    "settings.rag.description":
+      "语义化工作区检索，让 agent 能跨文件找到相关代码。可用 OpenAI 兼容的 embeddings API 或本地模型。",
+    "settings.rag.enableLabel": "启用语义检索",
+    "settings.rag.enableHint": "关闭时不下载、不发起任何请求。",
+    "settings.rag.backendLabel": "嵌入后端",
+    "settings.rag.backendApi": "API（OpenAI 兼容）",
+    "settings.rag.backendLocal": "本地模型",
+    "settings.rag.apiBaseUrlLabel": "API 地址",
+    "settings.rag.apiBaseUrlHint": "请求会发到该地址的 /embeddings 接口。",
+    "settings.rag.apiKeyLabel": "API Key",
+    "settings.rag.apiModelLabel": "模型",
+    "settings.rag.apiModelPlaceholder": "Qwen/Qwen3-VL-Embedding-8B 或 BAAI/bge-m3",
+    "settings.rag.fetchModels": "拉取模型",
+    "settings.rag.fetchingModels": "拉取中…",
+    "settings.rag.testConnection": "测试连接",
+    "settings.rag.testing": "测试中…",
+    "settings.rag.testOk": "连接成功",
+    "settings.rag.testOkDetail": "连接成功 · 维度 {dim}",
+    "settings.rag.modelLabel": "本地模型",
+    "settings.rag.modelHint": "首次应用时下载，之后离线可用。",
+    "settings.rag.save": "保存并应用",
+    "settings.rag.saving": "保存中…",
+    "settings.rag.idle": "已关闭",
+    "settings.rag.on": "已开启",
+    "settings.rag.downloading": "模型下载中…",
+    "settings.rag.ready": "已就绪",
+    "settings.rag.error": "错误",
+    "settings.rag.unsaved": "有未保存的更改",
+    "settings.rag.fetchOk": "已拉取 {count} 个模型",
+    "settings.rag.fetchFail": "无法拉取模型",
+    "settings.rag.incomplete": "请填写 API 地址、API Key 与模型。",
 
     "settings.provider.deepseek": "DeepSeek 提供商",
     "settings.provider.gemini": "Gemini 提供商",
@@ -429,37 +603,61 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.delete": "删除提供商",
     "settings.provider.deleteConfirm": "确定要删除此提供商吗？",
 
-    "settings.groups.appearance": "外观",
-    "settings.groups.ai": "DeepSeek",
-    "settings.groups.memory": "mem0",
-    "settings.groups.search": "联网搜索",
-    "settings.groups.agent": "编码助手",
-    "settings.groups.plugins": "PixPin / Snipaste",
+    "settings.groups.themeLanguage": "主题与语言",
+    "settings.groups.window": "窗口",
+    "settings.groups.hotkeys": "快捷键",
+    "settings.groups.performance": "性能",
+    "settings.groups.modelSelection": "模型选择",
+    "settings.groups.context": "上下文",
+    "settings.groups.reasoning": "推理",
+    "settings.groups.memory": "总开关",
+    "settings.groups.mem0": "mem0",
+    "settings.groups.webSearch": "联网搜索",
+    "settings.groups.searchKeys": "密钥",
+    "settings.groups.agentSafety": "安全",
+    "settings.groups.agentDisplay": "显示",
+    "settings.groups.agentCapabilities": "能力",
+    "settings.groups.plugins": "角标",
     "settings.groups.about": "应用信息",
 
-    "settings.fields.colorScheme.title": "Color Scheme",
+    "settings.pages.appearance.description": "主题、窗口与唤起快捷键。",
+    "settings.pages.ai.description":
+      "默认对话模型、视觉回退与推理行为。API Key 在「提供商」中配置。",
+    "settings.pages.agent.description": "工具审批、过程展示与编码行为。",
+    "settings.pages.memory.description": "长期偏好与项目约定。留空 API Key 时使用本地记忆。",
+    "settings.pages.search.description": "给模型提供 web_search。工作区语义检索请到「RAG 检索」。",
+    "settings.pages.plugins.description":
+      "在 PixPin / Snipaste 贴图右下角显示 AI 角标，点击后把图片附加到消息。",
+
+    "settings.fields.colorScheme.title": "颜色主题",
     "settings.fields.colorScheme.description": "选择内置亮色或暗色主题。",
-    "settings.fields.language.title": "Language",
+    "settings.fields.language.title": "界面语言",
     "settings.fields.language.description": "界面语言。",
     "settings.fields.zoom.title": "界面缩放",
     "settings.fields.zoom.description": "调整软件界面大小。",
     "settings.fields.hardwareAccelerationEnabled.title": "硬件加速",
-    "settings.fields.hardwareAccelerationEnabled.description":
-      "使用 GPU 加速 WebView2 界面渲染。默认关闭以提升驱动兼容性，更改后需要完整重启应用才能生效。",
+    "settings.fields.hardwareAccelerationEnabled.description": "更改后需完整重启。",
+    "settings.fields.hardwareAccelerationEnabled.help":
+      "使用 GPU 加速 WebView2 界面渲染。默认关闭以提升驱动兼容性。",
     "settings.fields.opacity.title": "透明度",
     "settings.fields.opacity.description": "调整窗口背景透明度与毛玻璃效果。",
+    "settings.fields.chromeFrostedGlass.title": "毛玻璃顶栏与侧栏",
+    "settings.fields.chromeFrostedGlass.description": "首次开启会重启应用。",
+    "settings.fields.chromeFrostedGlass.help": "顶栏和侧栏使用半透明毛玻璃，对话区域保持实色。",
     "settings.fields.primaryHotkey.title": "主快捷键",
-    "settings.fields.primaryHotkey.description":
-      "录制用于打开 Anya 的修饰键：需快速连按两下短按才会弹出。关闭开关后不再监听该全局快捷键。默认：双击 Alt。",
+    "settings.fields.primaryHotkey.description": "连按两下修饰键唤起。默认双击 Alt。",
+    "settings.fields.primaryHotkey.help":
+      "录制用于打开 Anya 的修饰键。关闭开关后不再监听该全局快捷键。",
     "settings.fields.secondaryHotkey.title": "副快捷键",
     "settings.fields.secondaryHotkey.description":
-      "为会抢走双击 Alt 的应用（如 IDEA）录制备用快捷键。关闭开关后不再监听该全局快捷键。默认：Ctrl+Alt+Space。",
+      "给会抢走双击 Alt 的应用备用。默认 Ctrl+Alt+Space。",
+    "settings.fields.secondaryHotkey.help":
+      "为会抢走双击 Alt 的应用（如 IDEA）录制备用快捷键。关闭开关后不再监听该全局快捷键。",
     "settings.fields.deepseekApiKey.title": "API Key",
     "settings.fields.deepseekApiKey.description":
       "用于 DeepSeek 请求，密钥仅保存在本机。获取地址：https://platform.deepseek.com/api_keys",
     "settings.fields.defaultModel.title": "默认模型",
-    "settings.fields.defaultModel.description":
-      "新对话默认使用的模型，列表通过 DeepSeek API 获取。",
+    "settings.fields.defaultModel.description": "新对话默认使用的模型。列表从已配置的提供商获取。",
     "settings.fields.multimodalModel.title": "多模态模型",
     "settings.fields.multimodalModel.description":
       "仅当主模型本身不能看图时（如 DeepSeek-R1）才用作视觉回退；Gemini / GPT-4o 等原生识图模型不会走此路径。",
@@ -469,18 +667,20 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.largeContextEnabled.title": "1M 上下文",
     "settings.fields.largeContextEnabled.description":
       "将压缩与单轮预算上限提到约 100 万 token。实际窗口仍受当前模型原生上限约束（未知模型按 256k）。",
-    "settings.fields.reasoningEffort.title": "Reasoning Effort",
+    "settings.fields.reasoningEffort.title": "思考深度",
     "settings.fields.reasoningEffort.description": "DeepSeek 思考深度",
-    "settings.fields.reasoningLanguage.title": "Reasoning Language",
+    "settings.fields.reasoningLanguage.title": "推理语言",
     "settings.fields.reasoningLanguage.description": "推理文本与回答语言偏好",
     "settings.fields.showReasoning.title": "显示思考过程",
     "settings.fields.showReasoning.description": "模型提供推理内容时，在聊天中显示思考过程。",
     "settings.fields.passToolReasoning.title": "工具轮次回传推理",
-    "settings.fields.passToolReasoning.description":
-      "开启后，含 tool_calls 的 assistant 轮次会把推理内容带回 API（思考 + 工具协议需要；关闭可能导致请求失败）。",
+    "settings.fields.passToolReasoning.description": "关闭可能导致请求失败。",
+    "settings.fields.passToolReasoning.help":
+      "含 tool_calls 的 assistant 轮次会把推理内容带回 API。思考 + 工具协议需要此项。",
     "settings.fields.continueThinkingAfterTools.title": "续轮思考",
-    "settings.fields.continueThinkingAfterTools.description":
-      "工具执行后的每一轮继续开启思考（默认开启）。关闭后后续轮次跳过思考以节省 token。",
+    "settings.fields.continueThinkingAfterTools.description": "关闭可节省 token。",
+    "settings.fields.continueThinkingAfterTools.help":
+      "工具执行后的每一轮继续开启思考（默认开启）。关闭后后续轮次跳过思考。",
     "settings.fields.memoryEnabled.title": "启用记忆",
     "settings.fields.memoryEnabled.description":
       "自动召回相关记忆，并按规则保存长期偏好与项目约定。",
@@ -502,9 +702,14 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.tavilyApiKey.title": "Tavily API Key",
     "settings.fields.tavilyApiKey.description":
       "用于 Tavily 搜索，密钥仅保存在本机设置中。获取地址：https://app.tavily.com",
+    "settings.fields.semanticSearchEnabled.title": "语义工作区检索",
+    "settings.fields.semanticSearchEnabled.description":
+      "用本地嵌入模型索引工作区文件，让 agent 能跨文件检索相关代码。模型在首次开启时下载（之后离线可用）。",
+    "settings.fields.semanticSearchModel.title": "嵌入模型",
+    "settings.fields.semanticSearchModel.description":
+      "用于语义排序的模型。更大的模型更准确，但下载与推理更慢。",
     "settings.fields.toolApprovalMode.title": "工具审批模式",
-    "settings.fields.toolApprovalMode.description":
-      "询问 / 自动 / 一律允许。一律允许仍会拦截危险 shell。",
+    "settings.fields.toolApprovalMode.description": "一律允许仍会拦截危险 shell。",
     "settings.fields.agentWorkDisplay.title": "工作过程显示",
     "settings.fields.agentWorkDisplay.description":
       "详细显示：命令与代码 diff 直接穿插在对话时间线中。轻量显示：收入过程详情并默认折叠；读取类工具始终在过程详情中。",
@@ -568,9 +773,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.memory": "記憶",
     "settings.categories.search": "検索",
     "settings.categories.agent": "代理",
-    "settings.categories.mcp": "拡張",
+    "settings.categories.mcp": "MCP",
     "settings.categories.skills": "技能",
-    "settings.categories.workspace": "作業",
+    "settings.categories.workspace": "ワークスペース",
     "settings.categories.history": "履歴",
     "settings.categories.about": "情報",
     "settings.categories.provider": "プロバイダー",
@@ -604,11 +809,21 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.delete": "プロバイダーを削除",
     "settings.provider.deleteConfirm": "このプロバイダーを削除しますか？",
 
-    "settings.groups.appearance": "外観",
-    "settings.groups.ai": "DeepSeek",
-    "settings.groups.memory": "mem0",
-    "settings.groups.search": "ウェブ検索",
-    "settings.groups.agent": "コーディング",
+    "settings.groups.themeLanguage": "テーマと言語",
+    "settings.groups.window": "ウィンドウ",
+    "settings.groups.hotkeys": "ショートカット",
+    "settings.groups.performance": "パフォーマンス",
+    "settings.groups.modelSelection": "モデル",
+    "settings.groups.context": "コンテキスト",
+    "settings.groups.reasoning": "推論",
+    "settings.groups.memory": "メモリ",
+    "settings.groups.mem0": "mem0",
+    "settings.groups.webSearch": "ウェブ検索",
+    "settings.groups.searchKeys": "API キー",
+    "settings.groups.agentSafety": "安全",
+    "settings.groups.agentDisplay": "表示",
+    "settings.groups.agentCapabilities": "機能",
+    "settings.groups.plugins": "バッジ",
     "settings.groups.about": "アプリケーション",
 
     "settings.fields.colorScheme.title": "カラーテーマ",
@@ -713,7 +928,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.agent": "Агент",
     "settings.categories.mcp": "MCP",
     "settings.categories.skills": "Скиллы",
-    "settings.categories.workspace": "Проект",
+    "settings.categories.workspace": "Рабочая область",
     "settings.categories.history": "История",
     "settings.categories.about": "О программе",
     "settings.categories.provider": "Провайдер",
@@ -748,11 +963,21 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.delete": "Удалить провайдера",
     "settings.provider.deleteConfirm": "Удалить этого провайдера?",
 
-    "settings.groups.appearance": "Внешний вид",
-    "settings.groups.ai": "DeepSeek",
-    "settings.groups.memory": "mem0",
-    "settings.groups.search": "Веб-поиск",
-    "settings.groups.agent": "Кодинг",
+    "settings.groups.themeLanguage": "Тема и язык",
+    "settings.groups.window": "Окно",
+    "settings.groups.hotkeys": "Ярлыки",
+    "settings.groups.performance": "Производительность",
+    "settings.groups.modelSelection": "Модели",
+    "settings.groups.context": "Контекст",
+    "settings.groups.reasoning": "Рассуждения",
+    "settings.groups.memory": "Память",
+    "settings.groups.mem0": "mem0",
+    "settings.groups.webSearch": "Веб-поиск",
+    "settings.groups.searchKeys": "API-ключи",
+    "settings.groups.agentSafety": "Безопасность",
+    "settings.groups.agentDisplay": "Отображение",
+    "settings.groups.agentCapabilities": "Возможности",
+    "settings.groups.plugins": "Значки",
     "settings.groups.about": "Приложение",
 
     "settings.fields.colorScheme.title": "Цветовая схема",
@@ -859,7 +1084,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.agent": "Agent",
     "settings.categories.mcp": "MCP",
     "settings.categories.skills": "Skills",
-    "settings.categories.workspace": "Raum",
+    "settings.categories.workspace": "Arbeitsbereich",
     "settings.categories.history": "Verlauf",
     "settings.categories.about": "Info",
     "settings.categories.provider": "Anbieter",
@@ -893,11 +1118,21 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.delete": "Anbieter löschen",
     "settings.provider.deleteConfirm": "Diesen Anbieter wirklich löschen?",
 
-    "settings.groups.appearance": "Darstellung",
-    "settings.groups.ai": "DeepSeek",
-    "settings.groups.memory": "mem0",
-    "settings.groups.search": "Websuche",
-    "settings.groups.agent": "Coding",
+    "settings.groups.themeLanguage": "Thema & Sprache",
+    "settings.groups.window": "Fenster",
+    "settings.groups.hotkeys": "Tastenkürzel",
+    "settings.groups.performance": "Leistung",
+    "settings.groups.modelSelection": "Modelle",
+    "settings.groups.context": "Kontext",
+    "settings.groups.reasoning": "Reasoning",
+    "settings.groups.memory": "Gedächtnis",
+    "settings.groups.mem0": "mem0",
+    "settings.groups.webSearch": "Websuche",
+    "settings.groups.searchKeys": "API-Schlüssel",
+    "settings.groups.agentSafety": "Sicherheit",
+    "settings.groups.agentDisplay": "Anzeige",
+    "settings.groups.agentCapabilities": "Funktionen",
+    "settings.groups.plugins": "Badges",
     "settings.groups.about": "Anwendung",
 
     "settings.fields.colorScheme.title": "Farbschema",
@@ -1007,7 +1242,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.agent": "Agent",
     "settings.categories.mcp": "MCP",
     "settings.categories.skills": "Skills",
-    "settings.categories.workspace": "Espace",
+    "settings.categories.workspace": "Espace de travail",
     "settings.categories.history": "Historique",
     "settings.categories.about": "À propos",
     "settings.categories.provider": "Fournisseur",
@@ -1041,11 +1276,21 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.delete": "Supprimer le fournisseur",
     "settings.provider.deleteConfirm": "Supprimer ce fournisseur ?",
 
-    "settings.groups.appearance": "Apparence",
-    "settings.groups.ai": "DeepSeek",
-    "settings.groups.memory": "mem0",
-    "settings.groups.search": "Recherche web",
-    "settings.groups.agent": "Coding",
+    "settings.groups.themeLanguage": "Thème et langue",
+    "settings.groups.window": "Fenêtre",
+    "settings.groups.hotkeys": "Raccourcis",
+    "settings.groups.performance": "Performances",
+    "settings.groups.modelSelection": "Modèles",
+    "settings.groups.context": "Contexte",
+    "settings.groups.reasoning": "Raisonnement",
+    "settings.groups.memory": "Mémoire",
+    "settings.groups.mem0": "mem0",
+    "settings.groups.webSearch": "Recherche web",
+    "settings.groups.searchKeys": "Clés API",
+    "settings.groups.agentSafety": "Sécurité",
+    "settings.groups.agentDisplay": "Affichage",
+    "settings.groups.agentCapabilities": "Capacités",
+    "settings.groups.plugins": "Badges",
     "settings.groups.about": "Application",
 
     "settings.fields.colorScheme.title": "Thème de couleurs",
@@ -1156,9 +1401,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.memory": "기억",
     "settings.categories.search": "검색",
     "settings.categories.agent": "에이전트",
-    "settings.categories.mcp": "확장",
+    "settings.categories.mcp": "MCP",
     "settings.categories.skills": "스킬",
-    "settings.categories.workspace": "작업",
+    "settings.categories.workspace": "작업 영역",
     "settings.categories.history": "기록",
     "settings.categories.about": "정보",
     "settings.categories.provider": "제공자",
@@ -1192,11 +1437,21 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.delete": "제공자 삭제",
     "settings.provider.deleteConfirm": "이 제공자를 삭제할까요?",
 
-    "settings.groups.appearance": "모양",
-    "settings.groups.ai": "DeepSeek",
-    "settings.groups.memory": "mem0",
-    "settings.groups.search": "웹 검색",
-    "settings.groups.agent": "코딩",
+    "settings.groups.themeLanguage": "테마와 언어",
+    "settings.groups.window": "창",
+    "settings.groups.hotkeys": "단축키",
+    "settings.groups.performance": "성능",
+    "settings.groups.modelSelection": "모델",
+    "settings.groups.context": "컨텍스트",
+    "settings.groups.reasoning": "추론",
+    "settings.groups.memory": "메모리",
+    "settings.groups.mem0": "mem0",
+    "settings.groups.webSearch": "웹 검색",
+    "settings.groups.searchKeys": "API 키",
+    "settings.groups.agentSafety": "보안",
+    "settings.groups.agentDisplay": "표시",
+    "settings.groups.agentCapabilities": "기능",
+    "settings.groups.plugins": "배지",
     "settings.groups.about": "애플리케이션",
 
     "settings.fields.colorScheme.title": "색상 테마",
@@ -1297,6 +1552,7 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     zoom: "Appearance › Interface Zoom",
     hardwareAccelerationEnabled: "Appearance › Hardware acceleration",
     opacity: "Appearance › Opacity",
+    chromeFrostedGlass: "Appearance › Frosted glass chrome",
     primaryHotkey: "Appearance › Primary shortcut",
     secondaryHotkey: "Appearance › Secondary shortcut",
     deepseekApiKey: "AI › DeepSeek › API Key",
@@ -1317,6 +1573,8 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     webSearchProvider: "Web Search / Provider",
     serperApiKey: "Web Search / Serper API Key",
     tavilyApiKey: "Web Search / Tavily API Key",
+    semanticSearchEnabled: "Search / Semantic Workspace Search",
+    semanticSearchModel: "Search / Embedding Model",
     toolApprovalMode: "Agent / Tool Approval",
     agentWorkDisplay: "Agent / Work Display",
     lspEnabled: "Agent / Language Server",
@@ -1334,6 +1592,7 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     zoom: "Appearance › Interface Zoom",
     hardwareAccelerationEnabled: "外观 › 硬件加速",
     opacity: "Appearance › Opacity",
+    chromeFrostedGlass: "外观 › 毛玻璃顶栏与侧栏",
     primaryHotkey: "外观 › 主快捷键",
     secondaryHotkey: "外观 › 副快捷键",
     deepseekApiKey: "AI › DeepSeek › API Key",
@@ -1354,6 +1613,8 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     webSearchProvider: "联网搜索 / Provider",
     serperApiKey: "联网搜索 / Serper API Key",
     tavilyApiKey: "联网搜索 / Tavily API Key",
+    semanticSearchEnabled: "搜索 / 语义工作区检索",
+    semanticSearchModel: "搜索 / 嵌入模型",
     toolApprovalMode: "Agent / 工具审批",
     agentWorkDisplay: "Agent / 工作过程显示",
     lspEnabled: "Agent / 语言服务",
@@ -1384,6 +1645,17 @@ const settingsFieldKeywords: Record<
       "restart",
     ],
     opacity: ["opacity", "transparent", "glass", "blur", "acrylic", "appearance"],
+    chromeFrostedGlass: [
+      "frosted",
+      "glass",
+      "blur",
+      "acrylic",
+      "mica",
+      "titlebar",
+      "sidebar",
+      "chrome",
+      "restart",
+    ],
     primaryHotkey: ["hotkey", "shortcut", "primary", "double", "alt", "ctrl", "shift", "meta"],
     secondaryHotkey: ["hotkey", "shortcut", "secondary", "ctrl", "alt", "space", "record"],
     deepseekApiKey: ["deepseek", "api", "key", "ai"],
@@ -1412,6 +1684,8 @@ const settingsFieldKeywords: Record<
     webSearchProvider: ["web", "search", "provider", "serper", "tavily"],
     serperApiKey: ["web", "search", "serper", "api", "key"],
     tavilyApiKey: ["web", "search", "tavily", "api", "key"],
+    semanticSearchEnabled: ["semantic", "workspace", "search", "embedding", "rag"],
+    semanticSearchModel: ["semantic", "model", "embedding", "bge", "e5"],
     toolApprovalMode: ["approval", "ask", "auto", "alwaysAllow"],
     agentWorkDisplay: ["display", "detailed", "compact", "timeline", "process", "agent", "work"],
     lspEnabled: ["lsp", "diagnostics", "definition"],
@@ -1429,6 +1703,7 @@ const settingsFieldKeywords: Record<
     zoom: ["缩放", "放大", "大小", "字体", "zoom", "scale"],
     hardwareAccelerationEnabled: ["gpu", "硬件", "加速", "渲染", "webview2", "重启"],
     opacity: ["透明", "透明度", "毛玻璃", "blur", "opacity", "glass", "acrylic", "外观"],
+    chromeFrostedGlass: ["毛玻璃", "顶栏", "侧栏", "透明", "blur", "acrylic", "mica", "glass"],
     primaryHotkey: ["快捷键", "主快捷键", "双击", "hotkey", "shortcut", "alt", "ctrl"],
     secondaryHotkey: ["快捷键", "副快捷键", "录制", "hotkey", "shortcut", "ctrl", "alt"],
     deepseekApiKey: ["deepseek", "api", "key", "密钥", "ai"],
@@ -1449,6 +1724,8 @@ const settingsFieldKeywords: Record<
     webSearchProvider: ["联网", "搜索", "provider", "serper", "tavily"],
     serperApiKey: ["联网", "搜索", "serper", "api", "key", "密钥"],
     tavilyApiKey: ["联网", "搜索", "tavily", "api", "key", "密钥"],
+    semanticSearchEnabled: ["语义", "检索", "工作区", "embedding", "rag", "search"],
+    semanticSearchModel: ["语义", "模型", "嵌入", "embedding", "bge", "e5"],
     toolApprovalMode: ["审批", "ask", "auto", "一律允许", "approval"],
     agentWorkDisplay: [
       "详细",

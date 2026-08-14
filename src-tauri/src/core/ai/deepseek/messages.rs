@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde_json::{json, Map, Value};
 
 use crate::core::runtime::{ChatMessage, ChatRequest, Role};
@@ -26,18 +28,21 @@ pub(crate) fn build_api_body(
         &request.messages,
     );
 
-    let messages: Vec<_> = request
+    // DeepSeek-specific wire quirks (empty-content passback, empty tool output,
+    // cache-hit token accounting) only apply to actual DeepSeek models, never to
+    // custom OpenAI-compatible providers routed through the same adapter.
+    let is_deepseek = model.trim().to_ascii_lowercase().starts_with("deepseek");
+
+    let mut messages: Vec<_> = request
         .messages
         .iter()
-        .filter(|message| {
-            message.role == Role::Tool
-                || message
-                    .tool_calls
-                    .as_ref()
-                    .is_some_and(|calls| !calls.is_empty())
-                || !message.content.trim().is_empty()
-        })
-        .map(|message| message_to_api_json(message, effective_pass))
+        .filter(|message| message.contributes_to_api())
+        .cloned()
+        .collect();
+    normalize_tool_protocol(&mut messages);
+    let messages: Vec<_> = messages
+        .iter()
+        .map(|message| message_to_api_json(message, effective_pass, is_deepseek))
         .collect();
 
     let mut body = Map::new();
@@ -184,17 +189,120 @@ fn parse_multimodal_content(content: &str) -> Value {
     }
 }
 
-pub(super) fn message_to_api_json(message: &ChatMessage, pass_tool_reasoning: bool) -> Value {
+/// Drop `role=tool` rows that are not a response to the nearest preceding
+/// assistant `tool_calls`. DeepSeek (and other OpenAI-compatible APIs) return
+/// 400 otherwise. Also fill empty tool-call ids so the pair can still match.
+pub(super) fn normalize_tool_protocol(messages: &mut Vec<ChatMessage>) {
+    let mut i = 0;
+    while i < messages.len() {
+        if messages[i].role == Role::Assistant {
+            if let Some(calls) = messages[i].tool_calls.as_mut() {
+                for (index, call) in calls.iter_mut().enumerate() {
+                    if call.id.trim().is_empty() {
+                        call.id = format!("call-{index}");
+                    }
+                }
+                if calls.is_empty() {
+                    messages[i].tool_calls = None;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        if messages[i].role != Role::Tool {
+            i += 1;
+            continue;
+        }
+
+        let mut block_start = i;
+        while block_start > 0 && messages[block_start - 1].role == Role::Tool {
+            block_start -= 1;
+        }
+        let assistant_idx = block_start.checked_sub(1);
+        let pending: Vec<String> = assistant_idx
+            .and_then(|idx| {
+                let assistant = &messages[idx];
+                if assistant.role != Role::Assistant {
+                    return None;
+                }
+                assistant.tool_calls.as_ref().and_then(|calls| {
+                    if calls.is_empty() {
+                        None
+                    } else {
+                        Some(calls.iter().map(|call| call.id.clone()).collect())
+                    }
+                })
+            })
+            .unwrap_or_default();
+
+        if pending.is_empty() {
+            messages.remove(i);
+            continue;
+        }
+
+        let used: HashSet<String> = messages[block_start..i]
+            .iter()
+            .filter_map(|message| message.tool_call_id.clone())
+            .collect();
+        let raw_id = messages[i]
+            .tool_call_id
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let matched = if raw_id.is_empty() {
+            pending.iter().find(|id| !used.contains(*id)).cloned()
+        } else if pending.contains(&raw_id) && !used.contains(&raw_id) {
+            Some(raw_id)
+        } else {
+            None
+        };
+
+        match matched {
+            Some(id) => {
+                messages[i].tool_call_id = Some(id);
+                i += 1;
+            }
+            None => {
+                messages.remove(i);
+            }
+        }
+    }
+}
+
+pub(super) fn message_to_api_json(
+    message: &ChatMessage,
+    pass_tool_reasoning: bool,
+    is_deepseek: bool,
+) -> Value {
     if message.role == Role::Tool {
-        return json!({
+        // DeepSeek rejects empty tool output; other providers tolerate "".
+        let content = if is_deepseek && message.content.trim().is_empty() {
+            "(no output)".to_string()
+        } else {
+            message.content.clone()
+        };
+        let mut payload = json!({
             "role": "tool",
-            "tool_call_id": message.tool_call_id,
-            "content": message.content,
+            "tool_call_id": message.tool_call_id.clone().unwrap_or_default(),
+            "content": content,
         });
+        if let Some(name) = message.name.as_deref().filter(|name| !name.is_empty()) {
+            payload
+                .as_object_mut()
+                .expect("tool payload object")
+                .insert("name".into(), json!(name));
+        }
+        return payload;
     }
 
     if message.role == Role::Assistant {
-        if let Some(tool_calls) = &message.tool_calls {
+        if let Some(tool_calls) = message
+            .tool_calls
+            .as_ref()
+            .filter(|calls| !calls.is_empty())
+        {
             let calls: Vec<Value> = tool_calls
                 .iter()
                 .map(|call| {
@@ -210,7 +318,11 @@ pub(super) fn message_to_api_json(message: &ChatMessage, pass_tool_reasoning: bo
                 .collect();
             let mut payload = json!({
                 "role": "assistant",
-                "content": if message.content.is_empty() { Value::Null } else { json!(message.content) },
+                // DeepSeek (and some gateways) reject null content on text-less
+                // tool-call turns — send an empty string instead.
+                "content": if message.content.is_empty() {
+                    if is_deepseek { json!("") } else { Value::Null }
+                } else { json!(message.content) },
                 "tool_calls": calls,
             });
             if pass_tool_reasoning {

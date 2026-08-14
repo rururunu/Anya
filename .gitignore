@@ -45,3 +45,11 @@ release/
 # Eval harness outputs
 eval/results/
 
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Debug symbols and temporary artifacts
+*.pdb
+tmp_*
+

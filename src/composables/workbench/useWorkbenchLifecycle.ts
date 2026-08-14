@@ -19,7 +19,7 @@ import { useChatStore } from "@/stores/chat";
 import { useSettingStore } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
 import type { Workspace } from "@/commands/workspace";
-import type { CategoryId } from "@/types/setting";
+import { DEFAULT_SETTINGS_CATEGORY, type CategoryId } from "@/types/setting";
 import type { ChatSessionSummary } from "@/types/chat";
 import type { PendingInteraction, WorkspacePointerDrag } from "./types";
 
@@ -131,7 +131,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     );
     unlisteners.push(
       await listen("open-workbench-settings", () => {
-        openSettings(appStore.settingsCategory || "ai");
+        openSettings(appStore.settingsCategory || DEFAULT_SETTINGS_CATEGORY);
       }),
     );
     unlisteners.push(

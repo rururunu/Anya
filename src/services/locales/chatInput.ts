@@ -16,9 +16,10 @@ export const chatInputEn = {
   "chatInput.attachInsertFolder": "Long-press to insert folder",
   "chatInput.attachSkills": "Skills",
   "chatInput.attachMcp": "MCP",
-  "chatInput.attachEmptySkills": "No skills available. Enable built-ins or install from Settings.",
+  "chatInput.attachEmptySkills":
+    "No skills available. Enable built-ins or install from the sidebar.",
   "chatInput.attachEmptyMcp":
-    "No enabled MCP servers. Install one in Settings → MCP, then turn it on.",
+    "No enabled MCP servers. Install one from the sidebar MCP page, then turn it on.",
   "chatInput.attachLoading": "Loading…",
   "chatInput.attachExpandMore": "+{count} more",
   "chatInput.attachCollapse": "Show less",
@@ -46,8 +47,8 @@ export const chatInputLocales: Record<AppLanguage, ChatInputLocalePartial> = {
     "chatInput.attachInsertFolder": "长按引入文件夹",
     "chatInput.attachSkills": "Skills",
     "chatInput.attachMcp": "MCP",
-    "chatInput.attachEmptySkills": "暂无可用 Skill。可在设置中启用内置或安装。",
-    "chatInput.attachEmptyMcp": "暂无已启用的 MCP。请到设置 → MCP 安装后打开开关。",
+    "chatInput.attachEmptySkills": "暂无可用 Skill。可在侧栏技能页启用内置或安装。",
+    "chatInput.attachEmptyMcp": "暂无已启用的 MCP。请到侧栏 MCP 页安装后打开开关。",
     "chatInput.attachLoading": "加载中…",
     "chatInput.attachExpandMore": "展开 +{count}",
     "chatInput.attachCollapse": "收起",

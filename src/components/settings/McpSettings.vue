@@ -1,5 +1,5 @@
 <template>
-  <section class="mcp-settings">
+  <section class="settings-page is-wide mcp-settings">
     <AppConfirmDialog ref="confirmDialogRef" />
 
     <DialogRoot :open="smitheryConfigOpen" @update:open="onSmitheryConfigOpenChange">
@@ -41,11 +41,8 @@
       </DialogPortal>
     </DialogRoot>
 
-    <header>
-      <div>
-        <h2>{{ copy.title }}</h2>
-      </div>
-      <div class="header-actions">
+    <SettingsPageHeader :title="copy.title">
+      <template #actions>
         <Button
           variant="outline"
           size="sm"
@@ -67,15 +64,15 @@
           <Plus class="size-3.5" />
           {{ copy.add }}
         </Button>
-      </div>
-    </header>
+      </template>
+    </SettingsPageHeader>
 
-    <div class="tabs" role="tablist">
+    <div class="settings-tabs" role="tablist">
       <button
         type="button"
         role="tab"
-        class="tab"
-        :class="{ active: tab === 'installed' }"
+        class="settings-tab"
+        :class="{ on: tab === 'installed' }"
         :aria-selected="tab === 'installed'"
         @click="tab = 'installed'"
       >
@@ -84,8 +81,8 @@
       <button
         type="button"
         role="tab"
-        class="tab"
-        :class="{ active: tab === 'catalog' }"
+        class="settings-tab"
+        :class="{ on: tab === 'catalog' }"
         :aria-selected="tab === 'catalog'"
         @click="openCatalog"
       >
@@ -94,8 +91,8 @@
       <button
         type="button"
         role="tab"
-        class="tab"
-        :class="{ active: tab === 'smithery' }"
+        class="settings-tab"
+        :class="{ on: tab === 'smithery' }"
         :aria-selected="tab === 'smithery'"
         @click="openSmithery"
       >
@@ -173,6 +170,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ExternalLink, Plus, Settings } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
 import {
   DialogContent,
   DialogDescription,
@@ -1137,64 +1135,11 @@ watch(
 .mcp-settings {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 12px 16px 20px;
-}
-
-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-header h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-header p {
-  margin: 4px 0 0;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.5;
-  max-width: 52ch;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--muted-foreground) 10%, transparent);
-  width: fit-content;
-}
-
-.tab {
-  border: 0;
-  background: transparent;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.tab.active {
-  background: var(--background);
-  color: var(--foreground);
+  gap: 0;
 }
 
 .form-error {
-  margin: 0;
+  margin: 0 0 12px;
   color: #ef4444;
   font-size: 12px;
   line-height: 1.5;

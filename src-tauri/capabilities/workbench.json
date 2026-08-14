@@ -16,6 +16,7 @@
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-effects",
     "dialog:default",
     "opener:default",
     "opener:allow-open-path",

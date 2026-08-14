@@ -19,6 +19,18 @@
       </button>
     </nav>
 
+    <Transition name="scroll-to-bottom">
+      <button
+        v-if="!stickToBottom && displayItems.length"
+        type="button"
+        class="scroll-to-bottom"
+        :aria-label="tr(settingStore.language, 'scrollToBottom')"
+        @click="scrollToLatest"
+      >
+        <ArrowDown :size="16" :stroke-width="1.75" />
+      </button>
+    </Transition>
+
     <div
       ref="listRef"
       class="message-list peek-scrollbar"
@@ -295,7 +307,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { Bot, Check, Copy, File, Folder, Undo2, Zap } from "@lucide/vue";
+import { ArrowDown, Bot, Check, Copy, File, Folder, Undo2, Zap } from "@lucide/vue";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
 import { normalizeMentionPath } from "@/services/chat/composerSegments";
 import { splitInlineTokenParts } from "@/services/chat/inlineTokenMarks";
@@ -1117,6 +1129,13 @@ function scrollToMessage(messageId: string) {
   // Offset accounts for the absolute thread header overlay.
   gsapScrollContainerTo(container, node, { offsetY: 42 });
 }
+function scrollToLatest() {
+  const element = listRef.value;
+  if (!element) return;
+  stickToBottom.value = true;
+  element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+  updateActiveUserMessage();
+}
 function messagePreview(message: ChatMessage) {
   const parsed = userContent(message);
   const compact = parsed.message.replace(/\s+/g, " ").trim();
@@ -1262,6 +1281,36 @@ onUnmounted(() => {
 }
 .message-preview-rail::-webkit-scrollbar {
   display: none;
+}
+.scroll-to-bottom {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: 72px;
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 72%, transparent);
+  border-radius: 50%;
+  background: var(--peek-list-bg, #fff);
+  color: var(--peek-text);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
+  cursor: pointer;
+}
+.scroll-to-bottom:hover {
+  border-color: var(--peek-border);
+  background: var(--peek-surface);
+}
+.scroll-to-bottom-enter-active,
+.scroll-to-bottom-leave-active {
+  transition: opacity 140ms ease;
+}
+.scroll-to-bottom-enter-from,
+.scroll-to-bottom-leave-to {
+  opacity: 0;
 }
 .message-preview-mark {
   position: relative;

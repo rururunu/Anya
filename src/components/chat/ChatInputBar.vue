@@ -4484,13 +4484,17 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--peek-text) 16%, transparent);
   border-radius: 16px;
+  background: var(--peek-list-bg);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
+}
+
+:global([data-theme="dark"]) .workbench-composer .input-bar {
   background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
-  box-shadow: 0 14px 36px color-mix(in srgb, #000 18%, transparent);
 }
 
 .workbench-composer .input-bar:focus-within {
   border-color: color-mix(in srgb, var(--peek-text) 28%, transparent);
-  box-shadow: 0 16px 40px color-mix(in srgb, #000 22%, transparent);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--peek-shadow) 32%, transparent);
 }
 
 .workbench-composer {
@@ -4676,8 +4680,20 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   border: 1px solid color-mix(in srgb, var(--peek-text) 16%, transparent);
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
-  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
+  background: var(--peek-list-bg);
   box-shadow: none;
+}
+
+:global([data-theme="dark"])
+  .workbench-composer.overlay-pickers.interaction-request-open
+  :deep(.ask-user-list),
+:global([data-theme="dark"])
+  .workbench-composer.overlay-pickers.interaction-request-open
+  :deep(.path-permission-list),
+:global([data-theme="dark"])
+  .workbench-composer.overlay-pickers.interaction-request-open
+  :deep(.tool-approval-list) {
+  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
 }
 
 .workbench-composer.overlay-pickers.interaction-request-open :deep(.ask-user-list) {
@@ -4711,7 +4727,7 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   /* Keep outer frame continuous; middle seam uses the same stroke. */
   border-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
   border-top-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
-  box-shadow: 0 14px 36px color-mix(in srgb, #000 18%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
 }
 
 .workbench-composer.overlay-pickers :deep(.command-item) {

@@ -208,6 +208,16 @@ pub enum ClientMessage {
         #[serde(rename = "uploadId")]
         upload_id: String,
     },
+    #[serde(rename = "file.download.begin")]
+    FileDownloadBegin {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        path: String,
+        #[serde(rename = "sessionId", default)]
+        session_id: Option<String>,
+        #[serde(rename = "workspaceId", default)]
+        workspace_id: Option<String>,
+    },
 }
 
 fn default_protocol_version() -> i32 {

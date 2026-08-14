@@ -2,7 +2,7 @@ import { ref, watch } from "vue";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { useAppStore } from "@/stores/app";
-import type { CategoryId } from "@/types/setting";
+import { DEFAULT_SETTINGS_CATEGORY, type CategoryId } from "@/types/setting";
 
 export interface UseWorkbenchWindowOptions {
   appWindow: WebviewWindow;
@@ -19,7 +19,7 @@ export function useWorkbenchWindow(options: UseWorkbenchWindowOptions) {
 
   const isMaximized = ref(false);
   const settingsOpen = ref(false);
-  const settingsCategory = ref<CategoryId>("ai");
+  const settingsCategory = ref<CategoryId>(DEFAULT_SETTINGS_CATEGORY);
 
   function minimizeWindow() {
     void appWindow.minimize();
@@ -43,7 +43,7 @@ export function useWorkbenchWindow(options: UseWorkbenchWindowOptions) {
     if (category) {
       settingsCategory.value = category;
     } else if (!settingsOpen.value) {
-      settingsCategory.value = "ai";
+      settingsCategory.value = DEFAULT_SETTINGS_CATEGORY;
     }
     settingsOpen.value = true;
   }

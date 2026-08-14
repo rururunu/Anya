@@ -32,6 +32,22 @@ struct ApiStreamResponse {
 struct ApiTokenUsage {
     prompt_tokens: usize,
     completion_tokens: usize,
+    #[serde(default)]
+    prompt_tokens_details: ApiPromptTokensDetails,
+    #[serde(default)]
+    completion_tokens_details: ApiCompletionTokensDetails,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ApiPromptTokensDetails {
+    #[serde(default)]
+    cached_tokens: usize,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ApiCompletionTokensDetails {
+    #[serde(default)]
+    reasoning_tokens: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,6 +119,12 @@ pub(super) async fn run_chat_stream(
     body: &Value,
     tx: &Sender<StreamEvent>,
 ) -> Result<(), ProviderError> {
+    // DeepSeek-only behaviors (cache-hit token accounting, etc.) are keyed off
+    // the wire model so custom OpenAI-compatible providers are untouched.
+    let is_deepseek = body
+        .get("model")
+        .and_then(Value::as_str)
+        .is_some_and(|model| model.trim().to_ascii_lowercase().starts_with("deepseek"));
     let mut last_error: Option<ProviderError> = None;
 
     for attempt in 0..MAX_STREAM_ATTEMPTS {
@@ -121,7 +143,7 @@ pub(super) async fn run_chat_stream(
             }
         };
 
-        match read_sse_stream(response, tx).await {
+        match read_sse_stream(response, tx, is_deepseek).await {
             Ok(outcome) if outcome.is_complete() => {
                 let _ = tx.send(StreamEvent::Finish).await;
                 return Ok(());
@@ -198,6 +220,7 @@ async fn post_stream_request(
 async fn read_sse_stream(
     response: reqwest::Response,
     tx: &Sender<StreamEvent>,
+    is_deepseek: bool,
 ) -> Result<StreamReadOutcome, ProviderError> {
     let mut stream = response.bytes_stream();
     let mut pending_utf8 = Vec::new();
@@ -238,11 +261,24 @@ async fn read_sse_stream(
             })?;
 
             if let Some(usage) = parsed.usage {
+                // DeepSeek's prompt_tokens INCLUDES cache reads; subtract them so
+                // `inputTokens` reflects actual (non-cached) input.
+                let (cache_read, reasoning) = if is_deepseek {
+                    (
+                        usage.prompt_tokens_details.cached_tokens,
+                        usage.completion_tokens_details.reasoning_tokens,
+                    )
+                } else {
+                    (0, 0)
+                };
+                let input = usage.prompt_tokens.saturating_sub(cache_read);
                 let _ = tx
-                    .send(StreamEvent::Usage(TokenUsage::exact(
-                        usage.prompt_tokens,
+                    .send(StreamEvent::Usage(TokenUsage::exact_with_breakdown(
+                        input,
                         usage.completion_tokens,
                         "provider/usage",
+                        (is_deepseek && cache_read > 0).then_some(cache_read),
+                        (is_deepseek && reasoning > 0).then_some(reasoning),
                     )))
                     .await;
             }
@@ -305,8 +341,12 @@ async fn read_sse_stream(
     merged_calls.sort_by_key(|(index, _)| *index);
     let tool_call_payloads: Vec<ToolCallPayload> = merged_calls
         .into_iter()
-        .map(|(_, builder)| ToolCallPayload {
-            id: builder.id,
+        .map(|(index, builder)| ToolCallPayload {
+            id: if builder.id.trim().is_empty() {
+                format!("call-{index}")
+            } else {
+                builder.id
+            },
             name: builder.name,
             arguments: builder.arguments,
             thought_signature: None,

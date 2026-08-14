@@ -1,5 +1,9 @@
 <template>
-  <div class="settings-workbench" :class="{ embedded: props.embedded }">
+  <div
+    class="settings-workbench"
+    :class="{ embedded: props.embedded, 'is-glass': settingStore.chromeFrostedGlass }"
+  >
+    <div v-if="!props.embedded" class="glass-chrome" aria-hidden="true" />
     <header v-if="!props.embedded" class="titlebar">
       <div class="titlebar-drag" data-tauri-drag-region @mousedown="onWindowDragMouseDown">
         <Settings2 class="titlebar-icon" :size="15" />
@@ -28,21 +32,10 @@
 
     <div class="settings-body">
       <SidebarProvider
-        class="settings-layout h-full min-h-0 w-full [&_[data-slot=sidebar-wrapper]]:h-full [&_[data-slot=sidebar-wrapper]]:min-h-0"
+        class="settings-layout h-full min-h-0 w-full !min-h-0 [&_[data-slot=sidebar-wrapper]]:h-full [&_[data-slot=sidebar-wrapper]]:min-h-0"
       >
         <Sidebar collapsible="none" class="settings-nav">
           <SidebarContent class="settings-nav-content peek-scrollbar">
-            <div v-if="props.embedded" class="settings-back-wrap">
-              <button
-                type="button"
-                class="settings-back"
-                :aria-label="t.back"
-                @click="emit('back')"
-              >
-                <ArrowLeft :size="15" />
-                <span>{{ t.back }}</span>
-              </button>
-            </div>
             <SidebarGroup
               v-for="section in categorySections"
               :key="section.id"
@@ -52,15 +45,15 @@
                 {{ section.label }}
               </SidebarGroupLabel>
               <SidebarMenu>
-                <SidebarMenuItem v-for="category in section.categories" :key="category.id">
+                <SidebarMenuItem v-for="navItem in section.categories" :key="navItem.id">
                   <SidebarMenuButton
                     class="settings-nav-item"
-                    :is-active="activeCategory === category.id"
-                    :title="category.label"
-                    @click="activeCategory = category.id"
+                    :is-active="activeCategory === navItem.id"
+                    :title="navItem.label"
+                    @click="activeCategory = navItem.id"
                   >
-                    <component :is="category.icon" class="size-4 shrink-0" />
-                    <span class="settings-nav-label">{{ category.label }}</span>
+                    <component :is="navItem.icon" class="size-4 shrink-0" />
+                    <span class="settings-nav-label">{{ navItem.label }}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
@@ -74,9 +67,8 @@
                  when done() never fires (seen as white-screen/freeze on some WebView2 installs). -->
             <div :key="activeCategory" class="settings-panel">
               <WorkspaceSettings v-if="activeCategory === 'workspace'" />
-              <McpSettings v-else-if="activeCategory === 'mcp'" />
-              <SkillsSettings v-else-if="activeCategory === 'skills'" />
               <ProviderSettings v-else-if="activeCategory === 'provider'" />
+              <RagSettings v-else-if="activeCategory === 'rag'" />
               <HistorySettings
                 v-else-if="activeCategory === 'history'"
                 :expanded-history-groups="expandedHistoryGroups"
@@ -92,6 +84,7 @@
               <SettingFieldList
                 v-else
                 :items="visibleItems"
+                :page-title="fieldPageTitle"
                 :empty-text="t.empty"
                 v-model:api-key-draft="apiKeyDraft"
                 v-model:mem0-api-key-draft="mem0ApiKeyDraft"
@@ -130,7 +123,6 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   Bot,
   BrainCircuit,
-  Cable,
   Shield,
   Folders,
   Globe2,
@@ -139,24 +131,22 @@ import {
   Minus,
   Palette,
   Pin,
-  ScrollText,
+  Search,
   Server,
   Settings2,
   X,
   BarChart3,
-  ArrowLeft,
 } from "@lucide/vue";
 import WorkspaceSettings from "@/components/workspace/WorkspaceSettings.vue";
-import McpSettings from "@/components/settings/McpSettings.vue";
-import SkillsSettings from "@/components/settings/SkillsSettings.vue";
 import HistorySettings from "@/components/settings/HistorySettings.vue";
 import TokenUsageSettings from "@/components/settings/TokenUsageSettings.vue";
 import AboutSettings from "@/components/settings/AboutSettings.vue";
 import ProviderSettings from "@/components/settings/ProviderSettings.vue";
+import RagSettings from "@/components/settings/RagSettings.vue";
 import SettingFieldList from "@/components/settings/SettingFieldList.vue";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
 import { gsapSettingsNavMount } from "@/services/motion/gsapPresets";
-import { getAppInfo } from "@/services/ipc";
+import { getAppInfo, relaunchApp, webviewGpuDisabled } from "@/services/ipc";
 import {
   Sidebar,
   SidebarContent,
@@ -176,15 +166,16 @@ import {
   type CategoryId,
   type SettingDefinition,
 } from "@/pages/Settings/settingsDefinitions";
-import type {
-  AppLanguage,
-  ColorScheme,
-  ReasoningEffort,
-  ReasoningLanguage,
-  ModelSelection,
-  WebSearchProvider,
-  ToolApprovalMode,
-  AgentWorkDisplay,
+import {
+  DEFAULT_SETTINGS_CATEGORY,
+  type AppLanguage,
+  type ColorScheme,
+  type ReasoningEffort,
+  type ReasoningLanguage,
+  type ModelSelection,
+  type WebSearchProvider,
+  type ToolApprovalMode,
+  type AgentWorkDisplay,
 } from "@/types/setting";
 
 const settingStore = useSettingStore();
@@ -200,7 +191,6 @@ const props = withDefaults(
     embedded: false,
   },
 );
-const emit = defineEmits<{ back: [] }>();
 
 const SETTINGS_BASE_WIDTH = 880;
 const SETTINGS_BASE_HEIGHT = 620;
@@ -212,12 +202,19 @@ async function resizeSettingsWindow() {
   await appWindow.setSize(new LogicalSize(scaledWidth, scaledHeight));
 }
 
-const activeCategory = ref<CategoryId>(props.category ?? "ai");
+function resolveSettingsCategory(category?: CategoryId): CategoryId {
+  if (!category || category === "mcp" || category === "skills") {
+    return DEFAULT_SETTINGS_CATEGORY;
+  }
+  return category;
+}
+
+const activeCategory = ref<CategoryId>(resolveSettingsCategory(props.category));
 
 watch(
   () => props.category,
   (category) => {
-    if (category) activeCategory.value = category;
+    if (category) activeCategory.value = resolveSettingsCategory(category);
   },
 );
 
@@ -249,7 +246,6 @@ const t = computed(() => {
     title: tr(language, "settings.title"),
     minimize: tr(language, "settings.minimize"),
     close: tr(language, "settings.close"),
-    back: tr(language, "settings.provider.back"),
     sidebarLabel: tr(language, "settings.sidebarLabel"),
     empty: tr(language, "settings.empty"),
     categories: {
@@ -258,14 +254,13 @@ const t = computed(() => {
       memory: tr(language, "settings.categories.memory"),
       search: tr(language, "settings.categories.search"),
       agent: tr(language, "settings.categories.agent"),
-      mcp: tr(language, "settings.categories.mcp"),
-      skills: tr(language, "settings.categories.skills"),
       plugins: tr(language, "settings.categories.plugins"),
       workspace: tr(language, "settings.categories.workspace"),
       history: tr(language, "settings.categories.history"),
       usage: tr(language, "settings.categories.usage"),
       about: tr(language, "settings.categories.about"),
       provider: tr(language, "settings.categories.provider"),
+      rag: tr(language, "settings.categories.rag"),
     },
   };
 });
@@ -281,8 +276,6 @@ const categories = computed(() => [
   { id: "agent" as const, label: t.value.categories.agent, icon: Shield },
   { id: "history" as const, label: t.value.categories.history, icon: History },
   { id: "usage" as const, label: t.value.categories.usage, icon: BarChart3 },
-  { id: "mcp" as const, label: t.value.categories.mcp, icon: Cable },
-  { id: "skills" as const, label: t.value.categories.skills, icon: ScrollText },
   { id: "plugins" as const, label: t.value.categories.plugins, icon: Pin },
   {
     id: "memory" as const,
@@ -290,6 +283,7 @@ const categories = computed(() => [
     icon: BrainCircuit,
   },
   { id: "search" as const, label: t.value.categories.search, icon: Globe2 },
+  { id: "rag" as const, label: t.value.categories.rag, icon: Search },
   {
     id: "appearance" as const,
     label: t.value.categories.appearance,
@@ -300,7 +294,8 @@ const categories = computed(() => [
 
 const categorySections = computed(() => {
   const byId = new Map(categories.value.map((category) => [category.id, category]));
-  const section = (id: string, label: string, ids: CategoryId[]) => ({
+  type SettingsNavId = (typeof categories.value)[number]["id"];
+  const section = (id: string, label: string, ids: SettingsNavId[]) => ({
     id,
     label,
     categories: ids.flatMap((categoryId) => {
@@ -312,17 +307,14 @@ const categorySections = computed(() => {
   return [
     section("general", tr(language, "settings.sections.general"), ["appearance", "workspace"]),
     section("intelligence", tr(language, "settings.sections.intelligence"), [
-      "ai",
       "provider",
+      "ai",
       "agent",
       "memory",
       "search",
+      "rag",
     ]),
-    section("extensions", tr(language, "settings.sections.extensions"), [
-      "mcp",
-      "skills",
-      "plugins",
-    ]),
+    section("extensions", tr(language, "settings.sections.extensions"), ["plugins"]),
     section("data", tr(language, "settings.sections.data"), ["history", "usage"]),
     section("system", tr(language, "settings.sections.system"), ["about"]),
   ];
@@ -339,6 +331,11 @@ const settingDefinitions = computed<SettingDefinition[]>(() =>
 const visibleItems = computed(() =>
   settingDefinitions.value.filter((item) => item.category === activeCategory.value),
 );
+
+const fieldPageTitle = computed(() => {
+  const id = activeCategory.value;
+  return t.value.categories[id as keyof typeof t.value.categories] ?? "";
+});
 
 function minimize() {
   void appWindow.minimize();
@@ -433,6 +430,16 @@ function onToggle(id: string) {
     void settingStore.update({
       hardwareAccelerationEnabled: !settingStore.hardwareAccelerationEnabled,
     });
+  }
+  if (id === "chromeFrostedGlass") {
+    const enabling = !settingStore.chromeFrostedGlass;
+    void (async () => {
+      await settingStore.update({ chromeFrostedGlass: enabling });
+      // Software WebView2 cannot blend transparent chrome with DWM Acrylic.
+      if (enabling && (await webviewGpuDisabled())) {
+        await relaunchApp();
+      }
+    })();
   }
   if (id === "memoryEnabled") {
     void settingStore.update({ memoryEnabled: !settingStore.memoryEnabled });
@@ -621,10 +628,16 @@ watch(
   background: var(--settings-chrome-bg);
 }
 
+:global(html.chrome-frosted-glass) .settings-workbench,
+:global(html.chrome-frosted-glass) .settings-workbench.embedded,
+:global(html.chrome-frosted-glass) .settings-body {
+  background: transparent;
+}
+
 .settings-nav {
-  width: clamp(8.5rem, 22cqw, 13rem);
-  min-width: 0;
-  max-width: 14rem;
+  width: var(--nav-col, 250px) !important;
+  min-width: var(--nav-col, 250px) !important;
+  max-width: var(--nav-col, 250px) !important;
   flex: none;
   background: var(--settings-chrome-bg);
   transition:
@@ -633,57 +646,76 @@ watch(
 }
 
 .settings-content-pane {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
   flex: 1;
-  overflow: hidden;
-  border-radius: 12px 12px 0 0;
-  background: var(--peek-list-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 12px 0 0 0;
+  background: var(--peek-list-bg) !important;
+  box-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
+}
+
+.settings-workbench.is-glass,
+.settings-workbench.is-glass.embedded,
+.settings-workbench.is-glass .settings-body,
+.settings-workbench.is-glass .titlebar,
+.settings-workbench.is-glass .settings-nav,
+.settings-workbench.is-glass :deep([data-slot="sidebar"]),
+.settings-workbench.is-glass :deep([data-slot="sidebar-wrapper"]) {
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.settings-workbench :deep([data-slot="sidebar-wrapper"]) {
+  min-height: 0;
+  height: 100%;
+  overflow: visible;
+}
+
+.settings-workbench.is-glass:not(.embedded) {
+  position: relative;
+}
+
+.settings-workbench.is-glass:not(.embedded) .glass-chrome {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--workbench-glass-fill);
+}
+
+.settings-workbench.is-glass:not(.embedded) .titlebar,
+.settings-workbench.is-glass:not(.embedded) .settings-body {
+  position: relative;
+  z-index: 1;
+}
+
+.glass-chrome {
+  display: none;
 }
 
 .settings-scroll {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding-right: 1px;
   display: flex;
   flex-direction: column;
+  border-radius: 12px 0 0 0;
 }
 
 .settings-nav-content {
   overflow-y: auto;
   padding: 5px 4px 8px;
-}
-
-.settings-back-wrap {
-  padding: 2px 4px 7px;
-  border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 72%, transparent);
-  margin-bottom: 4px;
-}
-
-.settings-back {
-  width: 100%;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--peek-muted);
-  cursor: pointer;
-  font-size: 12px;
-  text-align: left;
-}
-
-.settings-back:hover {
-  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
-  color: var(--peek-text);
-}
-
-.settings-back svg {
-  flex: none;
 }
 
 .settings-nav-group {
@@ -731,9 +763,10 @@ watch(
   flex: 1;
   min-height: 100%;
   width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 4px;
+  align-items: stretch;
 }
 
 .titlebar-btn {
@@ -758,35 +791,5 @@ watch(
 .titlebar-btn.close:hover {
   background: #e81123;
   color: #fff;
-}
-
-@media (max-width: 620px) {
-  .settings-nav {
-    width: 3.5rem;
-    min-width: 3.5rem;
-    max-width: 3.5rem;
-  }
-
-  .settings-nav-group {
-    padding-inline: 3px;
-  }
-
-  .settings-section-label,
-  .settings-nav-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-  }
-
-  .settings-nav :deep([data-slot="sidebar-menu-button"]),
-  .settings-nav-item {
-    justify-content: center;
-    gap: 0;
-    padding-inline: 0;
-  }
 }
 </style>

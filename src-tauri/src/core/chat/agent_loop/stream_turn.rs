@@ -28,6 +28,7 @@ pub async fn collect_stream_turn(
     tx: &mpsc::Sender<StreamEvent>,
     cancelled: &Arc<AtomicBool>,
 ) -> Result<StreamTurnResult, ProviderError> {
+    tracing::debug!("stream_turn start");
     let mut content = String::new();
     let mut reasoning = String::new();
     let mut tool_calls = Vec::new();
@@ -87,6 +88,13 @@ pub async fn collect_stream_turn(
             }
         }
     }
+
+    tracing::debug!(
+        content_len = content.len(),
+        reasoning_len = reasoning.len(),
+        tool_calls = tool_calls.len(),
+        "stream_turn done"
+    );
 
     Ok(StreamTurnResult {
         content,

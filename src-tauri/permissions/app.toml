@@ -1,4 +1,9 @@
 [[permission]]
 identifier = "allow-app-commands"
 description = "Enables app info and updater install commands."
-commands.allow = ["get_app_info", "download_and_install_update"]
+commands.allow = [
+    "get_app_info",
+    "webview_gpu_disabled",
+    "relaunch_app",
+    "download_and_install_update",
+]

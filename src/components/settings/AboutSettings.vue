@@ -13,16 +13,15 @@
       <div class="about-update-row">
         <div class="about-update-main">
           <div class="about-update-icon" aria-hidden="true">
-            <RefreshCw v-if="updaterStore.isBusy" :size="18" class="spin" />
-            <ArrowUpCircle v-else-if="updaterStore.updateAvailable" :size="18" />
-            <CheckCircle2 v-else :size="18" />
+            <RefreshCw v-if="updaterStore.isBusy" :size="16" class="spin" />
+            <ArrowUpCircle v-else-if="updaterStore.updateAvailable" :size="16" />
+            <CheckCircle2 v-else :size="16" />
           </div>
           <div class="about-update-copy">
             <h2 id="about-updates-title">{{ copy.updates }}</h2>
             <p>{{ updateDetail }}</p>
           </div>
         </div>
-
         <div class="about-actions">
           <button
             type="button"
@@ -43,7 +42,6 @@
           </button>
         </div>
       </div>
-
       <div
         v-if="showProgress"
         class="about-progress"
@@ -274,10 +272,10 @@ async function copyIdentifier() {
 .about-update {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   margin: 0 0 4px;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 90%, transparent);
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 85%, transparent);
   border-radius: 12px;
   background: color-mix(in srgb, var(--peek-text) 2.5%, transparent);
 }
@@ -295,12 +293,12 @@ async function copyIdentifier() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .about-update-main {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   min-width: 0;
   flex: 1;
@@ -308,11 +306,11 @@ async function copyIdentifier() {
 
 .about-update-icon {
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--peek-text) 5%, transparent);
   color: var(--peek-muted);
 }
@@ -326,6 +324,10 @@ async function copyIdentifier() {
   color: color-mix(in srgb, var(--peek-accent) 65%, var(--peek-muted));
 }
 
+.about-update.is-error .about-update-icon {
+  color: var(--peek-danger, #ef4444);
+}
+
 .about-update-copy {
   min-width: 0;
   flex: 1;
@@ -334,14 +336,13 @@ async function copyIdentifier() {
 .about-update-copy h2 {
   margin: 0;
   color: var(--peek-text);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  text-transform: none;
 }
 
 .about-update-copy p {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
   color: var(--peek-muted);
   font-size: 12px;
   line-height: 1.45;
@@ -351,19 +352,8 @@ async function copyIdentifier() {
   color: var(--peek-accent);
 }
 
-.about-block {
-  padding: 18px 0;
-  border-top: 1px solid color-mix(in srgb, var(--peek-border) 85%, transparent);
-}
-
-.about-block h2,
-.about-privacy h2 {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--peek-faint);
+.about-update.is-error .about-update-copy p {
+  color: var(--peek-danger, #ef4444);
 }
 
 .about-progress {
@@ -396,25 +386,20 @@ async function copyIdentifier() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 14px;
-  border: 1px solid var(--peek-border);
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 90%, transparent);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--peek-surface, transparent) 88%, var(--peek-text));
+  background: transparent;
   color: var(--peek-text);
   font: inherit;
   font-size: 12px;
   font-weight: 550;
   cursor: pointer;
-  transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
 }
 
 .about-btn:hover:not(:disabled) {
-  background: var(--peek-hover-bg);
+  background: color-mix(in srgb, var(--peek-text) 5%, transparent);
 }
 
 .about-btn-accent {
@@ -431,6 +416,21 @@ async function copyIdentifier() {
 .about-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.about-block {
+  padding: 18px 0;
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 85%, transparent);
+}
+
+.about-block h2,
+.about-privacy h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--peek-faint);
 }
 
 .about-meta {

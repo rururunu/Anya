@@ -277,6 +277,56 @@ fn workspace_context_precedes_history_and_current_user() {
 }
 
 #[test]
+fn prompt_keeps_empty_assistant_tool_calls_and_tool_results() {
+    use crate::core::runtime::ToolCallPayload;
+
+    let message = |id: &str, role: Role, content: &str| ChatMessage {
+        id: id.to_string(),
+        session_id: "session-1".to_string(),
+        role,
+        content: content.to_string(),
+        reasoning: None,
+        work_timeline: None,
+        tool_activities: None,
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        status: MessageStatus::Done,
+        timestamp: 1,
+        estimated_tokens: None,
+    };
+    let mut assistant = message("a-tools", Role::Assistant, "");
+    assistant.tool_calls = Some(vec![ToolCallPayload {
+        id: "call-1".into(),
+        name: "read_file".into(),
+        arguments: r#"{"path":"a.rs"}"#.into(),
+        thought_signature: None,
+    }]);
+    let mut tool = message("t1", Role::Tool, "file contents");
+    tool.tool_call_id = Some("call-1".into());
+    let history = vec![
+        message("old-user", Role::User, "read the file"),
+        assistant,
+        tool,
+        message("current-user", Role::User, "now edit it"),
+    ];
+    let request = PromptBuilder::build(PromptBuildInput {
+        request_id: "request-1",
+        session_id: "session-1",
+        history: &history,
+        context: &RequestContext::default(),
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: None,
+        provider: None,
+        preferences: &PromptPreferences::default(),
+    });
+    let ids: Vec<_> = request.messages.iter().map(|m| m.id.as_str()).collect();
+    assert!(ids.contains(&"a-tools"));
+    assert!(ids.contains(&"t1"));
+}
+
+#[test]
 fn recalled_memories_are_injected_as_untrusted_system_context() {
     let context = RequestContext::default();
     let preferences = PromptPreferences::default();

@@ -82,3 +82,49 @@ pub fn maybe_run_post_edit_verification(
     })
 }
 
+/// Feedback for the next model round. Must not be a `role=tool` message:
+/// the verify call_id was never in the assistant `tool_calls`, and DeepSeek
+/// rejects that with 400 ("Messages with role 'tool' must be a response to
+/// a preceding message with 'tool_calls'").
+pub fn verify_feedback_content(outcome: &ToolOutcome) -> String {
+    let command = serde_json::from_str::<serde_json::Value>(&outcome.arguments)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("command")
+                .and_then(|v| v.as_str())
+                .filter(|command| !command.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| outcome.tool_name.clone());
+    format!(
+        "[System] Automatic post-edit verification (`{command}`):\n{}",
+        outcome.result
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::verify_feedback_content;
+    use crate::core::chat::agent_loop::types::ToolOutcome;
+
+    #[test]
+    fn verify_feedback_is_system_user_text_not_tool_role() {
+        let outcome = ToolOutcome {
+            call_id: "auto-verify-1".into(),
+            tool_name: "run_shell".into(),
+            arguments: serde_json::json!({
+                "command": "cargo check -q",
+                "description": "Auto verify edits"
+            })
+            .to_string(),
+            result: "Finished `dev` profile [unoptimized + debuginfo]".into(),
+            success: true,
+            user_denied: false,
+        };
+        let content = verify_feedback_content(&outcome);
+        assert!(content.starts_with("[System] Automatic post-edit verification (`cargo check -q`)"));
+        assert!(content.contains("Finished `dev` profile"));
+    }
+}
+

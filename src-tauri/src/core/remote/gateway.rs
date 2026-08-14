@@ -270,6 +270,15 @@ where
                                     }
                                 });
                             }
+                            Message::Binary(bytes) => {
+                                // Raw upload chunk (no base64). Handle on the
+                                // blocking pool and ack back with the RPC id.
+                                let payload = bytes.to_vec();
+                                let out = out.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    handle_binary_chunk(payload, out).await;
+                                });
+                            }
                             Message::Ping(payload) => {
                                 if out.send_raw(Message::Pong(payload)).await.is_err() {
                                     break;
@@ -582,6 +591,55 @@ async fn resolve_session_compose(app: &AppHandle, session_id: &str) -> super::co
     compose
 }
 
+/// Binary upload-chunk frame: `[requestId:36][uploadId:36][offset:8][data]`.
+/// Writes the chunk out-of-order and replies with the matching RPC ack.
+async fn handle_binary_chunk(payload: Vec<u8>, out: Outbound) {
+    const HEADER_LEN: usize = 36 + 36 + 8;
+    if payload.len() < HEADER_LEN {
+        tracing::debug!(len = payload.len(), "binary chunk frame too short");
+        return;
+    }
+    let request_id = match std::str::from_utf8(&payload[..36]) {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        _ => return,
+    };
+    let upload_id = match std::str::from_utf8(&payload[36..72]) {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        _ => return,
+    };
+    let offset = u64::from_be_bytes(payload[72..80].try_into().unwrap_or([0u8; 8]));
+    let data = payload[HEADER_LEN..].to_vec();
+
+    let (request_id, upload_id) = (request_id, upload_id);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        super::upload::chunk_bytes(&upload_id, offset, &data)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(chunk_result)) => {
+            if out
+                .send(&ServerMessage::rpc_ok(request_id, chunk_result))
+                .await
+                .is_err()
+            {
+                tracing::debug!("failed to ack binary chunk");
+            }
+        }
+        Ok(Err(message)) => {
+            let _ = out.send(&ServerMessage::rpc_err(request_id, &message)).await;
+        }
+        Err(error) => {
+            let _ = out
+                .send(&ServerMessage::rpc_err(
+                    request_id,
+                    &format!("chunk task failed: {error}"),
+                ))
+                .await;
+        }
+    }
+}
+
 async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), String> {
     let parsed: ClientMessage = match serde_json::from_str(text) {
         Ok(msg) => msg,
@@ -746,6 +804,18 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             upload_id,
         } => {
             match super::upload::abort(&upload_id) {
+                Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
+                Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
+            }
+        }
+        ClientMessage::FileDownloadBegin {
+            request_id,
+            path,
+            session_id,
+            workspace_id,
+        } => {
+            let result = begin_file_download(app, session_id.as_deref(), workspace_id.as_deref(), &path);
+            match result {
                 Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
                 Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
             }
@@ -1043,6 +1113,9 @@ async fn handle_chat_send(
         skip_auto_plan: false,
         resume_plan: false,
     };
+    // Unbound companion sends (FAB 随文) are treated as quick-ask inside
+    // ChatService::send so they do not inherit the desktop selected workspace.
+    // Workspace-folder "+" still passes workspaceId and stays bound.
     let quick_ask = false;
     match state
         .core
@@ -1420,6 +1493,41 @@ fn resolve_in_workspace(
         return Err("path escapes workspace root".into());
     }
     Ok(canonical)
+}
+
+fn begin_file_download(
+    app: &AppHandle,
+    session_id: Option<&str>,
+    workspace_id: Option<&str>,
+    rel_path: &str,
+) -> Result<serde_json::Value, String> {
+    let workspace = resolve_workspace(app, session_id, workspace_id)
+        .ok_or_else(|| "No workspace selected".to_string())?;
+    let file = resolve_in_workspace(&workspace.root, rel_path)?;
+    let meta = std::fs::metadata(&file).map_err(|e| format!("stat failed: {e}"))?;
+    if !meta.is_file() {
+        return Err("not a file".into());
+    }
+    let size = meta.len();
+    if size > MAX_UPLOAD_BYTES {
+        return Err(format!(
+            "file too large for download: {size} bytes (max {MAX_UPLOAD_BYTES})"
+        ));
+    }
+    let name = file
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| rel_path.trim_start_matches(['/', '\\']).to_string());
+    let mime = guess_mime(&file).to_string();
+    let id = super::download::mint(file, name.clone(), mime.clone(), size)?;
+    let url = super::download::public_download_url(app, &id);
+    Ok(json!({
+        "downloadId": id,
+        "url": url,
+        "size": size,
+        "name": name,
+        "mime": mime,
+    }))
 }
 
 async fn read_workspace_file_payload(

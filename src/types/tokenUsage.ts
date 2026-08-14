@@ -11,6 +11,10 @@ export interface TokenUsage {
   totalTokens: number;
   accuracy: TokenAccuracy;
   source?: string;
+  /** Prompt tokens served from cache (DeepSeek reports these inside promptTokens). */
+  cacheReadTokens?: number;
+  /** Reasoning/thinking tokens (part of outputTokens). */
+  reasoningTokens?: number;
 }
 
 export interface TokenUsageReport {

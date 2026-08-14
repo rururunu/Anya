@@ -20,6 +20,20 @@ impl ProviderError {
     pub fn cancelled() -> Self {
         Self::Cancelled
     }
+
+    /// DeepSeek/OpenAI-style "maximum context length" rejection. The agent loop
+    /// uses this to trigger a mid-turn compaction and retry instead of failing.
+    pub fn is_context_window_exceeded(&self) -> bool {
+        match self {
+            ProviderError::Message(message) => {
+                let lower = message.to_ascii_lowercase();
+                (lower.contains("context") && lower.contains("length"))
+                    || lower.contains("maximum context")
+                    || lower.contains("context window")
+            }
+            ProviderError::Cancelled => false,
+        }
+    }
 }
 
 impl From<String> for ProviderError {

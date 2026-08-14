@@ -105,11 +105,7 @@ impl PromptBuilder {
 
         // [5..] History（排除 pending 的空 assistant）
         let (prior, current_user) = split_current_user(history);
-        messages.extend(
-            prior
-                .into_iter()
-                .filter(|message| !message.content.trim().is_empty()),
-        );
+        messages.extend(prior.into_iter().filter(ChatMessage::contributes_to_api));
 
         // 当前用户输入（含 transient 语言块）
         if let Some(mut user_message) = current_user {

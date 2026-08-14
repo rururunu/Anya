@@ -102,6 +102,18 @@ impl ChatMessage {
         self.status = status;
         self
     }
+
+    /// Keep tool-protocol rows and any message with visible text. Empty
+    /// pending assistants (no `tool_calls`) are omitted so providers do not
+    /// see a blank assistant turn.
+    pub fn contributes_to_api(&self) -> bool {
+        self.role == Role::Tool
+            || self
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.is_empty())
+            || !self.content.trim().is_empty()
+    }
 }
 
 pub const DEFAULT_SESSION_ID: &str = "default";

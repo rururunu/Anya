@@ -118,6 +118,10 @@ pub async fn dispatch(
         return handle_companion_stream(app, state, rewind, peer).await;
     }
 
+    if let Some(id) = match_download_path(&head.path) {
+        return serve_download(stream, head, &id).await;
+    }
+
     if let Some((id, origin_path)) = match_preview_path(&head.path) {
         return proxy_preview(state, stream, head, extra, &id, origin_path, true).await;
     }
@@ -346,6 +350,112 @@ fn parse_http_head(raw: &[u8]) -> Result<HttpHead, String> {
         path,
         headers,
     })
+}
+
+fn match_download_path(path: &str) -> Option<String> {
+    let path = path.split('?').next().unwrap_or(path);
+    let id = path.strip_prefix("/f/")?;
+    if id.is_empty()
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return None;
+    }
+    Some(id.to_string())
+}
+
+/// Serve a minted download ticket with HTTP Range support (single range).
+async fn serve_download(
+    mut client: TcpStream,
+    head: HttpHead,
+    id: &str,
+) -> Result<(), String> {
+    let Some(ticket) = super::download::lookup(id) else {
+        return write_simple(&mut client, 404, "Unknown or expired download").await;
+    };
+    let size = ticket.size;
+    let range = head.header("range").and_then(|v| parse_range(v, size));
+
+    let (status, start, length, content_range) = match range {
+        Some((start, end)) => (
+            206u16,
+            start,
+            end - start + 1,
+            format!("bytes {start}-{end}/{size}"),
+        ),
+        None => (200u16, 0u64, size, String::new()),
+    };
+
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(&ticket.file).map_err(|e| e.to_string())?;
+    if start > 0 {
+        file.seek(SeekFrom::Start(start))
+            .map_err(|e| e.to_string())?;
+    }
+
+    let reason = if status == 206 { "Partial Content" } else { "OK" };
+    let mut resp = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: {}\r\nContent-Length: {length}\r\nAccept-Ranges: bytes\r\nContent-Disposition: attachment; filename=\"{}\"\r\n",
+        ticket.mime,
+        sanitize_header(&ticket.name),
+    );
+    if status == 206 {
+        resp.push_str(&format!("Content-Range: {content_range}\r\n"));
+    }
+    resp.push_str("Connection: close\r\n\r\n");
+    client
+        .write_all(resp.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut remaining = length;
+    let mut buf = vec![0u8; 64 * 1024];
+    while remaining > 0 {
+        let want = remaining.min(buf.len() as u64) as usize;
+        let n = file.read(&mut buf[..want]).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        client
+            .write_all(&buf[..n])
+            .await
+            .map_err(|e| e.to_string())?;
+        remaining -= n as u64;
+    }
+    let _ = client.flush().await;
+    Ok(())
+}
+
+fn parse_range(value: &str, size: u64) -> Option<(u64, u64)> {
+    let spec = value.trim().strip_prefix("bytes=")?;
+    let spec = spec.split(',').next()?;
+    let (start_s, end_s) = spec.split_once('-')?;
+    if start_s.is_empty() {
+        let n: u64 = end_s.parse().ok()?;
+        if n == 0 {
+            return None;
+        }
+        let start = size.saturating_sub(n);
+        return Some((start, size - 1));
+    }
+    let start: u64 = start_s.parse().ok()?;
+    if start >= size {
+        return None;
+    }
+    let end = if end_s.is_empty() {
+        size - 1
+    } else {
+        end_s.parse::<u64>().ok()?.min(size - 1)
+    };
+    if end < start {
+        return None;
+    }
+    Some((start, end))
+}
+
+fn sanitize_header(value: &str) -> String {
+    value.replace(['\r', '\n', '"'], "")
 }
 
 async fn write_simple(stream: &mut TcpStream, status: u16, body: &str) -> Result<(), String> {

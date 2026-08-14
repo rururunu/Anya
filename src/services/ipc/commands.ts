@@ -26,7 +26,13 @@ import type {
   RewindSessionResponse,
 } from "@/types/chat";
 import { IPC_COMMANDS } from "@/types/ipc";
-import type { AppSettings, AppSettingsPatch, GeminiAuthStatus } from "@/types/setting";
+import type {
+  AppSettings,
+  AppSettingsPatch,
+  GeminiAuthStatus,
+  SemanticSearchConfig,
+  SemanticSearchState,
+} from "@/types/setting";
 import type { TokenUsageReport } from "@/types/tokenUsage";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -104,6 +110,26 @@ export function setAppSettings(patch: AppSettingsPatch) {
   return ipcInvoke<AppSettings>(IPC_COMMANDS.setAppSettings, { patch });
 }
 
+export function getSemanticSearchStatus() {
+  return ipcInvoke<SemanticSearchState>("get_semantic_search_status");
+}
+
+export function setSemanticSearch(config: SemanticSearchConfig) {
+  return ipcInvoke<SemanticSearchState>("set_semantic_search", { config });
+}
+
+export function testSemanticSearchApi(baseUrl: string, apiKey: string, model: string) {
+  return ipcInvoke<{ ok: boolean; dim: number }>("test_semantic_search_api", {
+    baseUrl,
+    apiKey,
+    model,
+  });
+}
+
+export function fetchSemanticSearchModels(baseUrl: string, apiKey: string) {
+  return ipcInvoke<string[]>("fetch_semantic_search_models", { baseUrl, apiKey });
+}
+
 export function geminiAuthStatus() {
   return ipcInvoke<GeminiAuthStatus>(IPC_COMMANDS.geminiAuthStatus);
 }
@@ -128,6 +154,14 @@ export function geminiImportClientSecrets(path: string) {
 
 export function getAppInfo() {
   return ipcInvoke<AppInfo>(IPC_COMMANDS.getAppInfo);
+}
+
+export function webviewGpuDisabled() {
+  return ipcInvoke<boolean>(IPC_COMMANDS.webviewGpuDisabled);
+}
+
+export function relaunchApp() {
+  return ipcInvoke<void>(IPC_COMMANDS.relaunchApp);
 }
 
 export function chat(request: ChatSendRequest) {

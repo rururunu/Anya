@@ -109,6 +109,25 @@ impl ChatService {
         }
     }
 
+    #[tracing::instrument(
+        target = "peek.agent",
+        name = "chat.send",
+        skip(
+            self,
+            session_id,
+            content,
+            preferences,
+            workspace_id,
+            quick_ask,
+            overrides,
+            origin
+        ),
+        fields(
+            session_id = %session_id.as_deref().unwrap_or(DEFAULT_SESSION_ID),
+            content_len = content.len(),
+            content_preview = %content.chars().take(120).collect::<String>(),
+        )
+    )]
     pub async fn send(
         &self,
         session_id: Option<String>,
@@ -147,6 +166,14 @@ impl ChatService {
         let inbox_root = self.app_handle.as_ref().and_then(|app| {
             crate::core::remote::inbox_root_if_exists(app, &session_id)
         });
+        // Phone FAB / 随文 omits workspace_id. Never inherit the desktop's
+        // currently selected workspace — that fallback is only for workbench
+        // turns that forgot to pass one. Workspace-folder "+" still sends an
+        // explicit id; later turns of a bound session use `already_bound`.
+        let quick_ask = quick_ask
+            || (matches!(origin, RequestOrigin::Companion)
+                && explicit_workspace.is_none()
+                && already_bound.is_none());
         let using_inbox = explicit_workspace.is_none()
             && already_bound.is_none()
             && inbox_root.is_some();
@@ -477,8 +504,9 @@ impl ChatService {
             }
         }
 
-        // Last resort for workbench turns that omitted workspace_id before the
-        // session was bound: use the currently selected workspace.
+        // Last resort for *workbench* turns that omitted workspace_id before
+        // the session was bound. Companion unbound sends are treated as
+        // quick-ask in `send()` and must not reach this fallback.
         self.workspace_manager.current()
     }
 

@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.9                             |
+| **版本**   | v0.2.10                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -29,8 +29,8 @@
 - Agent 回合编排与策略钩子（Ask / Agent / 计划门禁）
 - 持久化（SQLite、journal、work timeline）
 - 前端流式投影与会话模型
-- 扩展点（Provider、工具、Skills、MCP）
-- Companion / Remote Gateway（配对、局域网 vs 隧道、线路协议）
+- 扩展点（Provider、工具、Skills、MCP、RAG 嵌入）
+- Companion / Remote Gateway（配对、局域网 vs 隧道、线路协议、文件 HTTP）
 
 **范围外**
 
@@ -47,23 +47,25 @@ Anya 以**单个原生进程**托管多个 WebView 窗口。Rust 宿主负责 OS
 ```mermaid
 flowchart LR
   User((用户)) -->|热键 / 托盘 / 输入| Host[Anya 进程]
-  Phone[Anya Companion] -->|WebSocket /remote/v1| Host
+  Phone[Anya Companion] -->|WS /remote/v1 · HTTP /f /p| Host
   IDE[IDE 插件] -->|上下文推送| Host
   Host -->|COM| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[模型服务商]
   Host -->|HTTPS / stdio| Aux[MCP · 搜索 · mem0]
-  Host --> Disk[(SQLite · 设置 · 检查点)]
+  Host -.->|可选 /embeddings| Emb[嵌入 API]
+  Host --> Disk[(SQLite · 设置 · 索引 · 模型)]
 ```
 
-| 参与方            | 交互方式                                               |
-| ----------------- | ------------------------------------------------------ |
-| 用户              | 全局热键、托盘、输入栏、Diff 审查                      |
-| Anya Companion    | 安卓远程控制台；局域网 `ws` 或 Cloudflare `wss` 连网关 |
-| IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）         |
-| Microsoft Office  | COM：文档上下文与 `word_*` / `excel_*` / `ppt_*` 工具  |
-| 模型服务商        | 鉴权 HTTPS；支持处使用流式                             |
-| MCP / 搜索 / mem0 | 可选；在设置中显式启用                                 |
-| 本地磁盘          | 聊天库、设置、更新公钥、检查点撤销数据                 |
+| 参与方            | 交互方式                                                           |
+| ----------------- | ------------------------------------------------------------------ |
+| 用户              | 全局热键、托盘、输入栏、Diff 审查、工作台内嵌设置                  |
+| Anya Companion    | 安卓远程；局域网 `ws` 或 Cloudflare `wss`；文件走 HTTP Range `/f/` |
+| IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）                     |
+| Microsoft Office  | COM：文档上下文与 `word_*` / `excel_*` / `ppt_*` 工具              |
+| 模型服务商        | 鉴权 HTTPS；支持处使用流式                                         |
+| 嵌入              | 可选 RAG：OpenAI 兼容 `/embeddings` 或本地 ONNX（`fastembed`）     |
+| MCP / 搜索 / mem0 | 可选；在设置中显式启用                                             |
+| 本地磁盘          | 聊天库、设置、`.anya/index`、嵌入模型缓存、更新公钥、检查点        |
 
 ---
 
@@ -76,7 +78,7 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph Presentation["L1 Presentation"]
-    Win["窗口表面<br/>workbench · overlay · settings · preview"]
+    Win["窗口表面<br/>workbench（含设置）· overlay · preview"]
     UI["Vue layouts / components / composables"]
     Store["Pinia stores"]
   end
@@ -90,7 +92,7 @@ flowchart TB
   subgraph Domain["L3 Domain core"]
     Chat["core/chat<br/>ChatService · StreamManager · AgentRunner"]
     AgentShell["core/agent<br/>AgentRuntime · run lifecycle"]
-    Ai["core/ai<br/>Provider trait + implementations"]
+    Ai["core/ai<br/>providers · embed / RAG"]
     Tools["core/tools<br/>registry · approval · plan gate · sandbox"]
     Ctx["core/context · workspace · rules · token"]
     Persist["conversation_manager · db · journal"]
@@ -99,7 +101,7 @@ flowchart TB
   subgraph Adapters["L4 Adapters"]
     Rt["crate::runtime<br/>git · search · browser · shell"]
     OfficeCore["core/office · core/mcp · core/lsp"]
-    Remote["core/remote<br/>gateway · pairing · tunnel"]
+    Remote["core/remote<br/>gateway · upload · download · preview"]
     Svc["services/<br/>window · hotkey · settings · oauth · pin_badge"]
   end
 
@@ -120,12 +122,12 @@ flowchart TB
   Chat --> Bus
 ```
 
-| 层              | 位置                                                    | 职责                                            | 禁止                     |
-| --------------- | ------------------------------------------------------- | ----------------------------------------------- | ------------------------ |
-| L1 Presentation | `src/{layouts,components,composables,stores,pages}`     | 渲染、本地 UX 状态、RAF 合并流式增量            | 调用 Provider 或执行工具 |
-| L2 Bridge       | `src/services/ipc`、`commands/`、`adapters/`            | 序列化 IPC DTO；将 `BusEvent` 投影为 Tauri emit | 承载业务策略             |
-| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                  | 聊天生命周期、Agent 循环、工具、提示词、持久化  | 依赖 Vue / DOM           |
-| L4 Adapters     | `runtime/`、`services/`、`core/{office,mcp,lsp,remote}` | OS、COM、HTTP 客户端、MCP 传输、Companion WS    | 驱动 Agent 主循环        |
+| 层              | 位置                                                    | 职责                                                | 禁止                     |
+| --------------- | ------------------------------------------------------- | --------------------------------------------------- | ------------------------ |
+| L1 Presentation | `src/{layouts,components,composables,stores,pages}`     | 渲染、本地 UX 状态、RAF 合并流式增量                | 调用 Provider 或执行工具 |
+| L2 Bridge       | `src/services/ipc`、`commands/`、`adapters/`            | 序列化 IPC DTO；将 `BusEvent` 投影为 Tauri emit     | 承载业务策略             |
+| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                  | 聊天生命周期、Agent 循环、工具、提示词、持久化      | 依赖 Vue / DOM           |
+| L4 Adapters     | `runtime/`、`services/`、`core/{office,mcp,lsp,remote}` | OS、COM、HTTP 客户端、MCP 传输、Companion WS / HTTP | 驱动 Agent 主循环        |
 
 ### 3.2 前端依赖规则
 
@@ -158,9 +160,8 @@ services（window、hotkey、settings）→ 按需依赖 core
 flowchart TB
   subgraph Process["Anya.exe"]
     Rust["Rust 宿主<br/>hotkey · tray · COM · SQLite · AgentRuntime · Gateway"]
-    WV1["WebView: workbench"]
+    WV1["WebView: workbench<br/>对话 · 审查 · 内嵌设置"]
     WV2["WebView: overlay"]
-    WV3["WebView: settings"]
     WV4["WebView: image-preview"]
   end
 
@@ -168,17 +169,17 @@ flowchart TB
 
   WV1 <-->|invoke / events| Rust
   WV2 <-->|invoke / events| Rust
-  WV3 <-->|invoke / events| Rust
   WV4 <-->|invoke / events| Rust
-  Phone -->|ws / wss /remote/v1| Rust
+  Phone -->|ws / wss /remote/v1<br/>HTTP /f /p| Rust
 ```
 
-| 表面      | Label               | 职责                               |
-| --------- | ------------------- | ---------------------------------- |
-| Workbench | `workbench`         | 完整会话管理、审查、内嵌设置       |
-| Overlay   | `overlay*`          | 悬浮输入；临时快速提问或绑定工作区 |
-| Settings  | `settings`          | 服务商 / Agent / 扩展配置          |
-| Preview   | `overlay-preview-*` | 图片预览窗口                       |
+| 表面      | Label               | 职责                                         |
+| --------- | ------------------- | -------------------------------------------- |
+| Workbench | `workbench`         | 会话、审查、**内嵌设置**（没有独立设置窗口） |
+| Overlay   | `overlay*`          | 悬浮输入；临时快速提问或绑定工作区           |
+| Preview   | `overlay-preview-*` | 图片预览窗口                                 |
+
+托盘 **设置** 会显示工作台并发出 `open-workbench-settings`。可选 **毛玻璃顶栏与侧栏**（`services/workbench_glass.rs`）走 DWM backdrop；对话区保持不透明。最大化 / 全屏时关闭原生模糊。
 
 会话标识（`session_id`）由 Rust 会话存储拥有。Overlay 与 Workbench 可同时附着到**同一**会话。Companion 经网关附着并投影同一存储——它不拥有第二套 Agent。
 
@@ -200,7 +201,7 @@ flowchart TB
   end
 
   subgraph Desktop["Anya.exe"]
-    GW[gateway.rs :8787]
+    GW[http_proxy.rs :8787]
     Tunnel[cloudflared Quick Tunnel]
     Pair[pairing.rs]
     Bridge[bridge.rs → EventBus]
@@ -215,29 +216,68 @@ flowchart TB
   Client -->|"2. 公网回退"| CF --> Tunnel
 ```
 
+同一端口 **8787** 拆成三条 HTTP 表面：
+
+```mermaid
+flowchart TB
+  TCP[TCP :8787] --> Disp[http_proxy::dispatch]
+  Disp -->|Upgrade /remote/v1| WS[Companion WebSocket]
+  Disp -->|GET /f/:id| DL[Range 下载票据]
+  Disp -->|/p/:id/ cookie Referer| PX[预览反向代理]
+```
+
 ```mermaid
 sequenceDiagram
   participant D as 桌面
   participant P as Companion
   D->>D: 配对令牌 + 二维码（anya://pair）
   P->>D: WebSocket /remote/v1
-  P->>D: hello { deviceId, credential }
+  P->>D: hello deviceId + credential
   D-->>P: hello.ok
   D-->>P: event session.snapshot
   P->>D: chat.send / approval.respond / file.upload.*
   D-->>P: event（增量、审批、file.offer）
+  P->>D: file.download.begin
+  D-->>P: url /f/:id size name
+  P->>D: GET /f/:id Range
+  D-->>P: 206 Partial Content
 ```
 
-| 主题        | 约定                                                                  |
-| ----------- | --------------------------------------------------------------------- |
-| 路径 / 端口 | `/remote/v1`，端口 **8787**（局域网 `ws`，隧道 `wss`）                |
-| 鉴权        | 短时二维码令牌，随后存储设备凭证                                      |
-| 保活        | 应用层 `ping` / `pong`（代理常丢原生 WS ping）                        |
-| 手机 → 桌面 | 分片 `file.upload.*`，512KB，上限 **500MB**                           |
-| 桌面 → 手机 | `share_to_companion` 卡片 + `workspace.readFile` `mode=download` 分片 |
-| 预览        | 同一网关上的 HTTP `/p/{id}/` 反向代理                                 |
+| 主题        | 约定                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 路径 / 端口 | `/remote/v1`，端口 **8787**（局域网 `ws`，隧道 `wss`）                                                                   |
+| 鉴权        | 短时二维码令牌，随后存储设备凭证                                                                                         |
+| 保活        | 应用层 `ping` / `pong`（代理常丢原生 WS ping）                                                                           |
+| 手机 → 桌面 | 分片 `file.upload.*`（JSON+b64 **或** 二进制 WS 帧），可乱序，512KB，上限 **500MB**                                      |
+| 桌面 → 手机 | 卡片 → `file.download.begin` → HTTP `/f/{id}` `Range`（票据 10 分钟）。旧路径：`workspace.readFile` `mode=download` 分片 |
+| 预览        | 同一网关上的 HTTP `/p/{id}/` 反向代理（cookie / Referer 回退）                                                           |
+| 未绑定手机  | FAB / `chat.send` 无 `workspaceId` 视为快速提问——**不得**继承桌面当前工作区                                              |
 
 手机侧图示：[Companion 架构](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.zh-CN.md)。
+
+### 4.2 Companion 文件传输
+
+工作区会话落在 `{workspace}/.anya/uploads/{sessionId}/`。未绑定 Ask 会话落在 `{config}/companion-inbox/{sessionId}/`。
+
+```mermaid
+sequenceDiagram
+  participant P as Companion
+  participant GW as 网关
+  participant Disk as 磁盘
+  Note over P,Disk: 手机 → 桌面
+  P->>GW: file.upload.begin size name
+  GW->>Disk: 创建目标文件
+  loop 并发分片
+    P->>GW: chunk JSON+b64 或二进制帧
+    GW->>Disk: Seek + 按 offset 写入
+  end
+  P->>GW: file.upload.finish
+  Note over P,Disk: 桌面 → 手机
+  P->>GW: file.download.begin path
+  GW-->>P: url /f/:ticket TTL 10m
+  P->>GW: GET /f/:ticket Range
+  GW-->>P: 200 / 206 流式
+```
 
 ---
 
@@ -245,26 +285,28 @@ sequenceDiagram
 
 ### 5.1 Rust 领域（`src-tauri/src/core`）
 
-| 模块               | 路径                                      | 职责                                                         |
-| ------------------ | ----------------------------------------- | ------------------------------------------------------------ |
-| Chat service       | `core/chat/service.rs`                    | 入口：落库、解析上下文/模型、启动或 soft-inject              |
-| Stream manager     | `core/chat/stream.rs`                     | 后台任务、取消、流式聚合、UI 事件、时间线文本                |
-| Agent runner       | `core/chat/agent.rs`                      | **主** model↔tools 循环                                      |
-| Agent loop 策略    | `core/chat/agent_loop/`                   | stream_turn、tools、challenge、compact、soft_inject、failure |
-| 会话存储           | `core/chat/conversation_manager.rs`       | 内存会话 + 异步 SQLite；work timeline                        |
-| DB / journal       | `core/chat/db.rs`、`core/chat/journal.rs` | Schema、存取、崩溃恢复                                       |
-| 提示词             | `core/chat/prompts/`、`prompts/*.md`      | system / tools / policies / skills                           |
-| Agent runtime      | `core/agent/runtime/`                     | Run 状态机、取消、soft-inject、debug                         |
-| AI providers       | `core/ai/`                                | DeepSeek、Gemini/Antigravity、多模态                         |
-| Tools              | `core/tools/`                             | 注册表、审批、计划门禁、文件、shell、skills、子 Agent        |
-| Plan mode          | `core/tools/plan_mode.rs`                 | 会话级写操作门禁；Agent 复杂任务自动进入启发式               |
-| Context            | `core/context/`                           | IDE、选区、剪贴板、环境、Office 提示                         |
-| Checkpoint         | `core/checkpoint/`                        | 已应用文件变更的撤销 / 审查                                  |
-| Token              | `core/token/`                             | 用量记账与持久化                                             |
-| MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/office`     | 外部协议适配                                                 |
-| 协议类型           | `core/runtime/`                           | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`             |
-| Event bus          | `core/event/`                             | 领域事件                                                     |
-| Remote gateway     | `core/remote/`                            | Companion WS `/remote/v1`、配对、隧道、上传、预览代理        |
+| 模块               | 路径                                       | 职责                                                                           |
+| ------------------ | ------------------------------------------ | ------------------------------------------------------------------------------ |
+| Chat service       | `core/chat/service.rs`                     | 入口：落库、解析上下文/模型、启动或 soft-inject                                |
+| Stream manager     | `core/chat/stream.rs`                      | 后台任务、取消、流式聚合、UI 事件、时间线文本                                  |
+| Agent runner       | `core/chat/agent.rs`                       | **主** model↔tools 循环                                                        |
+| Agent loop 策略    | `core/chat/agent_loop/`                    | stream_turn、tools、challenge、compact、post_edit_verify、soft_inject、failure |
+| 会话存储           | `core/chat/conversation_manager.rs`        | 内存会话 + 异步 SQLite；work timeline                                          |
+| DB / journal       | `core/chat/db.rs`、`core/chat/journal.rs`  | Schema、存取、崩溃恢复                                                         |
+| 提示词             | `core/chat/prompts/`、`prompts/*.md`       | system / tools / policies / skills                                             |
+| Agent runtime      | `core/agent/runtime/`                      | Run 状态机、取消、soft-inject、debug                                           |
+| AI providers       | `core/ai/`                                 | DeepSeek、Gemini/Antigravity、多模态                                           |
+| 嵌入 / RAG         | `core/ai/embed.rs`、`commands/semantic.rs` | 可选 retrieve-then-rerank；API 或本地 ONNX                                     |
+| Tools              | `core/tools/`                              | 注册表、审批、计划门禁、文件、shell、skills、子 Agent                          |
+| 工作区索引         | `core/tools/workspace_index.rs`            | 分块关键词索引，落在 `.anya/index`（增量 JSONL）                               |
+| Plan mode          | `core/tools/plan_mode.rs`                  | 会话级写操作门禁；Agent 复杂任务自动进入启发式                                 |
+| Context            | `core/context/`                            | IDE、选区、剪贴板、环境、Office 提示                                           |
+| Checkpoint         | `core/checkpoint/`                         | 已应用文件变更的撤销 / 审查                                                    |
+| Token              | `core/token/`                              | 用量记账（含缓存命中 / reasoning token）与持久化                               |
+| MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/office`      | 外部协议适配                                                                   |
+| 协议类型           | `core/runtime/`                            | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`                               |
+| Event bus          | `core/event/`                              | 领域事件                                                                       |
+| Remote gateway     | `core/remote/`                             | WS `/remote/v1`、配对、隧道、上传、**下载 `/f/`**、预览 `/p/`                  |
 
 ### 5.2 命名：三处 “runtime”
 
@@ -276,14 +318,14 @@ sequenceDiagram
 
 ### 5.3 前端（`src/`）
 
-| 区域                | 路径                                      | 职责                                           |
-| ------------------- | ----------------------------------------- | ---------------------------------------------- |
-| Overlay / Workbench | `layouts/Overlay.vue`、`layouts/Main.vue` | 窗口壳                                         |
-| 聊天 UI             | `components/chat/*`                       | 消息列表、时间线、工具卡片、计划批准卡、输入栏 |
-| Stores              | `stores/chat.ts` 等                       | 会话消息、计划门禁、任务列表、设置、模型选择   |
-| IPC                 | `services/ipc/`                           | 类型化 invoke 与事件订阅                       |
-| 流式批处理          | `services/chat/rafBatch.ts`、`main.ts`    | delta RAF 合并                                 |
-| 设置页              | `pages/Settings/`                         | 服务商 / Agent / MCP / skills                  |
+| 区域                | 路径                                                           | 职责                                           |
+| ------------------- | -------------------------------------------------------------- | ---------------------------------------------- |
+| Overlay / Workbench | `layouts/Overlay.vue`、`layouts/Main.vue`                      | 窗口壳；工作台内嵌 SettingsPage                |
+| 聊天 UI             | `components/chat/*`                                            | 消息列表、时间线、工具卡片、计划批准卡、输入栏 |
+| Stores              | `stores/chat.ts` 等                                            | 会话消息、计划门禁、任务列表、设置、模型选择   |
+| IPC                 | `services/ipc/`                                                | 类型化 invoke 与事件订阅                       |
+| 流式批处理          | `services/chat/rafBatch.ts`、`composables/chat/wireChatIpc.ts` | delta RAF 合并；聊天 IPC 从 `main.ts` 抽出     |
+| 设置页              | `pages/Settings/`                                              | 服务商 / Agent / MCP / skills / **RAG 检索**   |
 
 ---
 
@@ -336,7 +378,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  Emit[Tauri emit] --> Listen[src/main.ts 监听]
+  Emit[Tauri emit] --> Listen[wireChatIpc 监听]
   Listen -->|delta / reasoning| RAF[createRafBatch]
   Listen -->|tool / finish / error| Sync[立即更新 store]
   RAF --> Store[chatStore.applyStreamDeltas]
@@ -359,7 +401,7 @@ commands/chat.rs::chat
               → agent_loop::collect_stream_turn
               → AIProvider::stream
               → agent_loop::tools::{execute_serial, execute_parallel}
-              → agent_loop::{challenge, mid_turn_compact, soft_inject, failure}
+              → agent_loop::{challenge, mid_turn_compact, post_edit_verify, soft_inject, failure}
 ```
 
 ---
@@ -387,14 +429,15 @@ stateDiagram-v2
   StopBreaker --> [*]
 ```
 
-| 模块               | 关注点                                                    |
-| ------------------ | --------------------------------------------------------- |
-| `stream_turn`      | 将一轮 Provider 流折叠为 content / reasoning / tool_calls |
-| `tools`            | 串行 / 并行调度；工具 activity 事件                       |
-| `challenge`        | 空完成 / 校验门禁                                         |
-| `mid_turn_compact` | 上下文窗口压力下的压缩                                    |
-| `soft_inject`      | 在安全边界合并排队中的用户追问                            |
-| `failure`          | 连续失败 / 同错重复的熔断                                 |
+| 模块               | 关注点                                                                 |
+| ------------------ | ---------------------------------------------------------------------- |
+| `stream_turn`      | 将一轮 Provider 流折叠为 content / reasoning / tool_calls              |
+| `tools`            | 串行 / 并行调度；工具 activity 事件                                    |
+| `challenge`        | 空完成 / 校验门禁                                                      |
+| `mid_turn_compact` | 上下文窗口压力下的压缩                                                 |
+| `post_edit_verify` | 成功改文件后做轻量检查；结果以 **system 文本**回灌（不是 `role=tool`） |
+| `soft_inject`      | 在安全边界合并排队中的用户追问                                         |
+| `failure`          | 连续失败 / 同错重复的熔断                                              |
 
 ### Ask / Agent / Plan
 
@@ -492,7 +535,7 @@ flowchart TB
 | `chat_messages`       | content、reasoning、tool_activities、**work_timeline**、tool_calls、status、tokens |
 | `chat_journal_events` | 进行中回合的压缩 delta 快照                                                        |
 | 会话元数据            | 标题、工作区绑定                                                                   |
-| Token 用量记录        | Provider 上报时的按 run 记账                                                       |
+| Token 用量记录        | Provider 上报时的按 run 记账；DeepSeek 缓存命中 / reasoning token                  |
 
 启动时对孤儿 `pending` / `streaming` 消息做 journal 回填并结算到终态，避免 UI 卡在「执行中」。
 
@@ -535,6 +578,39 @@ flowchart TB
 
 Skills 位于 `src-tauri/prompts/skills/`（含厂商资源）。调用时常注入 playbook，并可按子 Agent 执行（可选 `read_only`）。
 
+### 11.1 工作区索引与 RAG
+
+`search_codebase` 始终走关键词索引。语义重排**默认关闭**（设置 → RAG 检索）。启用前不下载、不发请求。
+
+```mermaid
+flowchart TB
+  Q[search_codebase 查询] --> KW[WorkspaceIndex.refresh + 关键词打分]
+  KW --> Hits[候选命中 ≤ 80]
+  Hits --> Ready{SemanticSearchEngine Ready?}
+  Ready -->|否| Out[返回关键词排序]
+  Ready -->|是| Emb[嵌入 query + snippets]
+  Emb --> Cos[余弦重排]
+  Cos --> Out[截断到 limit]
+```
+
+```mermaid
+flowchart LR
+  UI[RagSettings.vue] --> Cmd[set_semantic_search]
+  Cmd --> Eng[SemanticSearchEngine 单例]
+  Eng -->|backend=api| API["OpenAI 兼容 POST /embeddings"]
+  Eng -->|backend=local| ONNX["fastembed ONNX<br/>app_data/models/"]
+```
+
+| 环节       | 位置                                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------------- |
+| 关键词索引 | `core/tools/workspace_index.rs` — 重叠分块 + 符号 / 路径 / ADR；JSONL 在 `{workspace}/.anya/index/` |
+| 检索工具   | `search_codebase`（`core/tools/builtin/misc.rs`）— 先召回再重排                                     |
+| 引擎       | `core/ai/embed.rs` — API（`reqwest::blocking`）或本地 `fastembed`                                   |
+| IPC / 设置 | `commands/semantic.rs`，设置分类 **RAG 检索**                                                       |
+| 本地模型   | E5-Small（约 120MB，默认）、BGE-Small 中/英、Jina 代码（约 500MB）、BGE-M3（约 2.3GB）              |
+
+API 路径会把 **查询与候选片段** 发到配置的嵌入主机。本地路径首次下载后离线可用。
+
 ---
 
 ## 12. 事件契约（领域 → UI）
@@ -557,13 +633,14 @@ Skills 位于 `src-tauri/prompts/skills/`（含厂商资源）。调用时常注
 
 ## 13. 会话 / 工作区模型
 
-| 类型       | 绑定         | 典型入口                  |
-| ---------- | ------------ | ------------------------- |
-| 快速提问   | 无工作区     | IDE 外悬浮窗              |
-| 工作区会话 | 绑定文件夹   | IDE 前台、`/work`、选择器 |
-| 置顶       | 用户置顶标记 | 工作台侧栏                |
+| 类型                            | 绑定         | 典型入口                                     |
+| ------------------------------- | ------------ | -------------------------------------------- |
+| 快速提问                        | 无工作区     | IDE 外悬浮窗                                 |
+| 工作区会话                      | 绑定文件夹   | IDE 前台、`/work`、选择器                    |
+| 置顶                            | 用户置顶标记 | 工作台侧栏                                   |
+| Companion FAB（无 workspaceId） | 无工作区     | 手机新会话——**不得**继承桌面当前选中的工作区 |
 
-悬浮窗与工作台共享会话存储；「在工作台打开」复用同一 `session_id`。
+悬浮窗与工作台共享会话存储；「在工作台打开」复用同一 `session_id`。Companion 经网关投影同一存储。
 
 ---
 
@@ -594,6 +671,7 @@ flowchart LR
 | 外部上下文源         | `core/context` provider                            |
 | 新 Skill             | `src-tauri/prompts/skills/*.md`（按需加资源）      |
 | Companion RPC / 事件 | `core/remote/protocol.rs` + AnyaAndroid 手机客户端 |
+| RAG 嵌入后端         | `core/ai/embed.rs` + 设置 RAG 页                   |
 
 避免在 `AgentRunner` 之外平行再造一套 Agent 循环。
 Companion 不得再长出第二套 Agent 运行时。
@@ -602,18 +680,22 @@ Companion 不得再长出第二套 Agent 运行时。
 
 ## 16. 相关源码入口
 
-| 关注点                      | 从此处开始                                                    |
-| --------------------------- | ------------------------------------------------------------- |
-| 应用启动 / 托盘 / 热键      | `src-tauri/src/lib.rs`                                        |
-| 聊天 IPC                    | `commands/chat.rs`                                            |
-| 发送与上下文组装 / 计划门禁 | `core/chat/service.rs`、`core/tools/plan_mode.rs`             |
-| 流式生命周期 + 时间线文本   | `core/chat/stream.rs`                                         |
-| 时间线持久化                | `core/chat/conversation_manager.rs`、`core/chat/db.rs`        |
-| Agent 循环                  | `core/chat/agent.rs`、`core/chat/agent_loop/`                 |
-| Run 壳                      | `core/agent/runtime/`                                         |
-| 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/main.ts`、`src/stores/chat.ts`      |
-| 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                    |
-| 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue` |
-| Remote gateway / 配对       | `core/remote/gateway.rs`、`pairing.rs`、`tunnel.rs`           |
-| Companion 文件传输          | `core/remote/upload.rs`、`workspace.readFile` download 模式   |
-| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)        |
+| 关注点                      | 从此处开始                                                                       |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| 应用启动 / 托盘 / 热键      | `src-tauri/src/lib.rs`                                                           |
+| 聊天 IPC                    | `commands/chat.rs`                                                               |
+| 发送与上下文组装 / 计划门禁 | `core/chat/service.rs`、`core/tools/plan_mode.rs`                                |
+| 流式生命周期 + 时间线文本   | `core/chat/stream.rs`                                                            |
+| 时间线持久化                | `core/chat/conversation_manager.rs`、`core/chat/db.rs`                           |
+| Agent 循环                  | `core/chat/agent.rs`、`core/chat/agent_loop/`                                    |
+| Run 壳                      | `core/agent/runtime/`                                                            |
+| 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/composables/chat/wireChatIpc.ts`、`src/stores/chat.ts` |
+| 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                       |
+| 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                    |
+| 内嵌设置 / RAG              | `pages/Settings/`、`components/settings/RagSettings.vue`                         |
+| 工作台毛玻璃                | `services/workbench_glass.rs`、`overlay/appearance.ts`                           |
+| Remote gateway / 配对       | `core/remote/gateway.rs`、`pairing.rs`、`tunnel.rs`                              |
+| 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                        |
+| Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                           |
+| 工作区索引 / RAG            | `core/tools/workspace_index.rs`、`core/ai/embed.rs`                              |
+| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                           |
