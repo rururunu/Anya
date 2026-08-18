@@ -33,7 +33,7 @@
       {{ tr(settingStore.language, "planModeNoTasksYet") }}
     </p>
 
-    <div v-if="!executing && autoCountdown" class="plan-auto-execute">
+    <div v-if="!executing && autoCountdown && tasks.length" class="plan-auto-execute">
       <div
         class="plan-auto-progress"
         role="progressbar"
@@ -58,7 +58,7 @@
       </span>
     </div>
 
-    <div v-if="!executing" class="plan-approval-actions">
+    <div v-if="!executing && (tasks.length || allowEmptyApprove)" class="plan-approval-actions">
       <button
         v-if="autoCountdown"
         type="button"
@@ -71,7 +71,7 @@
       <button
         type="button"
         class="plan-approval-btn primary"
-        :disabled="busy || !tasks.length"
+        :disabled="busy"
         @click="$emit('approve')"
       >
         {{ tr(settingStore.language, "planModeApprove") }}
@@ -94,12 +94,14 @@ const props = withDefaults(
     busy?: boolean;
     executing?: boolean;
     autoCountdown?: { remaining: number; total: number } | null;
+    allowEmptyApprove?: boolean;
   }>(),
   {
     visible: true,
     busy: false,
     executing: false,
     autoCountdown: null,
+    allowEmptyApprove: false,
   },
 );
 

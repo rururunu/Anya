@@ -17,7 +17,8 @@ fn icons_root(app: &AppHandle) -> Result<PathBuf, String> {
         .app_cache_dir()
         .map_err(|error| format!("cache dir unavailable: {error}"))?
         .join("icons");
-    std::fs::create_dir_all(&dir).map_err(|error| format!("failed to create icons cache: {error}"))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("failed to create icons cache: {error}"))?;
     Ok(dir)
 }
 
@@ -118,11 +119,7 @@ pub fn lookup_install_icon(
 }
 
 /// Encode a cached install icon as a `data:` URL for remote clients (phone companion).
-pub fn install_icon_data_url(
-    app: &AppHandle,
-    kind: &str,
-    cache_key: &str,
-) -> Option<String> {
+pub fn install_icon_data_url(app: &AppHandle, kind: &str, cache_key: &str) -> Option<String> {
     let (kind, key) = sanitize_cache_key(kind, cache_key).ok()?;
     let dir = kind_dir(app, &kind).ok()?;
     let path = find_existing(&dir, &key)?;

@@ -64,7 +64,12 @@ pub fn maybe_run_post_edit_verification(
         return None;
     }
     let command = detect_verify_command(&ctx.workspace_root)?;
-    let result = match run_foreground(&command, Some(&ctx.workspace_root), &ctx.cancelled, Some(ctx)) {
+    let result = match run_foreground(
+        &command,
+        Some(&ctx.workspace_root),
+        &ctx.cancelled,
+        Some(ctx),
+    ) {
         Ok(out) => (out, true),
         Err(err) => (format!("auto verification failed: {err}"), false),
     };
@@ -127,4 +132,3 @@ mod tests {
         assert!(content.contains("Finished `dev` profile"));
     }
 }
-

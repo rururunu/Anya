@@ -1108,7 +1108,10 @@ export const useChatStore = defineStore("chat", {
         this.setSessionMessages(resolvedSessionId, next);
         return;
       }
-      const activityStatus = kind.trim() ? kind : undefined;
+      // Compact finished: drop the in-progress label instead of leaving a
+      // leftover "compressing" status on the assistant bubble.
+      const activityStatus =
+        kind.startsWith("context_compacted") || !kind.trim() ? undefined : kind;
       if (current.activityStatus === activityStatus) {
         return;
       }

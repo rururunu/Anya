@@ -126,12 +126,8 @@ pub async fn dispatch(
         return proxy_preview(state, stream, head, extra, &id, origin_path, true).await;
     }
 
-    let cookie_id = head
-        .header("cookie")
-        .and_then(preview_id_from_cookie);
-    let referer_id = head
-        .header("referer")
-        .and_then(preview_id_from_referer);
+    let cookie_id = head.header("cookie").and_then(preview_id_from_cookie);
+    let referer_id = head.header("referer").and_then(preview_id_from_referer);
     let fallback_id = cookie_id.or(referer_id).or_else(|| state.last_preview_id());
     if let Some(id) = fallback_id {
         let origin_path = if head.path.is_empty() {
@@ -169,7 +165,10 @@ async fn proxy_preview(
         .await
         .map_err(|e| e.to_string())?;
     if !extra.is_empty() {
-        upstream.write_all(&extra).await.map_err(|e| e.to_string())?;
+        upstream
+            .write_all(&extra)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     if head.is_websocket_upgrade() {
@@ -177,19 +176,17 @@ async fn proxy_preview(
         return Ok(());
     }
 
-    let (resp_head, resp_extra) = match tokio::time::timeout(
-        HEADER_READ_TIMEOUT,
-        read_http_head(&mut upstream),
-    )
-    .await
-    {
-        Ok(Ok(pair)) => pair,
-        _ => return write_simple(&mut client, 502, "Bad gateway").await,
-    };
+    let (resp_head, resp_extra) =
+        match tokio::time::timeout(HEADER_READ_TIMEOUT, read_http_head(&mut upstream)).await {
+            Ok(Ok(pair)) => pair,
+            _ => return write_simple(&mut client, 502, "Bad gateway").await,
+        };
     let secure = head
         .header("x-forwarded-proto")
         .is_some_and(|v| v.eq_ignore_ascii_case("https"))
-        || head.header("host").is_some_and(|h| h.contains("trycloudflare.com"));
+        || head
+            .header("host")
+            .is_some_and(|h| h.contains("trycloudflare.com"));
     let public_host = head.header("host").unwrap_or("").to_string();
     let mut resp = resp_head;
     resp = rewrite_location_headers(&resp, &origin, preview_id, &public_host);
@@ -321,7 +318,9 @@ fn find_header_end(buf: &[u8]) -> Option<usize> {
 fn parse_http_head(raw: &[u8]) -> Result<HttpHead, String> {
     let text = std::str::from_utf8(raw).map_err(|_| "HTTP headers are not utf-8".to_string())?;
     let mut lines = text.split("\r\n");
-    let request_line = lines.next().ok_or_else(|| "empty HTTP request".to_string())?;
+    let request_line = lines
+        .next()
+        .ok_or_else(|| "empty HTTP request".to_string())?;
     let mut parts = request_line.split_whitespace();
     let method = parts
         .next()
@@ -355,22 +354,14 @@ fn parse_http_head(raw: &[u8]) -> Result<HttpHead, String> {
 fn match_download_path(path: &str) -> Option<String> {
     let path = path.split('?').next().unwrap_or(path);
     let id = path.strip_prefix("/f/")?;
-    if id.is_empty()
-        || !id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return None;
     }
     Some(id.to_string())
 }
 
 /// Serve a minted download ticket with HTTP Range support (single range).
-async fn serve_download(
-    mut client: TcpStream,
-    head: HttpHead,
-    id: &str,
-) -> Result<(), String> {
+async fn serve_download(mut client: TcpStream, head: HttpHead, id: &str) -> Result<(), String> {
     let Some(ticket) = super::download::lookup(id) else {
         return write_simple(&mut client, 404, "Unknown or expired download").await;
     };
@@ -394,7 +385,11 @@ async fn serve_download(
             .map_err(|e| e.to_string())?;
     }
 
-    let reason = if status == 206 { "Partial Content" } else { "OK" };
+    let reason = if status == 206 {
+        "Partial Content"
+    } else {
+        "OK"
+    };
     let mut resp = format!(
         "HTTP/1.1 {status} {reason}\r\nContent-Type: {}\r\nContent-Length: {length}\r\nAccept-Ranges: bytes\r\nContent-Disposition: attachment; filename=\"{}\"\r\n",
         ticket.mime,
@@ -468,5 +463,8 @@ async fn write_simple(stream: &mut TcpStream, status: u16, body: &str) -> Result
         "HTTP/1.1 {status} {reason}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
-    stream.write_all(resp.as_bytes()).await.map_err(|e| e.to_string())
+    stream
+        .write_all(resp.as_bytes())
+        .await
+        .map_err(|e| e.to_string())
 }

@@ -116,432 +116,450 @@
       </div>
     </header>
 
-    <div v-if="settingsOpen" class="embedded-settings">
-      <SettingsPage embedded :category="settingsCategory" />
-    </div>
-
-    <div
-      v-else
-      class="workspace-grid"
-      :class="{ 'navigation-closed': !navigationOpen, 'review-open': reviewOpen }"
-    >
-      <aside class="navigation-pane" :inert="!navigationOpen" :aria-hidden="!navigationOpen">
-        <div class="navigation-brand">
-          <img class="navigation-brand-logo" :src="appIconAsset" alt="" draggable="false" />
-          <div class="navigation-brand-text">
-            <strong>{{ appDisplayName }}</strong>
-            <span v-if="isDevBuild" class="debug-badge">debug</span>
-          </div>
-          <button
-            type="button"
-            class="icon-button navigation-search-button"
-            :title="searchLabels.open"
-            :aria-label="searchLabels.open"
-            @click.stop="openSearchPalette"
-          >
-            <Search :size="16" />
-          </button>
-        </div>
-
-        <button type="button" class="new-chat-button" @click.stop="handleCreateQuickConversation">
-          <SquarePen :size="15" />
-          <span>{{ labels.newChat }}</span>
-        </button>
-
-        <div class="navigation-shortcuts" role="group" :aria-label="navigationLabels.extensions">
-          <button
-            type="button"
-            class="nav-shortcut-button"
-            :class="{ active: extensionView === 'skills' }"
-            @click.stop="openExtensionView('skills')"
-          >
-            <ScrollText :size="15" :stroke-width="1.75" />
-            <span>{{ navigationLabels.skills }}</span>
-          </button>
-          <button
-            type="button"
-            class="nav-shortcut-button"
-            :class="{ active: extensionView === 'mcp' }"
-            @click.stop="openExtensionView('mcp')"
-          >
-            <Cable :size="15" :stroke-width="1.75" />
-            <span>{{ navigationLabels.mcp }}</span>
-          </button>
-          <button
-            type="button"
-            class="nav-shortcut-button"
-            :class="{ active: extensionView === 'phone' }"
-            @click.stop="openExtensionView('phone')"
-          >
-            <span class="nav-shortcut-icon">
-              <Smartphone :size="15" :stroke-width="1.75" />
-              <span
-                v-if="remoteGatewayRunning"
-                class="nav-status-dot"
-                :title="navigationLabels.connectPhone"
-                aria-hidden="true"
-              />
-            </span>
-            <span>{{ navigationLabels.connectPhone }}</span>
-          </button>
-        </div>
-
-        <nav class="session-list peek-scrollbar" :aria-label="labels.conversations" @click.stop>
-          <section
-            v-for="workspaceSection in workspaceNavigationSections"
-            :key="workspaceSection.id"
-            class="navigation-section"
-          >
-            <header class="navigation-section-header">
-              <button
-                type="button"
-                class="navigation-section-toggle"
-                @click="toggleNavigationSection(workspaceSection.id)"
-              >
-                <ChevronRight
-                  :size="13"
-                  :class="{ expanded: !collapsedNavigationSections.has(workspaceSection.id) }"
-                />
-                <span>{{ workspaceSection.label }}</span>
-                <small>{{ workspaceSection.items.length }}</small>
-              </button>
-              <button
-                v-if="workspaceSection.id === 'workspaces'"
-                type="button"
-                class="section-action"
-                :title="navigationLabels.addWorkspace"
-                @click="addWorkspace"
-              >
-                <Plus :size="14" />
-              </button>
-            </header>
-
-            <div
-              v-show="!collapsedNavigationSections.has(workspaceSection.id)"
-              class="navigation-section-body"
+    <div class="main-stage">
+      <div
+        class="workspace-grid"
+        :class="{
+          'navigation-closed': !navigationOpen,
+          'review-open': reviewOpen,
+          'is-covered': settingsOpen,
+        }"
+        :inert="settingsOpen"
+        :aria-hidden="settingsOpen"
+      >
+        <aside class="navigation-pane" :inert="!navigationOpen" :aria-hidden="!navigationOpen">
+          <div class="navigation-brand">
+            <img class="navigation-brand-logo" :src="appIconAsset" alt="" draggable="false" />
+            <div class="navigation-brand-text">
+              <strong>{{ appDisplayName }}</strong>
+              <span v-if="isDevBuild" class="debug-badge">debug</span>
+            </div>
+            <button
+              type="button"
+              class="icon-button navigation-search-button"
+              :title="searchLabels.open"
+              :aria-label="searchLabels.open"
+              @click.stop="openSearchPalette"
             >
-              <section
-                v-for="workspace in workspaceSection.items"
-                :key="workspace.id"
-                class="workspace-group"
-                :data-workspace-id="workspace.id"
-                :class="{
-                  dragging: draggedWorkspaceId === workspace.id,
-                  'drop-before':
-                    dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'before',
-                  'drop-after':
-                    dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'after',
-                }"
-              >
-                <div
-                  class="workspace-row"
-                  role="button"
-                  tabindex="0"
-                  :aria-expanded="!collapsedWorkspaceIds.has(workspace.id)"
-                  :title="
-                    collapsedWorkspaceIds.has(workspace.id)
-                      ? navigationLabels.expandWorkspace
-                      : navigationLabels.collapseWorkspace
-                  "
-                  @click="handleWorkspaceClick(workspace)"
-                  @keydown.enter.self.prevent="handleWorkspaceClick(workspace)"
-                  @keydown.space.self.prevent="handleWorkspaceClick(workspace)"
-                  @pointerdown="startWorkspacePointerDrag($event, workspace)"
+              <Search :size="16" />
+            </button>
+          </div>
+
+          <button type="button" class="new-chat-button" @click.stop="handleCreateQuickConversation">
+            <SquarePen :size="15" />
+            <span>{{ labels.newChat }}</span>
+          </button>
+
+          <div class="navigation-shortcuts" role="group" :aria-label="navigationLabels.extensions">
+            <button
+              type="button"
+              class="nav-shortcut-button"
+              :class="{ active: extensionView === 'skills' }"
+              @click.stop="openExtensionView('skills')"
+            >
+              <ScrollText :size="15" :stroke-width="1.75" />
+              <span>{{ navigationLabels.skills }}</span>
+            </button>
+            <button
+              type="button"
+              class="nav-shortcut-button"
+              :class="{ active: extensionView === 'mcp' }"
+              @click.stop="openExtensionView('mcp')"
+            >
+              <Cable :size="15" :stroke-width="1.75" />
+              <span>{{ navigationLabels.mcp }}</span>
+            </button>
+            <button
+              type="button"
+              class="nav-shortcut-button"
+              :class="{ active: extensionView === 'phone' }"
+              @click.stop="openExtensionView('phone')"
+            >
+              <span class="nav-shortcut-icon">
+                <Smartphone :size="15" :stroke-width="1.75" />
+                <span
+                  v-if="remoteGatewayRunning"
+                  class="nav-status-dot"
+                  :title="navigationLabels.connectPhone"
+                  aria-hidden="true"
+                />
+              </span>
+              <span>{{ navigationLabels.connectPhone }}</span>
+            </button>
+          </div>
+
+          <nav class="session-list peek-scrollbar" :aria-label="labels.conversations" @click.stop>
+            <section
+              v-for="workspaceSection in workspaceNavigationSections"
+              :key="workspaceSection.id"
+              class="navigation-section"
+            >
+              <header class="navigation-section-header">
+                <button
+                  type="button"
+                  class="navigation-section-toggle"
+                  @click="toggleNavigationSection(workspaceSection.id)"
                 >
-                  <span class="workspace-collapse" aria-hidden="true" />
-                  <span class="workspace-group-header">
-                    <Folder v-if="collapsedWorkspaceIds.has(workspace.id)" :size="14" />
-                    <FolderOpen v-else :size="14" />
-                    <span>{{ workspace.name }}</span>
-                  </span>
-                  <div class="workspace-actions">
-                    <button
-                      type="button"
-                      :title="navigationLabels.more"
-                      @click.stop="toggleWorkspaceMenu(workspace.id)"
-                    >
-                      <Ellipsis :size="14" />
+                  <ChevronRight
+                    :size="13"
+                    :class="{ expanded: !collapsedNavigationSections.has(workspaceSection.id) }"
+                  />
+                  <span>{{ workspaceSection.label }}</span>
+                  <small>{{ workspaceSection.items.length }}</small>
+                </button>
+                <button
+                  v-if="workspaceSection.id === 'workspaces'"
+                  type="button"
+                  class="section-action"
+                  :title="navigationLabels.addWorkspace"
+                  @click="addWorkspace"
+                >
+                  <Plus :size="14" />
+                </button>
+              </header>
+
+              <div
+                v-show="!collapsedNavigationSections.has(workspaceSection.id)"
+                class="navigation-section-body"
+              >
+                <section
+                  v-for="workspace in workspaceSection.items"
+                  :key="workspace.id"
+                  class="workspace-group"
+                  :data-workspace-id="workspace.id"
+                  :class="{
+                    dragging: draggedWorkspaceId === workspace.id,
+                    'drop-before':
+                      dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'before',
+                    'drop-after':
+                      dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'after',
+                  }"
+                >
+                  <div
+                    class="workspace-row"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="!collapsedWorkspaceIds.has(workspace.id)"
+                    :title="
+                      collapsedWorkspaceIds.has(workspace.id)
+                        ? navigationLabels.expandWorkspace
+                        : navigationLabels.collapseWorkspace
+                    "
+                    @click="handleWorkspaceClick(workspace)"
+                    @keydown.enter.self.prevent="handleWorkspaceClick(workspace)"
+                    @keydown.space.self.prevent="handleWorkspaceClick(workspace)"
+                    @pointerdown="startWorkspacePointerDrag($event, workspace)"
+                  >
+                    <span class="workspace-collapse" aria-hidden="true" />
+                    <span class="workspace-group-header">
+                      <Folder v-if="collapsedWorkspaceIds.has(workspace.id)" :size="14" />
+                      <FolderOpen v-else :size="14" />
+                      <span>{{ workspace.name }}</span>
+                    </span>
+                    <div class="workspace-actions">
+                      <button
+                        type="button"
+                        :title="navigationLabels.more"
+                        @click.stop="toggleWorkspaceMenu(workspace.id)"
+                      >
+                        <Ellipsis :size="14" />
+                      </button>
+                      <button
+                        type="button"
+                        :title="navigationLabels.newWorkspaceChat"
+                        @click.stop="handleCreateWorkspaceConversation(workspace)"
+                      >
+                        <SquarePen :size="13" />
+                      </button>
+                    </div>
+                  </div>
+                  <div v-if="workspaceMenuId === workspace.id" class="workspace-menu" @click.stop>
+                    <button type="button" @click.stop="toggleWorkspacePinned(workspace)">
+                      <PinOff v-if="workspace.pinned" :size="13" />
+                      <Pin v-else :size="13" />
+                      <span>
+                        {{
+                          workspace.pinned
+                            ? navigationLabels.unpinWorkspace
+                            : navigationLabels.pinWorkspace
+                        }}
+                      </span>
                     </button>
-                    <button
-                      type="button"
-                      :title="navigationLabels.newWorkspaceChat"
-                      @click.stop="handleCreateWorkspaceConversation(workspace)"
-                    >
-                      <SquarePen :size="13" />
+                    <button type="button" @click.stop="openWorkspaceFolder(workspace)">
+                      <FolderOpen :size="13" />
+                      <span>{{ navigationLabels.openFolder }}</span>
+                    </button>
+                    <button type="button" class="danger" @click.stop="removeWorkspace(workspace)">
+                      <Trash2 :size="13" />
+                      <span>{{ navigationLabels.deleteWorkspace }}</span>
                     </button>
                   </div>
-                </div>
-                <div v-if="workspaceMenuId === workspace.id" class="workspace-menu" @click.stop>
-                  <button type="button" @click.stop="toggleWorkspacePinned(workspace)">
-                    <PinOff v-if="workspace.pinned" :size="13" />
-                    <Pin v-else :size="13" />
-                    <span>
-                      {{
-                        workspace.pinned
-                          ? navigationLabels.unpinWorkspace
-                          : navigationLabels.pinWorkspace
-                      }}
-                    </span>
-                  </button>
-                  <button type="button" @click.stop="openWorkspaceFolder(workspace)">
-                    <FolderOpen :size="13" />
-                    <span>{{ navigationLabels.openFolder }}</span>
-                  </button>
-                  <button type="button" class="danger" @click.stop="removeWorkspace(workspace)">
-                    <Trash2 :size="13" />
-                    <span>{{ navigationLabels.deleteWorkspace }}</span>
-                  </button>
-                </div>
-                <WorkbenchSessionList
-                  v-show="!collapsedWorkspaceIds.has(workspace.id)"
-                  :sessions="sessionsForWorkspace(workspace.id)"
-                  :active-session-id="activeSessionId"
-                  :language="settingStore.language"
-                  :untitled-label="labels.untitled"
-                  :delete-label="labels.deleteConversation"
-                  :running-session-ids="runningSessionIds"
-                  :attention-session-ids="attentionSessionIds"
-                  :unread-session-ids="unreadSessionIdList"
-                  :draft-session-ids="draftSessionIds"
-                  variant="workspace"
-                  @select="handleSelectConversation"
-                  @delete="removeConversation"
-                />
-              </section>
-            </div>
-          </section>
-
-          <section class="navigation-section quick-ask-section">
-            <header class="navigation-section-header">
-              <button
-                type="button"
-                class="navigation-section-toggle"
-                @click="toggleNavigationSection('quick')"
-              >
-                <ChevronRight
-                  :size="13"
-                  :class="{ expanded: !collapsedNavigationSections.has('quick') }"
-                />
-                <span>{{ navigationLabels.quickAsk }}</span>
-                <small>{{ quickAskSessions.length }}</small>
-              </button>
-              <button
-                type="button"
-                class="section-action"
-                :title="navigationLabels.newQuickAsk"
-                @click="handleCreateQuickConversation"
-              >
-                <SquarePen :size="13" />
-              </button>
-            </header>
-            <WorkbenchSessionList
-              v-show="!collapsedNavigationSections.has('quick')"
-              :sessions="quickAskSessions"
-              :active-session-id="activeSessionId"
-              :language="settingStore.language"
-              :untitled-label="labels.untitled"
-              :delete-label="labels.deleteConversation"
-              :running-session-ids="runningSessionIds"
-              :attention-session-ids="attentionSessionIds"
-              :unread-session-ids="unreadSessionIdList"
-              :draft-session-ids="draftSessionIds"
-              variant="quick"
-              @select="handleSelectConversation"
-              @delete="removeConversation"
-            />
-          </section>
-        </nav>
-      </aside>
-
-      <WorkbenchSearchPalette
-        v-model:open="searchPaletteOpen"
-        :sessions="sessionsWithLiveTokens"
-        :workspaces="workspaces"
-        :language="settingStore.language"
-        @select-session="handleSelectConversation"
-        @new-chat="handleCreateQuickConversation"
-      />
-
-      <section
-        class="conversation-pane"
-        :class="{
-          'empty-conversation': !extensionView && !hasConversationMessages,
-          'extension-open': Boolean(extensionView),
-        }"
-      >
-        <div v-if="extensionView" class="extension-pane">
-          <div class="extension-scroll peek-scrollbar">
-            <div class="extension-panel">
-              <SkillsSettings v-if="extensionView === 'skills'" />
-              <McpSettings v-else-if="extensionView === 'mcp'" />
-              <ConnectPhonePanel v-else-if="extensionView === 'phone'" />
-            </div>
-          </div>
-        </div>
-        <template v-else>
-          <div v-if="contextNotice" class="context-notice" role="status">
-            <CircleAlert :size="14" :stroke-width="1.8" aria-hidden="true" />
-            <span>{{ contextNotice }}</span>
-          </div>
-          <Transition name="empty-hero">
-            <div v-if="!hasConversationMessages" class="empty-conversation-hero">
-              <div class="empty-conversation-brand" data-onboarding-logo-target aria-hidden="true">
-                <img :src="appIconAsset" alt="" draggable="false" />
+                  <WorkbenchSessionList
+                    v-show="!collapsedWorkspaceIds.has(workspace.id)"
+                    :sessions="sessionsForWorkspace(workspace.id)"
+                    :active-session-id="activeSessionId"
+                    :language="settingStore.language"
+                    :untitled-label="labels.untitled"
+                    :delete-label="labels.deleteConversation"
+                    :running-session-ids="runningSessionIds"
+                    :attention-session-ids="attentionSessionIds"
+                    :unread-session-ids="unreadSessionIdList"
+                    :draft-session-ids="draftSessionIds"
+                    variant="workspace"
+                    @select="handleSelectConversation"
+                    @delete="removeConversation"
+                  />
+                </section>
               </div>
-              <p class="empty-conversation-prompt">
-                {{ emptyConversationPrompt }}
-              </p>
-            </div>
-          </Transition>
-          <MessageList
-            class="workbench-messages"
-            :messages="messages"
-            :session-id="activeSessionId"
-            :checkpoints="checkpoints"
-            @rewound="handleRewound"
-            @review-changes="openReview('diff')"
-            @inspect-subagent="openAgentReview"
-            @preview-image="previewImage"
-          />
+            </section>
 
-          <div
-            class="composer-wrap"
-            :class="{ 'has-interaction-picker': Boolean(activePendingInteraction) }"
-          >
-            <div
-              v-if="stagedMessages.length"
-              class="staged-wrap peek-scrollbar"
-              data-tauri-drag-region="false"
-            >
-              <div class="staged-list">
-                <div
-                  v-for="(message, index) in stagedMessages"
-                  :key="`${index}-${message}`"
-                  class="staged-item"
+            <section class="navigation-section quick-ask-section">
+              <header class="navigation-section-header">
+                <button
+                  type="button"
+                  class="navigation-section-toggle"
+                  @click="toggleNavigationSection('quick')"
                 >
-                  <span class="staged-item-text">{{ message }}</span>
-                  <span class="staged-item-actions">
-                    <button
-                      type="button"
-                      class="staged-btn staged-btn-guide"
-                      :title="labels.guideOneHint"
-                      @click="guideStaged(index)"
-                    >
-                      <CornerDownLeft :size="13" />
-                    </button>
-                    <button
-                      type="button"
-                      class="staged-btn"
-                      :title="labels.editStaged"
-                      @click="startStagedEdit(index)"
-                    >
-                      <Pencil :size="13" />
-                    </button>
-                    <button
-                      type="button"
-                      class="staged-btn staged-btn-danger"
-                      :title="labels.removeStaged"
-                      @click="removeStaged(index)"
-                    >
-                      <Trash2 :size="13" />
-                    </button>
-                  </span>
-                </div>
+                  <ChevronRight
+                    :size="13"
+                    :class="{ expanded: !collapsedNavigationSections.has('quick') }"
+                  />
+                  <span>{{ navigationLabels.quickAsk }}</span>
+                  <small>{{ quickAskSessions.length }}</small>
+                </button>
+                <button
+                  type="button"
+                  class="section-action"
+                  :title="navigationLabels.newQuickAsk"
+                  @click="handleCreateQuickConversation"
+                >
+                  <SquarePen :size="13" />
+                </button>
+              </header>
+              <WorkbenchSessionList
+                v-show="!collapsedNavigationSections.has('quick')"
+                :sessions="quickAskSessions"
+                :active-session-id="activeSessionId"
+                :language="settingStore.language"
+                :untitled-label="labels.untitled"
+                :delete-label="labels.deleteConversation"
+                :running-session-ids="runningSessionIds"
+                :attention-session-ids="attentionSessionIds"
+                :unread-session-ids="unreadSessionIdList"
+                :draft-session-ids="draftSessionIds"
+                variant="quick"
+                @select="handleSelectConversation"
+                @delete="removeConversation"
+              />
+            </section>
+          </nav>
+        </aside>
+
+        <WorkbenchSearchPalette
+          v-model:open="searchPaletteOpen"
+          :sessions="sessionsWithLiveTokens"
+          :workspaces="workspaces"
+          :language="settingStore.language"
+          @select-session="handleSelectConversation"
+          @new-chat="handleCreateQuickConversation"
+        />
+
+        <section
+          class="conversation-pane"
+          :class="{
+            'empty-conversation': !extensionView && !hasConversationMessages,
+            'extension-open': Boolean(extensionView),
+          }"
+          :style="composerOverlayStyle"
+        >
+          <div v-if="extensionView" class="extension-pane">
+            <div class="extension-scroll peek-scrollbar">
+              <div class="extension-panel">
+                <SkillsSettings v-if="extensionView === 'skills'" />
+                <McpSettings v-else-if="extensionView === 'mcp'" />
+                <ConnectPhonePanel v-else-if="extensionView === 'phone'" />
               </div>
             </div>
-            <ChatInputBar
-              ref="inputRef"
-              :sending="sending"
-              :close-on-escape="false"
-              appearance="workbench"
-              overlay-pickers
-              :context-ready="true"
+          </div>
+          <template v-else>
+            <div v-if="contextNotice" class="context-notice" role="status">
+              <CircleAlert :size="14" :stroke-width="1.8" aria-hidden="true" />
+              <span>{{ contextNotice }}</span>
+            </div>
+            <Transition name="empty-hero">
+              <div v-if="!hasConversationMessages" class="empty-conversation-hero">
+                <div
+                  class="empty-conversation-brand"
+                  data-onboarding-logo-target
+                  aria-hidden="true"
+                >
+                  <img :src="appIconAsset" alt="" draggable="false" />
+                </div>
+                <p class="empty-conversation-prompt">
+                  {{ emptyConversationPrompt }}
+                </p>
+              </div>
+            </Transition>
+            <MessageList
+              class="workbench-messages"
+              :messages="messages"
               :session-id="activeSessionId"
-              :ask-user="askUserSession"
-              :path-permission="pathPermissionSession"
-              :tool-approval="toolApprovalSession"
-              @submit="submitMessage"
-              @pause="pauseResponse"
-              @ask-user-complete="completeAskUser"
-              @path-permission-complete="completePathPermission"
-              @tool-approval-complete="completeToolApproval"
+              :checkpoints="checkpoints"
+              @rewound="handleRewound"
+              @review-changes="openReview('diff')"
+              @inspect-subagent="openAgentReview"
               @preview-image="previewImage"
             />
-          </div>
-        </template>
-      </section>
 
-      <Transition name="review-panel">
-        <div
-          v-if="reviewOpen"
-          class="review-shell"
-          :style="{ '--review-pane-width': `${reviewWidth + REVIEW_RESIZE_HANDLE_WIDTH}px` }"
-        >
-          <div
-            class="review-resize-handle"
-            :class="{ active: reviewResizing }"
-            role="separator"
-            aria-orientation="vertical"
-            :aria-label="tr(settingStore.language, 'resizeCodeChanges')"
-            :title="tr(settingStore.language, 'resizeCodeChanges')"
-            :aria-valuemin="REVIEW_SIDEBAR_MIN_WIDTH"
-            :aria-valuemax="REVIEW_SIDEBAR_MAX_WIDTH"
-            :aria-valuenow="Math.round(reviewWidth)"
-            tabindex="0"
-            data-tauri-drag-region="false"
-            @pointerdown="startReviewResize"
-            @keydown="handleReviewResizeKey"
-            @dblclick="resetReviewWidth"
-          />
-          <aside class="review-pane">
-            <header class="review-header">
-              <div class="review-tabs" role="tablist" :aria-label="labels.views">
-                <button
-                  v-for="view in reviewViews"
-                  :key="view.id"
-                  type="button"
-                  :class="{ active: reviewView === view.id }"
-                  @click="reviewView = view.id"
-                >
-                  <component :is="view.icon" :size="14" />
-                  <span>{{ view.label }}</span>
-                </button>
-              </div>
-              <button
-                type="button"
-                class="small-icon-button"
-                :title="labels.closePanel"
-                @click="reviewOpen = false"
+            <div v-if="hasConversationMessages" class="composer-fade" aria-hidden="true">
+              <div class="composer-fade-blur"></div>
+              <div class="composer-fade-tint"></div>
+            </div>
+
+            <div
+              ref="composerWrapRef"
+              class="composer-wrap"
+              :class="{ 'has-interaction-picker': Boolean(activePendingInteraction) }"
+            >
+              <div
+                v-if="stagedMessages.length"
+                class="staged-wrap peek-scrollbar"
+                data-tauri-drag-region="false"
               >
-                <PanelRightClose :size="15" />
-              </button>
-            </header>
-            <CodeDiffSidebar
-              v-show="reviewView === 'diff'"
-              embedded
-              :messages="messages"
-              :width="reviewWidth"
+                <div class="staged-list">
+                  <div
+                    v-for="(message, index) in stagedMessages"
+                    :key="`${index}-${message}`"
+                    class="staged-item"
+                  >
+                    <span class="staged-item-text">{{ message }}</span>
+                    <span class="staged-item-actions">
+                      <button
+                        type="button"
+                        class="staged-btn staged-btn-guide"
+                        :title="labels.guideOneHint"
+                        @click="guideStaged(index)"
+                      >
+                        <CornerDownLeft :size="13" />
+                      </button>
+                      <button
+                        type="button"
+                        class="staged-btn"
+                        :title="labels.editStaged"
+                        @click="startStagedEdit(index)"
+                      >
+                        <Pencil :size="13" />
+                      </button>
+                      <button
+                        type="button"
+                        class="staged-btn staged-btn-danger"
+                        :title="labels.removeStaged"
+                        @click="removeStaged(index)"
+                      >
+                        <Trash2 :size="13" />
+                      </button>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <ChatInputBar
+                ref="inputRef"
+                :sending="sending"
+                :close-on-escape="false"
+                appearance="workbench"
+                overlay-pickers
+                :context-ready="true"
+                :session-id="activeSessionId"
+                :ask-user="askUserSession"
+                :path-permission="pathPermissionSession"
+                :tool-approval="toolApprovalSession"
+                @submit="submitMessage"
+                @pause="pauseResponse"
+                @ask-user-complete="completeAskUser"
+                @path-permission-complete="completePathPermission"
+                @tool-approval-complete="completeToolApproval"
+                @preview-image="previewImage"
+              />
+            </div>
+          </template>
+        </section>
+
+        <Transition name="review-panel">
+          <div
+            v-if="reviewOpen"
+            class="review-shell"
+            :style="{ '--review-pane-width': `${reviewWidth + REVIEW_RESIZE_HANDLE_WIDTH}px` }"
+          >
+            <div
+              class="review-resize-handle"
+              :class="{ active: reviewResizing }"
+              role="separator"
+              aria-orientation="vertical"
+              :aria-label="tr(settingStore.language, 'resizeCodeChanges')"
+              :title="tr(settingStore.language, 'resizeCodeChanges')"
+              :aria-valuemin="REVIEW_SIDEBAR_MIN_WIDTH"
+              :aria-valuemax="REVIEW_SIDEBAR_MAX_WIDTH"
+              :aria-valuenow="Math.round(reviewWidth)"
+              tabindex="0"
+              data-tauri-drag-region="false"
+              @pointerdown="startReviewResize"
+              @keydown="handleReviewResizeKey"
+              @dblclick="resetReviewWidth"
             />
-            <SubagentSidebar
-              v-show="reviewView === 'agents'"
-              embedded
-              :activities="subagentActivities"
-              :all-activities="allToolActivities"
-              :opened-entry-ids="openedSubagentIds"
-              :selected-entry-id="selectedSubagentId"
-              @close-entry="closeSubagent"
-            />
-            <AgentDebugPanel v-show="reviewView === 'runtime'" embedded />
-            <ImagePreviewSidebar
-              v-show="reviewView === 'image'"
-              :sources="openedImageSources"
-              :selected-source="selectedImageSource"
-              @select="selectedImageSource = $event"
-              @close="closeImageTab"
-            />
-          </aside>
-        </div>
-      </Transition>
+            <aside class="review-pane">
+              <header class="review-header">
+                <div class="review-tabs" role="tablist" :aria-label="labels.views">
+                  <button
+                    v-for="view in reviewViews"
+                    :key="view.id"
+                    type="button"
+                    :class="{ active: reviewView === view.id }"
+                    @click="reviewView = view.id"
+                  >
+                    <component :is="view.icon" :size="14" />
+                    <span>{{ view.label }}</span>
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="small-icon-button"
+                  :title="labels.closePanel"
+                  @click="reviewOpen = false"
+                >
+                  <PanelRightClose :size="15" />
+                </button>
+              </header>
+              <CodeDiffSidebar
+                v-show="reviewView === 'diff'"
+                embedded
+                :messages="messages"
+                :width="reviewWidth"
+              />
+              <SubagentSidebar
+                v-show="reviewView === 'agents'"
+                embedded
+                :activities="subagentActivities"
+                :all-activities="allToolActivities"
+                :opened-entry-ids="openedSubagentIds"
+                :selected-entry-id="selectedSubagentId"
+                @close-entry="closeSubagent"
+              />
+              <AgentDebugPanel v-show="reviewView === 'runtime'" embedded />
+              <ImagePreviewSidebar
+                v-show="reviewView === 'image'"
+                :sources="openedImageSources"
+                :selected-source="selectedImageSource"
+                @select="selectedImageSource = $event"
+                @close="closeImageTab"
+              />
+            </aside>
+          </div>
+        </Transition>
+      </div>
+
+      <div v-if="settingsOpen" class="embedded-settings">
+        <SettingsPage embedded :category="settingsCategory" />
+      </div>
     </div>
 
     <WelcomeOnboarding v-if="showOnboarding" @completed="showOnboarding = false" />
@@ -680,6 +698,44 @@ const isDevBuild = import.meta.env.DEV;
 const appWindow = getCurrentWebviewWindow();
 const inputRef = ref<InstanceType<typeof ChatInputBar> | null>(null);
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
+const composerWrapRef = ref<HTMLElement | null>(null);
+const composerFootprint = ref(0);
+/** How far the blur continues above the composer card. */
+const COMPOSER_FADE_OVERHANG = 28;
+/** Air between the last message and the top of the fade. */
+const COMPOSER_CLEARANCE_EXTRA = 12;
+let composerResizeObserver: ResizeObserver | null = null;
+
+const composerOverlayStyle = computed(() => {
+  const height = composerFootprint.value;
+  if (height <= 0) {
+    return undefined;
+  }
+  const fade = height + 10 + COMPOSER_FADE_OVERHANG;
+  return {
+    "--composer-fade-height": `${fade}px`,
+    "--composer-list-clearance": `${fade + COMPOSER_CLEARANCE_EXTRA}px`,
+  };
+});
+
+watch(
+  composerWrapRef,
+  (element) => {
+    composerResizeObserver?.disconnect();
+    composerResizeObserver = null;
+    if (!element) {
+      composerFootprint.value = 0;
+      return;
+    }
+    const sync = () => {
+      composerFootprint.value = element.offsetHeight;
+    };
+    composerResizeObserver = new ResizeObserver(sync);
+    composerResizeObserver.observe(element);
+    sync();
+  },
+  { flush: "post" },
+);
 
 // Cross-cutting state shared by several workbench composables below. Kept
 // here (rather than owned by a single composable) to avoid a construction
@@ -977,6 +1033,8 @@ onMounted(async () => {
 onUnmounted(() => {
   remoteGatewayUnlisten?.();
   remoteGatewayUnlisten = null;
+  composerResizeObserver?.disconnect();
+  composerResizeObserver = null;
 });
 
 watch(
@@ -1081,6 +1139,7 @@ watch(settingsOpen, (open) => {
 }
 
 .workbench.is-glass,
+.workbench.is-glass .main-stage,
 .workbench.is-glass .workspace-grid,
 .workbench.is-glass .embedded-settings,
 .workbench.is-glass .titlebar,
@@ -1116,8 +1175,7 @@ watch(settingsOpen, (open) => {
 }
 
 .workbench.is-glass .titlebar,
-.workbench.is-glass .workspace-grid,
-.workbench.is-glass .embedded-settings {
+.workbench.is-glass .main-stage {
   position: relative;
   z-index: 1;
 }
@@ -1266,8 +1324,21 @@ button {
   background: var(--peek-accent);
 }
 
-.workspace-grid {
+.main-stage {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.main-stage > .workspace-grid,
+.main-stage > .embedded-settings {
+  position: absolute;
+  inset: 0;
+}
+
+.workspace-grid {
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -1299,8 +1370,13 @@ button {
   grid-column: 3;
   grid-row: 1;
 }
+.workspace-grid.is-covered {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .embedded-settings {
-  flex: 1;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1667,6 +1743,9 @@ button {
 }
 
 .conversation-pane {
+  --composer-dock-gap: 10px;
+  --composer-fade-height: 148px;
+  --composer-list-clearance: 160px;
   position: relative;
   z-index: 1;
   grid-column: 2;
@@ -1729,18 +1808,18 @@ button {
   margin: 0;
   overflow: hidden;
   padding-top: 18px;
-  padding-bottom: 148px;
-  transition: padding-bottom 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  padding-bottom: 0;
 }
 .workbench-messages :deep(.message-list) {
-  padding: 18px max(40px, calc((100% - 900px) / 2)) 28px;
+  padding: 18px max(40px, calc((100% - 900px) / 2)) var(--composer-list-clearance);
   gap: 20px;
 }
 .workbench-messages :deep(.message-preview-rail) {
   right: 8px;
+  bottom: var(--composer-fade-height);
 }
 .workbench-messages :deep(.scroll-to-bottom) {
-  bottom: 158px;
+  bottom: calc(var(--composer-fade-height) + 10px);
 }
 .workbench-messages :deep(.assistant-bubble) {
   max-width: 100%;
@@ -1748,15 +1827,56 @@ button {
 .workbench-messages :deep(.user-turn) {
   max-width: min(76%, 680px);
 }
+.composer-fade {
+  position: absolute;
+  z-index: 7;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--composer-fade-height);
+  pointer-events: none;
+}
+.composer-fade-blur,
+.composer-fade-tint {
+  position: absolute;
+  inset: 0;
+}
+.composer-fade-blur {
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.22) 28%,
+    rgba(0, 0, 0, 0.78) 62%,
+    #000 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.22) 28%,
+    rgba(0, 0, 0, 0.78) 62%,
+    #000 100%
+  );
+}
+.composer-fade-tint {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--peek-list-bg) 22%, transparent) 28%,
+    color-mix(in srgb, var(--peek-list-bg) 82%, transparent) 62%,
+    var(--peek-list-bg) 100%
+  );
+}
 .composer-wrap {
   position: absolute;
   z-index: 8;
   left: 50%;
-  top: calc(100% - clamp(10px, 2.5vh, 24px));
+  top: calc(100% - var(--composer-dock-gap));
   bottom: auto;
   width: min(calc(100% - 48px), 820px);
   min-height: 0;
-  max-height: min(280px, calc(100% - 24px));
+  max-height: min(280px, calc(100% - 16px));
   margin: 0;
   transform: translate(-50%, -100%);
   display: flex;
@@ -2065,6 +2185,20 @@ button {
     transition: none !important;
   }
 }
+
+@media (prefers-reduced-transparency: reduce) {
+  .composer-fade-blur {
+    display: none;
+  }
+  .composer-fade-tint {
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      color-mix(in srgb, var(--peek-list-bg) 55%, transparent) 40%,
+      var(--peek-list-bg) 100%
+    );
+  }
+}
 .context-notice {
   position: absolute;
   z-index: 9;
@@ -2219,11 +2353,12 @@ button {
 }
 
 @media (max-height: 700px) {
-  .workbench-messages :deep(.message-list) {
-    padding-bottom: 14px;
+  .conversation-pane {
+    --composer-dock-gap: 8px;
+    --composer-fade-height: 120px;
+    --composer-list-clearance: 132px;
   }
   .composer-wrap {
-    top: calc(100% - 8px);
     width: min(calc(100% - 28px), 820px);
     max-height: calc(100% - 12px);
   }
@@ -2247,11 +2382,12 @@ button {
 }
 
 @container workbench (max-height: 560px) {
-  .workbench-messages :deep(.message-list) {
-    padding-bottom: 12px;
+  .conversation-pane {
+    --composer-dock-gap: 8px;
+    --composer-fade-height: 112px;
+    --composer-list-clearance: 124px;
   }
   .composer-wrap {
-    top: calc(100% - 8px);
     width: min(calc(100% - 28px), 820px);
     max-height: min(46cqh, calc(100% - 12px));
   }
@@ -2266,9 +2402,6 @@ button {
 @container conversation (max-height: 480px) {
   .composer-wrap {
     max-height: min(48cqh, calc(100% - 8px));
-  }
-  .workbench-messages {
-    padding-bottom: max(96px, 22cqh);
   }
 }
 

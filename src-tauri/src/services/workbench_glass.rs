@@ -63,9 +63,7 @@ mod windows_imp {
     use tauri::WebviewWindow;
     use windows::core::s;
     use windows::Win32::Foundation::{BOOL, HWND};
-    use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE,
-    };
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
     use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
     use windows::Win32::UI::WindowsAndMessaging::{GetWindow, GW_CHILD, GW_HWNDNEXT};
 
@@ -207,7 +205,9 @@ mod windows_imp {
         unsafe {
             let module = LoadLibraryA(s!("user32.dll")).ok()?;
             let proc = GetProcAddress(module, s!("SetWindowCompositionAttribute"))?;
-            Some(std::mem::transmute::<_, SetWindowCompositionAttributeFn>(proc))
+            Some(std::mem::transmute::<_, SetWindowCompositionAttributeFn>(
+                proc,
+            ))
         }
     }
 }

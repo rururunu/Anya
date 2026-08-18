@@ -881,26 +881,21 @@ mod message_persistence_tests {
         };
 
         save_message(&pool, &message).await.unwrap();
-        let loaded = load_messages_for_session(&pool, "session-1")
-            .await
-            .unwrap();
+        let loaded = load_messages_for_session(&pool, "session-1").await.unwrap();
         let result = loaded[0].tool_activities.as_ref().unwrap()[0]
             .result
             .as_ref()
             .unwrap();
         assert!(
-            result.chars().count()
-                <= crate::core::chat::limits::STORED_TOOL_RESULT_MAX_CHARS + 40
+            result.chars().count() <= crate::core::chat::limits::STORED_TOOL_RESULT_MAX_CHARS + 40
         );
         assert!(result.contains("truncated"));
     }
 
     #[tokio::test]
     async fn loads_messages_for_one_session_only() {
-        let path = std::env::temp_dir().join(format!(
-            "anya-session-load-{}.db",
-            uuid::Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("anya-session-load-{}.db", uuid::Uuid::new_v4()));
         let pool = init_db(&path).await.unwrap();
         for (id, session) in [("a1", "s1"), ("a2", "s2")] {
             let message = ChatMessage {

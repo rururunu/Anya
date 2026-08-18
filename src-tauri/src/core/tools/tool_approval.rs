@@ -118,23 +118,23 @@ impl ToolApprovalStore {
             .unwrap_or_else(|| self.mode())
     }
 
-    pub fn complete(&self, request_id: &str, decision: &str) -> bool {
+    pub fn complete(&self, request_id: &str, decision: &str) -> Option<String> {
         let Some(decision) = ApprovalDecision::parse(decision) else {
-            return false;
+            return None;
         };
-        let sender = {
+        let pending = {
             let mut pending = match self.pending.lock() {
                 Ok(guard) => guard,
-                Err(_) => return false,
+                Err(_) => return None,
             };
-            pending.remove(request_id).map(|p| p.sender)
+            pending.remove(request_id)
         };
-        if let Some(sender) = sender {
-            let _ = sender.send(decision);
-            true
-        } else {
-            false
-        }
+        let Some(pending) = pending else {
+            return None;
+        };
+        let session_id = pending.session_id.clone();
+        let _ = pending.sender.send(decision);
+        Some(session_id)
     }
 
     fn session_allowed(&self, session_id: &str, tool_name: &str) -> bool {

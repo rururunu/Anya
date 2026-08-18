@@ -413,7 +413,10 @@ fn merge_skill_meta(info: &mut SkillInfo, dir: &Path) {
         .get("namespace")
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    info.slug = value.get("slug").and_then(|v| v.as_str()).map(str::to_string);
+    info.slug = value
+        .get("slug")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     info.homepage = value
         .get("homepage")
         .and_then(|v| v.as_str())

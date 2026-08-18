@@ -99,7 +99,9 @@ pub fn get(session_id: &str) -> SessionCompose {
 
 pub fn set(session_id: &str, compose: SessionCompose) -> SessionCompose {
     if let Ok(mut guard) = store().lock() {
-        guard.by_session.insert(session_id.to_string(), compose.clone());
+        guard
+            .by_session
+            .insert(session_id.to_string(), compose.clone());
     }
     compose
 }

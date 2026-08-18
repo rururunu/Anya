@@ -63,7 +63,9 @@ fn extract_docx(path: &Path) -> Result<String, ToolError> {
     let mut archive = open_zip(path)?;
     let names = zip_names(&mut archive)?;
     if !names.iter().any(|n| n == "word/document.xml") {
-        return Err(ToolError::new("not a valid .docx (missing word/document.xml)"));
+        return Err(ToolError::new(
+            "not a valid .docx (missing word/document.xml)",
+        ));
     }
     let mut ordered: Vec<String> = names
         .into_iter()
@@ -369,7 +371,8 @@ mod tests {
 
     #[test]
     fn does_not_treat_ppr_as_paragraph() {
-        let xml = r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Title</w:t></w:r></w:p>"#;
+        let xml =
+            r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Title</w:t></w:r></w:p>"#;
         assert_eq!(wml_plain_text(xml), "Title");
     }
 

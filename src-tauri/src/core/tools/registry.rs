@@ -186,10 +186,7 @@ impl ToolRegistry {
         for name in self.names() {
             if let Some(tool) = self.get(&name) {
                 if tool.read_only()
-                    || matches!(
-                        name.as_str(),
-                        "update_tasks" | "ask_user" | "todo_write"
-                    )
+                    || matches!(name.as_str(), "update_tasks" | "ask_user" | "todo_write")
                 {
                     filtered.register(tool);
                 }

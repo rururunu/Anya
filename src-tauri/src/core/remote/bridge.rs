@@ -33,6 +33,7 @@ pub struct RemoteSessionDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_name: Option<String>,
     pub run_state: RemoteRunState,
+    pub plan_mode_active: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,9 +52,11 @@ static STATUS: OnceLock<Mutex<StatusStore>> = OnceLock::new();
 static OUTBOUND: OnceLock<broadcast::Sender<String>> = OnceLock::new();
 
 fn status_store() -> &'static Mutex<StatusStore> {
-    STATUS.get_or_init(|| Mutex::new(StatusStore {
-        states: HashMap::new(),
-    }))
+    STATUS.get_or_init(|| {
+        Mutex::new(StatusStore {
+            states: HashMap::new(),
+        })
+    })
 }
 
 pub fn outbound_sender() -> broadcast::Sender<String> {
@@ -79,17 +82,73 @@ pub fn broadcast_server_message(message: &ServerMessage) {
 
 /// Notify companion clients that an ask / approval / permission was resolved
 /// (including when the desktop UI answered it).
-pub fn push_interaction_resolved(request_id: &str, kind: &str) {
+pub fn push_interaction_resolved(request_id: &str, kind: &str, session_id: Option<&str>) {
     broadcast_server_message(&ServerMessage::Event {
         name: "interaction.resolved".into(),
         data: json!({
             "requestId": request_id,
             "kind": kind,
+            "sessionId": session_id,
         })
         .as_object()
         .cloned()
         .unwrap_or_default(),
     });
+}
+
+/// After desktop/phone resolves an interaction, drop a stale WaitingApproval
+/// badge unless another request is still blocking this session.
+pub fn resume_run_state_after_interaction(app: &AppHandle, session_id: &str) {
+    if session_has_blocking_approval(app, session_id) {
+        set_run_state(session_id, RemoteRunState::WaitingApproval);
+        return;
+    }
+    if session_has_ask(app, session_id) {
+        set_run_state(session_id, RemoteRunState::WaitingAskUser);
+        return;
+    }
+    match run_state_for(session_id) {
+        RemoteRunState::WaitingApproval | RemoteRunState::WaitingAskUser => {
+            set_run_state(session_id, RemoteRunState::Streaming);
+        }
+        _ => {}
+    }
+}
+
+fn session_has_blocking_approval(app: &AppHandle, session_id: &str) -> bool {
+    if crate::core::tools::plan_mode::shared_plan_mode_store().is_awaiting_approval(session_id) {
+        return true;
+    }
+    if crate::core::tools::tool_approval::shared_tool_approval_store()
+        .pending_items()
+        .iter()
+        .any(|item| item.session_id == session_id)
+    {
+        return true;
+    }
+    app.try_state::<crate::app_state::AppState>()
+        .is_some_and(|state| {
+            state
+                .core
+                .chat()
+                .path_permission_store()
+                .pending_items()
+                .iter()
+                .any(|item| item.session_id == session_id)
+        })
+}
+
+fn session_has_ask(app: &AppHandle, session_id: &str) -> bool {
+    app.try_state::<crate::app_state::AppState>()
+        .is_some_and(|state| {
+            state
+                .core
+                .chat()
+                .ask_store()
+                .pending_items()
+                .iter()
+                .any(|item| item.session_id == session_id)
+        })
 }
 
 pub fn set_run_state(session_id: &str, state: RemoteRunState) {
@@ -181,7 +240,14 @@ pub fn on_bus_event(event: &BusEvent) {
             reasoning,
             ..
         } => {
-            set_run_state(session_id, RemoteRunState::Idle);
+            let waiting_plan = crate::core::tools::plan_mode::shared_plan_mode_store()
+                .is_awaiting_approval(session_id)
+                || crate::core::tools::plan_mode::content_requests_plan_approval(content);
+            if waiting_plan {
+                set_run_state(session_id, RemoteRunState::WaitingApproval);
+            } else {
+                set_run_state(session_id, RemoteRunState::Idle);
+            }
             broadcast_server_message(&ServerMessage::Event {
                 name: "chat.finished".into(),
                 data: json!({
@@ -229,6 +295,15 @@ pub fn on_bus_event(event: &BusEvent) {
             active,
             source,
         } => {
+            if !*active && run_state_for(session_id) == RemoteRunState::WaitingApproval {
+                let still_blocked = crate::core::tools::tool_approval::shared_tool_approval_store()
+                    .pending_items()
+                    .iter()
+                    .any(|item| item.session_id == *session_id);
+                if !still_blocked {
+                    set_run_state(session_id, RemoteRunState::Idle);
+                }
+            }
             broadcast_server_message(&ServerMessage::Event {
                 name: "session.planMode".into(),
                 data: json!({
@@ -446,7 +521,13 @@ pub fn on_bus_event(event: &BusEvent) {
             result,
             success,
         } => {
-            set_run_state(session_id, RemoteRunState::Streaming);
+            // A plan-gate rejection ends the turn; do not leave Companion on
+            // Streaming ("回答中") until ChatFinished arrives.
+            if !*success && result.contains(crate::core::tools::plan_mode::PLAN_GATE_BLOCKED) {
+                set_run_state(session_id, RemoteRunState::WaitingApproval);
+            } else {
+                set_run_state(session_id, RemoteRunState::Streaming);
+            }
             broadcast_server_message(&ServerMessage::Event {
                 name: "tool.finished".into(),
                 data: json!({
@@ -497,11 +578,10 @@ pub fn build_session_snapshot(app: &AppHandle) -> Value {
                 title: session.preview.clone(),
                 updated_at_epoch_ms: session.updated_at,
                 workspace_id: session.workspace_id.clone(),
-                workspace_name: session
-                    .workspace_id
-                    .as_deref()
-                    .and_then(workspace_name),
+                workspace_name: session.workspace_id.as_deref().and_then(workspace_name),
                 run_state,
+                plan_mode_active: crate::core::tools::plan_mode::shared_plan_mode_store()
+                    .is_active(&session.session_id),
             }
         })
         .collect();

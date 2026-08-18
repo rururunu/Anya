@@ -47,8 +47,16 @@ impl Tool for UpdateTasksTool {
             let mut guard = self.tasks.lock().map_err(|_| ToolError::new("task lock"))?;
             *guard = parsed.clone();
         }
+        let session_id = ctx.root_session_id();
+        if parsed
+            .iter()
+            .any(|task| crate::core::tools::plan_mode::task_status_is_open(&task.status))
+        {
+            crate::core::tools::plan_mode::shared_plan_mode_store()
+                .mark_awaiting_approval(session_id);
+        }
         self.event_bus.emit(BusEvent::TaskListUpdated {
-            session_id: ctx.root_session_id().to_string(),
+            session_id: session_id.to_string(),
             tasks: parsed,
         });
         Ok("updated".into())

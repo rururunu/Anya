@@ -54,3 +54,12 @@ export function hydrateChartBlocks(root: HTMLElement) {
       console.error("chart card load failed:", error);
     });
 }
+
+export function disposeChartBlocks(root: HTMLElement) {
+  for (const node of [...mountedContainers.keys()]) {
+    if (root.contains(node) || !node.isConnected) {
+      render(null, node);
+      mountedContainers.delete(node);
+    }
+  }
+}

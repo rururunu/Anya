@@ -69,7 +69,8 @@ fn start_hotkey_listener(app: AppHandle) {
                     if primary_enabled {
                         primary_detector.key_press(key, now_millis(), primary);
                     } else {
-                        primary_detector = crate::services::hotkey::DoubleModifierDetector::default();
+                        primary_detector =
+                            crate::services::hotkey::DoubleModifierDetector::default();
                     }
                     if secondary_enabled {
                         secondary.key_press(key, &chord);
@@ -79,10 +80,9 @@ fn start_hotkey_listener(app: AppHandle) {
                     false
                 }
                 EventType::KeyRelease(key) => {
-                    let primary_hit = primary_enabled
-                        && primary_detector.key_release(key, now_millis(), primary);
-                    let chord_hit =
-                        secondary_enabled && secondary.key_release(key, &chord);
+                    let primary_hit =
+                        primary_enabled && primary_detector.key_release(key, now_millis(), primary);
+                    let chord_hit = secondary_enabled && secondary.key_release(key, &chord);
                     primary_hit || chord_hit
                 }
                 _ => false,

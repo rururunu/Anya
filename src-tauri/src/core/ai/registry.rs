@@ -5,7 +5,7 @@ use tauri::AppHandle;
 use super::antigravity::AntigravityProvider;
 use super::deepseek::DeepSeekProvider;
 use super::provider::AIProvider;
-use crate::models::settings::{AppSettings, CustomProviderConfig, ReasoningEffort};
+use crate::models::settings::{AppSettings, CustomProviderConfig, ProviderApiProtocol, ReasoningEffort};
 use crate::services::gemini_oauth;
 use crate::services::settings_store;
 
@@ -127,7 +127,7 @@ pub(crate) fn resolve_provider_for_selection(
     let resolve_base_url = {
         let app = app.clone();
         let selected_model = model.clone();
-        let selected_provider = provider_hint;
+        let selected_provider = provider_hint.clone();
         Arc::new(move || -> Option<String> {
             let settings = settings_store::get_settings(&app).unwrap_or_default();
             custom_provider_for_selection(&settings, &selected_model, &selected_provider).and_then(
@@ -139,6 +139,18 @@ pub(crate) fn resolve_provider_for_selection(
         })
     };
 
+    let resolve_api_protocol = {
+        let app = app.clone();
+        let selected_model = model;
+        let selected_provider = provider_hint;
+        Arc::new(move || -> ProviderApiProtocol {
+            let settings = settings_store::get_settings(&app).unwrap_or_default();
+            custom_provider_for_selection(&settings, &selected_model, &selected_provider)
+                .map(|custom| custom.api_protocol)
+                .unwrap_or_default()
+        })
+    };
+
     Arc::new(DeepSeekProvider::new(
         app.clone(),
         resolve_api_key,
@@ -147,6 +159,7 @@ pub(crate) fn resolve_provider_for_selection(
         resolve_pass_tool_reasoning,
         resolve_continue_thinking_after_tools,
         Some(resolve_base_url),
+        resolve_api_protocol,
     ))
 }
 
@@ -163,6 +176,7 @@ mod tests {
             api_key: api_key.into(),
             models: "shared-model".into(),
             preset_id: None,
+            api_protocol: Default::default(),
         }
     }
 

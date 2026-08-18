@@ -10,9 +10,9 @@ use crate::runtime::terminal::{prepare_command, prepare_powershell};
 
 use super::error::ToolError;
 use crate::core::tools::context::ToolContext;
-use crate::core::tools::shell_judge::{judge_shell_completion, CompletionVerdict};
 #[cfg(windows)]
 use crate::core::tools::sandbox::restricted_process;
+use crate::core::tools::shell_judge::{judge_shell_completion, CompletionVerdict};
 
 const WAIT_POLL: Duration = Duration::from_millis(100);
 const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -100,7 +100,7 @@ impl ShellJobStore {
         let mut child = if crate::core::tools::sandbox::restricted_shell() {
             #[cfg(windows)]
             {
-            restricted_process::spawn_powershell(&command, cwd, &cancelled)?
+                restricted_process::spawn_powershell(&command, cwd, &cancelled)?
             }
             #[cfg(not(windows))]
             {
@@ -255,7 +255,10 @@ impl ShellJobStore {
                                 Ok(guard) => guard,
                                 Err(_) => return,
                             };
-                            guard.get(job_id).map(|job| job.output.clone()).unwrap_or_default()
+                            guard
+                                .get(job_id)
+                                .map(|job| job.output.clone())
+                                .unwrap_or_default()
                         };
                         judge_shell_completion(ctx, &command, &output)
                     }
@@ -776,7 +779,7 @@ fn run_foreground_with_policy(
     let mut child = if restricted {
         #[cfg(windows)]
         {
-        restricted_process::spawn_powershell(command, cwd, cancelled)?
+            restricted_process::spawn_powershell(command, cwd, cancelled)?
         }
         #[cfg(not(windows))]
         {
@@ -881,7 +884,8 @@ fn run_foreground_with_policy(
                     last_progress = Instant::now();
                     stall_unconfirmed = false;
                     cpu_at_progress = probe.cpu_time();
-                } else if let (Some(now_cpu), Some(baseline)) = (probe.cpu_time(), cpu_at_progress) {
+                } else if let (Some(now_cpu), Some(baseline)) = (probe.cpu_time(), cpu_at_progress)
+                {
                     // Silent but busy: a command can compile or link for
                     // minutes without printing anything, so CPU burned
                     // anywhere in the tree counts as progress too.
@@ -901,7 +905,11 @@ fn run_foreground_with_policy(
                         since_progress: last_progress.elapsed(),
                         since_judge: last_judge.map(|at| at.elapsed()),
                         judge_interval,
-                        judge_rounds_left: if judge.is_some() { judge_rounds_left } else { 0 },
+                        judge_rounds_left: if judge.is_some() {
+                            judge_rounds_left
+                        } else {
+                            0
+                        },
                         stall_unconfirmed,
                         activity_measurable,
                     },
@@ -924,8 +932,7 @@ fn run_foreground_with_policy(
                         };
                         last_judge = Some(Instant::now());
                         judge_rounds_left = judge_rounds_left.saturating_sub(1);
-                        judge_interval =
-                            std::cmp::min(judge_interval * 2, IDLE_CHECK_MAX_INTERVAL);
+                        judge_interval = std::cmp::min(judge_interval * 2, IDLE_CHECK_MAX_INTERVAL);
                         let output = format_streams(
                             &decode_process_bytes(&stdout_bytes),
                             &decode_process_bytes(&stderr_bytes),
@@ -933,8 +940,7 @@ fn run_foreground_with_policy(
                         match judge_shell_completion(ctx, command, &output) {
                             CompletionVerdict::Finished => {
                                 terminate_process_tree(&mut child);
-                                let exit_code =
-                                    child.wait().ok().and_then(|status| status.code());
+                                let exit_code = child.wait().ok().and_then(|status| status.code());
                                 drain_until_quiet(
                                     &stdout_rx,
                                     &stderr_rx,
@@ -1133,8 +1139,7 @@ mod tests {
             signal.store(true, Ordering::Relaxed);
         });
 
-        let error =
-            run_foreground("Start-Sleep -Seconds 30", None, &cancelled, None).unwrap_err();
+        let error = run_foreground("Start-Sleep -Seconds 30", None, &cancelled, None).unwrap_err();
         canceller.join().unwrap();
 
         assert!(error.is_cancelled());
@@ -1210,7 +1215,10 @@ mod tests {
             started.elapsed().as_secs()
         );
         assert!(result.contains("done"), "missing final output: {result}");
-        assert!(result.contains("note:"), "expected held-pipe note: {result}");
+        assert!(
+            result.contains("note:"),
+            "expected held-pipe note: {result}"
+        );
     }
 
     /// A direct child that never exits on its own (e.g. a wrapper process
@@ -1236,7 +1244,10 @@ mod tests {
             "lingering process was not reclaimed promptly: {}s",
             started.elapsed().as_secs()
         );
-        assert!(result.contains("build succeeded"), "missing output: {result}");
+        assert!(
+            result.contains("build succeeded"),
+            "missing output: {result}"
+        );
         assert!(
             result.contains("note:"),
             "expected idle-completion note: {result}"
@@ -1325,7 +1336,10 @@ mod tests {
             stall_unconfirmed: true,
             ..stalled
         };
-        assert_eq!(next_wait_action(&policy(), &unconfirmed), WaitAction::Stalled);
+        assert_eq!(
+            next_wait_action(&policy(), &unconfirmed),
+            WaitAction::Stalled
+        );
 
         // No judge available (or rounds exhausted): the stall alone decides.
         let no_judge = WaitSnapshot {
@@ -1356,7 +1370,10 @@ mod tests {
             elapsed: IDLE_CHECK_GRACE - Duration::from_secs(1),
             ..snapshot()
         };
-        assert_eq!(next_wait_action(&policy(), &too_early), WaitAction::KeepWaiting);
+        assert_eq!(
+            next_wait_action(&policy(), &too_early),
+            WaitAction::KeepWaiting
+        );
 
         let first_check = WaitSnapshot {
             elapsed: IDLE_CHECK_GRACE,
@@ -1379,7 +1396,10 @@ mod tests {
             since_judge: Some(IDLE_CHECK_MIN_INTERVAL),
             ..snapshot()
         };
-        assert_eq!(next_wait_action(&policy(), &backoff_elapsed), WaitAction::Judge);
+        assert_eq!(
+            next_wait_action(&policy(), &backoff_elapsed),
+            WaitAction::Judge
+        );
     }
 
     /// A command that burns CPU without printing anything (compiling,
@@ -1420,14 +1440,9 @@ mod tests {
             stall: Duration::from_secs(2),
         };
         let started = Instant::now();
-        let error = run_foreground_with_policy(
-            "Start-Sleep -Seconds 300",
-            None,
-            &cancelled,
-            None,
-            policy,
-        )
-        .expect_err("an idle process must be reported as stuck");
+        let error =
+            run_foreground_with_policy("Start-Sleep -Seconds 300", None, &cancelled, None, policy)
+                .expect_err("an idle process must be reported as stuck");
         assert!(
             started.elapsed() < Duration::from_secs(30),
             "stuck command was not reclaimed promptly: {}s",
@@ -1464,7 +1479,10 @@ mod tests {
             let status = store.read_output_limited(&id, None, None).expect("read");
             if status.contains("status: done") {
                 assert!(status.contains("done"), "missing final output: {status}");
-                assert!(status.contains("note:"), "expected held-pipe note: {status}");
+                assert!(
+                    status.contains("note:"),
+                    "expected held-pipe note: {status}"
+                );
                 break;
             }
             assert!(

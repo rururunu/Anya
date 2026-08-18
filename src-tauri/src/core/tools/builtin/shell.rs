@@ -50,7 +50,12 @@ impl Tool for RunShellTool {
                 Some(ctx.clone()),
             );
         }
-        run_foreground(command, Some(&ctx.workspace_root), &ctx.cancelled, Some(ctx))
+        run_foreground(
+            command,
+            Some(&ctx.workspace_root),
+            &ctx.cancelled,
+            Some(ctx),
+        )
     }
 }
 

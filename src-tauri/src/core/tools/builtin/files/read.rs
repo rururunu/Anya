@@ -16,6 +16,12 @@ use crate::core::tools::error::ToolError;
 
 use super::{office, resolve_read, run_command_cancellable, should_skip};
 
+/// Recursive listing without a cap walks huge trees (and still emits
+/// `node_modules`-adjacent leftovers) — that stalls both the tool and the
+/// next model turn. Keep the dump small; `find_files` is the glob path.
+const LIST_FOLDER_MAX_ENTRIES: usize = 400;
+const LIST_FOLDER_MAX_DEPTH: usize = 6;
+
 pub struct ReadFileTool;
 pub struct ListFolderTool;
 pub struct FindFilesTool;
@@ -129,12 +135,23 @@ impl Tool for ListFolderTool {
                     "file"
                 };
                 entries.push(format!("[{kind}] {name}"));
+                if entries.len() >= LIST_FOLDER_MAX_ENTRIES {
+                    break;
+                }
             }
             entries.sort();
-            return Ok(entries.join("\n"));
+            let mut out = entries.join("\n");
+            if entries.len() >= LIST_FOLDER_MAX_ENTRIES {
+                out.push_str(&format!(
+                    "\n… truncated after {LIST_FOLDER_MAX_ENTRIES} entries. Use a narrower path or find_files."
+                ));
+            }
+            return Ok(out);
         }
         let mut lines = Vec::new();
+        let mut truncated = false;
         for entry in WalkDir::new(&resolved)
+            .max_depth(LIST_FOLDER_MAX_DEPTH)
             .into_iter()
             .filter_entry(|e| !should_skip(e.path()))
         {
@@ -151,8 +168,18 @@ impl Tool for ListFolderTool {
                 "file"
             };
             lines.push(format!("[{kind}] {rel}"));
+            if lines.len() >= LIST_FOLDER_MAX_ENTRIES {
+                truncated = true;
+                break;
+            }
         }
-        Ok(lines.join("\n"))
+        let mut out = lines.join("\n");
+        if truncated {
+            out.push_str(&format!(
+                "\n… truncated after {LIST_FOLDER_MAX_ENTRIES} entries (max depth {LIST_FOLDER_MAX_DEPTH}). Use a narrower path or find_files."
+            ));
+        }
+        Ok(out)
     }
 }
 
@@ -300,5 +327,71 @@ impl Tool for ListSymbolsTool {
             ));
         }
         Ok(out.join("\n"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::chat::conversation_manager::ConversationManager;
+    use crate::core::event::{BusEvent, EventBus};
+    use crate::core::tools::context::{AskStore, PathPermissionStore, ToolContext};
+    use std::sync::{atomic::AtomicBool, Arc, Mutex};
+
+    struct NullBus;
+    impl EventBus for NullBus {
+        fn emit(&self, _event: BusEvent) {}
+    }
+
+    fn make_ctx(workspace: std::path::PathBuf) -> (ToolContext, std::path::PathBuf) {
+        let db = std::env::temp_dir().join(format!("peek-list-{}.db", uuid::Uuid::new_v4()));
+        let ctx = ToolContext {
+            workspace_root: workspace,
+            request_context: Default::default(),
+            session_id: "s".into(),
+            assistant_message_id: "a".into(),
+            conversation: Arc::new(ConversationManager::new(db.clone())),
+            event_bus: Arc::new(NullBus),
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            ask_store: Arc::new(AskStore::new()),
+            path_permission_store: Arc::new(PathPermissionStore::new()),
+            registry: None,
+            provider: None,
+            subagent_depth: 0,
+            max_subagent_depth: 1,
+            subagent_id: None,
+            parent_activity_id: None,
+            app_handle: None,
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        (ctx, db)
+    }
+
+    #[test]
+    fn recursive_list_caps_depth_and_count() {
+        let root = std::env::temp_dir().join(format!("peek-list-ws-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut deep = root.clone();
+        for level in 0..8 {
+            deep.push(format!("d{level}"));
+            std::fs::create_dir_all(&deep).unwrap();
+        }
+        std::fs::write(deep.join("hidden.txt"), "x").unwrap();
+        for index in 0..(LIST_FOLDER_MAX_ENTRIES + 20) {
+            std::fs::write(root.join(format!("f{index}.txt")), "x").unwrap();
+        }
+
+        let (ctx, db) = make_ctx(root.clone());
+        let out = ListFolderTool
+            .execute(&ctx, json!({ "path": ".", "recursive": true }))
+            .unwrap();
+        assert!(out.contains("truncated"));
+        assert!(!out.contains("hidden.txt"));
+        let entry_lines = out.lines().filter(|line| line.starts_with('[')).count();
+        assert!(entry_lines <= LIST_FOLDER_MAX_ENTRIES);
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(db);
     }
 }

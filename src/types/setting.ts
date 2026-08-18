@@ -138,6 +138,14 @@ export interface McpServerConfig {
   source?: string;
 }
 
+export type ProviderApiProtocol = "chatCompletions" | "responses";
+
+export const DEFAULT_PROVIDER_API_PROTOCOL: ProviderApiProtocol = "chatCompletions";
+
+export function normalizeProviderApiProtocol(value: unknown): ProviderApiProtocol {
+  return value === "responses" ? "responses" : "chatCompletions";
+}
+
 export interface CustomProviderConfig {
   id: string;
   name: string;
@@ -147,6 +155,8 @@ export interface CustomProviderConfig {
   models: string;
   /** Optional preset template id (mimo / zhipu / …) for icons and defaults. */
   presetId?: string;
+  /** `chatCompletions` (default) or `responses`. Grok thinking needs Responses. */
+  apiProtocol?: ProviderApiProtocol;
 }
 
 export interface GeminiOAuthSettings {

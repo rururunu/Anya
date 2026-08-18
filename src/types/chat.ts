@@ -361,6 +361,8 @@ export interface ChatContextNoticeEvent {
   message: string;
   usageRatio: number;
   foldedMessages?: number;
+  estimatedTokens?: number;
+  contextWindowTokens?: number;
 }
 
 export interface ContextUsageSnapshot {

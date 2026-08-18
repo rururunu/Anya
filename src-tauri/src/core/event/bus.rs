@@ -94,6 +94,8 @@ pub enum BusEvent {
         message: String,
         usage_ratio: f32,
         folded_messages: Option<usize>,
+        estimated_tokens: usize,
+        context_window_tokens: usize,
     },
     AskUser {
         session_id: String,

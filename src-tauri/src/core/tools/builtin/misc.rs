@@ -251,7 +251,9 @@ impl Tool for SearchCodebaseTool {
         // Retrieve a larger keyword candidate set, then re-rank semantically
         // when the embedding model is ready (retrieve-then-rerank).
         let candidate_limit = limit.max(30).min(80);
-        let mut hits = index.search(query, candidate_limit).map_err(ToolError::new)?;
+        let mut hits = index
+            .search(query, candidate_limit)
+            .map_err(ToolError::new)?;
         if hits.len() > 1 && crate::core::ai::embed::SemanticSearchEngine::is_ready() {
             let passages: Vec<String> = hits.iter().map(|h| h.snippet.clone()).collect();
             if let Ok(scores) =
@@ -346,7 +348,10 @@ use share_preview_url instead."
         if raw.is_empty() {
             return Err(ToolError::new("path is required"));
         }
-        let label = args["label"].as_str().map(str::trim).filter(|s| !s.is_empty());
+        let label = args["label"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
 
         let (rel_path, absolute, workspace_id) = prepare_share_path(ctx, raw)?;
         let meta = std::fs::metadata(&absolute).map_err(|e| ToolError::new(e.to_string()))?;
@@ -438,12 +443,9 @@ Use after starting a Vite/Next/static server, or whenever the deliverable is a r
         if !state.is_running() {
             crate::core::remote::start_gateway(app.clone(), None).map_err(ToolError::new)?;
         }
-        let preview = crate::core::remote::preview::register_preview(
-            app,
-            raw,
-            ctx.root_session_id(),
-        )
-        .map_err(ToolError::new)?;
+        let preview =
+            crate::core::remote::preview::register_preview(app, raw, ctx.root_session_id())
+                .map_err(ToolError::new)?;
         let public_url = crate::core::remote::preview::public_preview_url(app, &preview.id);
         let offer_id = preview.id.clone();
         ctx.event_bus.emit(BusEvent::UrlOffer {
@@ -474,17 +476,17 @@ fn resolve_share_workspace(
             let manager = state.core.workspaces();
             let list = manager.list();
 
-            if let Some(id) = ctx.conversation.workspace_for_session(ctx.root_session_id()) {
+            if let Some(id) = ctx
+                .conversation
+                .workspace_for_session(ctx.root_session_id())
+            {
                 if let Some(ws) = list.iter().find(|w| w.id == id) {
                     return Ok((ws.root.clone(), Some(ws.id.clone())));
                 }
             }
 
             let ctx_root = normalize_path(&ctx.workspace_root);
-            if let Some(ws) = list
-                .iter()
-                .find(|w| normalize_path(&w.root) == ctx_root)
-            {
+            if let Some(ws) = list.iter().find(|w| normalize_path(&w.root) == ctx_root) {
                 return Ok((ws.root.clone(), Some(ws.id.clone())));
             }
 

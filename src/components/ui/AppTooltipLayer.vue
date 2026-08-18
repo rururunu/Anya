@@ -125,6 +125,15 @@ onMounted(() => {
       record.addedNodes.forEach((node) => {
         if (node instanceof HTMLElement) adoptTitles(node);
       });
+      record.removedNodes.forEach((node) => {
+        if (
+          activeTarget &&
+          node instanceof Node &&
+          (node === activeTarget || node.contains(activeTarget))
+        ) {
+          hide();
+        }
+      });
     }
   });
   observer.observe(document.body, {

@@ -1,3 +1,4 @@
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
@@ -23,6 +24,20 @@ impl PathAccess {
 
 struct PendingPermission {
     sender: mpsc::Sender<PermissionDecision>,
+    session_id: String,
+    path: String,
+    operation: String,
+    tool_name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingPathPermissionSnapshot {
+    pub request_id: String,
+    pub session_id: String,
+    pub path: String,
+    pub operation: String,
+    pub tool_name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,20 +91,41 @@ impl PathPermissionStore {
             .any(|grant| grant.access == access && path_starts_with(&normalized, &grant.prefix))
     }
 
-    pub fn complete(&self, request_id: &str, decision: &str) -> bool {
+    /// Completes a pending request. Returns the session id when a waiter was notified.
+    pub fn complete(&self, request_id: &str, decision: &str) -> Option<String> {
         let Some(decision) = PermissionDecision::parse(decision) else {
-            return false;
+            return None;
         };
-        let sender = self
+        let pending = self
             .pending
             .lock()
             .ok()
-            .and_then(|mut guard| guard.remove(request_id).map(|pending| pending.sender));
-        if let Some(sender) = sender {
-            let _ = sender.send(decision);
-            return true;
-        }
-        false
+            .and_then(|mut guard| guard.remove(request_id));
+        let Some(pending) = pending else {
+            return None;
+        };
+        let session_id = pending.session_id.clone();
+        let _ = pending.sender.send(decision);
+        Some(session_id)
+    }
+
+    pub fn pending_items(&self) -> Vec<PendingPathPermissionSnapshot> {
+        self.pending
+            .lock()
+            .ok()
+            .map(|guard| {
+                guard
+                    .iter()
+                    .map(|(request_id, pending)| PendingPathPermissionSnapshot {
+                        request_id: request_id.clone(),
+                        session_id: pending.session_id.clone(),
+                        path: pending.path.clone(),
+                        operation: pending.operation.clone(),
+                        tool_name: pending.tool_name.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn request_and_grant(
@@ -103,7 +139,16 @@ impl PathPermissionStore {
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = mpsc::channel();
         if let Ok(mut guard) = self.pending.lock() {
-            guard.insert(request_id.clone(), PendingPermission { sender: tx });
+            guard.insert(
+                request_id.clone(),
+                PendingPermission {
+                    sender: tx,
+                    session_id: session_id.to_string(),
+                    path: path.display().to_string(),
+                    operation: access.as_str().to_string(),
+                    tool_name: tool_name.to_string(),
+                },
+            );
         }
 
         event_bus.emit(BusEvent::PathPermissionRequest {
@@ -169,6 +214,51 @@ mod tests {
         let path = PathBuf::from(r"C:\Users\demo\Desktop\test.txt");
         let grant = grant_prefix_for_path(&path, PathAccess::Write);
         assert_eq!(grant, PathBuf::from(r"C:\Users\demo\Desktop"));
+    }
+
+    #[test]
+    fn pending_items_surface_path_requests() {
+        use crate::core::event::{BusEvent, EventBus};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        struct NullBus;
+        impl EventBus for NullBus {
+            fn emit(&self, _event: BusEvent) {}
+        }
+
+        let store = Arc::new(PathPermissionStore::new());
+        let bus: Arc<dyn EventBus> = Arc::new(NullBus);
+        let waiter = Arc::clone(&store);
+        let bus_clone = Arc::clone(&bus);
+        let handle = std::thread::spawn(move || {
+            waiter.request_and_grant(
+                "s1",
+                &bus_clone,
+                PathBuf::from("/tmp/a.txt"),
+                PathAccess::Read,
+                "read_file",
+            )
+        });
+        let started = std::time::Instant::now();
+        let items = loop {
+            let items = store.pending_items();
+            if !items.is_empty() {
+                break items;
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "timed out waiting for pending path permission"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].session_id, "s1");
+        assert_eq!(items[0].tool_name, "read_file");
+        assert!(store.complete(&items[0].request_id, "deny").is_some());
+        let result = handle.join().expect("thread");
+        assert!(result.is_err());
+        assert!(store.pending_items().is_empty());
     }
 
     #[test]

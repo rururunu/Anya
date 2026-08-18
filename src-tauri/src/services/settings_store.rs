@@ -54,11 +54,7 @@ pub fn configure_prestart_webview() {
             "ai.aaai.desktop"
         })
         .join(SETTINGS_FILE);
-    let settings_file = if path.is_file() {
-        path
-    } else {
-        legacy_path
-    };
+    let settings_file = if path.is_file() { path } else { legacy_path };
     let parsed = fs::read_to_string(&settings_file)
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());

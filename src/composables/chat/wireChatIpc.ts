@@ -16,6 +16,7 @@ import {
   listenUrlOffer,
 } from "@/services/ipc";
 import { normalizeToolActivityEvent, resolveSessionId } from "@/services/chat/normalize";
+import { parseContextCompactedStatus } from "@/services/chat/compactMarker";
 import { createRafBatch } from "@/services/chat/rafBatch";
 import { recordToolActivityUsage } from "@/services/usage/resourceUsage";
 import { createLogger } from "@/services/logger";
@@ -79,16 +80,35 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
   await listenChatContextNotice((payload) => {
     const event = payload as ChatContextNoticeEvent & {
       session_id?: string;
+      folded_messages?: number;
+      estimated_tokens?: number;
+      context_window_tokens?: number;
     };
     const sId = resolveSessionId(event.sessionId, event.session_id);
     if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
-      chatStore.setContextNotice(sId, event.message);
+      const estimatedTokens = event.estimatedTokens ?? event.estimated_tokens;
+      const contextWindowTokens = event.contextWindowTokens ?? event.context_window_tokens;
       const prev = chatStore.contextUsage[sId];
-      chatStore.setContextUsage(sId, {
-        usageRatio: event.usageRatio,
-        estimatedTokens: prev?.estimatedTokens ?? 0,
-        contextWindowTokens: prev?.contextWindowTokens ?? 0,
-      });
+      if (
+        typeof estimatedTokens === "number" &&
+        estimatedTokens > 0 &&
+        typeof contextWindowTokens === "number" &&
+        contextWindowTokens > 0
+      ) {
+        chatStore.setContextUsage(sId, {
+          usageRatio: event.usageRatio,
+          estimatedTokens,
+          contextWindowTokens,
+        });
+      } else if (typeof event.usageRatio === "number") {
+        chatStore.setContextUsage(sId, {
+          usageRatio: event.usageRatio,
+          estimatedTokens: prev?.estimatedTokens ?? 0,
+          contextWindowTokens: prev?.contextWindowTokens ?? 0,
+        });
+      }
+      // Compacted notices only refresh the usage ring. The in-thread
+      // indicator is a transient activity label, not a history divider.
     }
   });
 
@@ -132,6 +152,19 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
     if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
       if (event.kind?.startsWith("stream_retry")) {
         streamBatch.drain();
+      }
+      const compacted = parseContextCompactedStatus(event.kind ?? "");
+      if (
+        compacted &&
+        compacted.usageRatio != null &&
+        compacted.estimatedTokens &&
+        compacted.contextWindowTokens
+      ) {
+        chatStore.setContextUsage(sId, {
+          usageRatio: compacted.usageRatio,
+          estimatedTokens: compacted.estimatedTokens,
+          contextWindowTokens: compacted.contextWindowTokens,
+        });
       }
       chatStore.setActivityStatus(
         sId,

@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 use crate::models::chat::ChatModelInfo;
+use crate::models::settings::ProviderApiProtocol;
 
 use super::ProviderError;
 
@@ -26,13 +27,7 @@ pub async fn list_models(api_key: &str) -> Result<Vec<ChatModelInfo>, ProviderEr
         ));
     }
 
-    let models = list_openai_compatible_models(
-        MODELS_URL,
-        api_key,
-        "deepseek",
-        None,
-    )
-    .await?;
+    let models = list_openai_compatible_models(MODELS_URL, api_key, "deepseek", None).await?;
     Ok(models)
 }
 
@@ -92,8 +87,36 @@ pub async fn list_openai_compatible_models(
 
 /// Normalize an OpenAI-compatible base URL to a models listing endpoint.
 pub fn normalize_models_url(base_url: &str) -> String {
+    format!("{}/models", openai_versioned_root(base_url))
+}
+
+/// Normalize an OpenAI-compatible base URL to a chat completions endpoint.
+///
+/// Bare hosts such as `https://www.micuapi.ai` (NewAPI) must become
+/// `.../v1/chat/completions`, not `.../chat/completions`.
+pub(crate) fn normalize_chat_completions_url(base_url: &str) -> String {
+    format!("{}/chat/completions", openai_versioned_root(base_url))
+}
+
+/// xAI Chat Completions does not return reasoning text. Grok thinking is only
+/// available on the Responses API (`/v1/responses`).
+pub(crate) fn normalize_responses_url(base_url: &str) -> String {
+    format!("{}/responses", openai_versioned_root(base_url))
+}
+
+pub(crate) fn endpoint_url_for_protocol(base_url: &str, protocol: ProviderApiProtocol) -> String {
+    match protocol {
+        ProviderApiProtocol::Responses => normalize_responses_url(base_url),
+        ProviderApiProtocol::ChatCompletions => normalize_chat_completions_url(base_url),
+    }
+}
+
+fn openai_versioned_root(base_url: &str) -> String {
     let mut base = base_url.trim().trim_end_matches('/').to_string();
     if let Some(stripped) = base.strip_suffix("/chat/completions") {
+        base = stripped.trim_end_matches('/').to_string();
+    }
+    if let Some(stripped) = base.strip_suffix("/responses") {
         base = stripped.trim_end_matches('/').to_string();
     }
     if let Some(stripped) = base.strip_suffix("/models") {
@@ -102,22 +125,7 @@ pub fn normalize_models_url(base_url: &str) -> String {
     if !has_versioned_api_path(&base) {
         base = format!("{base}/v1");
     }
-    format!("{base}/models")
-}
-
-/// Normalize an OpenAI-compatible base URL to a chat completions endpoint.
-///
-/// Bare hosts such as `https://www.micuapi.ai` (NewAPI) must become
-/// `.../v1/chat/completions`, not `.../chat/completions`.
-pub(crate) fn normalize_chat_completions_url(base_url: &str) -> String {
-    let mut base = base_url.trim().trim_end_matches('/').to_string();
-    if let Some(stripped) = base.strip_suffix("/chat/completions") {
-        base = stripped.trim_end_matches('/').to_string();
-    }
-    if !has_versioned_api_path(&base) {
-        base = format!("{base}/v1");
-    }
-    format!("{base}/chat/completions")
+    base
 }
 
 fn has_versioned_api_path(base: &str) -> bool {

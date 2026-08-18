@@ -73,7 +73,10 @@ fn configure_updater_pubkey() {
         serde_json::from_str(&raw).expect("parse tauri.conf.json")
     });
 
-    if !config.get("plugins").is_some_and(serde_json::Value::is_object) {
+    if !config
+        .get("plugins")
+        .is_some_and(serde_json::Value::is_object)
+    {
         config["plugins"] = serde_json::json!({});
     }
     if !config

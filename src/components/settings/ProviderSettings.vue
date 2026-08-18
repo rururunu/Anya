@@ -306,6 +306,24 @@
           </div>
 
           <div class="field-row">
+            <label>{{ t("settings.provider.apiProtocol") }}</label>
+            <Select :model-value="customApiProtocol" @update:model-value="onProtocolChange">
+              <SelectTrigger class="h-8 w-full text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="chatCompletions">
+                  {{ t("settings.provider.apiProtocolChatCompletions") }}
+                </SelectItem>
+                <SelectItem value="responses">
+                  {{ t("settings.provider.apiProtocolResponses") }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p class="field-hint">{{ protocolHint }}</p>
+          </div>
+
+          <div class="field-row">
             <label>{{ t("settings.provider.apiKey") }}</label>
             <SecretInput v-model="customKey" placeholder="sk-..." @blur="saveCustom" />
           </div>
@@ -406,7 +424,8 @@ import {
 } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import type { SettingsI18nKey } from "@/services/locales/settings";
-import type { CustomProviderConfig } from "@/types/setting";
+import type { CustomProviderConfig, ProviderApiProtocol } from "@/types/setting";
+import { DEFAULT_PROVIDER_API_PROTOCOL, normalizeProviderApiProtocol } from "@/types/setting";
 import { getProviderIcon } from "@/lib/providerIcons";
 import {
   CUSTOM_PROVIDER_PRESETS,
@@ -416,6 +435,13 @@ import {
   serializeProviderModels,
   type ProviderPreset,
 } from "@/lib/providerPresets";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const DEEPSEEK_API_KEYS_URL = "https://platform.deepseek.com/api_keys";
 
@@ -450,9 +476,20 @@ const fetchModelsError = ref("");
 const customName = ref("");
 const customUrl = ref("");
 const customKey = ref("");
+const customApiProtocol = ref<ProviderApiProtocol>(DEFAULT_PROVIDER_API_PROTOCOL);
 const customModelList = ref<string[]>([]);
 const customModelDraft = ref("");
 const providerPresets = CUSTOM_PROVIDER_PRESETS;
+
+const protocolHint = computed(() => {
+  if (
+    customApiProtocol.value === "chatCompletions" &&
+    /(?:^|\.)x\.ai(?:[:/?#]|$)/i.test(customUrl.value.trim())
+  ) {
+    return t("settings.provider.apiProtocolGrokHint");
+  }
+  return t("settings.provider.apiProtocolHint");
+});
 
 const availablePresets = computed(() => {
   const used = new Set(
@@ -585,6 +622,7 @@ function startEditCustom(id: string) {
     customName.value = provider.name;
     customUrl.value = provider.baseUrl;
     customKey.value = provider.apiKey;
+    customApiProtocol.value = normalizeProviderApiProtocol(provider.apiProtocol);
     customModelList.value = parseProviderModels(provider.models);
     customModelDraft.value = "";
     fetchModelsError.value = "";
@@ -602,6 +640,7 @@ function addBlankCustomProvider() {
   customName.value = "";
   customUrl.value = "";
   customKey.value = "";
+  customApiProtocol.value = DEFAULT_PROVIDER_API_PROTOCOL;
   customModelList.value = [];
   customModelDraft.value = "";
   fetchModelsError.value = "";
@@ -619,6 +658,7 @@ function addFromPreset(preset: ProviderPreset) {
   customName.value = preset.name;
   customUrl.value = preset.baseUrl;
   customKey.value = "";
+  customApiProtocol.value = DEFAULT_PROVIDER_API_PROTOCOL;
   customModelList.value = [...preset.models];
   customModelDraft.value = "";
   fetchModelsError.value = "";
@@ -689,6 +729,7 @@ async function saveCustom() {
   const nextKey = customKey.value.trim();
   const nextModels = serializeProviderModels(customModelList.value);
   const nextPresetId = customPresetId.value;
+  const nextProtocol = customApiProtocol.value;
 
   const list = [...settingStore.customProviders];
   const index = list.findIndex((p) => p.id === editingProviderId.value);
@@ -700,6 +741,7 @@ async function saveCustom() {
     apiKey: nextKey,
     models: nextModels,
     presetId: nextPresetId,
+    apiProtocol: nextProtocol,
   };
 
   if (index !== -1) {
@@ -709,7 +751,8 @@ async function saveCustom() {
       current.baseUrl === nextUrl &&
       current.apiKey === nextKey &&
       current.models === nextModels &&
-      current.presetId === nextPresetId
+      current.presetId === nextPresetId &&
+      normalizeProviderApiProtocol(current.apiProtocol) === nextProtocol
     ) {
       return;
     }
@@ -725,6 +768,11 @@ async function saveCustom() {
 async function saveCustomAndGoBack() {
   await saveCustom();
   currentView.value = "list";
+}
+
+function onProtocolChange(value: unknown) {
+  customApiProtocol.value = normalizeProviderApiProtocol(value);
+  void saveCustom();
 }
 
 async function deleteCustom(id: string | null) {

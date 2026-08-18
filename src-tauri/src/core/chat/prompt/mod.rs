@@ -7,7 +7,7 @@ mod slots;
 #[path = "tests.rs"]
 mod tests;
 
-use crate::core::runtime::{ChatMessage, ChatRequest, RequestContext, Role};
+use crate::core::runtime::{ChatMessage, ChatRequest, RequestContext};
 use crate::models::settings::{AppLanguage, ReasoningLanguage};
 
 use language::inject_language_blocks;
@@ -75,8 +75,12 @@ impl PromptBuilder {
         } = input;
         let mut messages = Vec::with_capacity(history.len() + 7);
 
-        // [0] Stable system — never moves.
-        if !history.iter().any(|message| message.role == Role::System) {
+        // Always inject the stable agent preamble. A compaction summary in
+        // history is an extra system note, not a replacement for SYSTEM_PROMPT.
+        if !history
+            .iter()
+            .any(|message| message.id == format!("system-{session_id}"))
+        {
             messages.push(system_message(session_id));
         }
 

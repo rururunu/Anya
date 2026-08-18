@@ -120,7 +120,9 @@ async fn collect_answer(
                     break;
                 }
             }
-            StreamEvent::TurnComplete { content: complete, .. } => {
+            StreamEvent::TurnComplete {
+                content: complete, ..
+            } => {
                 content = complete;
                 break;
             }
@@ -180,7 +182,10 @@ mod tests {
         assert_eq!(parse_verdict("RUNNING"), CompletionVerdict::Running);
         assert_eq!(parse_verdict("UNKNOWN"), CompletionVerdict::Unknown);
         assert_eq!(parse_verdict(""), CompletionVerdict::Unknown);
-        assert_eq!(parse_verdict("The build finished"), CompletionVerdict::Unknown);
+        assert_eq!(
+            parse_verdict("The build finished"),
+            CompletionVerdict::Unknown
+        );
         assert_eq!(parse_verdict("maybe"), CompletionVerdict::Unknown);
     }
 

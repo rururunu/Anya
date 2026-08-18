@@ -31,8 +31,6 @@ pub fn context_window_tokens(large_context_enabled: bool) -> usize {
         DEFAULT_CONTEXT_WINDOW
     }
 }
-/// 达到该比例时仅提示，不压缩。
-pub const SOFT_WARN_RATIO: f32 = 0.7;
 /// 达到该比例时尝试压缩较早消息。
 pub const COMPACT_TRIGGER_RATIO: f32 = 0.8;
 /// 保留最近 N 轮完整对话（user + assistant 各算一条）。
@@ -44,7 +42,6 @@ pub const SUMMARY_MAX_CHARS: usize = 4_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextNoticeKind {
-    ApproachingLimit,
     Compacted,
 }
 
@@ -53,12 +50,29 @@ pub struct ContextNotice {
     pub kind: ContextNoticeKind,
     pub usage_ratio: f32,
     pub folded_messages: Option<usize>,
+    pub estimated_tokens: usize,
+    pub context_window_tokens: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompactResult {
     pub messages: Vec<ChatMessage>,
     pub notice: Option<ContextNotice>,
+}
+
+impl CompactResult {
+    pub fn summary_message(&self) -> Option<&ChatMessage> {
+        self.messages
+            .iter()
+            .find(|message| is_compaction_summary(message))
+    }
+
+    pub fn first_kept_id(&self) -> Option<&str> {
+        self.messages
+            .iter()
+            .find(|message| !is_compaction_summary(message))
+            .map(|message| message.id.as_str())
+    }
 }
 
 #[async_trait]
@@ -161,7 +175,23 @@ impl ConversationSummarizer for ProviderSummarizer {
     }
 }
 
+fn reconstruct_prompt(
+    prior: Vec<ChatMessage>,
+    current_user: Option<ChatMessage>,
+    pending_tail: Vec<ChatMessage>,
+) -> Vec<ChatMessage> {
+    let mut messages = prior;
+    if let Some(user) = current_user {
+        messages.push(user);
+    }
+    messages.extend(pending_tail);
+    messages
+}
+
 /// 为 Prompt 准备历史：超阈值时优先 LLM 摘要，失败则机械折叠。
+///
+/// Already-compacted turns are sliced from the last `<compaction-summary>` so
+/// folded history is not sent (or counted) again.
 pub async fn prepare_history_for_prompt(
     history: &[ChatMessage],
     context: &RequestContext,
@@ -169,7 +199,8 @@ pub async fn prepare_history_for_prompt(
     context_window: usize,
     summarizer: Option<&dyn ConversationSummarizer>,
 ) -> CompactResult {
-    let (prior, current_user, pending_tail) = split_for_compact(history);
+    let effective = history_from_last_summary(history);
+    let (prior, current_user, pending_tail) = split_for_compact(effective);
 
     let estimated = estimate_history_tokens(&prior, context, current_user.as_ref());
     let usage_ratio = estimated as f32 / context_window.max(1) as f32;
@@ -181,30 +212,22 @@ pub async fn prepare_history_for_prompt(
                 messages.push(user);
             }
             messages.extend(pending_tail);
+            let post = measure_context_usage(&messages, context, None, context_window);
             return CompactResult {
                 messages,
                 notice: Some(ContextNotice {
                     kind: ContextNoticeKind::Compacted,
-                    usage_ratio,
+                    usage_ratio: post.usage_ratio,
                     folded_messages: Some(compacted.folded_count),
+                    estimated_tokens: post.estimated_tokens,
+                    context_window_tokens: context_window,
                 }),
             };
         }
     }
 
-    if usage_ratio >= SOFT_WARN_RATIO {
-        return CompactResult {
-            messages: history.to_vec(),
-            notice: Some(ContextNotice {
-                kind: ContextNoticeKind::ApproachingLimit,
-                usage_ratio,
-                folded_messages: None,
-            }),
-        };
-    }
-
     CompactResult {
-        messages: history.to_vec(),
+        messages: reconstruct_prompt(prior, current_user, pending_tail),
         notice: None,
     }
 }
@@ -215,6 +238,20 @@ pub struct ContextUsageMeasure {
     pub usage_ratio: f32,
 }
 
+/// True when this row is an auto-compact summary (prompt slicing only; not shown in the thread).
+pub fn is_compaction_summary(message: &ChatMessage) -> bool {
+    message.id.starts_with("compact-") || message.content.contains("<compaction-summary>")
+}
+
+/// Slice history from the latest compaction summary (inclusive) so folded
+/// turns are not counted or re-sent. The UI still shows the original thread.
+pub fn history_from_last_summary(history: &[ChatMessage]) -> &[ChatMessage] {
+    match history.iter().rposition(is_compaction_summary) {
+        Some(idx) => &history[idx..],
+        None => history,
+    }
+}
+
 /// Estimate prompt token usage for the current session plus optional unsent draft.
 pub fn measure_context_usage(
     history: &[ChatMessage],
@@ -222,6 +259,7 @@ pub fn measure_context_usage(
     draft_message: Option<&str>,
     context_window: usize,
 ) -> ContextUsageMeasure {
+    let history = history_from_last_summary(history);
     let mut estimated = estimate_tokens(SYSTEM_PROMPT);
     estimated += estimate_context_tokens(context);
 
@@ -259,7 +297,7 @@ pub fn estimate_history_tokens(
     total += estimate_context_tokens(context);
 
     for message in prior {
-        if message.content.trim().is_empty() {
+        if !message_has_estimable_tokens(message) {
             continue;
         }
         total += estimate_message_tokens(message);
@@ -341,18 +379,60 @@ pub async fn compact_prior(
     session_id: &str,
     summarizer: Option<&dyn ConversationSummarizer>,
 ) -> Option<CompactPriorResult> {
-    let compactable: Vec<_> = prior
+    fold_compactable(prior, session_id, summarizer, true).await
+}
+
+/// Fold older in-flight messages after the current user turn (tool results
+/// from this turn). Keeps the user message and a recent tail.
+pub async fn compact_after_user(
+    messages: &[ChatMessage],
+    user_idx: usize,
+    session_id: &str,
+    summarizer: Option<&dyn ConversationSummarizer>,
+) -> Option<CompactPriorResult> {
+    if user_idx >= messages.len() {
+        return None;
+    }
+    let after = &messages[user_idx + 1..];
+    let folded_outcome = fold_compactable(after, session_id, summarizer, false).await?;
+    let mut new_messages = messages[..=user_idx].to_vec();
+    new_messages.extend(folded_outcome.messages);
+    Some(CompactPriorResult {
+        messages: new_messages,
+        folded_count: folded_outcome.folded_count,
+    })
+}
+
+async fn fold_compactable(
+    messages: &[ChatMessage],
+    session_id: &str,
+    summarizer: Option<&dyn ConversationSummarizer>,
+    fold_all_when_short: bool,
+) -> Option<CompactPriorResult> {
+    let compactable: Vec<_> = messages
         .iter()
         .filter(|message| is_compactable(message))
         .cloned()
         .collect();
 
     let keep_count = KEEP_TAIL_TURNS * 2;
-    if compactable.len() <= keep_count + min_compactable_messages() {
+    // Already over the 80% trigger: a handful of huge turns can fill 1M
+    // without reaching 8+ messages. Fold the whole short prior into a summary
+    // and keep only the caller's current user turn.
+    // In-flight tool compact keeps a full tail and will not fold a short
+    // tool loop (completion / mutation gates still need those rows).
+    let keep = if compactable.len() > keep_count {
+        keep_count
+    } else if fold_all_when_short {
+        0
+    } else {
+        return None;
+    };
+    if compactable.len() <= keep {
         return None;
     }
 
-    let split_at = compactable.len().saturating_sub(keep_count);
+    let split_at = compactable.len() - keep;
     let folded = &compactable[..split_at];
     let kept = &compactable[split_at..];
 
@@ -361,12 +441,12 @@ pub async fn compact_prior(
         return None;
     }
 
-    let mut messages = Vec::with_capacity(kept.len() + 1);
-    messages.push(summary_message(session_id, &summary, folded.len()));
-    messages.extend_from_slice(kept);
+    let mut out = Vec::with_capacity(kept.len() + 1);
+    out.push(summary_message(session_id, &summary, folded.len()));
+    out.extend_from_slice(kept);
 
     Some(CompactPriorResult {
-        messages,
+        messages: out,
         folded_count: folded.len(),
     })
 }
@@ -393,14 +473,12 @@ async fn summarize_folded(
     }
 }
 
-fn min_compactable_messages() -> usize {
-    2
-}
-
 fn is_compactable(message: &ChatMessage) -> bool {
-    matches!(message.role, Role::User | Role::Assistant)
-        && !message.content.trim().is_empty()
-        && message.status != MessageStatus::Pending
+    if is_compaction_summary(message) || message.status == MessageStatus::Pending {
+        return false;
+    }
+    matches!(message.role, Role::User | Role::Assistant | Role::Tool)
+        && message_has_estimable_tokens(message)
 }
 
 fn build_mechanical_summary(messages: &[ChatMessage]) -> String {
@@ -411,7 +489,8 @@ fn build_mechanical_summary(messages: &[ChatMessage]) -> String {
         let role = match message.role {
             Role::User => "User",
             Role::Assistant => "Assistant",
-            _ => continue,
+            Role::Tool => "Tool",
+            Role::System => continue,
         };
         let snippet = truncate_chars(message.content.trim(), SNIPPET_MAX_CHARS);
         if snippet.is_empty() {
@@ -536,22 +615,11 @@ fn now_millis() -> u64 {
 }
 
 pub fn notice_message(notice: &ContextNotice, language_zh: bool) -> String {
-    let pct = (notice.usage_ratio * 100.0).round() as u32;
-    match notice.kind {
-        ContextNoticeKind::ApproachingLimit if language_zh => {
-            format!("对话上下文已使用约 {pct}%，接近上限")
-        }
-        ContextNoticeKind::ApproachingLimit => {
-            format!("Context is about {pct}% full and approaching the limit")
-        }
-        ContextNoticeKind::Compacted if language_zh => {
-            let folded = notice.folded_messages.unwrap_or(0);
-            format!("已自动压缩较早的 {folded} 条消息以节省上下文（约 {pct}%）")
-        }
-        ContextNoticeKind::Compacted => {
-            let folded = notice.folded_messages.unwrap_or(0);
-            format!("Compacted {folded} earlier messages to save context (about {pct}%)")
-        }
+    let folded = notice.folded_messages.unwrap_or(0);
+    if language_zh {
+        format!("已自动压缩较早的 {folded} 条消息以节省上下文")
+    } else {
+        format!("Compacted {folded} earlier messages to save context")
     }
 }
 
@@ -745,26 +813,108 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn warns_without_compact_below_hard_threshold() {
+    async fn stays_quiet_below_compact_threshold() {
         let medium = "x".repeat(9_000);
         let history = vec![
             user_msg("u1", &medium),
             assistant_msg("a1", &medium),
             user_msg("current", "hi"),
         ];
+        let estimated =
+            estimate_history_tokens(&history[..2], &RequestContext::default(), history.last());
+        let window = ((estimated as f32) / 0.74).round().max(1.0) as usize;
+        assert!((estimated as f32 / window as f32) < COMPACT_TRIGGER_RATIO);
 
         let result =
-            prepare_history_for_prompt(&history, &RequestContext::default(), "s1", 6_000, None)
+            prepare_history_for_prompt(&history, &RequestContext::default(), "s1", window, None)
                 .await;
-        assert_eq!(
-            result.notice.as_ref().map(|n| n.kind),
-            Some(ContextNoticeKind::ApproachingLimit)
-        );
+        assert!(result.notice.is_none());
         assert!(!result.messages.iter().any(|m| m.id.starts_with("compact-")));
     }
 
     #[test]
     fn estimate_tokens_is_nonzero_for_text() {
         assert!(estimate_tokens("hello world") > 0);
+    }
+
+    #[tokio::test]
+    async fn compacts_short_thread_when_tokens_exceed_window() {
+        // Two huge prior turns used to skip compact (needed 9+ compactable
+        // messages). A 1M window can fill from a handful of tool-heavy turns.
+        let big = "word ".repeat(20_000);
+        let history = vec![
+            user_msg("u0", &big),
+            assistant_msg("a0", &big),
+            user_msg("u1", &big),
+            assistant_msg("a1", &big),
+            user_msg("current", "latest question"),
+        ];
+
+        let result =
+            prepare_history_for_prompt(&history, &RequestContext::default(), "s1", 8_000, None)
+                .await;
+        assert_eq!(
+            result.notice.as_ref().map(|n| n.kind),
+            Some(ContextNoticeKind::Compacted)
+        );
+        assert!(result.messages.iter().any(|m| m.id.starts_with("compact-")));
+        let post = measure_context_usage(&result.messages, &RequestContext::default(), None, 8_000);
+        let pre = measure_context_usage(&history, &RequestContext::default(), None, 8_000);
+        assert!(post.estimated_tokens < pre.estimated_tokens);
+    }
+
+    fn tool_msg(id: &str, content: &str) -> ChatMessage {
+        ChatMessage {
+            id: id.into(),
+            session_id: "s1".into(),
+            role: Role::Tool,
+            content: content.into(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: None,
+            tool_call_id: Some("c1".into()),
+            name: Some("read_file".into()),
+            status: MessageStatus::Done,
+            timestamp: 3,
+            estimated_tokens: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn folds_tool_results_after_current_user() {
+        let big = "word ".repeat(8_000);
+        let mut messages = vec![user_msg("u0", "please inspect the repo")];
+        for index in 0..6 {
+            messages.push(assistant_msg(&format!("a{index}"), "calling tool"));
+            messages.push(tool_msg(&format!("t{index}"), &big));
+        }
+
+        let result = compact_after_user(&messages, 0, "s1", None)
+            .await
+            .expect("should fold in-flight tool output");
+        assert!(result.folded_count >= 2);
+        assert_eq!(result.messages[0].id, "u0");
+        assert!(result.messages.iter().any(|m| m.id.starts_with("compact-")));
+    }
+
+    #[test]
+    fn usage_meter_starts_from_last_summary() {
+        let big = "x".repeat(8_000);
+        let history = vec![
+            user_msg("u0", &big),
+            assistant_msg("a0", &big),
+            summary_message("s1", "earlier work folded", 2),
+            user_msg("u1", "follow up"),
+        ];
+        let with_fold = measure_context_usage(&history, &RequestContext::default(), None, 64_000);
+        let without_old =
+            measure_context_usage(&history[2..], &RequestContext::default(), None, 64_000);
+        assert_eq!(with_fold.estimated_tokens, without_old.estimated_tokens);
+        let mut raw_all = estimate_tokens(SYSTEM_PROMPT);
+        for message in &history {
+            raw_all += estimate_message_tokens(message);
+        }
+        assert!(with_fold.estimated_tokens < raw_all);
     }
 }

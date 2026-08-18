@@ -5,14 +5,25 @@ use crate::core::tools::error::ToolError;
 use crate::models::settings::ChatMode;
 
 /// Hard plan-mode gate: when active, reject non-readonly mutating tools.
+pub const PLAN_GATE_BLOCKED: &str =
+    "plan mode is active: writer tools are blocked until the user approves the plan";
+
+/// User-visible stop text when a writer hits the gate. Also used to detect
+/// that the turn ended because of the gate (even if no checklist exists).
+pub const PLAN_GATE_STOP_HINT: &str = "计划尚未批准";
+
 pub struct PlanModeStore {
     active_sessions: Mutex<HashSet<String>>,
+    /// Sessions that actually have something to approve: a checklist, or a
+    /// writer that hit the gate. Plan mode alone is not enough.
+    awaiting_approval: Mutex<HashSet<String>>,
 }
 
 impl PlanModeStore {
     pub fn new() -> Self {
         Self {
             active_sessions: Mutex::new(HashSet::new()),
+            awaiting_approval: Mutex::new(HashSet::new()),
         }
     }
 
@@ -24,6 +35,9 @@ impl PlanModeStore {
                 guard.remove(session_id);
             }
         }
+        if !active {
+            self.clear_awaiting_approval(session_id);
+        }
     }
 
     pub fn is_active(&self, session_id: &str) -> bool {
@@ -31,6 +45,39 @@ impl PlanModeStore {
             .lock()
             .ok()
             .is_some_and(|g| g.contains(session_id))
+    }
+
+    pub fn active_session_ids(&self) -> Vec<String> {
+        self.active_sessions
+            .lock()
+            .ok()
+            .map(|g| g.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn mark_awaiting_approval(&self, session_id: &str) {
+        if !self.is_active(session_id) {
+            return;
+        }
+        if let Ok(mut guard) = self.awaiting_approval.lock() {
+            guard.insert(session_id.to_string());
+        }
+    }
+
+    pub fn clear_awaiting_approval(&self, session_id: &str) {
+        if let Ok(mut guard) = self.awaiting_approval.lock() {
+            guard.remove(session_id);
+        }
+    }
+
+    /// True only when plan mode is on *and* a plan (or gate stop) exists.
+    pub fn is_awaiting_approval(&self, session_id: &str) -> bool {
+        self.is_active(session_id)
+            && self
+                .awaiting_approval
+                .lock()
+                .ok()
+                .is_some_and(|g| g.contains(session_id))
     }
 
     pub fn authorize(
@@ -45,10 +92,20 @@ impl PlanModeStore {
         if plan_mode_allowed(tool_name, read_only) {
             return Ok(());
         }
-        Err(ToolError::new(
-            "plan mode is active: writer tools are blocked until the user approves the plan",
-        ))
+        self.mark_awaiting_approval(session_id);
+        Err(ToolError::new(PLAN_GATE_BLOCKED))
     }
+}
+
+pub fn content_requests_plan_approval(content: &str) -> bool {
+    content.contains(PLAN_GATE_STOP_HINT)
+}
+
+pub fn task_status_is_open(status: &str) -> bool {
+    matches!(
+        status.trim().to_ascii_lowercase().as_str(),
+        "pending" | "in_progress" | "active" | "running" | ""
+    )
 }
 
 fn plan_mode_allowed(tool_name: &str, read_only: bool) -> bool {
@@ -301,5 +358,38 @@ mod tests {
     #[test]
     fn force_phrase_wins_even_if_short() {
         assert!(should_auto_plan("先规划一下这个改动", ChatMode::Agent));
+    }
+
+    #[test]
+    fn plan_mode_alone_does_not_await_approval() {
+        let store = PlanModeStore::new();
+        store.set_active("s", true);
+        assert!(store.is_active("s"));
+        assert!(!store.is_awaiting_approval("s"));
+    }
+
+    #[test]
+    fn blocking_a_writer_marks_awaiting_approval() {
+        let store = PlanModeStore::new();
+        store.set_active("s", true);
+        assert!(store.authorize("s", "write_file", false).is_err());
+        assert!(store.is_awaiting_approval("s"));
+    }
+
+    #[test]
+    fn readonly_tools_do_not_mark_awaiting() {
+        let store = PlanModeStore::new();
+        store.set_active("s", true);
+        assert!(store.authorize("s", "read_file", true).is_ok());
+        assert!(!store.is_awaiting_approval("s"));
+    }
+
+    #[test]
+    fn deactivating_plan_mode_clears_awaiting() {
+        let store = PlanModeStore::new();
+        store.set_active("s", true);
+        store.mark_awaiting_approval("s");
+        store.set_active("s", false);
+        assert!(!store.is_awaiting_approval("s"));
     }
 }

@@ -312,7 +312,8 @@ mod tests {
 
     #[test]
     fn begin_turn_persists_conversation_checkpoint_immediately() {
-        let base = std::env::temp_dir().join(format!("peek-checkpoint-begin-{}", uuid::Uuid::new_v4()));
+        let base =
+            std::env::temp_dir().join(format!("peek-checkpoint-begin-{}", uuid::Uuid::new_v4()));
         let store = CheckpointStore::new(base.join("checkpoints"));
         store.begin_turn("session", 1, "hello", Some("user-1".into()), None);
         let listed = store.list("session").unwrap();

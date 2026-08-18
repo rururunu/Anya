@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::core::chat::limits::MAX_CONSECUTIVE_TOOL_FAILURES;
+use crate::core::tools::plan_mode::PLAN_GATE_BLOCKED;
 
 use super::types::ToolOutcome;
 
@@ -14,6 +15,11 @@ pub const IDENTICAL_ERROR_CHALLENGE: &str = concat!(
     "clearly to the user.",
 );
 
+/// Stop the turn as soon as plan mode rejects a writer — do not let the
+/// model "change strategy" with a different Shell command (same gate).
+pub const PLAN_GATE_STOP_REASON: &str =
+    "计划尚未批准，Shell 和写文件已暂停。请点「批准并执行」，或批准后再发消息继续。";
+
 /// How many identical (tool+args+error) failures are allowed before hard stop.
 /// 1 = first failure recorded; 2 = challenge; 3 = stop.
 const IDENTICAL_ERROR_STOP_AFTER: u32 = 3;
@@ -24,7 +30,10 @@ pub enum FailureAction {
     /// Keep the agent loop going.
     Continue,
     /// Inject a challenge and run another model turn (do not stop yet).
-    Challenge { status_kind: String, message: String },
+    Challenge {
+        status_kind: String,
+        message: String,
+    },
     /// Hard-stop the turn with a user-visible reason.
     Stop { reason: String },
 }
@@ -53,6 +62,11 @@ impl FailureBreaker {
                 continue;
             }
             if !outcome.success {
+                if is_plan_gate_error(&outcome.result) {
+                    return FailureAction::Stop {
+                        reason: PLAN_GATE_STOP_REASON.to_string(),
+                    };
+                }
                 self.consecutive_tool_failures += 1;
 
                 let key = format!("{}|{}", outcome.tool_name, outcome.arguments);
@@ -112,9 +126,14 @@ fn truncate_error(value: &str, max_chars: usize) -> String {
     format!("{cut}…")
 }
 
+pub fn is_plan_gate_error(result: &str) -> bool {
+    result.contains(PLAN_GATE_BLOCKED)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::tools::plan_mode::PLAN_GATE_BLOCKED;
 
     fn outcome(tool: &str, args: &str, result: &str, success: bool) -> ToolOutcome {
         ToolOutcome {
@@ -163,6 +182,50 @@ mod tests {
         ));
         match breaker.check(&[outcome("c", "3", "e3", false)]) {
             FailureAction::Stop { reason } => assert!(reason.contains("连续失败")),
+            other => panic!("expected stop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_gate_stops_on_first_blocked_writer() {
+        let mut breaker = FailureBreaker::new();
+        match breaker.check(&[outcome(
+            "run_shell",
+            r#"{"command":"ls"}"#,
+            PLAN_GATE_BLOCKED,
+            false,
+        )]) {
+            FailureAction::Stop { reason } => {
+                assert!(reason.contains("批准"), "{reason}");
+                assert!(
+                    reason.contains(crate::core::tools::plan_mode::PLAN_GATE_STOP_HINT),
+                    "{reason}"
+                );
+                assert!(!reason.contains("连续失败"), "{reason}");
+                assert!(!reason.contains("换路径"), "{reason}");
+            }
+            other => panic!("expected immediate stop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_gate_does_not_invite_a_different_shell_command() {
+        let mut breaker = FailureBreaker::new();
+        let _ = breaker.check(&[outcome(
+            "run_shell",
+            r#"{"command":"a"}"#,
+            PLAN_GATE_BLOCKED,
+            false,
+        )]);
+        // A second, different command must not even be considered — first
+        // blocked writer already stopped the turn.
+        match breaker.check(&[outcome(
+            "run_shell",
+            r#"{"command":"b"}"#,
+            PLAN_GATE_BLOCKED,
+            false,
+        )]) {
+            FailureAction::Stop { reason } => assert!(reason.contains("批准"), "{reason}"),
             other => panic!("expected stop, got {other:?}"),
         }
     }

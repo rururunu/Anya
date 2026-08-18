@@ -82,14 +82,8 @@ mod tests {
 
     #[test]
     fn large_context_respects_deepseek_v3_cap() {
-        assert_eq!(
-            effective_context_window(true, "deepseek-chat"),
-            128_000
-        );
-        assert_eq!(
-            effective_context_window(true, "deepseek-reasoner"),
-            128_000
-        );
+        assert_eq!(effective_context_window(true, "deepseek-chat"), 128_000);
+        assert_eq!(effective_context_window(true, "deepseek-reasoner"), 128_000);
     }
 
     #[test]

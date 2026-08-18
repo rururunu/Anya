@@ -20,11 +20,11 @@ import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import markedKatex from "marked-katex-extension";
 import { marked } from "marked";
-import { computed, h, onMounted, onUpdated, ref, render, type Component } from "vue";
+import { computed, h, onMounted, onUnmounted, onUpdated, ref, render, type Component } from "vue";
 import "katex/dist/katex.min.css";
 import { copyText } from "@/services/clipboard";
 import { parseChartSpec } from "@/services/chat/chartSpec";
-import { hydrateChartBlocks } from "./chartHydration";
+import { disposeChartBlocks, hydrateChartBlocks } from "./chartHydration";
 
 const props = defineProps<{
   content: string;
@@ -161,8 +161,21 @@ function hydrateAll() {
   if (root) hydrateChartBlocks(root);
 }
 
+function unmountPortalHosts(root: HTMLElement) {
+  root
+    .querySelectorAll<HTMLElement>("[data-code-language-icon], [data-code-copy], [data-chart-spec]")
+    .forEach((el) => {
+      render(null, el);
+    });
+  disposeChartBlocks(root);
+}
+
 onMounted(hydrateAll);
 onUpdated(hydrateAll);
+onUnmounted(() => {
+  const root = rootRef.value;
+  if (root) unmountPortalHosts(root);
+});
 
 marked.setOptions({
   breaks: true,

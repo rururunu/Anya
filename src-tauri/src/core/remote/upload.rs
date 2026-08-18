@@ -286,11 +286,7 @@ fn rel_path_for(
 
 pub(crate) fn sanitize_filename(name: &str) -> String {
     let normalized = name.replace('\\', "/");
-    let base = normalized
-        .rsplit('/')
-        .next()
-        .unwrap_or("file")
-        .trim();
+    let base = normalized.rsplit('/').next().unwrap_or("file").trim();
     let mut out = String::new();
     for ch in base.chars() {
         if ch.is_control() || "<>:\"|?*".contains(ch) {

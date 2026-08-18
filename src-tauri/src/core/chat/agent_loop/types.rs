@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::core::chat::limits::estimate_tokens;
+use crate::core::chat::limits::estimate_message_tokens;
 use crate::core::runtime::{ChatRequest, ToolCallPayload};
 
 /// A tool call that has started executing: its UI activity has already been
@@ -54,20 +54,60 @@ pub fn merge_tool_call(calls: &mut Vec<ToolCallPayload>, incoming: ToolCallPaylo
     calls.push(incoming);
 }
 
+/// Prompt-side token estimate used to decide mid-turn compact.
+///
+/// Tool schemas are a fixed per-request overhead: they cannot be folded, and
+/// counting them against the compact threshold made every agent step look
+/// over-budget (especially with MCP), so list/read rounds spent seconds
+/// re-compacting the same history.
 pub fn estimate_request_tokens(request: &ChatRequest) -> usize {
-    let message_tokens: usize = request
-        .messages
-        .iter()
-        .map(|message| {
-            estimate_tokens(&message.content)
-                + estimate_tokens(message.reasoning.as_deref().unwrap_or(""))
-                + 4
-        })
-        .sum();
-    let tool_tokens: usize = request
-        .tools
-        .iter()
-        .map(|tool| estimate_tokens(&tool.to_string()))
-        .sum();
-    message_tokens + tool_tokens
+    request.messages.iter().map(estimate_message_tokens).sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::runtime::{ChatMessage, MessageStatus, RequestContext, Role};
+    use serde_json::json;
+
+    #[test]
+    fn estimate_ignores_tool_schemas() {
+        let request = ChatRequest {
+            request_id: "r".into(),
+            session_id: "s".into(),
+            messages: vec![ChatMessage {
+                id: "u1".into(),
+                session_id: "s".into(),
+                role: Role::User,
+                content: "hello".into(),
+                reasoning: None,
+                work_timeline: None,
+                tool_activities: None,
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+                status: MessageStatus::Done,
+                timestamp: 1,
+                estimated_tokens: None,
+            }],
+            context: RequestContext::default(),
+            provider: None,
+            stream: true,
+            tools: std::sync::Arc::from(vec![json!({
+                "type": "function",
+                "function": {
+                    "name": "huge",
+                    "description": "x".repeat(80_000),
+                    "parameters": { "type": "object" }
+                }
+            })]),
+            temperature: None,
+            max_tokens: None,
+        };
+        let with_tools = estimate_request_tokens(&request);
+        let mut without = request.clone();
+        without.tools = std::sync::Arc::from([]);
+        assert_eq!(with_tools, estimate_request_tokens(&without));
+        assert!(with_tools < 100);
+    }
 }

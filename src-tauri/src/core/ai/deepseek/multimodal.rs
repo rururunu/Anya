@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use crate::models::settings::AppSettings;
+use crate::models::settings::{AppSettings, ProviderApiProtocol};
 
 use super::{normalize_chat_completions_url, ProviderError, RETRY_BACKOFF};
 fn load_image_as_base64(path_or_data: &str) -> Result<String, String> {
@@ -31,6 +31,8 @@ fn load_image_as_base64(path_or_data: &str) -> Result<String, String> {
 pub(super) struct MultimodalEndpoint {
     pub(super) api_key: String,
     pub(super) url: String,
+    pub(super) base_url: String,
+    pub(super) protocol: ProviderApiProtocol,
 }
 
 pub(super) fn resolve_multimodal_endpoint(
@@ -74,6 +76,8 @@ pub(super) fn resolve_multimodal_endpoint(
         return Ok(MultimodalEndpoint {
             api_key: custom.api_key.trim().to_string(),
             url: normalize_chat_completions_url(&custom.base_url),
+            base_url: custom.base_url.trim().to_string(),
+            protocol: custom.api_protocol,
         });
     }
 

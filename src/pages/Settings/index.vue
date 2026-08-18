@@ -117,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -145,7 +145,7 @@ import ProviderSettings from "@/components/settings/ProviderSettings.vue";
 import RagSettings from "@/components/settings/RagSettings.vue";
 import SettingFieldList from "@/components/settings/SettingFieldList.vue";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
-import { gsapSettingsNavMount } from "@/services/motion/gsapPresets";
+import { gsapSettingsNavMount, gsapSettingsNavUnmount } from "@/services/motion/gsapPresets";
 import { getAppInfo, relaunchApp, webviewGpuDisabled } from "@/services/ipc";
 import {
   Sidebar,
@@ -227,6 +227,7 @@ const mem0UserIdDraft = ref("");
 const mem0BaseUrlDraft = ref("");
 const serperApiKeyDraft = ref("");
 const tavilyApiKeyDraft = ref("");
+let settingsNavEl: Element | null = null;
 const expandedHistoryGroups = ref<Record<string, boolean>>({});
 
 function isHistoryGroupExpanded(groupId: string) {
@@ -548,7 +549,13 @@ onMounted(async () => {
 
   await nextTick();
   const navEl = document.querySelector(".settings-nav");
+  settingsNavEl = navEl;
   if (navEl) gsapSettingsNavMount(navEl);
+});
+
+onUnmounted(() => {
+  gsapSettingsNavUnmount(settingsNavEl);
+  settingsNavEl = null;
 });
 
 watch(

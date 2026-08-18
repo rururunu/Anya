@@ -125,7 +125,10 @@ fn wrap_with_workspace_guards(command: &str, cwd: Option<&Path>) -> String {
     let Some(root) = cwd else {
         return command.to_string();
     };
-    let root = root.to_string_lossy().replace('\'', "''").replace('\\', "\\\\");
+    let root = root
+        .to_string_lossy()
+        .replace('\'', "''")
+        .replace('\\', "\\\\");
     // Guard common file-mutating cmdlets in-process so even script-internal
     // operations are checked against workspace boundaries.
     format!(
@@ -163,4 +166,3 @@ mod tests {
         assert!(wrapped.contains("Write-Output 'ok'"));
     }
 }
-

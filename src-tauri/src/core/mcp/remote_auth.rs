@@ -143,7 +143,10 @@ pub fn inject_smithery_api_key_args(args: &mut Vec<String>) -> bool {
         // Strip any stale Authorization headers first.
         let mut i = 0;
         while i + 1 < args.len() {
-            if args[i] == "--header" && args[i + 1].to_ascii_lowercase().starts_with("authorization:")
+            if args[i] == "--header"
+                && args[i + 1]
+                    .to_ascii_lowercase()
+                    .starts_with("authorization:")
             {
                 args.remove(i);
                 args.remove(i);
@@ -378,10 +381,7 @@ pub struct McpServerRuntimeStatus {
     pub state: String,
 }
 
-pub fn runtime_status_for(
-    config: &McpServerConfig,
-    connected: bool,
-) -> McpServerRuntimeStatus {
+pub fn runtime_status_for(config: &McpServerConfig, connected: bool) -> McpServerRuntimeStatus {
     let uses_remote_auth = uses_mcp_remote(config);
     let credentials_saved = uses_remote_auth && has_saved_credentials(config);
     let state = if !config.enabled {
@@ -446,10 +446,7 @@ mod tests {
         );
         assert_eq!(
             server_url_hash("https://server.smithery.ai/gmail"),
-            format!(
-                "{:x}",
-                Md5::digest(b"https://server.smithery.ai/gmail")
-            )
+            format!("{:x}", Md5::digest(b"https://server.smithery.ai/gmail"))
         );
     }
 

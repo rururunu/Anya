@@ -35,6 +35,9 @@ pub fn primary_model_has_native_vision(model: &str) -> bool {
     if m.contains("claude") || m.contains("vision") {
         return true;
     }
+    if m.starts_with("grok") {
+        return true;
+    }
     false
 }
 

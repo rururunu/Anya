@@ -517,6 +517,7 @@ async function saveCustom() {
     apiKey: customKey.value.trim(),
     models: customModels.value.trim(),
     presetId: customPresetId.value,
+    apiProtocol: existing?.apiProtocol ?? "chatCompletions",
   };
   const list = existing
     ? settingStore.customProviders.map((p) => (p.id === id ? next : p))

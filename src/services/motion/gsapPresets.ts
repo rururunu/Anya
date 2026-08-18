@@ -392,6 +392,16 @@ export function gsapSettingsNavMount(root: Element) {
   );
 }
 
+export function gsapSettingsNavUnmount(root?: Element | null) {
+  if (!root) return;
+  const items = [...root.querySelectorAll<HTMLElement>(".settings-nav-item")];
+  gsap.killTweensOf(items);
+  for (const item of items) {
+    item.style.opacity = "";
+    item.style.transform = "";
+  }
+}
+
 /**
  * First-run welcome: move the floating logo onto the empty-conversation brand,
  * then circular-reveal the workspace by shrinking the overlay mask.

@@ -149,6 +149,10 @@ pub struct ChatContextNoticeEvent {
     pub usage_ratio: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folded_messages: Option<usize>,
+    #[serde(default)]
+    pub estimated_tokens: usize,
+    #[serde(default)]
+    pub context_window_tokens: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -301,10 +305,9 @@ mod tests {
 
     #[test]
     fn from_request_maps_resume_plan_and_skip_auto_plan() {
-        let request: ChatSendRequest = serde_json::from_str(
-            r#"{"message":"go","skipAutoPlan":true,"resumePlan":true}"#,
-        )
-        .expect("request parses");
+        let request: ChatSendRequest =
+            serde_json::from_str(r#"{"message":"go","skipAutoPlan":true,"resumePlan":true}"#)
+                .expect("request parses");
         let overrides = ChatSendOverrides::from_request(&request);
         assert!(overrides.resume_plan);
         assert!(overrides.skip_auto_plan);

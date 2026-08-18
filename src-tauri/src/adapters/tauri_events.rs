@@ -147,6 +147,8 @@ impl EventBus for TauriEventBus {
                 message,
                 usage_ratio,
                 folded_messages,
+                estimated_tokens,
+                context_window_tokens,
             } => {
                 let _ = self.app.emit(
                     "chat-context-notice",
@@ -156,6 +158,8 @@ impl EventBus for TauriEventBus {
                         message,
                         usage_ratio,
                         folded_messages,
+                        estimated_tokens,
+                        context_window_tokens,
                     },
                 );
             }

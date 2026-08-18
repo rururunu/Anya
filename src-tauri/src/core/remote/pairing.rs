@@ -17,7 +17,10 @@ use super::state::{
 /// them makes the probe below report e.g. 198.18.0.1 as "our" address).
 fn is_advertisable(v4: &std::net::Ipv4Addr) -> bool {
     let o = v4.octets();
-    !v4.is_loopback() && !v4.is_unspecified() && !v4.is_link_local() && !(o[0] == 198 && (o[1] & 0xfe) == 18)
+    !v4.is_loopback()
+        && !v4.is_unspecified()
+        && !v4.is_link_local()
+        && !(o[0] == 198 && (o[1] & 0xfe) == 18)
 }
 
 pub(crate) fn is_loopback_host(host: &str) -> bool {

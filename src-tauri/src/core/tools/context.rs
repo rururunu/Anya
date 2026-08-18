@@ -107,17 +107,18 @@ impl AskStore {
         }
     }
 
-    pub fn complete(&self, request_id: &str, answer: String) -> bool {
-        let sender = self
+    pub fn complete(&self, request_id: &str, answer: String) -> Option<String> {
+        let pending = self
             .inner
             .lock()
             .ok()
-            .and_then(|mut guard| guard.remove(request_id).map(|pending| pending.sender));
-        if let Some(sender) = sender {
-            let _ = sender.send(answer);
-            return true;
-        }
-        false
+            .and_then(|mut guard| guard.remove(request_id));
+        let Some(pending) = pending else {
+            return None;
+        };
+        let session_id = pending.session_id.clone();
+        let _ = pending.sender.send(answer);
+        Some(session_id)
     }
 
     /// Snapshot of current pending asks.

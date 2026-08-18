@@ -175,6 +175,11 @@ export type SettingsI18nKey =
   | "settings.provider.apiKey"
   | "settings.provider.getApiKey"
   | "settings.provider.baseUrl"
+  | "settings.provider.apiProtocol"
+  | "settings.provider.apiProtocolHint"
+  | "settings.provider.apiProtocolGrokHint"
+  | "settings.provider.apiProtocolChatCompletions"
+  | "settings.provider.apiProtocolResponses"
   | "settings.provider.modelsList"
   | "settings.provider.modelsPlaceholder"
   | "settings.provider.addModel"
@@ -246,6 +251,13 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.apiKey": "API Key",
   "settings.provider.getApiKey": "Get a key:",
   "settings.provider.baseUrl": "Base URL",
+  "settings.provider.apiProtocol": "API protocol",
+  "settings.provider.apiProtocolHint":
+    "Chat Completions is the OpenAI-compatible default. Choose Responses for Grok and other vendors that only stream reasoning on /v1/responses.",
+  "settings.provider.apiProtocolGrokHint":
+    "xAI Grok does not return thinking on Chat Completions. Switch this provider to Responses to show the reasoning process.",
+  "settings.provider.apiProtocolChatCompletions": "Chat Completions (/v1/chat/completions)",
+  "settings.provider.apiProtocolResponses": "Responses (/v1/responses)",
   "settings.provider.modelsList": "Model List",
   "settings.provider.modelsPlaceholder": "Model ID, e.g. gpt-4o",
   "settings.provider.addModel": "Add",
@@ -394,7 +406,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Raise the compaction / turn budget ceiling to 1,000,000 tokens. The effective window is still capped by the selected model's native limit (unknown models stay at 256k).",
   "settings.fields.reasoningEffort.title": "Reasoning Effort",
   "settings.fields.reasoningEffort.description":
-    "Controls DeepSeek thinking depth; disabled omits reasoning_effort.",
+    "Thinking depth for DeepSeek and Responses models (Grok). Disabled turns DeepSeek thinking off; Grok maps it to high.",
   "settings.fields.reasoningLanguage.title": "Reasoning Language",
   "settings.fields.reasoningLanguage.description":
     "Preferences for visible reasoning and final answer language (transient injection).",
@@ -579,6 +591,13 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.apiKey": "API Key",
     "settings.provider.getApiKey": "获取地址：",
     "settings.provider.baseUrl": "Base URL",
+    "settings.provider.apiProtocol": "API 协议",
+    "settings.provider.apiProtocolHint":
+      "默认使用 OpenAI 兼容的 Chat Completions。Grok 等只在 /v1/responses 上流式返回思考过程的厂商，请改选 Responses。",
+    "settings.provider.apiProtocolGrokHint":
+      "xAI Grok 的 Chat Completions 不会返回思考过程。请把该厂商改成 Responses，才能看到推理内容。",
+    "settings.provider.apiProtocolChatCompletions": "Chat Completions（/v1/chat/completions）",
+    "settings.provider.apiProtocolResponses": "Responses（/v1/responses）",
     "settings.provider.modelsList": "模型列表",
     "settings.provider.modelsPlaceholder": "模型 ID，例如 gpt-4o",
     "settings.provider.addModel": "添加",
@@ -668,7 +687,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.largeContextEnabled.description":
       "将压缩与单轮预算上限提到约 100 万 token。实际窗口仍受当前模型原生上限约束（未知模型按 256k）。",
     "settings.fields.reasoningEffort.title": "思考深度",
-    "settings.fields.reasoningEffort.description": "DeepSeek 思考深度",
+    "settings.fields.reasoningEffort.description":
+      "DeepSeek 与 Responses 模型（如 Grok）的思考深度。关闭会关掉 DeepSeek 思考；Grok 无法关闭，会按高强度发送。",
     "settings.fields.reasoningLanguage.title": "推理语言",
     "settings.fields.reasoningLanguage.description": "推理文本与回答语言偏好",
     "settings.fields.showReasoning.title": "显示思考过程",
@@ -1560,7 +1580,7 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     multimodalModel: "AI / DeepSeek / Multimodal Model",
     multimodalSplitAnalysis: "AI / DeepSeek / Split Multimodal Analysis",
     largeContextEnabled: "AI / Context / 1M Context Window",
-    reasoningEffort: "AI › DeepSeek › Reasoning Effort",
+    reasoningEffort: "AI › Reasoning › Reasoning Effort",
     reasoningLanguage: "AI › DeepSeek › Reasoning Language",
     showReasoning: "AI › Chat › Reasoning Display",
     passToolReasoning: "AI › Reasoning › Tool History",
@@ -1600,7 +1620,7 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     multimodalModel: "AI / DeepSeek / 多模态模型",
     multimodalSplitAnalysis: "AI / DeepSeek / 多模态分步分析",
     largeContextEnabled: "AI / 上下文 / 1M 上下文",
-    reasoningEffort: "AI › DeepSeek › Reasoning Effort",
+    reasoningEffort: "AI › Reasoning › Reasoning Effort",
     reasoningLanguage: "AI › DeepSeek › Reasoning Language",
     showReasoning: "AI › 聊天 › 思考过程显示",
     passToolReasoning: "AI › 推理 › 工具历史",
@@ -1671,7 +1691,7 @@ const settingsFieldKeywords: Record<
       "r1",
     ],
     largeContextEnabled: ["context", "window", "1m", "million", "token", "compact"],
-    reasoningEffort: ["reasoning", "effort", "thinking", "deepseek"],
+    reasoningEffort: ["reasoning", "effort", "thinking", "deepseek", "grok", "responses"],
     reasoningLanguage: ["reasoning", "language", "response"],
     showReasoning: ["reasoning", "thinking", "display", "chat"],
     passToolReasoning: ["reasoning", "tool", "passthrough", "thinking"],
@@ -1711,7 +1731,7 @@ const settingsFieldKeywords: Record<
     multimodalModel: ["多模态模型", "图片", "视觉", "multimodal", "vision", "image"],
     multimodalSplitAnalysis: ["多模态分步分析", "分步", "分析", "图片", "视觉", "deepseek", "r1"],
     largeContextEnabled: ["上下文", "1m", "百万", "token", "压缩", "context", "window"],
-    reasoningEffort: ["reasoning", "effort", "思考", "推理", "deepseek"],
+    reasoningEffort: ["reasoning", "effort", "思考", "推理", "deepseek", "grok", "responses"],
     reasoningLanguage: ["reasoning", "language", "推理语言", "回答语言"],
     showReasoning: ["思考过程", "推理", "显示", "reasoning", "thinking"],
     passToolReasoning: ["reasoning", "tool", "工具", "回传", "thinking"],

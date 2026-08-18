@@ -59,25 +59,26 @@ pub fn respond_tool_approval(
     app: AppHandle,
     request: RespondToolApprovalRequest,
 ) -> Result<(), String> {
-    let ok = shared_tool_approval_store().complete(&request.request_id, &request.decision);
-    if ok {
-        remote::push_interaction_resolved(&request.request_id, "tool_approval");
-        crate::commands::window::dismiss_tracked_interaction_notifications(
-            &app,
-            Some(&request.request_id),
-            None,
-        );
-        let _ = app.emit(
-            "interaction-resolved",
-            InteractionResolvedEvent {
-                request_id: request.request_id,
-                kind: "tool_approval".to_string(),
-            },
-        );
-        Ok(())
-    } else {
-        Err("tool approval request not found or already completed".into())
-    }
+    let Some(session_id) =
+        shared_tool_approval_store().complete(&request.request_id, &request.decision)
+    else {
+        return Err("tool approval request not found or already completed".into());
+    };
+    remote::push_interaction_resolved(&request.request_id, "tool_approval", Some(&session_id));
+    remote::resume_run_state_after_interaction(&app, &session_id);
+    crate::commands::window::dismiss_tracked_interaction_notifications(
+        &app,
+        Some(&request.request_id),
+        None,
+    );
+    let _ = app.emit(
+        "interaction-resolved",
+        InteractionResolvedEvent {
+            request_id: request.request_id,
+            kind: "tool_approval".to_string(),
+        },
+    );
+    Ok(())
 }
 
 #[tauri::command]

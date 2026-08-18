@@ -238,7 +238,10 @@ impl RemoteGatewayState {
     }
 
     pub fn last_preview_id(&self) -> Option<String> {
-        self.inner.lock().ok().and_then(|g| g.last_preview_id.clone())
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|g| g.last_preview_id.clone())
     }
 
     pub fn clear_previews(&self) {
@@ -270,10 +273,7 @@ impl RemoteGatewayState {
     }
 
     pub fn should_auto_start(&self) -> bool {
-        self.inner
-            .lock()
-            .map(|g| g.prefs.enabled)
-            .unwrap_or(false)
+        self.inner.lock().map(|g| g.prefs.enabled).unwrap_or(false)
     }
 
     pub fn set_enabled_preference(&self, enabled: bool, port: Option<u16>) {
@@ -451,19 +451,11 @@ impl RemoteGatewayState {
     }
 
     pub fn connected_peer(&self, device_id: &str) -> Option<SocketAddr> {
-        self.inner
-            .lock()
-            .ok()?
-            .connected
-            .get(device_id)
-            .copied()
+        self.inner.lock().ok()?.connected.get(device_id).copied()
     }
 
     pub fn connected_count(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|g| g.connected.len())
-            .unwrap_or(0)
+        self.inner.lock().map(|g| g.connected.len()).unwrap_or(0)
     }
 
     pub fn list_devices(&self) -> Vec<PairedDevice> {
@@ -589,9 +581,7 @@ pub fn build_pairing_info(
         .map(|g| g.prefs.tunnel.cloudflared_enabled)
         .unwrap_or(false);
     if tunnel_enabled {
-        if let Some(public) =
-            super::tunnel::resolve_tunnel_public(app, local_port, ensure_tunnel)
-        {
+        if let Some(public) = super::tunnel::resolve_tunnel_public(app, local_port, ensure_tunnel) {
             host = public.host.clone();
             hosts = vec![public.host.clone()];
             port = public.port;

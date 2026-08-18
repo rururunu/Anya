@@ -5,7 +5,6 @@
 //! protocol under `/remote/v1`.
 
 mod bridge;
-mod tunnel;
 mod compose;
 mod download;
 mod gateway;
@@ -14,15 +13,16 @@ mod pairing;
 pub mod preview;
 mod protocol;
 mod state;
+mod tunnel;
 mod upload;
 
+pub use bridge::{on_bus_event, push_interaction_resolved, resume_run_state_after_interaction};
 pub use compose::SessionCompose;
-pub use bridge::{on_bus_event, push_interaction_resolved};
 pub use gateway::start_gateway;
 pub use pairing::create_pairing_session;
 pub use state::{
-    gateway_status, list_paired_devices, restore_gateway_if_enabled, revoke_device, stop_gateway,
-    GatewayStatus, PairedDevice, PairingSessionInfo, TunnelPrefs, remote_state,
+    gateway_status, list_paired_devices, remote_state, restore_gateway_if_enabled, revoke_device,
+    stop_gateway, GatewayStatus, PairedDevice, PairingSessionInfo, TunnelPrefs,
 };
 pub use upload::{cleanup_session_uploads, inbox_root_if_exists, MAX_UPLOAD_BYTES};
 

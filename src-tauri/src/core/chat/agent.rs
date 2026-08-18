@@ -15,9 +15,9 @@ use crate::core::tools::registry::ToolRegistry;
 use crate::runtime::ToolManager;
 use tracing::Instrument;
 
+use super::agent_loop::challenge::push_challenge_message;
 use super::agent_loop::challenge::{ChallengeOutcome, CompletionGate};
 use super::agent_loop::failure::{FailureAction, FailureBreaker};
-use super::agent_loop::challenge::push_challenge_message;
 use super::agent_loop::mid_turn_compact;
 use super::agent_loop::post_edit_verify::{
     maybe_run_post_edit_verification, verify_feedback_content,
@@ -124,6 +124,7 @@ impl AgentRunner {
             .iter()
             .rposition(|msg| msg.role == Role::User);
         let mut used_tokens = estimate_request_tokens(&request);
+        let mut last_compact_msg_len = 0usize;
 
         loop {
             if cancelled.load(Ordering::Relaxed) {
@@ -145,15 +146,19 @@ impl AgentRunner {
                 break;
             }
 
-            mid_turn_compact::maybe_compact(
+            if let Some(outcome) = mid_turn_compact::maybe_compact(
                 &self.provider,
                 self.max_turn_tokens,
                 &mut request,
                 &mut user_msg_index,
                 &mut used_tokens,
+                &mut last_compact_msg_len,
                 &tx,
             )
-            .await;
+            .await
+            {
+                persist_mid_turn_compact(&tool_ctx, outcome);
+            }
 
             let (turn_tx, turn_rx) = mpsc::channel::<StreamEvent>(64);
             let provider = Arc::clone(&self.provider);
@@ -164,11 +169,10 @@ impl AgentRunner {
                 session_id = %request.session_id,
                 step = steps,
             );
-            let provider_task =
-                tauri::async_runtime::spawn(
-                    async move { provider.stream(turn_request, turn_tx).await }
-                        .instrument(stream_turn_span.clone()),
-                );
+            let provider_task = tauri::async_runtime::spawn(
+                async move { provider.stream(turn_request, turn_tx).await }
+                    .instrument(stream_turn_span.clone()),
+            );
 
             let StreamTurnResult {
                 content,
@@ -188,8 +192,9 @@ impl AgentRunner {
                 // instead of hard-failing the turn.
                 if error.is_context_window_exceeded() && !context_compacted {
                     context_compacted = true;
-                    if mid_turn_compact::force_compact(
+                    if let Some(outcome) = mid_turn_compact::force_compact(
                         &self.provider,
+                        self.max_turn_tokens,
                         &mut request,
                         &mut user_msg_index,
                         &mut used_tokens,
@@ -197,6 +202,8 @@ impl AgentRunner {
                     )
                     .await
                     {
+                        last_compact_msg_len = request.messages.len();
+                        persist_mid_turn_compact(&tool_ctx, outcome);
                         continue;
                     }
                 }
@@ -495,4 +502,18 @@ impl AgentRunner {
         let final_answer = answer.lock().await.clone();
         Ok(final_answer)
     }
+}
+
+fn persist_mid_turn_compact(
+    tool_ctx: &ToolContext,
+    outcome: mid_turn_compact::MidTurnCompactOutcome,
+) {
+    let Some(before_id) = outcome.persist_before_id else {
+        return;
+    };
+    tool_ctx.conversation.insert_compaction_summary(
+        tool_ctx.root_session_id(),
+        outcome.summary,
+        Some(before_id.as_str()),
+    );
 }

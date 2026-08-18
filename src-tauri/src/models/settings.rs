@@ -150,6 +150,22 @@ fn default_false() -> bool {
     false
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ProviderApiProtocol {
+    /// OpenAI-compatible `/v1/chat/completions`.
+    #[default]
+    ChatCompletions,
+    /// OpenAI/xAI `/v1/responses`. Required for Grok visible reasoning.
+    Responses,
+}
+
+impl ProviderApiProtocol {
+    pub fn is_chat_completions(&self) -> bool {
+        matches!(self, Self::ChatCompletions)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomProviderConfig {
@@ -162,6 +178,10 @@ pub struct CustomProviderConfig {
     /// Optional preset template id used for icons / known defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset_id: Option<String>,
+    /// Wire protocol for this custom endpoint. Existing providers default to
+    /// Chat Completions so previously saved settings keep working.
+    #[serde(default, skip_serializing_if = "ProviderApiProtocol::is_chat_completions")]
+    pub api_protocol: ProviderApiProtocol,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -621,13 +621,8 @@ fn finish_success(
     // work_timeline is the interleaved source of truth across tool rounds.
     // Prefer it when richer than the flat accumulators (which used to be
     // overwritten by the last provider turn's TurnComplete).
-    let (content, reasoning) = enrich_from_work_timeline(
-        conversation,
-        session_id,
-        message_id,
-        content,
-        reasoning,
-    );
+    let (content, reasoning) =
+        enrich_from_work_timeline(conversation, session_id, message_id, content, reasoning);
     let reasoning = non_empty_string(reasoning);
     conversation.update_message(
         session_id,

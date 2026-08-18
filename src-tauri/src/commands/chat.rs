@@ -143,10 +143,7 @@ pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, Stri
                 }
                 Ok(_) => {}
                 Err(error) => {
-                    eprintln!(
-                        "custom provider {} list_models error: {error}",
-                        custom.name
-                    );
+                    eprintln!("custom provider {} list_models error: {error}", custom.name);
                 }
             }
         }
@@ -201,8 +198,16 @@ pub async fn list_custom_provider_models(
 }
 
 #[tauri::command]
-pub fn delete_chat_session(app: AppHandle, state: State<'_, AppState>, session_id: String) -> Result<(), String> {
-    let bound = state.core.chat().conversation().workspace_for_session(&session_id);
+pub fn delete_chat_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let bound = state
+        .core
+        .chat()
+        .conversation()
+        .workspace_for_session(&session_id);
     let workspace_root = bound.and_then(|id| {
         state
             .core

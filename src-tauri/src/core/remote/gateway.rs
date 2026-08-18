@@ -154,12 +154,10 @@ where
 {
     let callback = |req: &Request, mut response: Response| {
         if req.uri().path() != PATH {
-            return Err(
-                Response::builder()
-                    .status(404)
-                    .body(None)
-                    .expect("static 404 response"),
-            );
+            return Err(Response::builder()
+                .status(404)
+                .body(None)
+                .expect("static 404 response"));
         }
         // Cloudflare Tunnel may rewrite Accept-Encoding and then try to
         // compress the 101 upgrade, which corrupts the WebSocket stream.
@@ -418,10 +416,8 @@ where
                     ..
                 } = parsed
                 else {
-                    let err = ServerMessage::hello_error(
-                        "expected_hello",
-                        "first message must be hello",
-                    );
+                    let err =
+                        ServerMessage::hello_error("expected_hello", "first message must be hello");
                     send_ws_msg(ws, &err).await?;
                     return Err("expected hello".into());
                 };
@@ -482,6 +478,17 @@ fn build_interaction_snapshot(app: &AppHandle) -> serde_json::Value {
                 "questions": item.questions,
             }));
         }
+        for item in state.core.chat().path_permission_store().pending_items() {
+            pending.push(json!({
+                "kind": "path_permission",
+                "sessionId": item.session_id,
+                "requestId": item.request_id,
+                "toolName": item.tool_name,
+                "title": format!("路径权限 · {}", item.tool_name),
+                "preview": item.path,
+                "operation": item.operation,
+            }));
+        }
     }
     for item in crate::core::tools::tool_approval::shared_tool_approval_store().pending_items() {
         pending.push(json!({
@@ -490,6 +497,22 @@ fn build_interaction_snapshot(app: &AppHandle) -> serde_json::Value {
             "requestId": item.request_id,
             "toolName": item.tool_name,
             "title": item.title,
+        }));
+    }
+    for session_id in crate::core::tools::plan_mode::shared_plan_mode_store().active_session_ids() {
+        if super::bridge::run_state_for(&session_id) == super::bridge::RemoteRunState::Streaming {
+            continue;
+        }
+        if !crate::core::tools::plan_mode::shared_plan_mode_store()
+            .is_awaiting_approval(&session_id)
+        {
+            continue;
+        }
+        pending.push(json!({
+            "kind": "plan_approval",
+            "sessionId": session_id,
+            "requestId": format!("plan-{session_id}"),
+            "title": "计划待批准",
         }));
     }
     json!({ "pending": pending })
@@ -554,16 +577,55 @@ async fn replay_pending_interactions(app: &AppHandle, ws: &Outbound) -> Result<(
         .await?;
     }
 
+    for pending in state.core.chat().path_permission_store().pending_items() {
+        send_msg(
+            ws,
+            &ServerMessage::Event {
+                name: "path.permission".into(),
+                data: json!({
+                    "sessionId": pending.session_id,
+                    "requestId": pending.request_id,
+                    "toolName": pending.tool_name,
+                    "title": format!("路径权限 · {}", pending.tool_name),
+                    "preview": pending.path,
+                    "operation": pending.operation,
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            },
+        )
+        .await?;
+    }
+
+    for session_id in crate::core::tools::plan_mode::shared_plan_mode_store().active_session_ids() {
+        send_msg(
+            ws,
+            &ServerMessage::Event {
+                name: "session.planMode".into(),
+                data: json!({
+                    "sessionId": session_id,
+                    "active": true,
+                    "source": "manual",
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            },
+        )
+        .await?;
+    }
+
     Ok(())
 }
 
 /// Phone `session.compose.get`: ask the desktop UI to mirror Pinia into the
 /// gateway store, then fall back to app settings if the session was never opened.
-async fn resolve_session_compose(app: &AppHandle, session_id: &str) -> super::compose::SessionCompose {
-    let _ = app.emit(
-        "remote-compose-needed",
-        json!({ "sessionId": session_id }),
-    );
+async fn resolve_session_compose(
+    app: &AppHandle,
+    session_id: &str,
+) -> super::compose::SessionCompose {
+    let _ = app.emit("remote-compose-needed", json!({ "sessionId": session_id }));
     tokio::time::sleep(Duration::from_millis(80)).await;
     let mut compose = super::compose::get(session_id);
     if compose.chat_model.trim().is_empty() {
@@ -627,7 +689,9 @@ async fn handle_binary_chunk(payload: Vec<u8>, out: Outbound) {
             }
         }
         Ok(Err(message)) => {
-            let _ = out.send(&ServerMessage::rpc_err(request_id, &message)).await;
+            let _ = out
+                .send(&ServerMessage::rpc_err(request_id, &message))
+                .await;
         }
         Err(error) => {
             let _ = out
@@ -687,11 +751,7 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
                     .find(|w| w.id == id)
                     .map(|w| w.root)
             });
-            super::upload::cleanup_session_uploads(
-                app,
-                &session_id,
-                workspace_root.as_deref(),
-            );
+            super::upload::cleanup_session_uploads(app, &session_id, workspace_root.as_deref());
             state.core.chat().conversation().delete_session(&session_id);
             // Same event the desktop settings page emits after deletes — the
             // workbench listener refreshes its list and leaves dead sessions.
@@ -708,7 +768,10 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             )
             .await
         }
-        ClientMessage::WorkspaceSnapshot { request_id, session_id } => {
+        ClientMessage::WorkspaceSnapshot {
+            request_id,
+            session_id,
+        } => {
             let snapshot = workspace_snapshot_payload(app, session_id.as_deref());
             send_msg(ws, &ServerMessage::rpc_ok(request_id, snapshot)).await
         }
@@ -743,12 +806,9 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             session_id,
             workspace_id,
         } => {
-            let payload = list_workspace_files_payload(
-                app,
-                session_id.as_deref(),
-                workspace_id.as_deref(),
-            )
-            .await;
+            let payload =
+                list_workspace_files_payload(app, session_id.as_deref(), workspace_id.as_deref())
+                    .await;
             send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await
         }
         ClientMessage::SkillsList { request_id } => {
@@ -784,37 +844,32 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             upload_id,
             offset,
             data_base64,
-        } => {
-            match super::upload::chunk(&upload_id, offset, &data_base64) {
-                Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
-                Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
-            }
-        }
+        } => match super::upload::chunk(&upload_id, offset, &data_base64) {
+            Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
+            Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
+        },
         ClientMessage::FileUploadFinish {
             request_id,
             upload_id,
-        } => {
-            match super::upload::finish(&upload_id) {
-                Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
-                Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
-            }
-        }
+        } => match super::upload::finish(&upload_id) {
+            Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
+            Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
+        },
         ClientMessage::FileUploadAbort {
             request_id,
             upload_id,
-        } => {
-            match super::upload::abort(&upload_id) {
-                Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
-                Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
-            }
-        }
+        } => match super::upload::abort(&upload_id) {
+            Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
+            Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
+        },
         ClientMessage::FileDownloadBegin {
             request_id,
             path,
             session_id,
             workspace_id,
         } => {
-            let result = begin_file_download(app, session_id.as_deref(), workspace_id.as_deref(), &path);
+            let result =
+                begin_file_download(app, session_id.as_deref(), workspace_id.as_deref(), &path);
             match result {
                 Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
                 Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
@@ -899,16 +954,17 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
         }
         ClientMessage::ModelsList { request_id } => {
             let models = list_remote_models(app).await;
-            send_msg(ws, &ServerMessage::rpc_ok(request_id, json!({ "models": models }))).await
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(request_id, json!({ "models": models })),
+            )
+            .await
         }
         ClientMessage::PlanApprove {
             request_id,
             session_id,
         } => {
-            let _ = app.emit(
-                "remote-plan-approve",
-                json!({ "sessionId": session_id }),
-            );
+            let _ = app.emit("remote-plan-approve", json!({ "sessionId": session_id }));
             send_msg(
                 ws,
                 &ServerMessage::rpc_ok(request_id, json!({ "ok": true, "sessionId": session_id })),
@@ -923,8 +979,16 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
                 return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
             };
             match state.core.chat().cancel(&message_id) {
-                Ok(()) => send_msg(ws, &ServerMessage::rpc_ok(request_id, json!({ "ok": true }))).await,
-                Err(error) => send_msg(ws, &ServerMessage::rpc_err(request_id, error.to_string())).await,
+                Ok(()) => {
+                    send_msg(
+                        ws,
+                        &ServerMessage::rpc_ok(request_id, json!({ "ok": true })),
+                    )
+                    .await
+                }
+                Err(error) => {
+                    send_msg(ws, &ServerMessage::rpc_err(request_id, error.to_string())).await
+                }
             }
         }
         ClientMessage::ApprovalRespond {
@@ -932,7 +996,7 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             approval_request_id,
             decision,
         } => {
-            let tool_ok = crate::core::tools::tool_approval::shared_tool_approval_store()
+            let tool_session = crate::core::tools::tool_approval::shared_tool_approval_store()
                 .complete(&approval_request_id, &decision);
             // Path permission uses allow_always (not allow_session); map phone
             // "本会话允许" onto the path-store grant.
@@ -940,7 +1004,7 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
                 "allow_session" => "allow_always",
                 other => other,
             };
-            let path_ok = if !tool_ok {
+            let path_session = if tool_session.is_none() {
                 let Some(state) = app.try_state::<AppState>() else {
                     return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready"))
                         .await;
@@ -951,18 +1015,18 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
                     .path_permission_store()
                     .complete(&approval_request_id, path_decision)
             } else {
-                false
+                None
             };
-            if tool_ok || path_ok {
-                let kind = if tool_ok {
-                    "tool_approval"
-                } else {
-                    "path_permission"
-                };
+            if let Some((kind, session_id)) = tool_session
+                .map(|sid| ("tool_approval", sid))
+                .or_else(|| path_session.map(|sid| ("path_permission", sid)))
+            {
                 crate::core::remote::bridge::push_interaction_resolved(
                     &approval_request_id,
                     kind,
+                    Some(&session_id),
                 );
+                crate::core::remote::bridge::resume_run_state_after_interaction(app, &session_id);
                 crate::commands::window::dismiss_tracked_interaction_notifications(
                     app,
                     Some(&approval_request_id),
@@ -999,40 +1063,44 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             let Some(state) = app.try_state::<AppState>() else {
                 return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
             };
-            let ok = state
+            let Some(session_id) = state
                 .core
                 .chat()
                 .ask_store()
-                .complete(&ask_request_id, answer);
-            if ok {
-                crate::core::remote::bridge::push_interaction_resolved(&ask_request_id, "ask_user");
-                crate::commands::window::dismiss_tracked_interaction_notifications(
-                    app,
-                    Some(&ask_request_id),
-                    None,
-                );
-                let _ = app.emit(
-                    "interaction-resolved",
-                    json!({
-                        "requestId": ask_request_id,
-                        "kind": "ask_user",
-                    }),
-                );
-                send_msg(
-                    ws,
-                    &ServerMessage::rpc_ok(request_id, json!({ "ok": true })),
-                )
-                .await
-            } else {
-                send_msg(
+                .complete(&ask_request_id, answer)
+            else {
+                return send_msg(
                     ws,
                     &ServerMessage::rpc_err(
                         request_id,
                         "ask request not found or already completed",
                     ),
                 )
-                .await
-            }
+                .await;
+            };
+            crate::core::remote::bridge::push_interaction_resolved(
+                &ask_request_id,
+                "ask_user",
+                Some(&session_id),
+            );
+            crate::core::remote::bridge::resume_run_state_after_interaction(app, &session_id);
+            crate::commands::window::dismiss_tracked_interaction_notifications(
+                app,
+                Some(&ask_request_id),
+                None,
+            );
+            let _ = app.emit(
+                "interaction-resolved",
+                json!({
+                    "requestId": ask_request_id,
+                    "kind": "ask_user",
+                }),
+            );
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(request_id, json!({ "ok": true })),
+            )
+            .await
         }
     }
 }
@@ -1201,9 +1269,19 @@ fn session_history(app: &AppHandle, session_id: &str) -> serde_json::Value {
                 })
                 .map(remote_chat_message)
                 .collect();
-            json!({ "sessionId": session_id, "messages": mapped })
+            json!({
+                "sessionId": session_id,
+                "messages": mapped,
+                "planModeActive": crate::core::tools::plan_mode::shared_plan_mode_store()
+                    .is_active(session_id),
+            })
         }
-        Err(_) => json!({ "sessionId": session_id, "messages": [] }),
+        Err(_) => json!({
+            "sessionId": session_id,
+            "messages": [],
+            "planModeActive": crate::core::tools::plan_mode::shared_plan_mode_store()
+                .is_active(session_id),
+        }),
     }
 }
 
@@ -1278,7 +1356,9 @@ fn extract_code_changes(message: &crate::core::runtime::ChatMessage) -> Vec<serd
         }
         if let Some(preview) = activity.preview.as_ref() {
             let (added, removed) = count_diff_lines(&preview.unified_diff);
-            if !preview.path.is_empty() && (added > 0 || removed > 0 || !preview.unified_diff.is_empty()) {
+            if !preview.path.is_empty()
+                && (added > 0 || removed > 0 || !preview.unified_diff.is_empty())
+            {
                 out.push(json!({
                     "id": format!("{}:{}", message.id, activity.id),
                     "path": preview.path,
@@ -1450,15 +1530,11 @@ fn guess_mime(path: &std::path::Path) -> &'static str {
         Some("mp4") => "video/mp4",
         Some("webm") => "video/webm",
         Some("doc") => "application/msword",
-        Some("docx") => {
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        }
+        Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         Some("xls") => "application/vnd.ms-excel",
         Some("xlsx") => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         Some("ppt") => "application/vnd.ms-powerpoint",
-        Some("pptx") => {
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        }
+        Some("pptx") => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         _ => "application/octet-stream",
     }
 }
@@ -1485,10 +1561,10 @@ fn resolve_in_workspace(
         }
         candidate.push(part);
     }
-    let canonical_root = std::fs::canonicalize(root)
-        .map_err(|e| format!("workspace root unavailable: {e}"))?;
-    let canonical = std::fs::canonicalize(&candidate)
-        .map_err(|_| format!("file not found: {rel}"))?;
+    let canonical_root =
+        std::fs::canonicalize(root).map_err(|e| format!("workspace root unavailable: {e}"))?;
+    let canonical =
+        std::fs::canonicalize(&candidate).map_err(|_| format!("file not found: {rel}"))?;
     if !canonical.starts_with(&canonical_root) {
         return Err("path escapes workspace root".into());
     }
@@ -1579,8 +1655,7 @@ async fn read_workspace_file_payload(
             let n = if want == 0 {
                 0
             } else {
-                let mut f = std::fs::File::open(&file)
-                    .map_err(|e| format!("read failed: {e}"))?;
+                let mut f = std::fs::File::open(&file).map_err(|e| format!("read failed: {e}"))?;
                 f.seek(SeekFrom::Start(start))
                     .map_err(|e| format!("seek failed: {e}"))?;
                 f.read(&mut buf).map_err(|e| format!("read failed: {e}"))?
@@ -1688,12 +1763,8 @@ fn list_skills_payload(app: &AppHandle) -> serde_json::Value {
         .into_iter()
         .filter(|skill| skill.source != "builtin" || enabled_builtins.contains(&skill.name))
         .map(|skill| {
-            let icon_url = resolve_remote_icon_url(
-                app,
-                "skill",
-                &skill.name,
-                skill.icon_url.as_deref(),
-            );
+            let icon_url =
+                resolve_remote_icon_url(app, "skill", &skill.name, skill.icon_url.as_deref());
             json!({
                 "id": skill.name,
                 "name": skill.name,
@@ -1715,12 +1786,8 @@ fn list_mcp_payload(app: &AppHandle) -> serde_json::Value {
         .into_iter()
         .filter(|server| server.enabled)
         .map(|server| {
-            let icon_url = resolve_remote_icon_url(
-                app,
-                "mcp",
-                &server.id,
-                server.icon_url.as_deref(),
-            );
+            let icon_url =
+                resolve_remote_icon_url(app, "mcp", &server.id, server.icon_url.as_deref());
             json!({
                 "id": server.id,
                 "title": server.title.unwrap_or_else(|| server.id.clone()),
@@ -1741,10 +1808,7 @@ fn resolve_remote_icon_url(
     remote: Option<&str>,
 ) -> Option<String> {
     if let Some(url) = remote.map(str::trim).filter(|u| !u.is_empty()) {
-        if url.starts_with("https://")
-            || url.starts_with("http://")
-            || url.starts_with("data:")
-        {
+        if url.starts_with("https://") || url.starts_with("http://") || url.starts_with("data:") {
             return Some(url.to_string());
         }
     }
@@ -1756,10 +1820,7 @@ fn app_version() -> Option<String> {
 }
 
 /// 认证阶段（读写分离前）直接写 WS；之后统一走 `Outbound` 队列。
-async fn send_ws_msg<S>(
-    ws: &mut WebSocketStream<S>,
-    msg: &ServerMessage,
-) -> Result<(), String>
+async fn send_ws_msg<S>(ws: &mut WebSocketStream<S>, msg: &ServerMessage) -> Result<(), String>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {

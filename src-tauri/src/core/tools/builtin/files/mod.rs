@@ -117,7 +117,10 @@ pub(super) fn guard_minimal_edit(
 
 pub(super) fn should_skip(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    matches!(name, ".git" | "node_modules" | "target" | "dist")
+    matches!(
+        name,
+        ".git" | "node_modules" | "target" | "dist" | ".next" | "__pycache__" | ".venv" | "venv"
+    )
 }
 
 pub(super) fn run_command_cancellable(

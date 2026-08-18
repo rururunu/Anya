@@ -1,7 +1,9 @@
 use tokio::sync::mpsc::Sender;
 
 use crate::core::runtime::{ChatRequest, Role, StreamEvent};
+use crate::models::settings::ProviderApiProtocol;
 
+use super::models::endpoint_url_for_protocol;
 use super::multimodal::{describe_image, multimodal_http_client, resolve_multimodal_endpoint};
 use super::ProviderError;
 
@@ -11,6 +13,7 @@ pub(super) enum FallbackPlan {
         model: String,
         api_key: String,
         url: String,
+        protocol: ProviderApiProtocol,
     },
 }
 
@@ -60,7 +63,8 @@ pub(super) async fn apply_image_input_fallback(
     Ok(FallbackPlan::SwitchToMultimodal {
         model: mm_model.to_string(),
         api_key: endpoint.api_key,
-        url: endpoint.url,
+        url: endpoint_url_for_protocol(&endpoint.base_url, endpoint.protocol),
+        protocol: endpoint.protocol,
     })
 }
 

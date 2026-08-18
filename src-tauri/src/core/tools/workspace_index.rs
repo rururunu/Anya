@@ -36,8 +36,7 @@ const CHUNK_OVERLAP: usize = 200;
 /// Cap per-file chunk records to bound index size on pathological files.
 const MAX_CHUNKS_PER_FILE: usize = 400;
 
-const SYMBOL_RE: &str =
-    r"(?m)^\s*(?:pub\s+)?(?:async\s+)?(?:fn|struct|enum|trait|class|function|def|interface|type)\s+([A-Za-z_][A-Za-z0-9_]*)";
+const SYMBOL_RE: &str = r"(?m)^\s*(?:pub\s+)?(?:async\s+)?(?:fn|struct|enum|trait|class|function|def|interface|type)\s+([A-Za-z_][A-Za-z0-9_]*)";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -512,7 +511,11 @@ mod tests {
         // Removed file disappears after refresh.
         fs::remove_file(root.join("a.py")).unwrap();
         index.refresh().unwrap();
-        assert!(index.search("apple", 3).unwrap().iter().all(|h| h.path != "a.py"));
+        assert!(index
+            .search("apple", 3)
+            .unwrap()
+            .iter()
+            .all(|h| h.path != "a.py"));
 
         let _ = fs::remove_dir_all(root);
     }

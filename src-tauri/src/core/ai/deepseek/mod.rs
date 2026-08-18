@@ -13,18 +13,19 @@ use tokio::sync::mpsc::Sender;
 use tracing::Instrument;
 
 use crate::core::runtime::{ChatRequest, Role, StreamEvent};
-use crate::models::settings::ReasoningEffort;
+use crate::models::settings::{ProviderApiProtocol, ReasoningEffort};
 
 use super::provider::{AIProvider, ProviderError};
 
 pub(crate) use messages::build_api_body;
+pub(crate) use messages::build_responses_body;
 pub use models::list_models;
+pub(crate) use models::{endpoint_url_for_protocol, normalize_chat_completions_url};
 pub use models::{list_openai_compatible_models, normalize_models_url};
-pub(crate) use models::normalize_chat_completions_url;
 use stream::RETRY_BACKOFF;
 
 use image_fallback::{apply_image_input_fallback, FallbackPlan};
-use stream::{emit_stream_error, run_chat_stream};
+use stream::{emit_stream_error, run_chat_stream, run_responses_stream};
 
 const API_URL: &str = "https://api.deepseek.com/chat/completions";
 
@@ -38,6 +39,7 @@ pub struct DeepSeekProvider {
     /// Optional resolver that returns a custom chat-completions URL.
     /// When `None` (or the resolver returns `None`) the default `API_URL` is used.
     resolve_base_url: Option<Arc<dyn Fn() -> Option<String> + Send + Sync>>,
+    resolve_api_protocol: Arc<dyn Fn() -> ProviderApiProtocol + Send + Sync>,
 }
 
 impl DeepSeekProvider {
@@ -49,6 +51,7 @@ impl DeepSeekProvider {
         resolve_pass_tool_reasoning: Arc<dyn Fn() -> bool + Send + Sync>,
         resolve_continue_thinking_after_tools: Arc<dyn Fn() -> bool + Send + Sync>,
         resolve_base_url: Option<Arc<dyn Fn() -> Option<String> + Send + Sync>>,
+        resolve_api_protocol: Arc<dyn Fn() -> ProviderApiProtocol + Send + Sync>,
     ) -> Self {
         Self {
             app,
@@ -58,6 +61,7 @@ impl DeepSeekProvider {
             resolve_pass_tool_reasoning,
             resolve_continue_thinking_after_tools,
             resolve_base_url,
+            resolve_api_protocol,
         }
     }
 
@@ -94,10 +98,14 @@ impl DeepSeekProvider {
         (self.resolve_continue_thinking_after_tools)()
     }
 
-    fn chat_completions_url(&self) -> String {
+    fn api_protocol(&self) -> ProviderApiProtocol {
+        (self.resolve_api_protocol)()
+    }
+
+    fn request_url(&self, protocol: ProviderApiProtocol) -> String {
         if let Some(resolver) = &self.resolve_base_url {
             if let Some(base) = resolver() {
-                return normalize_chat_completions_url(&base);
+                return endpoint_url_for_protocol(&base, protocol);
             }
         }
         API_URL.to_string()
@@ -136,7 +144,8 @@ impl DeepSeekProvider {
         let mut request = request;
         let primary_model = self.model()?;
         let primary_api_key = self.api_key()?;
-        let primary_url = self.chat_completions_url();
+        let primary_protocol = self.api_protocol();
+        let primary_url = self.request_url(primary_protocol);
         let effort = self.effort();
         let pass_tool_reasoning = self.pass_tool_reasoning();
         let continue_thinking_after_tools = self.continue_thinking_after_tools();
@@ -153,18 +162,24 @@ impl DeepSeekProvider {
         let mut model = primary_model.clone();
         let mut api_key = primary_api_key.clone();
         let mut url = primary_url.clone();
+        let mut protocol = primary_protocol;
 
         if has_images {
-            let body = build_api_body(
+            match dispatch_stream(
+                &client,
+                &primary_url,
+                &primary_api_key,
                 &request,
                 &primary_model,
-                true,
                 effort,
                 pass_tool_reasoning,
                 continue_thinking_after_tools,
                 include_thinking,
-            );
-            match run_chat_stream(&client, &primary_url, &primary_api_key, &body, &tx).await {
+                primary_protocol,
+                &tx,
+            )
+            .await
+            {
                 Ok(()) => return Ok(()),
                 // Multimodal split-analysis is only for text-only primaries.
                 // Gemini / gpt-4o / Claude already see images natively — never describe→reask.
@@ -180,15 +195,18 @@ impl DeepSeekProvider {
                             model = primary_model;
                             api_key = primary_api_key;
                             url = primary_url;
+                            protocol = primary_protocol;
                         }
                         Ok(FallbackPlan::SwitchToMultimodal {
                             model: mm_model,
                             api_key: mm_key,
                             url: mm_url,
+                            protocol: mm_protocol,
                         }) => {
                             model = mm_model;
                             api_key = mm_key;
                             url = mm_url;
+                            protocol = mm_protocol;
                         }
                         Err(error) => return emit_stream_error(&tx, error).await,
                     }
@@ -197,23 +215,67 @@ impl DeepSeekProvider {
             }
         }
 
-        let body = build_api_body(
-            &request,
-            &model,
-            true,
-            effort,
-            pass_tool_reasoning,
-            continue_thinking_after_tools,
-            include_thinking,
-        );
         // Only DeepSeek models get the reactive "context window exceeded →
         // compact and retry" path; custom OpenAI-compatible providers keep the
         // existing surface-error behavior.
         let is_deepseek = model.trim().to_ascii_lowercase().starts_with("deepseek");
-        match run_chat_stream(&client, &url, &api_key, &body, &tx).await {
+        match dispatch_stream(
+            &client,
+            &url,
+            &api_key,
+            &request,
+            &model,
+            effort,
+            pass_tool_reasoning,
+            continue_thinking_after_tools,
+            include_thinking,
+            protocol,
+            &tx,
+        )
+        .await
+        {
             Ok(()) => Ok(()),
             Err(error) if is_deepseek && error.is_context_window_exceeded() => Err(error),
             Err(error) => emit_stream_error(&tx, error).await,
+        }
+    }
+}
+
+async fn dispatch_stream(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    request: &ChatRequest,
+    model: &str,
+    effort: ReasoningEffort,
+    pass_tool_reasoning: bool,
+    continue_thinking_after_tools: bool,
+    include_thinking: bool,
+    protocol: ProviderApiProtocol,
+    tx: &Sender<StreamEvent>,
+) -> Result<(), ProviderError> {
+    match protocol {
+        ProviderApiProtocol::Responses => {
+            let body = build_responses_body(
+                request,
+                model,
+                true,
+                effort,
+                continue_thinking_after_tools,
+            );
+            run_responses_stream(client, url, api_key, &body, tx).await
+        }
+        ProviderApiProtocol::ChatCompletions => {
+            let body = build_api_body(
+                request,
+                model,
+                true,
+                effort,
+                pass_tool_reasoning,
+                continue_thinking_after_tools,
+                include_thinking,
+            );
+            run_chat_stream(client, url, api_key, &body, tx).await
         }
     }
 }
@@ -454,7 +516,13 @@ mod tests {
                 ),
                 msg("t1", Role::Tool, "wrote a.rs", None, Some("call-1")),
                 // Auto-verify used to be injected as role=tool with a fresh id.
-                msg("t2", Role::Tool, "cargo check ok", None, Some("auto-verify-1")),
+                msg(
+                    "t2",
+                    Role::Tool,
+                    "cargo check ok",
+                    None,
+                    Some("auto-verify-1"),
+                ),
             ]),
             "deepseek-chat",
             true,
@@ -719,6 +787,104 @@ mod tests {
     }
 
     #[test]
+    fn build_responses_body_uses_input_and_xai_reasoning() {
+        let mut request = sample_request(vec![]);
+        request.tools = std::sync::Arc::from([json!({
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a file",
+                "parameters": { "type": "object" }
+            }
+        })]);
+        let body = build_responses_body(
+            &request,
+            "grok-4.6",
+            true,
+            ReasoningEffort::High,
+            true,
+        );
+        let obj = body.as_object().expect("object body");
+        assert!(obj.contains_key("input"));
+        assert!(!obj.contains_key("messages"));
+        assert!(!obj.contains_key("thinking"));
+        assert!(!obj.contains_key("store"));
+        assert_eq!(
+            obj.get("reasoning"),
+            Some(&json!({ "effort": "high", "summary": "auto" }))
+        );
+        assert_eq!(
+            obj.get("tools"),
+            Some(&json!([{
+                "type": "function",
+                "name": "read_file",
+                "description": "Read a file",
+                "parameters": { "type": "object" }
+            }]))
+        );
+    }
+
+    #[test]
+    fn build_responses_body_maps_max_effort_to_xhigh() {
+        let body = build_responses_body(
+            &sample_request(vec![]),
+            "grok-4.6",
+            true,
+            ReasoningEffort::Max,
+            true,
+        );
+        assert_eq!(body["reasoning"]["effort"], json!("xhigh"));
+        assert_eq!(body["reasoning"]["summary"], json!("auto"));
+    }
+
+    #[test]
+    fn build_responses_body_maps_disabled_effort_to_high() {
+        let body = build_responses_body(
+            &sample_request(vec![]),
+            "grok-4.6",
+            true,
+            ReasoningEffort::Disabled,
+            true,
+        );
+        assert_eq!(body["reasoning"]["effort"], json!("high"));
+    }
+
+    #[test]
+    fn build_api_body_skips_deepseek_thinking_for_custom_models() {
+        let body = build_api_body(
+            &sample_request(vec![]),
+            "grok-4.6",
+            true,
+            ReasoningEffort::High,
+            true,
+            true,
+            true,
+        );
+        let obj = body.as_object().expect("object body");
+        assert!(!obj.contains_key("thinking"));
+        assert!(!obj.contains_key("reasoning_effort"));
+    }
+
+    #[test]
+    fn normalize_responses_url_from_chat_completions() {
+        assert_eq!(
+            super::models::normalize_responses_url("https://api.x.ai/v1/chat/completions"),
+            "https://api.x.ai/v1/responses"
+        );
+        assert_eq!(
+            super::models::normalize_responses_url("https://api.x.ai/v1"),
+            "https://api.x.ai/v1/responses"
+        );
+        assert_eq!(
+            endpoint_url_for_protocol(
+                "https://api.x.ai/v1",
+                crate::models::settings::ProviderApiProtocol::Responses
+            ),
+            "https://api.x.ai/v1/responses"
+        );
+    }
+
+    #[test]
     fn normalize_chat_completions_url_avoids_duplication() {
         assert_eq!(
             normalize_chat_completions_url("https://api.openai.com/v1"),
@@ -774,6 +940,7 @@ mod tests {
                 api_key: "sk-test".into(),
                 models: "gpt-4o, gpt-4o-mini".into(),
                 preset_id: None,
+                api_protocol: Default::default(),
             });
         let endpoint = resolve_multimodal_endpoint(&settings, "gpt-4o", "openai").unwrap();
         assert_eq!(endpoint.api_key, "sk-test");
@@ -789,6 +956,7 @@ mod tests {
             api_key: key.into(),
             models: "shared-vision-model".into(),
             preset_id: None,
+            api_protocol: Default::default(),
         };
         let settings = crate::models::settings::AppSettings {
             custom_providers: vec![provider("first", "key-1"), provider("second", "key-2")],

@@ -8,8 +8,8 @@ use crate::core::chat::conversation_manager::{create_message, ConversationManage
 use crate::core::chat::error::ChatError;
 use crate::core::chat::preferences::SendPreferences;
 use crate::core::chat::prompt::{PromptBuildInput, PromptBuilder, PromptPreferences};
-use crate::core::context::ContextResolver;
 use crate::core::chat::session_origin::{shared_session_origin_store, RequestOrigin};
+use crate::core::context::ContextResolver;
 use crate::core::event::{BusEvent, EventBus, PlanModeSource};
 use crate::core::runtime::{ChatMessage, MessageStatus, Role, DEFAULT_SESSION_ID};
 use crate::core::tools::context::{AskStore, PathPermissionStore, TaskItem};
@@ -163,9 +163,10 @@ impl ChatService {
             .map(str::trim)
             .filter(|id| !id.is_empty());
         let already_bound = self.conversation.workspace_for_session(&session_id);
-        let inbox_root = self.app_handle.as_ref().and_then(|app| {
-            crate::core::remote::inbox_root_if_exists(app, &session_id)
-        });
+        let inbox_root = self
+            .app_handle
+            .as_ref()
+            .and_then(|app| crate::core::remote::inbox_root_if_exists(app, &session_id));
         // Phone FAB / 随文 omits workspace_id. Never inherit the desktop's
         // currently selected workspace — that fallback is only for workbench
         // turns that forgot to pass one. Workspace-folder "+" still sends an
@@ -174,9 +175,8 @@ impl ChatService {
             || (matches!(origin, RequestOrigin::Companion)
                 && explicit_workspace.is_none()
                 && already_bound.is_none());
-        let using_inbox = explicit_workspace.is_none()
-            && already_bound.is_none()
-            && inbox_root.is_some();
+        let using_inbox =
+            explicit_workspace.is_none() && already_bound.is_none() && inbox_root.is_some();
         let workspace = if using_inbox || quick_ask {
             None
         } else {
@@ -230,8 +230,7 @@ impl ChatService {
         } else if !using_inbox && !quick_ask {
             // Keep the session sticky even when later turns omit workspace_id.
             if let Some(workspace) = workspace.as_ref() {
-                self.conversation
-                    .bind_workspace(&session_id, &workspace.id);
+                self.conversation.bind_workspace(&session_id, &workspace.id);
             }
         }
         let user_message = create_message(&session_id, Role::User, content, MessageStatus::Done);
@@ -300,7 +299,11 @@ impl ChatService {
             .as_deref()
             .filter(|model| !model.trim().is_empty())
             .map(str::to_string)
-            .or_else(|| settings.as_ref().map(|settings| settings.chat_model.clone()))
+            .or_else(|| {
+                settings
+                    .as_ref()
+                    .map(|settings| settings.chat_model.clone())
+            })
             .unwrap_or_default();
         let context_window =
             crate::core::chat::model_context::effective_context_window(large_context, &model);
@@ -308,6 +311,16 @@ impl ChatService {
         let max_turn_tokens = context_window;
         let provider = self.resolve_provider(&overrides);
         let summarizer = crate::core::chat::compact::ProviderSummarizer::new(Arc::clone(&provider));
+        let may_compact = compact::measure_context_usage(&history, &context, None, context_window)
+            .usage_ratio
+            >= compact::COMPACT_TRIGGER_RATIO;
+        if may_compact {
+            self.event_bus.emit(BusEvent::ChatStatus {
+                session_id: session_id.clone(),
+                message_id: assistant_message.id.clone(),
+                kind: "context_compacting".to_string(),
+            });
+        }
         let compact = compact::prepare_history_for_prompt(
             &history,
             &context,
@@ -316,20 +329,48 @@ impl ChatService {
             Some(&summarizer),
         )
         .await;
+        if may_compact {
+            let kind = compact
+                .notice
+                .as_ref()
+                .map(|notice| {
+                    format!(
+                        "context_compacted:{}:{:.4}:{}:{}",
+                        notice.folded_messages.unwrap_or(0),
+                        notice.usage_ratio,
+                        notice.estimated_tokens,
+                        notice.context_window_tokens,
+                    )
+                })
+                .unwrap_or_default();
+            self.event_bus.emit(BusEvent::ChatStatus {
+                session_id: session_id.clone(),
+                message_id: assistant_message.id.clone(),
+                kind,
+            });
+        }
         if let Some(notice) = &compact.notice {
+            if notice.kind == compact::ContextNoticeKind::Compacted {
+                if let Some(summary) = compact.summary_message() {
+                    self.conversation.insert_compaction_summary(
+                        &session_id,
+                        summary.clone(),
+                        compact.first_kept_id(),
+                    );
+                }
+            }
             let language_zh = matches!(
                 preferences.app_language,
                 crate::models::settings::AppLanguage::ZhCn
             );
             self.event_bus.emit(BusEvent::ChatContextNotice {
                 session_id: session_id.clone(),
-                kind: match notice.kind {
-                    compact::ContextNoticeKind::ApproachingLimit => "approaching-limit".to_string(),
-                    compact::ContextNoticeKind::Compacted => "compacted".to_string(),
-                },
+                kind: "compacted".to_string(),
                 message: compact::notice_message(notice, language_zh),
                 usage_ratio: notice.usage_ratio,
                 folded_messages: notice.folded_messages,
+                estimated_tokens: notice.estimated_tokens,
+                context_window_tokens: notice.context_window_tokens,
             });
         }
         let collaboration_models = settings
@@ -605,8 +646,8 @@ impl ChatService {
         context: Option<crate::core::runtime::RequestContext>,
         model_id: Option<String>,
     ) -> Result<crate::models::chat::ContextUsageResponse, ChatError> {
-        use crate::core::chat::model_context::effective_context_window;
         use crate::core::chat::compact::measure_context_usage;
+        use crate::core::chat::model_context::effective_context_window;
         use crate::services::settings_store::get_settings;
 
         let history = match session_id.as_deref() {
@@ -694,12 +735,7 @@ impl ChatService {
         context
     }
 
-    pub fn emit_plan_mode_changed(
-        &self,
-        session_id: &str,
-        active: bool,
-        source: PlanModeSource,
-    ) {
+    pub fn emit_plan_mode_changed(&self, session_id: &str, active: bool, source: PlanModeSource) {
         self.event_bus.emit(BusEvent::PlanModeChanged {
             session_id: session_id.to_string(),
             active,

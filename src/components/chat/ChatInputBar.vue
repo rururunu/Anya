@@ -159,7 +159,7 @@
         v-else-if="showThinkingTierList"
         key="thinking-tier-list"
         :options="thinkingTierPickerOptions"
-        :selected-id="chatModel"
+        :selected-id="thinkingTierSelectedId"
         :selected-index="selectedIndex"
         :ariaLabel="tr(language, 'chooseThinkingTier')"
         @hover="selectedIndex = $event"
@@ -651,12 +651,18 @@ import {
   isKnownModelSelection,
   isModelEntrySelected,
   localizeThinkingTierLabel,
-  modelHasThinkingVariants,
 } from "@/lib/modelThinking";
+import {
+  effectiveReasoningEffort,
+  effortOptionsForControl,
+  isReasoningEffort,
+  resolveReasoningControl,
+} from "@/lib/reasoningControl";
 import { useChatStore, type SessionCompose } from "@/stores/chat";
 import {
   localizedOptionLabel,
   normalizeChatMode,
+  reasoningEffortOptions,
   toolApprovalModeOptions,
   type ChatMode,
   type ToolApprovalMode,
@@ -1081,6 +1087,16 @@ watch(
 );
 
 watch(
+  () => (props.sessionId ? chatStore.contextUsage[props.sessionId] : undefined),
+  (usage) => {
+    if (!usage) {
+      return;
+    }
+    contextUsage.value = usage;
+  },
+);
+
+watch(
   [message, composerSegments],
   () => {
     void refreshContextUsage();
@@ -1234,19 +1250,35 @@ const currentModelEntry = computed(() =>
   findModelEntry(availableModels.value, chatModel.value, chatModelProvider.value),
 );
 
-const showThinkingTierPicker = computed(() => {
-  const entry = currentModelEntry.value;
-  return entry ? modelHasThinkingVariants(entry) : false;
+const reasoningControl = computed(() =>
+  resolveReasoningControl({
+    modelId: chatModel.value,
+    providerId: chatModelProvider.value,
+    entry: currentModelEntry.value,
+    customProviders: settingStore.customProviders,
+  }),
+);
+
+const showThinkingTierPicker = computed(() => reasoningControl.value.kind !== "none");
+
+const thinkingTierSelectedId = computed(() => {
+  if (reasoningControl.value.kind === "effort") {
+    return effectiveReasoningEffort(settingStore.reasoningEffort, reasoningControl.value);
+  }
+  return chatModel.value;
 });
 
 function thinkingTierIcon(label: string) {
   switch (label.trim().toLowerCase()) {
     case "low":
+    case "max":
       return Zap;
     case "high":
       return Brain;
     case "agent":
       return Bot;
+    case "disabled":
+      return Ban;
     case "default":
       return MessageCircle;
     default:
@@ -1255,8 +1287,16 @@ function thinkingTierIcon(label: string) {
 }
 
 const thinkingTierPickerOptions = computed(() => {
+  const control = reasoningControl.value;
+  if (control.kind === "effort") {
+    return effortOptionsForControl(control).map((option) => ({
+      id: option.value,
+      label: localizedOptionLabel(option, language.value),
+      icon: thinkingTierIcon(option.value),
+    }));
+  }
   const entry = currentModelEntry.value;
-  if (!entry) {
+  if (!entry || control.kind !== "variants") {
     return [];
   }
   return getThinkingTierOptions(entry).map((variant) => {
@@ -1270,6 +1310,12 @@ const thinkingTierPickerOptions = computed(() => {
 });
 
 const currentThinkingTierLabel = computed(() => {
+  const control = reasoningControl.value;
+  if (control.kind === "effort") {
+    const effort = effectiveReasoningEffort(settingStore.reasoningEffort, control);
+    const option = reasoningEffortOptions.find((item) => item.value === effort);
+    return option ? localizedOptionLabel(option, language.value) : "";
+  }
   const entry = currentModelEntry.value;
   if (!entry) {
     return "";
@@ -2122,7 +2168,9 @@ async function openThinkingTierPicker() {
     return;
   }
   await prepareChipPicker();
-  const idx = thinkingTierPickerOptions.value.findIndex((option) => option.id === chatModel.value);
+  const idx = thinkingTierPickerOptions.value.findIndex(
+    (option) => option.id === thinkingTierSelectedId.value,
+  );
   selectedIndex.value = idx >= 0 ? idx : 0;
   thinkingTierPickerOpen.value = true;
   await positionChipPicker(thinkingTierButtonRef.value, 240);
@@ -2264,6 +2312,15 @@ function selectChatMode(mode: string) {
 
 function selectThinkingTier(variantId: string) {
   closeThinkingTierPicker();
+  if (reasoningControl.value.kind === "effort") {
+    if (!isReasoningEffort(variantId) || variantId === settingStore.reasoningEffort) {
+      return;
+    }
+    void settingStore.update({ reasoningEffort: variantId }).catch((error) => {
+      log.warn("update reasoning effort failed", error);
+    });
+    return;
+  }
   if (variantId === chatModel.value) {
     return;
   }

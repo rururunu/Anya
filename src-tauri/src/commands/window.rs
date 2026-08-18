@@ -108,7 +108,10 @@ fn take_tracked_toasts(request_id: Option<&str>, session_id: Option<&str>) -> Ve
     }
     if let Some(id) = session_id.map(str::trim).filter(|s| !s.is_empty()) {
         if let Some(toast) = guard.remove(id) {
-            if !out.iter().any(|t| t.title == toast.title && t.body == toast.body) {
+            if !out
+                .iter()
+                .any(|t| t.title == toast.title && t.body == toast.body)
+            {
                 out.push(toast);
             }
         }
@@ -208,8 +211,8 @@ pub fn show_interaction_notification(
 
         match notification.show() {
             Ok(handle) => {
-                let result = handle.wait_for_response(
-                    |response: &notify_rust::NotificationResponse| {
+                let result =
+                    handle.wait_for_response(|response: &notify_rust::NotificationResponse| {
                         let should_open = match response {
                             notify_rust::NotificationResponse::Default => true,
                             notify_rust::NotificationResponse::Action(action) => action == "open",
@@ -234,11 +237,13 @@ pub fn show_interaction_notification(
                         let session_id = request.session_id.clone();
                         let _ = app.run_on_main_thread(move || {
                             crate::services::window::show_workbench_window(&app_handle);
-                            let _ = app_handle
-                                .emit_to("workbench", "workbench-open-session", session_id);
+                            let _ = app_handle.emit_to(
+                                "workbench",
+                                "workbench-open-session",
+                                session_id,
+                            );
                         });
-                    },
-                );
+                    });
                 if let Err(error) = result {
                     tracing::warn!(%error, "failed to wait for interaction notification action");
                 }

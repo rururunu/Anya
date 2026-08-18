@@ -164,7 +164,11 @@ fn extract_powershell_encodedcommand(normalized_lower: &str) -> Option<String> {
             .unwrap_or(after.len());
         after[..end].trim().to_string()
     };
-    if token.is_empty() { None } else { Some(token) }
+    if token.is_empty() {
+        None
+    } else {
+        Some(token)
+    }
 }
 
 fn base64_decode_utf16le_or_utf8(payload: &str) -> Result<String, ToolError> {
@@ -308,13 +312,12 @@ fn assign_job_windows(child: &mut std::process::Child) -> Result<(), String> {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JobObjectBasicUIRestrictions,
-        JOBOBJECT_BASIC_LIMIT_INFORMATION,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
-        JOB_OBJECT_LIMIT_PROCESS_TIME, JOB_OBJECT_LIMIT_WORKINGSET,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-        JOBOBJECT_BASIC_UI_RESTRICTIONS, JOB_OBJECT_UILIMIT_HANDLES,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicUIRestrictions,
+        JobObjectExtendedLimitInformation, SetInformationJobObject,
+        JOBOBJECT_BASIC_LIMIT_INFORMATION, JOBOBJECT_BASIC_UI_RESTRICTIONS,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+        JOB_OBJECT_LIMIT_PROCESS_TIME, JOB_OBJECT_LIMIT_WORKINGSET, JOB_OBJECT_UILIMIT_HANDLES,
         JOB_OBJECT_UILIMIT_READCLIPBOARD, JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
     };
 
@@ -350,8 +353,8 @@ fn assign_job_windows(child: &mut std::process::Child) -> Result<(), String> {
         // Extend LimitFlags with KILL_ON_JOB_CLOSE + ACTIVE_PROCESS.
         // NOTE: `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` uses `LimitFlags` in
         // `BasicLimitInformation`, and `ActiveProcessLimit` in the outer struct.
-        info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+        info.BasicLimitInformation.LimitFlags |=
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
         let _ = SetInformationJobObject(
             job,
             JobObjectExtendedLimitInformation,

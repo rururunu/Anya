@@ -254,6 +254,7 @@
             :busy="planBusy || isSessionSending"
             :executing="isApprovedPlan(item.message)"
             :auto-countdown="isApprovedPlan(item.message) ? null : planCountdownInfo"
+            :allow-empty-approve="isPlanGateStopMessage(item.message)"
             @approve="approvePlanMode"
             @reject="rejectAutoExecute"
           />
@@ -335,6 +336,7 @@ import { useChatStore } from "@/stores/chat";
 import type { ChatMessage, CheckpointInfo, TaskItem } from "@/types/chat";
 import { parseSelectionAttachment } from "@/services/chat/selectionAttachment";
 import { isSoftInjectContent, stripSoftInjectMarker } from "@/services/chat/softInject";
+import { isCompactionSummary } from "@/services/chat/compactMarker";
 import { tr } from "@/services/i18n";
 import { createLogger } from "@/services/logger";
 import { gsapScrollContainerTo } from "@/services/motion/gsapPresets";
@@ -630,15 +632,24 @@ function isApprovedPlan(message: ChatMessage): boolean {
   return message.id === approvedPlanMessageId.value;
 }
 
+function isPlanGateStopMessage(message: ChatMessage): boolean {
+  return message.content.includes("计划尚未批准");
+}
+
+function hasApprovablePlan(message: ChatMessage): boolean {
+  return looksLikePendingPlan(message) || isPlanGateStopMessage(message);
+}
+
 /** A planning turn: task checklist on THIS message, without mutating tool work yet. */
 function looksLikePendingPlan(message: ChatMessage): boolean {
   // Message-local only — sessionTasks would make every later reply look like a plan.
   const tasks = tasksFromMessage(message);
   if (!tasks.length) return false;
   const hadMutations = (message.toolActivities ?? []).some((activity) => {
+    if (activity.success === false || activity.status === "error") return false;
     const kind = String(activity.kind ?? "").toLowerCase();
     // Shell may be used for read-only inspection while drafting a plan; only
-    // file mutations mean this turn already started implementing.
+    // successful file mutations mean this turn already started implementing.
     return kind === "edit" || kind === "create" || kind === "delete" || kind === "move";
   });
   if (hadMutations) return false;
@@ -660,19 +671,27 @@ function showPlanCardFor(message: ChatMessage): boolean {
   }
   if (message.id !== lastDoneAssistantId.value) return false;
   if (hasUserMessageAfter(message.id)) return false;
-  // Require a checklist on this message (don't show solely because the sticky gate is on).
-  return looksLikePendingPlan(message);
+  // Plan mode by itself is not an approval request. Only show the card
+  // when there is a checklist, or the writer gate stopped the turn.
+  return hasApprovablePlan(message);
 }
 
 /** If Agent left a pending plan checklist but the gate never flipped, recover it. */
 function ensurePlanGateForPendingChecklist() {
   if (!props.sessionId || planBusy.value || isSessionSending.value) return;
-  // Manual Plan mode never auto-executes.
-  if (chatStore.sessionCompose[props.sessionId]?.chatMode === "plan") return;
   const messageId = lastDoneAssistantId.value;
   if (!messageId || messageId === approvedPlanMessageId.value) return;
   if (hasUserMessageAfter(messageId)) return;
   const message = props.messages.find((item) => item.id === messageId);
+  if (message && isPlanGateStopMessage(message) && !planModeActive.value) {
+    chatStore.setSessionPlanMode(props.sessionId, true);
+    void setPlanMode(props.sessionId, true).catch((error) => {
+      log.warn("recover plan gate after writer block failed", error);
+    });
+    return;
+  }
+  // Manual Plan mode never auto-executes.
+  if (chatStore.sessionCompose[props.sessionId]?.chatMode === "plan") return;
   const fingerprint = pendingPlanFingerprint(message);
   if (!fingerprint) return;
 
@@ -778,6 +797,7 @@ function rejectAutoExecute() {
 
 const visibleMessages = computed(() =>
   props.messages.filter((message) => {
+    if (isCompactionSummary(message)) return false;
     const role = String(message.role).toLowerCase();
     return role !== "system" && role !== "tool";
   }),
@@ -1001,6 +1021,9 @@ function isWaitingForAskUser(message: ChatMessage) {
 }
 
 function activityLabel(message: ChatMessage) {
+  if (message.activityStatus === "context_compacting") {
+    return tr(settingStore.language, "compactingContext");
+  }
   if (message.activityStatus?.startsWith("stream_retry")) {
     const [, attemptRaw, maxRaw] = message.activityStatus.split(":");
     const attempt = Number.parseInt(attemptRaw ?? "1", 10) || 1;
@@ -1224,6 +1247,7 @@ onMounted(() => {
   const element = listRef.value;
   if (!element || typeof ResizeObserver === "undefined") return;
   resizeObserver = new ResizeObserver(() => {
+    if (element.clientHeight < 8) return;
     void scrollToBottomIfNeeded();
   });
   resizeObserver.observe(element);

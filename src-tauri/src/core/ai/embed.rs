@@ -86,7 +86,10 @@ impl ApiEmbedder {
             .map_err(|e| e.to_string())?;
         let response = client
             .post(&url)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", self.api_key))
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", self.api_key),
+            )
             .json(&json!({ "input": texts, "model": self.model }))
             .send()
             .map_err(|e| format!("embeddings request failed: {e}"))?;
@@ -344,10 +347,7 @@ fn apply_prefix(text: &str, needs_prefix: bool, is_query: bool) -> String {
     }
 }
 
-fn load_embedder(
-    model: SemanticSearchModel,
-    cache_dir: PathBuf,
-) -> Result<TextEmbedding, String> {
+fn load_embedder(model: SemanticSearchModel, cache_dir: PathBuf) -> Result<TextEmbedding, String> {
     let threads = std::thread::available_parallelism()
         .map(|n| n.get().min(4))
         .unwrap_or(2);

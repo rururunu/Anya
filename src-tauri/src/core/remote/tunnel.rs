@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
@@ -88,12 +88,7 @@ fn extract_trycloudflare_url(line: &str) -> Option<String> {
             let rest = &line[start + prefix.len()..];
             let end = rest
                 .find(|c: char| {
-                    c == '/'
-                        || c.is_whitespace()
-                        || c == '"'
-                        || c == '|'
-                        || c == ','
-                        || c == ')'
+                    c == '/' || c.is_whitespace() || c == '"' || c == '|' || c == ',' || c == ')'
                 })
                 .unwrap_or(rest.len());
             let host = rest[..end].trim();
@@ -137,11 +132,7 @@ fn cloudflared_base_url(local_port: u16) -> String {
 }
 
 fn is_quick_tunnel(prefs: &TunnelPrefs) -> bool {
-    let token = prefs
-        .cloudflared_token
-        .as_deref()
-        .unwrap_or("")
-        .trim();
+    let token = prefs.cloudflared_token.as_deref().unwrap_or("").trim();
     prefs.use_quick_tunnel || token.is_empty()
 }
 
@@ -188,11 +179,7 @@ fn cloudflared_command(prefs: &TunnelPrefs, local_port: u16) -> Result<Command, 
         "tunnel",
     ]);
 
-    let token = prefs
-        .cloudflared_token
-        .as_deref()
-        .unwrap_or("")
-        .trim();
+    let token = prefs.cloudflared_token.as_deref().unwrap_or("").trim();
 
     if prefs.use_quick_tunnel || token.is_empty() {
         // Quick tunnel: `cloudflared tunnel --url http://localhost:PORT`

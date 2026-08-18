@@ -328,7 +328,8 @@ fn looks_like_local_dev_server(tool_name: &str, arguments: &str) -> bool {
     if tool_name != "run_shell" {
         return false;
     }
-    let value: serde_json::Value = serde_json::from_str(arguments).unwrap_or(serde_json::Value::Null);
+    let value: serde_json::Value =
+        serde_json::from_str(arguments).unwrap_or(serde_json::Value::Null);
     let background = value
         .get("run_in_background")
         .and_then(|v| v.as_bool())

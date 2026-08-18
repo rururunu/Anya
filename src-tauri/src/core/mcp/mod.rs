@@ -367,11 +367,7 @@ fn extract_urls(line: &str) -> Vec<String> {
     out
 }
 
-fn forward_mcp_stderr(
-    stderr: std::process::ChildStderr,
-    server_id: String,
-    open_oauth_urls: bool,
-) {
+fn forward_mcp_stderr(stderr: std::process::ChildStderr, server_id: String, open_oauth_urls: bool) {
     thread::spawn(move || {
         let reader = BufReader::new(stderr);
         let mut expect_auth_url = false;
@@ -669,7 +665,9 @@ impl McpProcess {
         // MCP stdio transport: newline-delimited JSON (not LSP Content-Length framing).
         let mut body = serde_json::to_vec(msg)?;
         if body.contains(&b'\n') {
-            return Err(ToolError::new("MCP message must not contain embedded newlines"));
+            return Err(ToolError::new(
+                "MCP message must not contain embedded newlines",
+            ));
         }
         body.push(b'\n');
         self.stdin

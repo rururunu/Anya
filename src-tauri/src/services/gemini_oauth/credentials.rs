@@ -89,16 +89,19 @@ pub(super) fn load_oauth_credentials(app: &AppHandle) -> Result<OAuthCredentials
 }
 
 fn embedded_oauth_credentials() -> Option<OAuthCredentials> {
-    decode_embedded_oauth(EMBEDDED_OAUTH_BYTES, EMBEDDED_OAUTH_MAGIC, EMBEDDED_OAUTH_KEY).or_else(
-        || {
-            // Previous brand used a different obfuscation key; keep reading those blobs.
-            decode_embedded_oauth(
-                EMBEDDED_OAUTH_BYTES,
-                b"AAAI-OAUTH-1",
-                b"AAAi-build-credential",
-            )
-        },
+    decode_embedded_oauth(
+        EMBEDDED_OAUTH_BYTES,
+        EMBEDDED_OAUTH_MAGIC,
+        EMBEDDED_OAUTH_KEY,
     )
+    .or_else(|| {
+        // Previous brand used a different obfuscation key; keep reading those blobs.
+        decode_embedded_oauth(
+            EMBEDDED_OAUTH_BYTES,
+            b"AAAI-OAUTH-1",
+            b"AAAi-build-credential",
+        )
+    })
 }
 
 fn decode_embedded_oauth(bytes: &[u8], magic: &[u8], key: &[u8]) -> Option<OAuthCredentials> {

@@ -141,12 +141,7 @@ impl ConversationManager {
                 .collect();
             let merged: Vec<ChatMessage> = full
                 .into_iter()
-                .map(|message| {
-                    settled_by_id
-                        .get(&message.id)
-                        .cloned()
-                        .unwrap_or(message)
-                })
+                .map(|message| settled_by_id.get(&message.id).cloned().unwrap_or(message))
                 .collect();
             sessions.insert(session_id, merged);
         }
@@ -284,6 +279,67 @@ impl ConversationManager {
         tauri::async_runtime::spawn(async move {
             if let Err(e) = super::db::save_message(&pool, &message).await {
                 eprintln!("Failed to save message to SQLite: {}", e);
+            }
+        });
+    }
+
+    /// Insert a compaction summary before `before_id` (or at the end).
+    /// No-op when a row with the same id already exists.
+    pub fn insert_compaction_summary(
+        &self,
+        session_id: &str,
+        mut summary: ChatMessage,
+        before_id: Option<&str>,
+    ) {
+        self.ensure_session_loaded(session_id);
+        if let Ok(sessions) = self.sessions.lock() {
+            if sessions
+                .get(session_id)
+                .is_some_and(|messages| messages.iter().any(|message| message.id == summary.id))
+            {
+                return;
+            }
+        }
+
+        refresh_message_token_cache(&mut summary);
+
+        let insert_at = {
+            let sessions = self.sessions.lock().ok();
+            let messages = sessions.as_ref().and_then(|map| map.get(session_id));
+            let len = messages.map(|list| list.len()).unwrap_or(0);
+            let idx = before_id
+                .and_then(|id| {
+                    messages.and_then(|list| list.iter().position(|message| message.id == id))
+                })
+                .unwrap_or(len);
+            if idx > 0 {
+                if let Some(list) = messages {
+                    let prev = list[idx - 1].timestamp;
+                    let next = list
+                        .get(idx)
+                        .map(|message| message.timestamp)
+                        .unwrap_or(prev.saturating_add(2));
+                    summary.timestamp = prev.saturating_add(1).min(next);
+                }
+            } else if let Some(next) = messages.and_then(|list| list.first()) {
+                summary.timestamp = next.timestamp.saturating_sub(1);
+            }
+            idx
+        };
+
+        if let Ok(mut sessions) = self.sessions.lock() {
+            let entry = sessions.entry(session_id.to_string()).or_default();
+            let idx = insert_at.min(entry.len());
+            entry.insert(idx, summary.clone());
+        }
+        if let Ok(mut loaded) = self.loaded_sessions.lock() {
+            loaded.insert(session_id.to_string());
+        }
+
+        let pool = self.db_pool.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = super::db::save_message(&pool, &summary).await {
+                eprintln!("Failed to save compaction summary to SQLite: {}", e);
             }
         });
     }
@@ -436,15 +492,12 @@ impl ConversationManager {
                     .sum();
                 let summary = ChatSessionSummary {
                     session_id: session_id.clone(),
-                    workspace_id: session_workspaces
-                        .get(session_id)
-                        .cloned()
-                        .or_else(|| {
-                            summaries
-                                .iter()
-                                .find(|item| item.session_id == *session_id)
-                                .and_then(|item| item.workspace_id.clone())
-                        }),
+                    workspace_id: session_workspaces.get(session_id).cloned().or_else(|| {
+                        summaries
+                            .iter()
+                            .find(|item| item.session_id == *session_id)
+                            .and_then(|item| item.workspace_id.clone())
+                    }),
                     preview,
                     message_count: messages.len(),
                     turn_count,
@@ -1029,10 +1082,8 @@ mod work_timeline_tests {
     use crate::core::runtime::{MessageStatus, Role, ToolActivity, WorkTimelineItem};
 
     fn temp_manager() -> (ConversationManager, std::path::PathBuf) {
-        let db_path = std::env::temp_dir().join(format!(
-            "anya-work-timeline-{}.db",
-            uuid::Uuid::new_v4()
-        ));
+        let db_path =
+            std::env::temp_dir().join(format!("anya-work-timeline-{}.db", uuid::Uuid::new_v4()));
         (ConversationManager::new(db_path.clone()), db_path)
     }
 
@@ -1050,7 +1101,12 @@ mod work_timeline_tests {
     fn interleaves_reasoning_tool_and_content_in_call_order() {
         let (manager, db_path) = temp_manager();
         let session_id = "session";
-        let message = create_message(session_id, Role::Assistant, String::new(), MessageStatus::Streaming);
+        let message = create_message(
+            session_id,
+            Role::Assistant,
+            String::new(),
+            MessageStatus::Streaming,
+        );
         let message_id = message.id.clone();
         manager
             .sessions
@@ -1092,11 +1148,15 @@ mod work_timeline_tests {
         let messages = manager.messages(session_id);
         let timeline = messages[0].work_timeline.clone().expect("timeline");
         assert_eq!(timeline.len(), 3);
-        assert!(matches!(&timeline[0], WorkTimelineItem::Reasoning { content, .. } if content == "let me check the file"));
+        assert!(
+            matches!(&timeline[0], WorkTimelineItem::Reasoning { content, .. } if content == "let me check the file")
+        );
         assert!(
             matches!(&timeline[1], WorkTimelineItem::Tool { tool_activity_id, .. } if tool_activity_id == "activity-1")
         );
-        assert!(matches!(&timeline[2], WorkTimelineItem::Content { content, .. } if content == "the file looks fine"));
+        assert!(
+            matches!(&timeline[2], WorkTimelineItem::Content { content, .. } if content == "the file looks fine")
+        );
 
         cleanup(db_path);
     }
@@ -1107,7 +1167,12 @@ mod work_timeline_tests {
     fn merges_consecutive_deltas_of_the_same_kind() {
         let (manager, db_path) = temp_manager();
         let session_id = "session";
-        let message = create_message(session_id, Role::Assistant, String::new(), MessageStatus::Streaming);
+        let message = create_message(
+            session_id,
+            Role::Assistant,
+            String::new(),
+            MessageStatus::Streaming,
+        );
         let message_id = message.id.clone();
         manager
             .sessions
@@ -1115,8 +1180,18 @@ mod work_timeline_tests {
             .unwrap()
             .insert(session_id.into(), vec![message]);
 
-        manager.append_work_timeline_text(session_id, &message_id, TimelineTextKind::Reasoning, "step one, ");
-        manager.append_work_timeline_text(session_id, &message_id, TimelineTextKind::Reasoning, "step two");
+        manager.append_work_timeline_text(
+            session_id,
+            &message_id,
+            TimelineTextKind::Reasoning,
+            "step one, ",
+        );
+        manager.append_work_timeline_text(
+            session_id,
+            &message_id,
+            TimelineTextKind::Reasoning,
+            "step two",
+        );
 
         let messages = manager.messages(session_id);
         let timeline = messages[0].work_timeline.clone().expect("timeline");
@@ -1134,7 +1209,12 @@ mod work_timeline_tests {
     fn tool_activity_updates_do_not_duplicate_timeline_entries() {
         let (manager, db_path) = temp_manager();
         let session_id = "session";
-        let message = create_message(session_id, Role::Assistant, String::new(), MessageStatus::Streaming);
+        let message = create_message(
+            session_id,
+            Role::Assistant,
+            String::new(),
+            MessageStatus::Streaming,
+        );
         let message_id = message.id.clone();
         manager
             .sessions
@@ -1173,7 +1253,12 @@ mod work_timeline_tests {
     fn truncate_work_timeline_keeps_stable_prefix() {
         let (manager, db_path) = temp_manager();
         let session_id = "session";
-        let message = create_message(session_id, Role::Assistant, String::new(), MessageStatus::Streaming);
+        let message = create_message(
+            session_id,
+            Role::Assistant,
+            String::new(),
+            MessageStatus::Streaming,
+        );
         let message_id = message.id.clone();
         manager
             .sessions
@@ -1212,7 +1297,10 @@ mod work_timeline_tests {
             TimelineTextKind::Reasoning,
             "retry partial",
         );
-        assert_eq!(manager.work_timeline_len(session_id, &message_id), stable_len + 1);
+        assert_eq!(
+            manager.work_timeline_len(session_id, &message_id),
+            stable_len + 1
+        );
 
         manager.truncate_work_timeline(session_id, &message_id, stable_len);
         let timeline = manager.messages(session_id)[0]
@@ -1237,10 +1325,8 @@ mod lazy_load_tests {
 
     #[tokio::test]
     async fn startup_does_not_load_all_sessions_until_opened() {
-        let db_path = std::env::temp_dir().join(format!(
-            "anya-lazy-load-{}.db",
-            uuid::Uuid::new_v4()
-        ));
+        let db_path =
+            std::env::temp_dir().join(format!("anya-lazy-load-{}.db", uuid::Uuid::new_v4()));
         let manager = ConversationManager::new(db_path.clone());
         let keep = create_message("keep", Role::User, "one".into(), MessageStatus::Done);
         let other = create_message("other", Role::User, "two".into(), MessageStatus::Done);

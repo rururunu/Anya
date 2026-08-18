@@ -33,8 +33,7 @@ pub fn parse_loopback_http_url(raw: &str) -> Result<(String, u16, String), Strin
         match hostport.rsplit_once(':') {
             Some((h, p)) => (
                 h.to_string(),
-                p.parse::<u16>()
-                    .map_err(|_| "invalid port".to_string())?,
+                p.parse::<u16>().map_err(|_| "invalid port".to_string())?,
             ),
             None => (hostport.to_string(), 80),
         }
@@ -91,7 +90,10 @@ pub fn public_preview_url(app: &AppHandle, preview_id: &str) -> String {
         } else {
             public.scheme.as_str()
         };
-        return format!("{scheme}://{}/p/{preview_id}/", public.host.trim_end_matches('/'));
+        return format!(
+            "{scheme}://{}/p/{preview_id}/",
+            public.host.trim_end_matches('/')
+        );
     }
     let lan = local_ipv4_hosts()
         .into_iter()
@@ -151,8 +153,7 @@ mod tests {
 
     #[test]
     fn accepts_loopback_urls() {
-        let (host, port, origin) =
-            parse_loopback_http_url("http://127.0.0.1:5173/app").unwrap();
+        let (host, port, origin) = parse_loopback_http_url("http://127.0.0.1:5173/app").unwrap();
         assert_eq!(host, "127.0.0.1");
         assert_eq!(port, 5173);
         assert_eq!(origin, "http://127.0.0.1:5173");

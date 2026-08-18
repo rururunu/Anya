@@ -30,8 +30,7 @@ pub const MINIMAL_CODING_PROMPT: &str = include_str!("../../../../prompts/minima
 pub const PLAN_MODE_PROMPT: &str = include_str!("../../../../prompts/plan-mode.md");
 
 /// Injected when the current turn was sent from the paired phone (Companion app).
-pub const COMPANION_ORIGIN_PROMPT: &str =
-    include_str!("../../../../prompts/companion-origin.md");
+pub const COMPANION_ORIGIN_PROMPT: &str = include_str!("../../../../prompts/companion-origin.md");
 
 #[cfg(test)]
 mod tests {
@@ -161,5 +160,6 @@ mod tests {
         assert!(PLAN_MODE_PROMPT.contains("Plan mode is active"));
         assert!(PLAN_MODE_PROMPT.contains("update_tasks"));
         assert!(PLAN_MODE_PROMPT.contains("Stop"));
+        assert!(PLAN_MODE_PROMPT.contains("Do not retry with a different command"));
     }
 }
