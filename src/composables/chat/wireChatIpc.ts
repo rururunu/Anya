@@ -6,6 +6,7 @@ import {
   listenChatReasoning,
   listenChatStarted,
   listenChatStatus,
+  listenChatTokenUsage,
   listenChatUserContent,
   listenSettingsChanged,
   listenToolFinished,
@@ -30,6 +31,7 @@ import type {
   ChatFinishedEvent,
   ChatReasoningEvent,
   ChatStatusEvent,
+  ChatTokenUsageEvent,
   ChatUserContentEvent,
 } from "@/types/chat";
 
@@ -211,6 +213,20 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
     if (sId) {
       void chatStore.flushStaged(sId);
     }
+  });
+
+  await listenChatTokenUsage((payload) => {
+    const event = payload as ChatTokenUsageEvent & { session_id?: string };
+    const sId = resolveSessionId(event.sessionId, event.session_id);
+    const cacheRead = event.usage?.cacheReadTokens;
+    if (!sId || cacheRead == null || !Number.isFinite(cacheRead)) {
+      return;
+    }
+    chatStore.setSessionCacheUsage(sId, {
+      inputTokens: event.usage.inputTokens ?? 0,
+      cacheReadTokens: cacheRead,
+      model: event.model,
+    });
   });
 
   await listenChatError((payload) => {

@@ -40,4 +40,13 @@ describe("toolActivityDisplay", () => {
     const item = activity({ title: "Read tauri.conf.json L1-73" });
     expect(summarizeProcessActivities([item], "en-US")).toBe("Read tauri.conf.json L1-73");
   });
+
+  it("falls back from empty title to tool name or process summary", () => {
+    expect(
+      summarizeProcessActivities([activity({ title: "  ", toolName: "browser_read" })], "en-US"),
+    ).toBe("browser_read");
+    expect(summarizeProcessActivities([activity({ title: "  ", toolName: "  " })], "zh-CN")).toBe(
+      "过程详情",
+    );
+  });
 });

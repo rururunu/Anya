@@ -38,6 +38,7 @@ pub struct ConversationManager {
     loaded_sessions: Arc<Mutex<HashSet<String>>>,
     session_workspaces: Arc<Mutex<HashMap<String, String>>>,
     session_titles: Arc<Mutex<HashMap<String, String>>>,
+    session_archived: Arc<Mutex<HashSet<String>>>,
     db_pool: sqlx::SqlitePool,
     journal: super::journal::SessionJournal,
 }
@@ -165,12 +166,21 @@ impl ConversationManager {
                     .expect("Failed to load chat session titles")
             }
         });
+        let session_archived = block_on_compat({
+            let db_pool = db_pool.clone();
+            async move {
+                super::db::load_session_archived(&db_pool)
+                    .await
+                    .expect("Failed to load archived chat sessions")
+            }
+        });
 
         Self {
             sessions: Arc::new(Mutex::new(sessions)),
             loaded_sessions: Arc::new(Mutex::new(loaded_sessions)),
             session_workspaces: Arc::new(Mutex::new(session_workspaces)),
             session_titles: Arc::new(Mutex::new(session_titles)),
+            session_archived: Arc::new(Mutex::new(session_archived)),
             db_pool,
             journal,
         }
@@ -444,6 +454,14 @@ impl ConversationManager {
     }
 
     pub fn list_sessions(&self) -> Vec<ChatSessionSummary> {
+        self.list_sessions_filtered(false)
+    }
+
+    pub fn list_archived_sessions(&self) -> Vec<ChatSessionSummary> {
+        self.list_sessions_filtered(true)
+    }
+
+    fn list_sessions_filtered(&self, archived: bool) -> Vec<ChatSessionSummary> {
         let pool = self.db_pool.clone();
         let mut summaries = block_on_compat(async move {
             super::db::load_session_summaries(&pool)
@@ -455,6 +473,11 @@ impl ConversationManager {
             .session_workspaces
             .lock()
             .map(|workspaces| workspaces.clone())
+            .unwrap_or_default();
+        let session_archived = self
+            .session_archived
+            .lock()
+            .map(|archived| archived.clone())
             .unwrap_or_default();
 
         // Overlay in-memory loaded sessions so an active stream's preview /
@@ -503,6 +526,7 @@ impl ConversationManager {
                     turn_count,
                     estimated_tokens,
                     updated_at,
+                    archived: session_archived.contains(session_id),
                 };
                 if let Some(index) = by_id.get(session_id).copied() {
                     summaries[index] = summary;
@@ -513,8 +537,30 @@ impl ConversationManager {
             }
         }
 
+        for summary in summaries.iter_mut() {
+            summary.archived = session_archived.contains(&summary.session_id);
+        }
+
+        summaries.retain(|summary| summary.archived == archived);
         summaries.sort_by_key(|summary| std::cmp::Reverse(summary.updated_at));
         summaries
+    }
+
+    pub fn set_session_archived(&self, session_id: &str, archived: bool) {
+        if let Ok(mut set) = self.session_archived.lock() {
+            if archived {
+                set.insert(session_id.to_string());
+            } else {
+                set.remove(session_id);
+            }
+        }
+        let pool = self.db_pool.clone();
+        let sid = session_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = super::db::set_session_archived(&pool, &sid, archived).await {
+                eprintln!("Failed to persist session archive state for {sid}: {error}");
+            }
+        });
     }
 
     pub fn update_message(
@@ -643,11 +689,38 @@ impl ConversationManager {
                 .get_mut(session_id)
                 .and_then(|messages| messages.iter_mut().find(|item| item.id == message_id))
             {
-                if let Some(timeline) = message.work_timeline.as_mut() {
-                    if keep_len == 0 {
-                        message.work_timeline = None;
-                    } else if timeline.len() > keep_len {
+                if keep_len == 0 {
+                    message.work_timeline = None;
+                } else if let Some(timeline) = message.work_timeline.as_mut() {
+                    if timeline.len() > keep_len {
                         timeline.truncate(keep_len);
+                    }
+                }
+                let kept_tool_ids = message
+                    .work_timeline
+                    .as_ref()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| match item {
+                                WorkTimelineItem::Tool { tool_activity_id, .. } => {
+                                    Some(tool_activity_id.as_str())
+                                }
+                                _ => None,
+                            })
+                            .collect::<HashSet<_>>()
+                    })
+                    .unwrap_or_default();
+                if let Some(activities) = message.tool_activities.as_mut() {
+                    activities.retain(|activity| {
+                        kept_tool_ids.contains(activity.id.as_str())
+                            || activity
+                                .parent_activity_id
+                                .as_deref()
+                                .is_some_and(|parent| kept_tool_ids.contains(parent))
+                    });
+                    if activities.is_empty() {
+                        message.tool_activities = None;
                     }
                 }
             }
@@ -674,15 +747,26 @@ impl ConversationManager {
             // Anchor the tool card at the point it actually started, right
             // after whatever narration preceded it, instead of grouping all
             // tool activity separately from the text that led up to it.
+            let already_on_timeline = message.work_timeline.as_ref().is_some_and(|items| {
+                items.iter().any(|item| {
+                    matches!(
+                        item,
+                        WorkTimelineItem::Tool { tool_activity_id, .. }
+                            if tool_activity_id == &activity.id
+                    )
+                })
+            });
             let timeline_entry = WorkTimelineItem::Tool {
                 id: format!("{}-tool-{}", message_id, activity.id),
                 tool_activity_id: activity.id.clone(),
             };
             activities.push(activity);
-            message
-                .work_timeline
-                .get_or_insert_with(Vec::new)
-                .push(timeline_entry);
+            if !already_on_timeline {
+                message
+                    .work_timeline
+                    .get_or_insert_with(Vec::new)
+                    .push(timeline_entry);
+            }
         }
         if !should_persist {
             message.estimated_tokens = None;
@@ -757,6 +841,9 @@ impl ConversationManager {
         if let Ok(mut workspaces) = self.session_workspaces.lock() {
             workspaces.remove(session_id);
         }
+        if let Ok(mut archived) = self.session_archived.lock() {
+            archived.remove(session_id);
+        }
 
         let pool = self.db_pool.clone();
         let sid = session_id.to_string();
@@ -800,6 +887,9 @@ impl ConversationManager {
         }
         if let Ok(mut workspaces) = self.session_workspaces.lock() {
             workspaces.clear();
+        }
+        if let Ok(mut archived) = self.session_archived.lock() {
+            archived.clear();
         }
 
         let pool = self.db_pool.clone();
@@ -1312,6 +1402,85 @@ mod work_timeline_tests {
             &timeline[0],
             WorkTimelineItem::Reasoning { content, .. } if content == "stable thought"
         ));
+
+        cleanup(db_path);
+    }
+
+    #[test]
+    fn truncate_work_timeline_drops_retried_tool_activities() {
+        let (manager, db_path) = temp_manager();
+        let session_id = "session";
+        let message = create_message(
+            session_id,
+            Role::Assistant,
+            String::new(),
+            MessageStatus::Streaming,
+        );
+        let message_id = message.id.clone();
+        manager
+            .sessions
+            .lock()
+            .unwrap()
+            .insert(session_id.into(), vec![message]);
+
+        manager.append_work_timeline_text(
+            session_id,
+            &message_id,
+            TimelineTextKind::Reasoning,
+            "stable thought",
+        );
+        let stable_len = manager.work_timeline_len(session_id, &message_id);
+        manager.upsert_tool_activity(
+            session_id,
+            &message_id,
+            ToolActivity {
+                id: "activity-retry".into(),
+                subagent_id: None,
+                parent_activity_id: None,
+                tool_name: "run_parallel_subagents".into(),
+                title: "Subagents (3)".into(),
+                kind: "other".into(),
+                detail: None,
+                arguments: None,
+                result: None,
+                preview: None,
+                success: true,
+                status: "running".into(),
+            },
+        );
+        manager.upsert_tool_activity(
+            session_id,
+            &message_id,
+            ToolActivity {
+                id: "activity-child".into(),
+                subagent_id: Some("child-1".into()),
+                parent_activity_id: Some("activity-retry".into()),
+                tool_name: "web_search".into(),
+                title: "Web search".into(),
+                kind: "other".into(),
+                detail: None,
+                arguments: None,
+                result: None,
+                preview: None,
+                success: true,
+                status: "running".into(),
+            },
+        );
+        assert_eq!(
+            manager.messages(session_id)[0]
+                .tool_activities
+                .as_ref()
+                .map(|items| items.len()),
+            Some(2)
+        );
+
+        manager.truncate_work_timeline(session_id, &message_id, stable_len);
+        let kept = &manager.messages(session_id)[0];
+        assert_eq!(
+            kept.work_timeline.as_ref().map(|items| items.len()),
+            Some(stable_len)
+        );
+        assert!(kept.tool_activities.is_none());
 
         cleanup(db_path);
     }

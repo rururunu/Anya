@@ -25,9 +25,16 @@ impl SearchRuntime {
                 return;
             }
         }
-        let next = build_provider(settings);
-        *lock_recover(&self.provider) = next;
+        let settings = settings.clone();
+        let next = crate::runtime::isolated::run_isolated(move || build_provider(&settings));
+        let previous = {
+            let mut provider = lock_recover(&self.provider);
+            std::mem::replace(&mut *provider, next)
+        };
         *lock_recover(&self.fingerprint) = next_fp;
+        if previous.is_some() {
+            crate::runtime::isolated::drop_isolated(previous);
+        }
     }
 
     pub fn provider(&self) -> Option<Arc<dyn SearchProvider>> {

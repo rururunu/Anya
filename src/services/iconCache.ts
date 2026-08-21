@@ -5,7 +5,7 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
-export type IconInstallKind = "mcp" | "skill";
+export type IconInstallKind = "mcp" | "skill" | "provider";
 
 export type IconWarmEntry = {
   kind: IconInstallKind;
@@ -79,7 +79,7 @@ export async function warmInstallIcons(entries: IconWarmEntry[]): Promise<void> 
       if (sep <= 0 || !path) continue;
       const kind = key.slice(0, sep) as IconInstallKind;
       const cacheKey = key.slice(sep + 1);
-      if (kind !== "mcp" && kind !== "skill") continue;
+      if (kind !== "mcp" && kind !== "skill" && kind !== "provider") continue;
       rememberPath(kind, cacheKey, path);
     }
   } catch {

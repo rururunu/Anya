@@ -52,10 +52,12 @@
           >
             <div class="card-left">
               <div class="icon-wrapper">
-                <component
-                  :is="customProviderIcon(provider)"
-                  v-if="customProviderIcon(provider)"
-                  :size="18"
+                <img
+                  v-if="peekProviderFavicon(provider.id)"
+                  :src="peekProviderFavicon(provider.id)!"
+                  alt=""
+                  class="favicon-img"
+                  @error="markProviderFaviconBroken(provider.id)"
                 />
                 <Globe2 v-else class="size-5" />
               </div>
@@ -76,31 +78,6 @@
         <div class="add-section">
           <h4 class="add-section-title">{{ t("settings.provider.presets") }}</h4>
           <div class="cards-list">
-            <button
-              v-for="preset in availablePresets"
-              :key="preset.id"
-              type="button"
-              class="provider-nav-card is-add"
-              @click="addFromPreset(preset)"
-            >
-              <div class="card-left">
-                <div class="icon-wrapper is-muted">
-                  <component :is="presetIcon(preset.id)" v-if="presetIcon(preset.id)" :size="18" />
-                  <Plus v-else class="size-4" />
-                </div>
-                <div class="card-text">
-                  <h3>{{ preset.name }}</h3>
-                  <p class="truncate max-w-[280px]">{{ preset.baseUrl }}</p>
-                </div>
-              </div>
-              <div class="card-right">
-                <span class="status-badge add-badge">
-                  <Plus class="size-3" />
-                  {{ t("settings.provider.add") }}
-                </span>
-              </div>
-            </button>
-
             <button type="button" class="provider-nav-card is-add" @click="addBlankCustomProvider">
               <div class="card-left">
                 <div class="icon-wrapper is-muted">
@@ -255,11 +232,12 @@
         <header class="view-header edit-header">
           <div class="header-details">
             <div class="edit-title-row">
-              <component
-                :is="customEditIcon"
-                v-if="customEditIcon"
-                :size="18"
-                class="edit-title-icon"
+              <img
+                v-if="editingProviderId && peekProviderFavicon(editingProviderId)"
+                :src="peekProviderFavicon(editingProviderId)!"
+                alt=""
+                class="favicon-img edit-title-icon"
+                @error="markProviderFaviconBroken(editingProviderId)"
               />
               <Globe2 v-else :size="18" class="edit-title-icon" />
               <h2>
@@ -373,16 +351,46 @@
                   v-for="(model, index) in customModelList"
                   :key="`${model}-${index}`"
                   class="model-item"
+                  :class="{ 'is-disabled': isModelDisabled(model) }"
                 >
+                  <component
+                    :is="modelBrandIcon(model)"
+                    v-if="modelBrandIcon(model)"
+                    :size="14"
+                    class="model-row-icon"
+                    aria-hidden="true"
+                  />
+                  <span v-else class="model-row-icon-dot" aria-hidden="true" />
                   <code class="model-id">{{ model }}</code>
-                  <button
-                    type="button"
-                    class="model-remove"
-                    :aria-label="t('settings.provider.removeModel')"
-                    @click="removeCustomModel(index)"
-                  >
-                    <X class="size-3.5" />
-                  </button>
+                  <div class="model-item-actions">
+                    <button
+                      type="button"
+                      class="setting-toggle model-toggle"
+                      :class="{ active: !isModelDisabled(model) }"
+                      :aria-pressed="!isModelDisabled(model)"
+                      :aria-label="
+                        isModelDisabled(model)
+                          ? t('settings.provider.enableModel')
+                          : t('settings.provider.disableModel')
+                      "
+                      :title="
+                        isModelDisabled(model)
+                          ? t('settings.provider.enableModel')
+                          : t('settings.provider.disableModel')
+                      "
+                      @click="toggleModelDisabled(model)"
+                    >
+                      <span class="setting-toggle-knob" />
+                    </button>
+                    <button
+                      type="button"
+                      class="model-remove"
+                      :aria-label="t('settings.provider.removeModel')"
+                      @click="removeCustomModel(index)"
+                    >
+                      <X class="size-3.5" />
+                    </button>
+                  </div>
                 </li>
               </ul>
               <p v-else class="models-empty">{{ t("settings.provider.modelsEmpty") }}</p>
@@ -403,8 +411,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
-import type { Component } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { Globe2, ChevronLeft, ChevronRight, Plus, Trash2, Save, X, RefreshCw } from "@lucide/vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
@@ -426,15 +433,19 @@ import { tr } from "@/services/i18n";
 import type { SettingsI18nKey } from "@/services/locales/settings";
 import type { CustomProviderConfig, ProviderApiProtocol } from "@/types/setting";
 import { DEFAULT_PROVIDER_API_PROTOCOL, normalizeProviderApiProtocol } from "@/types/setting";
-import { getProviderIcon } from "@/lib/providerIcons";
+import { getModelIcon } from "@/lib/providerIcons";
 import {
-  CUSTOM_PROVIDER_PRESETS,
   isCustomProviderConfigured,
   looksLikeHttpUrl,
   parseProviderModels,
   serializeProviderModels,
-  type ProviderPreset,
 } from "@/lib/providerPresets";
+import {
+  ensureProviderFavicon,
+  markProviderFaviconBroken,
+  peekProviderFavicon,
+  warmProviderFavicons,
+} from "@/services/providerFavicon";
 import {
   Select,
   SelectContent,
@@ -479,7 +490,7 @@ const customKey = ref("");
 const customApiProtocol = ref<ProviderApiProtocol>(DEFAULT_PROVIDER_API_PROTOCOL);
 const customModelList = ref<string[]>([]);
 const customModelDraft = ref("");
-const providerPresets = CUSTOM_PROVIDER_PRESETS;
+const customDisabledModels = ref<Set<string>>(new Set());
 
 const protocolHint = computed(() => {
   if (
@@ -491,16 +502,22 @@ const protocolHint = computed(() => {
   return t("settings.provider.apiProtocolHint");
 });
 
-const availablePresets = computed(() => {
-  const used = new Set(
-    settingStore.customProviders
-      .map((provider) => provider.presetId)
-      .filter((id): id is string => !!id),
-  );
-  return providerPresets.filter((preset) => !used.has(preset.id));
-});
+watch(
+  () => settingStore.customProviders,
+  (providers) => {
+    warmProviderFavicons(providers);
+  },
+  { immediate: true, deep: true },
+);
 
-const customEditIcon = computed(() => getProviderIcon(null, customPresetId.value));
+watch(
+  [editingProviderId, customUrl],
+  ([id, url]) => {
+    if (!id) return;
+    ensureProviderFavicon(id, url);
+  },
+  { immediate: true },
+);
 
 const canFetchModels = computed(
   () => looksLikeHttpUrl(customUrl.value) && !!customKey.value.trim(),
@@ -535,16 +552,27 @@ function statusLabel(configured: boolean) {
   return configured ? t("settings.provider.configured") : t("settings.provider.notConfigured");
 }
 
-function presetIcon(presetId: string): Component | null {
-  return getProviderIcon(null, presetId);
-}
-
-function customProviderIcon(provider: CustomProviderConfig): Component | null {
-  return getProviderIcon(provider.id, provider.presetId);
+function modelBrandIcon(modelId: string) {
+  return getModelIcon({ id: modelId, displayName: undefined });
 }
 
 function isCustomConfigured(provider: CustomProviderConfig) {
   return isCustomProviderConfigured(provider);
+}
+
+function isModelDisabled(model: string): boolean {
+  return customDisabledModels.value.has(model);
+}
+
+function toggleModelDisabled(model: string) {
+  const next = new Set(customDisabledModels.value);
+  if (next.has(model)) {
+    next.delete(model);
+  } else {
+    next.add(model);
+  }
+  customDisabledModels.value = next;
+  void saveCustom();
 }
 
 function customProviderSubtitle(provider: CustomProviderConfig) {
@@ -625,6 +653,7 @@ function startEditCustom(id: string) {
     customApiProtocol.value = normalizeProviderApiProtocol(provider.apiProtocol);
     customModelList.value = parseProviderModels(provider.models);
     customModelDraft.value = "";
+    customDisabledModels.value = new Set(parseProviderModels(provider.disabledModels ?? ""));
     fetchModelsError.value = "";
     currentView.value = "custom";
   }
@@ -643,24 +672,7 @@ function addBlankCustomProvider() {
   customApiProtocol.value = DEFAULT_PROVIDER_API_PROTOCOL;
   customModelList.value = [];
   customModelDraft.value = "";
-  fetchModelsError.value = "";
-  currentView.value = "custom";
-}
-
-function addFromPreset(preset: ProviderPreset) {
-  const existing = settingStore.customProviders.find((provider) => provider.presetId === preset.id);
-  if (existing) {
-    startEditCustom(existing.id);
-    return;
-  }
-  editingProviderId.value = newProviderId();
-  customPresetId.value = preset.id;
-  customName.value = preset.name;
-  customUrl.value = preset.baseUrl;
-  customKey.value = "";
-  customApiProtocol.value = DEFAULT_PROVIDER_API_PROTOCOL;
-  customModelList.value = [...preset.models];
-  customModelDraft.value = "";
+  customDisabledModels.value = new Set();
   fetchModelsError.value = "";
   currentView.value = "custom";
 }
@@ -680,17 +692,29 @@ async function addCustomModel() {
     return;
   }
   const next = [...customModelList.value];
+  const nextDisabled = new Set(customDisabledModels.value);
   for (const id of ids) {
-    if (!next.includes(id)) next.push(id);
+    if (!next.includes(id)) {
+      next.push(id);
+      // New models start disabled; the user opts in per model.
+      nextDisabled.add(id);
+    }
   }
   customModelList.value = next;
+  customDisabledModels.value = nextDisabled;
   customModelDraft.value = "";
   await saveCustom();
   await focusModelDraft();
 }
 
 async function removeCustomModel(index: number) {
+  const removed = customModelList.value[index];
   customModelList.value = customModelList.value.filter((_, i) => i !== index);
+  if (removed && customDisabledModels.value.has(removed)) {
+    const next = new Set(customDisabledModels.value);
+    next.delete(removed);
+    customDisabledModels.value = next;
+  }
   await saveCustom();
 }
 
@@ -708,10 +732,16 @@ async function fetchRemoteModels() {
       return;
     }
     const merged = [...customModelList.value];
+    const nextDisabled = new Set(customDisabledModels.value);
     for (const id of ids) {
-      if (!merged.includes(id)) merged.push(id);
+      if (!merged.includes(id)) {
+        merged.push(id);
+        // New models start disabled; the user opts in per model.
+        nextDisabled.add(id);
+      }
     }
     customModelList.value = merged;
+    customDisabledModels.value = nextDisabled;
     await saveCustom();
   } catch (error) {
     fetchModelsError.value =
@@ -728,6 +758,7 @@ async function saveCustom() {
   const nextUrl = customUrl.value.trim();
   const nextKey = customKey.value.trim();
   const nextModels = serializeProviderModels(customModelList.value);
+  const nextDisabledModels = serializeProviderModels([...customDisabledModels.value]);
   const nextPresetId = customPresetId.value;
   const nextProtocol = customApiProtocol.value;
 
@@ -740,8 +771,10 @@ async function saveCustom() {
     baseUrl: nextUrl,
     apiKey: nextKey,
     models: nextModels,
+    disabledModels: nextDisabledModels,
     presetId: nextPresetId,
     apiProtocol: nextProtocol,
+    modelProtocols: index !== -1 ? list[index].modelProtocols : undefined,
   };
 
   if (index !== -1) {
@@ -751,6 +784,7 @@ async function saveCustom() {
       current.baseUrl === nextUrl &&
       current.apiKey === nextKey &&
       current.models === nextModels &&
+      (current.disabledModels ?? "") === nextDisabledModels &&
       current.presetId === nextPresetId &&
       normalizeProviderApiProtocol(current.apiProtocol) === nextProtocol
     ) {
@@ -932,6 +966,14 @@ header.view-header p {
 .icon-wrapper.is-muted {
   background: color-mix(in srgb, var(--muted) 55%, transparent);
   color: var(--muted-foreground);
+}
+
+.favicon-img {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  object-fit: contain;
+  flex: none;
 }
 
 .card-text {
@@ -1149,6 +1191,24 @@ header.view-header.edit-header {
   background: color-mix(in srgb, var(--sidebar) 55%, transparent);
 }
 
+.model-row-icon {
+  flex: none;
+  color: var(--foreground);
+  opacity: 0.9;
+}
+
+.model-row-icon-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
+}
+
+.model-item.is-disabled {
+  opacity: 0.55;
+}
+
 .model-id {
   min-width: 0;
   flex: 1;
@@ -1156,6 +1216,50 @@ header.view-header.edit-header {
   font-size: 11px;
   color: var(--foreground);
   overflow-wrap: anywhere;
+}
+
+.model-item.is-disabled .model-id {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--muted-foreground) 60%, transparent);
+}
+
+.model-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.setting-toggle {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 28%, transparent);
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+  transition: background-color 0.15s;
+}
+
+.setting-toggle.active {
+  background: color-mix(in srgb, var(--primary) 75%, transparent);
+}
+
+.setting-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: white;
+  transition: transform 140ms ease;
+}
+
+.setting-toggle.active .setting-toggle-knob {
+  transform: translateX(14px);
 }
 
 .model-remove {

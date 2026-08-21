@@ -13,6 +13,7 @@ pub mod encoding;
 pub mod event;
 pub mod file;
 pub mod git;
+pub mod isolated;
 pub mod memory;
 pub mod search;
 pub mod settings;

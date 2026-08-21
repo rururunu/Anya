@@ -97,14 +97,7 @@ mod tests {
     #[test]
     fn stable_prompt_stays_isolated_from_skill_specifics() {
         let lower = SYSTEM_PROMPT.to_ascii_lowercase();
-        for needle in [
-            "generate_bid_tech",
-            "generate_word",
-            "review_bid_tech",
-            "docx-js",
-            "python-docx",
-            "pandoc",
-        ] {
+        for needle in ["generate_word", "docx-js", "python-docx", "pandoc"] {
             assert!(
                 !lower.contains(needle),
                 "stable system prompt should not reference skill-specific detail: {needle}"

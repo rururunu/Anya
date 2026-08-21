@@ -124,7 +124,7 @@ export function gsapPickerLeave(el: Element, done: () => void) {
   safeGsap(
     "pickerLeave",
     () => {
-      if (target.matches(".model-picker-list, .option-picker-list")) {
+      if (target.matches(".model-picker-list, .option-picker-list, .thinking-effort-panel")) {
         const items = target.querySelectorAll<HTMLElement>(".command-item");
         gsap.killTweensOf([target, ...items]);
         finish();

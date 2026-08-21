@@ -1,86 +1,88 @@
 <template>
-  <SettingsSearchField
-    v-model="query"
-    :placeholder="copy.catalogSearch"
-    :loading="loading"
-    :submit-label="copy.search"
-    @submit="$emit('search')"
-  />
-  <p v-if="runtimeHint" class="catalog-hint">{{ runtimeHint }}</p>
-  <p v-if="error" class="form-error">{{ error }}</p>
-
-  <div v-if="showCurated" class="catalog-section">
-    <h3>{{ copy.curatedTitle }}</h3>
-    <div class="server-list">
-      <CatalogItemCard
-        v-for="entry in curatedEntries"
-        :key="`curated-${entry.name}`"
-        :title="entry.title"
-        :meta="metaLine(entry)"
-        :description="entry.description"
-        :icon-fallback="entry.title"
-        :pills="curatedPills(entry)"
-        :expand-label="copy.expand"
-        :collapse-label="copy.collapse"
-      >
-        <template #action>
-          <CatalogRoundAction
-            :done="isInstalled(entry.install.id)"
-            :disabled="saving"
-            :label="isInstalled(entry.install.id) ? copy.added : copy.install"
-            @click="$emit('install', entry)"
-          />
-        </template>
-        <template v-if="entry.requiredEnv.length" #footer>
-          <p class="env-line">
-            {{ copy.needsEnv(entry.requiredEnv.map((item) => item.name).join(", ")) }}
-          </p>
-        </template>
-      </CatalogItemCard>
-    </div>
-  </div>
-
-  <div class="catalog-section">
-    <div class="section-head">
-      <h3>{{ copy.registryTitle }}</h3>
-      <span v-if="registryMeta" class="section-meta">{{ registryMeta }}</span>
-    </div>
-    <p v-if="!loading && registryEntries.length === 0" class="empty">
-      {{ copy.catalogEmpty }}
-    </p>
-    <div class="server-list">
-      <CatalogItemCard
-        v-for="entry in registryEntries"
-        :key="entry.name"
-        :title="entry.title"
-        :meta="metaLine(entry)"
-        :description="entry.description"
-        :icon-fallback="entry.title"
-        :pills="registryPills(entry)"
-        :expand-label="copy.expand"
-        :collapse-label="copy.collapse"
-      >
-        <template #action>
-          <CatalogRoundAction
-            :done="isInstalled(entry.install.id)"
-            :disabled="saving"
-            :label="isInstalled(entry.install.id) ? copy.added : copy.install"
-            @click="$emit('install', entry)"
-          />
-        </template>
-        <template v-if="entry.requiredEnv.length" #footer>
-          <p class="env-line">
-            {{ copy.needsEnv(entry.requiredEnv.map((item) => item.name).join(", ")) }}
-          </p>
-        </template>
-      </CatalogItemCard>
-    </div>
-    <InfiniteScrollSentinel
-      v-if="nextCursor || loading"
-      :has-more="Boolean(nextCursor)"
+  <div class="catalog-panel">
+    <SettingsSearchField
+      v-model="query"
+      :placeholder="copy.catalogSearch"
       :loading="loading"
-      @load="$emit('load-more')"
+      :submit-label="copy.search"
+      @submit="$emit('search')"
     />
+    <p v-if="runtimeHint" class="catalog-hint">{{ runtimeHint }}</p>
+    <p v-if="error" class="form-error">{{ error }}</p>
+
+    <div v-if="showCurated" class="catalog-section">
+      <h3>{{ copy.curatedTitle }}</h3>
+      <div class="server-list">
+        <CatalogItemCard
+          v-for="entry in curatedEntries"
+          :key="`curated-${entry.name}`"
+          :title="entry.title"
+          :meta="metaLine(entry)"
+          :description="entry.description"
+          :icon-fallback="entry.title"
+          :pills="curatedPills(entry)"
+          :expand-label="copy.expand"
+          :collapse-label="copy.collapse"
+        >
+          <template #action>
+            <CatalogRoundAction
+              :done="isInstalled(entry.install.id)"
+              :disabled="saving"
+              :label="isInstalled(entry.install.id) ? copy.added : copy.install"
+              @click="$emit('install', entry)"
+            />
+          </template>
+          <template v-if="entry.requiredEnv.length" #footer>
+            <p class="env-line">
+              {{ copy.needsEnv(entry.requiredEnv.map((item) => item.name).join(", ")) }}
+            </p>
+          </template>
+        </CatalogItemCard>
+      </div>
+    </div>
+
+    <div class="catalog-section">
+      <div class="section-head">
+        <h3>{{ copy.registryTitle }}</h3>
+        <span v-if="registryMeta" class="section-meta">{{ registryMeta }}</span>
+      </div>
+      <p v-if="!loading && registryEntries.length === 0" class="empty">
+        {{ copy.catalogEmpty }}
+      </p>
+      <div class="server-list">
+        <CatalogItemCard
+          v-for="entry in registryEntries"
+          :key="entry.name"
+          :title="entry.title"
+          :meta="metaLine(entry)"
+          :description="entry.description"
+          :icon-fallback="entry.title"
+          :pills="registryPills(entry)"
+          :expand-label="copy.expand"
+          :collapse-label="copy.collapse"
+        >
+          <template #action>
+            <CatalogRoundAction
+              :done="isInstalled(entry.install.id)"
+              :disabled="saving"
+              :label="isInstalled(entry.install.id) ? copy.added : copy.install"
+              @click="$emit('install', entry)"
+            />
+          </template>
+          <template v-if="entry.requiredEnv.length" #footer>
+            <p class="env-line">
+              {{ copy.needsEnv(entry.requiredEnv.map((item) => item.name).join(", ")) }}
+            </p>
+          </template>
+        </CatalogItemCard>
+      </div>
+      <InfiniteScrollSentinel
+        v-if="nextCursor || loading"
+        :has-more="Boolean(nextCursor)"
+        :loading="loading"
+        @load="$emit('load-more')"
+      />
+    </div>
   </div>
 </template>
 
@@ -155,6 +157,13 @@ function registryPills(entry: CatalogEntry) {
 </script>
 
 <style scoped>
+.catalog-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 .catalog-hint,
 .empty {
   margin: 0;

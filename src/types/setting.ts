@@ -45,7 +45,27 @@ export function isLightColorScheme(scheme: ColorScheme): boolean {
 
 export type AppLanguage = "zh-CN" | "en-US" | "ja-JP" | "ru-RU" | "de-DE" | "fr-FR" | "ko-KR";
 
-export type ReasoningEffort = "disabled" | "high" | "max";
+export type ReasoningEffort =
+  "disabled" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export const ALL_REASONING_EFFORTS: ReasoningEffort[] = [
+  "disabled",
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+export function isReasoningEffort(value: string): value is ReasoningEffort {
+  return ALL_REASONING_EFFORTS.includes(value as ReasoningEffort);
+}
+
+export function normalizeReasoningEffort(value: unknown): ReasoningEffort {
+  return typeof value === "string" && isReasoningEffort(value) ? value : "disabled";
+}
 
 export type ReasoningLanguage = "auto" | "zh" | "en";
 
@@ -102,6 +122,7 @@ export type CategoryId =
   | "plugins"
   | "workspace"
   | "history"
+  | "archive"
   | "usage"
   | "about"
   | "provider"
@@ -140,6 +161,8 @@ export interface McpServerConfig {
 
 export type ProviderApiProtocol = "chatCompletions" | "responses";
 
+export type ModelWireProtocol = "chatCompletions" | "responses" | "anthropicMessages";
+
 export const DEFAULT_PROVIDER_API_PROTOCOL: ProviderApiProtocol = "chatCompletions";
 
 export function normalizeProviderApiProtocol(value: unknown): ProviderApiProtocol {
@@ -153,10 +176,15 @@ export interface CustomProviderConfig {
   apiKey: string;
   /** Newline-separated model IDs (legacy comma-separated still accepted when loading). */
   models: string;
+  /** Newline/comma-separated model IDs the user has switched off; hidden from
+   * pickers and refused at send time. Survives `/models` refetches. */
+  disabledModels?: string;
   /** Optional preset template id (mimo / zhipu / …) for icons and defaults. */
   presetId?: string;
   /** `chatCompletions` (default) or `responses`. Grok thinking needs Responses. */
   apiProtocol?: ProviderApiProtocol;
+  /** Learned wire format per model id. Written by the backend after a successful stream. */
+  modelProtocols?: Record<string, ModelWireProtocol>;
 }
 
 export interface GeminiOAuthSettings {
@@ -376,13 +404,61 @@ export const reasoningEffortOptions: SelectOption<ReasoningEffort>[] = [
   {
     value: "disabled",
     label: {
-      "zh-CN": "关闭思考",
+      "zh-CN": "关闭",
       "en-US": "Disabled",
       "ja-JP": "無効",
-      "ru-RU": "Отключено",
-      "de-DE": "Deaktiviert",
+      "ru-RU": "Откл.",
+      "de-DE": "Aus",
       "fr-FR": "Désactivé",
-      "ko-KR": "사용 안 함",
+      "ko-KR": "끄기",
+    },
+  },
+  {
+    value: "none",
+    label: {
+      "zh-CN": "无",
+      "en-US": "None",
+      "ja-JP": "なし",
+      "ru-RU": "Нет",
+      "de-DE": "Keine",
+      "fr-FR": "Aucun",
+      "ko-KR": "없음",
+    },
+  },
+  {
+    value: "minimal",
+    label: {
+      "zh-CN": "最小",
+      "en-US": "Minimal",
+      "ja-JP": "最小",
+      "ru-RU": "Мин.",
+      "de-DE": "Minimal",
+      "fr-FR": "Minimal",
+      "ko-KR": "최소",
+    },
+  },
+  {
+    value: "low",
+    label: {
+      "zh-CN": "低",
+      "en-US": "Low",
+      "ja-JP": "低",
+      "ru-RU": "Низкая",
+      "de-DE": "Niedrig",
+      "fr-FR": "Faible",
+      "ko-KR": "낮음",
+    },
+  },
+  {
+    value: "medium",
+    label: {
+      "zh-CN": "中",
+      "en-US": "Medium",
+      "ja-JP": "中",
+      "ru-RU": "Средняя",
+      "de-DE": "Mittel",
+      "fr-FR": "Moyen",
+      "ko-KR": "중간",
     },
   },
   {
@@ -398,12 +474,24 @@ export const reasoningEffortOptions: SelectOption<ReasoningEffort>[] = [
     },
   },
   {
+    value: "xhigh",
+    label: {
+      "zh-CN": "极高",
+      "en-US": "xHigh",
+      "ja-JP": "極高",
+      "ru-RU": "Очень выс.",
+      "de-DE": "Sehr hoch",
+      "fr-FR": "Très élevé",
+      "ko-KR": "매우 높음",
+    },
+  },
+  {
     value: "max",
     label: {
       "zh-CN": "最高",
       "en-US": "Max",
       "ja-JP": "最大",
-      "ru-RU": "Максимальная",
+      "ru-RU": "Макс.",
       "de-DE": "Maximal",
       "fr-FR": "Maximum",
       "ko-KR": "최대",

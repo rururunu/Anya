@@ -68,6 +68,8 @@ export interface TokenUsage {
   totalTokens: number;
   accuracy: TokenAccuracy;
   source?: string;
+  cacheReadTokens?: number;
+  reasoningTokens?: number;
 }
 
 export type AgentDebugEvent =
@@ -344,6 +346,18 @@ export interface ChatFinishedEvent {
   finishReason?: string;
 }
 
+export interface ChatTokenUsageEvent {
+  sessionId: string;
+  model: string;
+  usage: TokenUsage;
+}
+
+export interface SessionCacheUsage {
+  inputTokens: number;
+  cacheReadTokens: number;
+  model?: string;
+}
+
 export interface ChatSessionTitleUpdatedEvent {
   sessionId: string;
   title: string;
@@ -383,6 +397,9 @@ export interface ContextUsageResponse {
   usageRatio: number;
   estimatedTokens: number;
   contextWindowTokens: number;
+  systemPromptTokens?: number;
+  toolsTokens?: number;
+  messageTokens?: number;
 }
 
 export interface ChatHistoryRequest {
@@ -392,6 +409,7 @@ export interface ChatHistoryRequest {
 export interface ChatHistoryResponse {
   sessionId: string;
   messages: ChatMessage[];
+  lastCacheUsage?: SessionCacheUsage;
 }
 
 export interface ChatSessionSummary {
@@ -402,6 +420,7 @@ export interface ChatSessionSummary {
   turnCount: number;
   estimatedTokens: number;
   updatedAt: number;
+  archived?: boolean;
 }
 
 export interface ListChatSessionsResponse {
@@ -414,6 +433,13 @@ export interface ModelThinkingVariant {
   recommended?: boolean;
 }
 
+export interface ModelReasoningInfo {
+  /** Advertised by the `/models` listing. Missing means the listing did not say. */
+  supported: boolean;
+  /** Whether thinking can be turned off. Missing means the listing did not say. */
+  canDisable?: boolean;
+}
+
 export interface ChatModelInfo {
   id: string;
   ownedBy: string;
@@ -423,6 +449,8 @@ export interface ChatModelInfo {
   displayName?: string;
   /** Alternate thinking tiers for the same model family (High / Low / Agent). */
   thinkingVariants?: ModelThinkingVariant[];
+  /** Provider-advertised reasoning capability, when `/models` included it. */
+  reasoning?: ModelReasoningInfo;
 }
 
 export interface AskUserOption {

@@ -1,57 +1,59 @@
 <template>
-  <SettingsSearchField
-    v-model="query"
-    :placeholder="labels.smitherySearch"
-    :loading="loading"
-    :submit-label="labels.search"
-    @submit="$emit('search')"
-  />
-  <p v-if="error" class="form-error">{{ error }}</p>
-
-  <div class="catalog-section">
-    <p v-if="!loading && servers.length === 0 && loaded" class="empty">
-      {{ labels.smitheryEmpty }}
-    </p>
-    <p v-else-if="loading && servers.length === 0" class="empty">{{ labels.searching }}</p>
-    <div class="server-list">
-      <CatalogItemCard
-        v-for="server in servers"
-        :key="server.id"
-        :title="server.displayName || server.qualifiedName"
-        :vendor="server.qualifiedName"
-        :meta="metaLine(server)"
-        :description="server.description"
-        :icon-url="server.iconUrl"
-        :icon-fallback="server.qualifiedName || server.displayName"
-        :verified="Boolean(server.verified)"
-        :verified-label="labels.verified"
-        :pills="isInstalled(server) ? [labels.added] : []"
-        :expand-label="labels.expand"
-        :collapse-label="labels.collapse"
-      >
-        <template #action>
-          <CatalogRoundAction
-            :done="isInstalled(server)"
-            :busy="installingId === server.id"
-            :disabled="saving"
-            :label="
-              isInstalled(server)
-                ? labels.added
-                : installingId === server.id
-                  ? labels.installing
-                  : labels.install
-            "
-            @click="$emit('install', server)"
-          />
-        </template>
-      </CatalogItemCard>
-    </div>
-    <InfiniteScrollSentinel
-      v-if="loaded && (hasMore || loading)"
-      :has-more="hasMore"
+  <div class="catalog-panel">
+    <SettingsSearchField
+      v-model="query"
+      :placeholder="labels.smitherySearch"
       :loading="loading"
-      @load="$emit('load-more')"
+      :submit-label="labels.search"
+      @submit="$emit('search')"
     />
+    <p v-if="error" class="form-error">{{ error }}</p>
+
+    <div class="catalog-section">
+      <p v-if="!loading && servers.length === 0 && loaded" class="empty">
+        {{ labels.smitheryEmpty }}
+      </p>
+      <p v-else-if="loading && servers.length === 0" class="empty">{{ labels.searching }}</p>
+      <div class="server-list">
+        <CatalogItemCard
+          v-for="server in servers"
+          :key="server.id"
+          :title="server.displayName || server.qualifiedName"
+          :vendor="server.qualifiedName"
+          :meta="metaLine(server)"
+          :description="server.description"
+          :icon-url="server.iconUrl"
+          :icon-fallback="server.qualifiedName || server.displayName"
+          :verified="Boolean(server.verified)"
+          :verified-label="labels.verified"
+          :pills="isInstalled(server) ? [labels.added] : []"
+          :expand-label="labels.expand"
+          :collapse-label="labels.collapse"
+        >
+          <template #action>
+            <CatalogRoundAction
+              :done="isInstalled(server)"
+              :busy="installingId === server.id"
+              :disabled="saving"
+              :label="
+                isInstalled(server)
+                  ? labels.added
+                  : installingId === server.id
+                    ? labels.installing
+                    : labels.install
+              "
+              @click="$emit('install', server)"
+            />
+          </template>
+        </CatalogItemCard>
+      </div>
+      <InfiniteScrollSentinel
+        v-if="loaded && (hasMore || loading)"
+        :has-more="hasMore"
+        :loading="loading"
+        @load="$emit('load-more')"
+      />
+    </div>
   </div>
 </template>
 
@@ -130,6 +132,13 @@ function metaLine(server: SmitheryMcpServerSummary) {
 </script>
 
 <style scoped>
+.catalog-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 .empty {
   margin: 0;
   color: var(--muted-foreground);

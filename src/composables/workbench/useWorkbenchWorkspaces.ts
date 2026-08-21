@@ -10,6 +10,7 @@ import {
   reorderWorkspaces,
   selectWorkspaceFolder,
   setWorkspacePinned,
+  setWorkspaceArchived,
   switchWorkspace,
   type Workspace,
 } from "@/commands/workspace";
@@ -246,6 +247,17 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     }
   }
 
+  async function archiveWorkspace(workspace: Workspace) {
+    workspaceMenuId.value = "";
+    await setWorkspaceArchived(workspace.id, true);
+    if (activeSessionWorkspaceId.value === workspace.id) {
+      await clearCurrentWorkspace();
+      activeSessionWorkspaceId.value = null;
+      createConversation(null);
+    }
+    await refreshSessions();
+  }
+
   async function removeWorkspace(workspace: Workspace) {
     workspaceMenuId.value = "";
     const confirmed = await confirmDialogRef.value?.ask({
@@ -286,6 +298,7 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     addWorkspace,
     createWorkspaceConversation,
     openWorkspaceFolder,
+    archiveWorkspace,
     removeWorkspace,
     clearWorkspaceLongPress,
   };

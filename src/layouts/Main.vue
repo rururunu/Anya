@@ -289,6 +289,10 @@
                       <FolderOpen :size="13" />
                       <span>{{ navigationLabels.openFolder }}</span>
                     </button>
+                    <button type="button" @click.stop="archiveWorkspace(workspace)">
+                      <Archive :size="13" />
+                      <span>{{ navigationLabels.archiveWorkspace }}</span>
+                    </button>
                     <button type="button" class="danger" @click.stop="removeWorkspace(workspace)">
                       <Trash2 :size="13" />
                       <span>{{ navigationLabels.deleteWorkspace }}</span>
@@ -300,14 +304,14 @@
                     :active-session-id="activeSessionId"
                     :language="settingStore.language"
                     :untitled-label="labels.untitled"
-                    :delete-label="labels.deleteConversation"
+                    :archive-label="labels.archiveConversation"
                     :running-session-ids="runningSessionIds"
                     :attention-session-ids="attentionSessionIds"
                     :unread-session-ids="unreadSessionIdList"
                     :draft-session-ids="draftSessionIds"
                     variant="workspace"
                     @select="handleSelectConversation"
-                    @delete="removeConversation"
+                    @archive="archiveConversation"
                   />
                 </section>
               </div>
@@ -342,14 +346,14 @@
                 :active-session-id="activeSessionId"
                 :language="settingStore.language"
                 :untitled-label="labels.untitled"
-                :delete-label="labels.deleteConversation"
+                :archive-label="labels.archiveConversation"
                 :running-session-ids="runningSessionIds"
                 :attention-session-ids="attentionSessionIds"
                 :unread-session-ids="unreadSessionIdList"
                 :draft-session-ids="draftSessionIds"
                 variant="quick"
                 @select="handleSelectConversation"
-                @delete="removeConversation"
+                @archive="archiveConversation"
               />
             </section>
           </nav>
@@ -365,7 +369,7 @@
         />
 
         <section
-          class="conversation-pane"
+          class="conversation-pane peek-pane"
           :class="{
             'empty-conversation': !extensionView && !hasConversationMessages,
             'extension-open': Boolean(extensionView),
@@ -479,6 +483,9 @@
                 @path-permission-complete="completePathPermission"
                 @tool-approval-complete="completeToolApproval"
                 @preview-image="previewImage"
+                @show-context="handleShowContext"
+                @open-history="openSearchPalette"
+                @close="handleCreateQuickConversation"
               />
             </div>
           </template>
@@ -618,6 +625,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   ArrowLeft,
   ArrowUpCircle,
+  Archive,
   BookOpen,
   Cable,
   CircleAlert,
@@ -674,7 +682,7 @@ import { useSettingStore, applyZoom, applyTheme } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
 import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
 import type { Workspace } from "@/commands/workspace";
-import type { ChatSessionSummary } from "@/types/chat";
+import type { ChatSessionSummary, CapturedContext } from "@/types/chat";
 
 const SettingsPage = defineAsyncComponent(() => import("@/pages/Settings/index.vue"));
 const SkillsSettings = defineAsyncComponent(
@@ -817,6 +825,7 @@ async function promptInstallUpdate() {
     description: updaterCopy.value.confirmDescription,
     confirmLabel: updaterCopy.value.confirmAction,
     cancelLabel: updaterCopy.value.cancelAction,
+    tone: "default",
   });
 
   if (!confirmed) return;
@@ -886,7 +895,7 @@ const {
   createQuickConversation,
   refreshCheckpoints,
   selectConversation,
-  removeConversation,
+  archiveConversation,
   guideStaged,
   startStagedEdit,
   removeStaged,
@@ -911,6 +920,25 @@ const {
 function handleCreateQuickConversation() {
   extensionView.value = null;
   return createQuickConversation();
+}
+
+function handleShowContext(context: CapturedContext) {
+  extensionView.value = null;
+  let sessionId = activeSessionId.value;
+  if (!sessionId) {
+    createConversation(activeSessionWorkspaceId.value);
+    sessionId = activeSessionId.value;
+  }
+  if (!sessionId) return;
+  chatStore.upsertMessage({
+    id: `local-context-${Date.now()}`,
+    sessionId,
+    role: "assistant",
+    content: "",
+    environmentContext: context,
+    status: "done",
+    timestamp: Date.now(),
+  });
 }
 
 function handleSelectConversation(sessionId: string) {
@@ -938,6 +966,7 @@ const {
   addWorkspace,
   createWorkspaceConversation,
   openWorkspaceFolder,
+  archiveWorkspace,
   removeWorkspace,
   clearWorkspaceLongPress,
 } = useWorkbenchWorkspaces({
@@ -1207,25 +1236,25 @@ button {
   padding: 0 8px 0 10px;
 }
 .titlebar-back {
-  height: 30px;
+  height: var(--peek-control-icon);
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 0 8px 0 6px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--peek-font-sm);
 }
 .titlebar-back:hover {
   color: var(--peek-text);
   background: var(--peek-hover-bg);
 }
 .nav-toggle {
-  width: 30px;
-  height: 30px;
+  width: var(--peek-control-icon);
+  height: var(--peek-control-icon);
 }
 .titlebar-context {
   justify-self: center;
@@ -1267,19 +1296,19 @@ button {
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-muted);
   cursor: pointer;
 }
 .icon-button {
   position: relative;
-  width: 30px;
-  height: 30px;
+  width: var(--peek-control-icon);
+  height: var(--peek-control-icon);
 }
 .small-icon-button {
-  width: 27px;
-  height: 27px;
+  width: var(--peek-control-icon);
+  height: var(--peek-control-icon);
 }
 .window-button {
   width: 42px;
@@ -1311,8 +1340,8 @@ button {
   background: var(--peek-accent);
 }
 .window-button.close:hover {
-  color: white;
-  background: #c42b1c;
+  color: var(--peek-primary-foreground, #fff);
+  background: var(--peek-danger);
 }
 .status-dot {
   position: absolute;
@@ -1407,10 +1436,10 @@ button {
 .navigation-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 64px;
-  margin: 0 0 8px;
-  padding: 8px 4px 8px 8px;
+  gap: 10px;
+  min-height: 56px;
+  margin: 0 0 4px;
+  padding: 4px 4px 6px 8px;
   color: var(--peek-text);
 }
 .navigation-brand-logo {
@@ -1468,14 +1497,14 @@ button {
 }
 .new-chat-button,
 .nav-shortcut-button {
-  height: 34px;
+  height: var(--peek-control-row);
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 0 9px;
-  border-radius: 6px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--peek-font-sm);
   font-weight: 550;
 }
 .new-chat-button:hover,
@@ -1496,7 +1525,7 @@ button {
   text-align: left;
 }
 .nav-shortcut-button.active {
-  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
+  background: var(--peek-row-active);
   color: var(--peek-text);
 }
 .nav-shortcut-button > svg {
@@ -1519,7 +1548,7 @@ button {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #1f9d55;
+  background: var(--peek-success);
   box-shadow: 0 0 0 2px var(--peek-bg, #fff);
 }
 .nav-shortcut-button:hover > svg,
@@ -1537,26 +1566,26 @@ button {
   margin: 2px 0 8px;
 }
 .navigation-section-header {
-  height: 28px;
+  height: var(--peek-control-row);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
 }
 .navigation-section-toggle {
   min-width: 0;
-  height: 28px;
+  height: var(--peek-control-row);
   display: flex;
   align-items: center;
   gap: 6px;
   flex: 1;
   padding: 0 5px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-text);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--peek-font-xs);
   font-weight: 650;
   text-align: left;
 }
@@ -1588,14 +1617,14 @@ button {
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-muted);
   cursor: pointer;
 }
 .section-action {
-  width: 27px;
-  height: 27px;
+  width: var(--peek-control-icon);
+  height: var(--peek-control-icon);
 }
 .section-action:hover,
 .workspace-actions button:hover {
@@ -1636,8 +1665,8 @@ button {
   display: flex;
   align-items: center;
   min-width: 0;
-  height: 28px;
-  border-radius: 5px;
+  height: var(--peek-control-row);
+  border-radius: var(--peek-radius-sm);
   cursor: pointer;
   user-select: none;
   transition:
@@ -1658,30 +1687,30 @@ button {
 .workspace-collapse {
   flex: none;
   width: 25px;
-  height: 28px;
+  height: var(--peek-control-row);
   display: inline-grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-faint);
   cursor: inherit;
 }
 .workspace-group-header {
   min-width: 0;
-  height: 28px;
+  height: var(--peek-control-row);
   display: flex;
   align-items: center;
   flex: 1;
   gap: 7px;
   padding: 0 4px 0 1px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-text);
   cursor: inherit;
-  font-size: 11px;
+  font-size: var(--peek-font-xs);
   text-align: left;
 }
 .workspace-group-header:hover {
@@ -1716,19 +1745,19 @@ button {
   right: 4px;
   min-width: 150px;
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--peek-radius-sm);
   background: var(--peek-list-bg);
-  box-shadow: 0 8px 24px var(--peek-shadow);
+  box-shadow: var(--peek-elev-md);
 }
 .workspace-menu button {
   width: 100%;
-  height: 28px;
+  height: var(--peek-control-icon);
   display: flex;
   align-items: center;
   gap: 7px;
   padding: 0 7px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-text);
   cursor: pointer;
@@ -1758,7 +1787,7 @@ button {
   border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
   border-right: 0;
   border-bottom: 0;
-  border-radius: 12px 0 0 0;
+  border-radius: var(--peek-radius-lg) 0 0 0;
   background: var(--peek-list-bg);
   box-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
   container-type: size;
@@ -1904,7 +1933,7 @@ button {
 .composer-wrap :deep(.input-bar) {
   width: 100%;
   max-height: 100%;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
+  box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
   transition:
     min-height 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     padding 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
@@ -1914,7 +1943,7 @@ button {
     box-shadow 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .composer-wrap :deep(.input-bar:focus-within) {
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--peek-shadow) 32%, transparent);
+  box-shadow: var(--peek-composer-shadow-focus, var(--peek-composer-shadow, var(--peek-elev-sm)));
 }
 .composer-wrap :deep(.input-content),
 .composer-wrap :deep(.composer-textarea),
@@ -1992,13 +2021,13 @@ button {
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-muted);
   cursor: pointer;
 }
 .staged-btn:hover {
-  background: color-mix(in srgb, var(--peek-fg) 9%, transparent);
+  background: color-mix(in srgb, var(--peek-text) 9%, transparent);
   color: var(--peek-text);
 }
 .staged-btn-guide {
@@ -2086,10 +2115,11 @@ button {
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-bar) {
   min-height: 128px;
   padding: 16px 16px 12px;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--peek-text) 16%, transparent);
+  border-radius: var(--peek-radius-composer);
+  border: 1px solid
+    var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
   background: var(--peek-list-bg);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
+  box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
 }
 
 /* Ask / permission panels should merge into the composer, not stack as a second card. */
@@ -2133,12 +2163,15 @@ button {
   .conversation-pane.empty-conversation
   .composer-wrap
   :deep(.input-bar) {
-  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--peek-shadow) 36%, transparent);
+  background: color-mix(in srgb, var(--peek-text) 6%, var(--peek-surface));
+  box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-bar:focus-within) {
-  border-color: color-mix(in srgb, var(--peek-text) 28%, transparent);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--peek-shadow) 32%, transparent);
+  border-color: var(
+    --peek-composer-border-focus,
+    color-mix(in srgb, var(--peek-text) 28%, transparent)
+  );
+  box-shadow: var(--peek-composer-shadow-focus, var(--peek-composer-shadow, var(--peek-elev-sm)));
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-content) {
   min-height: 56px;
@@ -2160,6 +2193,11 @@ button {
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.model-picker-list) {
   max-height: max(96px, calc(50vh - 96px));
+}
+.conversation-pane.empty-conversation .composer-wrap :deep(.command-list) {
+  max-height: min(260px, calc(50cqh - 96px));
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 /* Detached @/# cards sit above a mid-screen composer — keep them below the titlebar. */
 .conversation-pane.empty-conversation .composer-wrap :deep(.file-suggestion-list),
@@ -2305,15 +2343,15 @@ button {
   gap: 2px;
 }
 .review-tabs button {
-  height: 28px;
+  height: var(--peek-control-icon);
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 0 9px;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-muted);
-  font-size: 10px;
+  font-size: var(--peek-font-xs);
 }
 .review-tabs button:hover {
   color: var(--peek-text);

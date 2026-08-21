@@ -61,7 +61,7 @@
           </SidebarContent>
         </Sidebar>
 
-        <SidebarInset class="settings-content-pane">
+        <SidebarInset class="settings-content-pane peek-pane">
           <div class="settings-scroll peek-scrollbar">
             <!-- No JS Transition: animated out-in + GSAP can leave this pane blank forever
                  when done() never fires (seen as white-screen/freeze on some WebView2 installs). -->
@@ -74,6 +74,7 @@
                 :expanded-history-groups="expandedHistoryGroups"
                 @toggle-history-group="toggleHistoryGroup"
               />
+              <ArchiveSettings v-else-if="activeCategory === 'archive'" />
               <TokenUsageSettings v-else-if="activeCategory === 'usage'" />
               <AboutSettings
                 v-else-if="activeCategory === 'about'"
@@ -121,6 +122,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
+  Archive,
   Bot,
   BrainCircuit,
   Shield,
@@ -139,6 +141,7 @@ import {
 } from "@lucide/vue";
 import WorkspaceSettings from "@/components/workspace/WorkspaceSettings.vue";
 import HistorySettings from "@/components/settings/HistorySettings.vue";
+import ArchiveSettings from "@/components/settings/ArchiveSettings.vue";
 import TokenUsageSettings from "@/components/settings/TokenUsageSettings.vue";
 import AboutSettings from "@/components/settings/AboutSettings.vue";
 import ProviderSettings from "@/components/settings/ProviderSettings.vue";
@@ -170,12 +173,12 @@ import {
   DEFAULT_SETTINGS_CATEGORY,
   type AppLanguage,
   type ColorScheme,
-  type ReasoningEffort,
   type ReasoningLanguage,
   type ModelSelection,
   type WebSearchProvider,
   type ToolApprovalMode,
   type AgentWorkDisplay,
+  isReasoningEffort,
 } from "@/types/setting";
 
 const settingStore = useSettingStore();
@@ -258,6 +261,7 @@ const t = computed(() => {
       plugins: tr(language, "settings.categories.plugins"),
       workspace: tr(language, "settings.categories.workspace"),
       history: tr(language, "settings.categories.history"),
+      archive: tr(language, "settings.categories.archive"),
       usage: tr(language, "settings.categories.usage"),
       about: tr(language, "settings.categories.about"),
       provider: tr(language, "settings.categories.provider"),
@@ -276,6 +280,7 @@ const categories = computed(() => [
   },
   { id: "agent" as const, label: t.value.categories.agent, icon: Shield },
   { id: "history" as const, label: t.value.categories.history, icon: History },
+  { id: "archive" as const, label: t.value.categories.archive, icon: Archive },
   { id: "usage" as const, label: t.value.categories.usage, icon: BarChart3 },
   { id: "plugins" as const, label: t.value.categories.plugins, icon: Pin },
   {
@@ -316,7 +321,7 @@ const categorySections = computed(() => {
       "rag",
     ]),
     section("extensions", tr(language, "settings.sections.extensions"), ["plugins"]),
-    section("data", tr(language, "settings.sections.data"), ["history", "usage"]),
+    section("data", tr(language, "settings.sections.data"), ["history", "archive", "usage"]),
     section("system", tr(language, "settings.sections.system"), ["about"]),
   ];
 });
@@ -377,10 +382,10 @@ function onZoomChange(value: unknown) {
 }
 
 function onReasoningEffortChange(value: unknown) {
-  if (typeof value !== "string") {
+  if (typeof value !== "string" || !isReasoningEffort(value)) {
     return;
   }
-  void settingStore.update({ reasoningEffort: value as ReasoningEffort });
+  void settingStore.update({ reasoningEffort: value });
 }
 
 function onReasoningLanguageChange(value: unknown) {
@@ -661,12 +666,7 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: visible;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
-  border-right: 0;
-  border-bottom: 0;
-  border-radius: 12px 0 0 0;
   background: var(--peek-list-bg) !important;
-  box-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
 }
 
 .settings-workbench.is-glass,
@@ -717,7 +717,7 @@ watch(
   padding-right: 1px;
   display: flex;
   flex-direction: column;
-  border-radius: 12px 0 0 0;
+  border-radius: var(--peek-radius-lg) 0 0 0;
 }
 
 .settings-nav-content {
@@ -733,31 +733,43 @@ watch(
   height: 25px;
   padding: 0 8px;
   color: var(--peek-faint);
-  font-size: 10px;
+  font-size: var(--peek-font-xs);
   font-weight: 650;
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"]),
 .settings-nav-item {
-  height: 30px;
+  position: relative;
+  height: var(--peek-control-row);
   gap: 8px;
-  padding: 0 8px;
-  border-radius: 5px;
+  padding: 0 8px 0 10px;
+  border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-muted);
-  font-size: 12px;
+  font-size: var(--peek-font-sm);
   letter-spacing: 0;
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"]:hover) {
-  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
+  background: var(--peek-row-hover);
   color: var(--peek-text);
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) {
-  background: color-mix(in srgb, var(--peek-text) 9%, transparent);
+  background: var(--peek-row-active);
   color: var(--peek-text);
   font-weight: 600;
+}
+
+.settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]::before) {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--peek-accent);
 }
 
 .settings-nav-label {
@@ -796,7 +808,7 @@ watch(
 }
 
 .titlebar-btn.close:hover {
-  background: #e81123;
-  color: #fff;
+  background: var(--peek-danger);
+  color: var(--peek-primary-foreground, #fff);
 }
 </style>

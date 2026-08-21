@@ -23,6 +23,7 @@ pub enum BusEvent {
         event: crate::core::agent::AgentDebugEvent,
     },
     TokenUsage {
+        session_id: Option<String>,
         model: String,
         usage: crate::core::token::TokenUsage,
     },

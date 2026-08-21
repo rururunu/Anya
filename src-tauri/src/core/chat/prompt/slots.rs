@@ -29,11 +29,7 @@ pub(super) fn inject_optional_policy_suffix(
         );
     }
     if !collaboration_models.is_empty() {
-        let list = collaboration_models
-            .iter()
-            .map(|model| format!("- `{model}`"))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let list = crate::core::ai::model_ref::format_collaboration_prompt_ids(collaboration_models);
         let content = MULTI_MODEL_COLLABORATION_PROMPT.replace("{{MODELS}}", &list);
         inject_system_block(messages, session_id, "collaboration-models", Some(&content));
     }

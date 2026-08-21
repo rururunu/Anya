@@ -49,6 +49,14 @@ pub async fn collect_stream_turn(
                 let _ = tx.send(StreamEvent::Reasoning(chunk)).await;
             }
             StreamEvent::Status { kind } => {
+                // Drop the interrupted attempt so a retry cannot merge a second
+                // copy of the same tool_calls into this turn.
+                if kind.starts_with("stream_retry") {
+                    content.clear();
+                    reasoning.clear();
+                    tool_calls.clear();
+                    finish_reason = None;
+                }
                 let _ = tx.send(StreamEvent::Status { kind }).await;
             }
             StreamEvent::UserContentPatch {

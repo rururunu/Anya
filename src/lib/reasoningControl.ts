@@ -1,6 +1,14 @@
 import { modelHasThinkingVariants } from "@/lib/modelThinking";
+import {
+  clampReasoningEffort,
+  genericReasoningProfile,
+  profileForModel,
+  responsesReasoningProfile,
+  type ReasoningProfile,
+} from "@/lib/reasoningProfiles";
 import type { ChatModelInfo } from "@/types/chat";
 import {
+  isReasoningEffort as isKnownReasoningEffort,
   normalizeProviderApiProtocol,
   reasoningEffortOptions,
   type CustomProviderConfig,
@@ -11,11 +19,12 @@ import {
  * Input-bar thinking control.
  *
  * - `variants`: swap model IDs in the same family (Gemini High / Low / Agent).
- * - `effort`: keep the model, write `settings.reasoningEffort` (DeepSeek thinking
- *   and Responses `reasoning.effort`, e.g. Grok).
+ * - `effort`: keep the model, write `settings.reasoningEffort` using that
+ *   family's official levels (DeepSeek low/high/max, GPT none/minimal/…, Grok
+ *   low/medium/high/xhigh, …).
  */
 export type ReasoningControl =
-  { kind: "none" } | { kind: "variants" } | { kind: "effort"; allowsDisabled: boolean };
+  { kind: "none" } | { kind: "variants" } | { kind: "effort"; profile: ReasoningProfile };
 
 export type ResolveReasoningControlInput = {
   modelId: string;
@@ -25,7 +34,7 @@ export type ResolveReasoningControlInput = {
 };
 
 export function isReasoningEffort(value: string): value is ReasoningEffort {
-  return value === "disabled" || value === "high" || value === "max";
+  return isKnownReasoningEffort(value);
 }
 
 export function resolveReasoningControl(input: ResolveReasoningControlInput): ReasoningControl {
@@ -37,12 +46,18 @@ export function resolveReasoningControl(input: ResolveReasoningControlInput): Re
   const model = (entry?.id ?? input.modelId).trim().toLowerCase();
   const provider = (entry?.provider ?? input.providerId).trim().toLowerCase();
 
-  if (isDeepSeekModel(model, provider)) {
-    return { kind: "effort", allowsDisabled: true };
+  const advertised = entry?.reasoning;
+  if (advertised && !advertised.supported) {
+    return { kind: "none" };
   }
 
-  if (isGrokModel(model, provider)) {
-    return { kind: "effort", allowsDisabled: false };
+  const profile = profileForModel(model, provider);
+  if (profile) {
+    return { kind: "effort", profile };
+  }
+
+  if (advertised?.supported) {
+    return { kind: "effort", profile: genericReasoningProfile() };
   }
 
   const custom = findCustomProvider(
@@ -51,38 +66,29 @@ export function resolveReasoningControl(input: ResolveReasoningControlInput): Re
     model,
   );
   if (custom && normalizeProviderApiProtocol(custom.apiProtocol) === "responses") {
-    return { kind: "effort", allowsDisabled: false };
+    return { kind: "effort", profile: responsesReasoningProfile() };
   }
 
   return { kind: "none" };
 }
 
-/** Grok cannot turn reasoning off; the request layer maps `disabled` → `high`. */
 export function effectiveReasoningEffort(
   requested: ReasoningEffort,
   control: ReasoningControl,
 ): ReasoningEffort {
-  if (control.kind === "effort" && !control.allowsDisabled && requested === "disabled") {
-    return "high";
+  if (control.kind !== "effort") {
+    return requested;
   }
-  return requested;
+  return clampReasoningEffort(requested, control.profile);
 }
 
 export function effortOptionsForControl(control: ReasoningControl) {
   if (control.kind !== "effort") {
     return [];
   }
-  return control.allowsDisabled
-    ? reasoningEffortOptions
-    : reasoningEffortOptions.filter((option) => option.value !== "disabled");
-}
-
-function isDeepSeekModel(model: string, provider: string): boolean {
-  return model.startsWith("deepseek") || provider === "deepseek";
-}
-
-function isGrokModel(model: string, provider: string): boolean {
-  return model.startsWith("grok") || provider === "xai" || provider.includes("x.ai");
+  return control.profile.levels
+    .map((value) => reasoningEffortOptions.find((option) => option.value === value))
+    .filter((option): option is (typeof reasoningEffortOptions)[number] => option != null);
 }
 
 function findCustomProvider(

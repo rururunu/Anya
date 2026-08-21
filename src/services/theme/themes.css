@@ -30,8 +30,12 @@
   --peek-danger: #c42b1c;
   --peek-success: #18794e;
   --peek-info: #006ab1;
-  --peek-focus: #006ab1;
+  --peek-focus: #111111;
   --peek-shadow: rgb(0 0 0 / 18%);
+  --peek-composer-border: color-mix(in srgb, var(--peek-text) 16%, transparent);
+  --peek-composer-border-focus: color-mix(in srgb, var(--peek-text) 28%, transparent);
+  --peek-composer-shadow: inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent);
+  --peek-composer-shadow-focus: inset 0 1px 0 color-mix(in srgb, #fff 86%, transparent);
   --peek-scrollbar: rgba(0, 0, 0, 0.16);
   --peek-scrollbar-hover: rgba(0, 0, 0, 0.3);
   --peek-code-fg: #1f2328;
@@ -76,8 +80,8 @@
   --peek-placeholder: #8b8b8b;
   --peek-send-bg: #333333;
   --peek-send-fg: #c8c8c8;
-  --peek-send-active-bg: #0e639c;
-  --peek-send-active-fg: #ffffff;
+  --peek-send-active-bg: #f3f4f6;
+  --peek-send-active-fg: #1b1b1b;
   --peek-primary-foreground: #1b1b1b;
   --peek-user-bubble-bg: #2b2b2b;
   --peek-user-bubble-border: rgba(255, 255, 255, 0.14);
@@ -88,6 +92,10 @@
   --peek-info: #75beff;
   --peek-focus: #f3f4f6;
   --peek-shadow: rgb(0 0 0 / 28%);
+  --peek-composer-border: color-mix(in srgb, var(--peek-text) 16%, transparent);
+  --peek-composer-border-focus: color-mix(in srgb, var(--peek-text) 28%, transparent);
+  --peek-composer-shadow: inset 0 1px 0 color-mix(in srgb, #fff 9%, transparent);
+  --peek-composer-shadow-focus: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
   --peek-scrollbar: rgba(255, 255, 255, 0.14);
   --peek-scrollbar-hover: rgba(255, 255, 255, 0.28);
   --peek-code-fg: #e6edf3;
@@ -145,4 +153,24 @@
   --sidebar-ring: var(--peek-focus);
   --peek-hover-bg: color-mix(in srgb, var(--peek-icon) 9%, transparent);
   --peek-dialog-bg: var(--peek-surface);
+  --peek-row-hover: color-mix(in srgb, var(--peek-text) 6%, transparent);
+  --peek-row-active: color-mix(in srgb, var(--peek-accent) 13%, transparent);
+
+  --peek-radius-sm: 6px;
+  --peek-radius-md: 8px;
+  --peek-radius-lg: 12px;
+  --peek-radius-composer: 16px;
+
+  --peek-control-icon: 28px;
+  --peek-control-row: 30px;
+  --peek-titlebar-h: 42px;
+
+  --peek-font-xs: 11px;
+  --peek-font-sm: 12px;
+  --peek-font-md: 13px;
+  --peek-font-lg: 14px;
+
+  --peek-elev-sm: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
+  --peek-elev-md: 0 6px 18px color-mix(in srgb, var(--peek-shadow) 42%, transparent);
+  --peek-focus-ring: 0 0 0 1px color-mix(in srgb, var(--peek-text) 22%, transparent);
 }

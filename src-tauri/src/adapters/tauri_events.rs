@@ -4,7 +4,8 @@ use crate::core::event::{BusEvent, EventBus};
 use crate::models::chat::{
     AskUserEvent, ChatContextNoticeEvent, ChatDeltaEvent, ChatErrorEvent, ChatFinishedEvent,
     ChatReasoningEvent, ChatSessionTitleUpdatedEvent, ChatStartedEvent, ChatStatusEvent,
-    ChatUserContentEvent, PathPermissionEvent, TaskListUpdatedEvent, ToolActivityEvent,
+    ChatTokenUsageEvent, ChatUserContentEvent, PathPermissionEvent, TaskListUpdatedEvent,
+    ToolActivityEvent,
 };
 
 pub struct TauriEventBus {
@@ -27,7 +28,23 @@ impl EventBus for TauriEventBus {
             BusEvent::AgentDebugEvent { event } => {
                 let _ = self.app.emit("agent-debug-event", event);
             }
-            BusEvent::TokenUsage { .. } => {}
+            BusEvent::TokenUsage {
+                session_id: Some(session_id),
+                model,
+                usage,
+            } => {
+                let _ = self.app.emit(
+                    "chat-token-usage",
+                    ChatTokenUsageEvent {
+                        session_id,
+                        model,
+                        usage,
+                    },
+                );
+            }
+            BusEvent::TokenUsage {
+                session_id: None, ..
+            } => {}
             BusEvent::SubagentStarted { .. }
             | BusEvent::SubagentProgress { .. }
             | BusEvent::SubagentFinished { .. } => {}

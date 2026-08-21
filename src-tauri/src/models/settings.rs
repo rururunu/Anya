@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,7 +51,12 @@ pub enum AppLanguage {
 pub enum ReasoningEffort {
     #[default]
     Disabled,
+    None,
+    Minimal,
+    Low,
+    Medium,
     High,
+    Xhigh,
     Max,
 }
 
@@ -166,6 +173,21 @@ impl ProviderApiProtocol {
     }
 }
 
+/// Learned per-model wire format for a custom provider. Distinct from the
+/// user-facing provider default (`ProviderApiProtocol`), which has no
+/// Anthropic option in Settings.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ModelWireProtocol {
+    ChatCompletions,
+    Responses,
+    AnthropicMessages,
+}
+
+fn model_protocols_is_empty(value: &HashMap<String, ModelWireProtocol>) -> bool {
+    value.is_empty()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomProviderConfig {
@@ -175,6 +197,11 @@ pub struct CustomProviderConfig {
     pub api_key: String,
     /// Comma-separated or newline-separated model IDs (stored as raw text).
     pub models: String,
+    /// Comma-separated or newline-separated model IDs the user has switched
+    /// off. Disabled models are hidden from pickers and refused at send time,
+    /// and survive a `/models` refetch (never auto-cleared/re-enabled).
+    #[serde(default)]
+    pub disabled_models: String,
     /// Optional preset template id used for icons / known defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset_id: Option<String>,
@@ -182,6 +209,10 @@ pub struct CustomProviderConfig {
     /// Chat Completions so previously saved settings keep working.
     #[serde(default, skip_serializing_if = "ProviderApiProtocol::is_chat_completions")]
     pub api_protocol: ProviderApiProtocol,
+    /// Learned wire format per model id. Empty until a successful stream
+    /// records which protocol the gateway actually accepted.
+    #[serde(default, skip_serializing_if = "model_protocols_is_empty")]
+    pub model_protocols: HashMap<String, ModelWireProtocol>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -861,5 +892,35 @@ mod tests {
         let merged = settings.merge(patch);
         assert_eq!(merged.chat_model_provider, "provider-a");
         assert_eq!(merged.multimodal_model_provider, "provider-b");
+    }
+
+    #[test]
+    fn custom_provider_model_protocols_round_trip_and_default_empty() {
+        let mut provider = super::CustomProviderConfig {
+            id: "go".into(),
+            name: "Go".into(),
+            base_url: "https://example/v1".into(),
+            api_key: "sk".into(),
+            models: "minimax-m3".into(),
+            disabled_models: String::new(),
+            preset_id: None,
+            api_protocol: super::ProviderApiProtocol::Responses,
+            model_protocols: Default::default(),
+        };
+        let empty = serde_json::to_value(&provider).expect("serialize");
+        assert!(empty.get("modelProtocols").is_none());
+
+        provider.model_protocols.insert(
+            "minimax-m3".into(),
+            super::ModelWireProtocol::AnthropicMessages,
+        );
+        let json = serde_json::to_value(&provider).expect("serialize");
+        assert_eq!(json["modelProtocols"]["minimax-m3"], "anthropicMessages");
+        let restored: super::CustomProviderConfig =
+            serde_json::from_value(json).expect("deserialize");
+        assert_eq!(
+            restored.model_protocols.get("minimax-m3"),
+            Some(&super::ModelWireProtocol::AnthropicMessages)
+        );
     }
 }

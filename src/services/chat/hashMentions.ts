@@ -2,7 +2,7 @@
  * `#` resource mentions for Skills and MCP servers.
  *
  * Wire format in the sent message (human-readable + agent-parseable):
- * - `#skill:generate_bid_tech`
+ * - `#skill:generate_word`
  * - `#mcp:server-id`
  *
  * Chips in the composer use the same tokens via {@link formatHashMention}.

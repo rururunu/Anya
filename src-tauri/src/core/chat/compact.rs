@@ -236,6 +236,9 @@ pub async fn prepare_history_for_prompt(
 pub struct ContextUsageMeasure {
     pub estimated_tokens: usize,
     pub usage_ratio: f32,
+    pub system_prompt_tokens: usize,
+    pub tools_tokens: usize,
+    pub message_tokens: usize,
 }
 
 /// True when this row is an auto-compact summary (prompt slicing only; not shown in the thread).
@@ -260,14 +263,15 @@ pub fn measure_context_usage(
     context_window: usize,
 ) -> ContextUsageMeasure {
     let history = history_from_last_summary(history);
-    let mut estimated = estimate_tokens(SYSTEM_PROMPT);
-    estimated += estimate_context_tokens(context);
+    let system_prompt_tokens = estimate_tokens(SYSTEM_PROMPT);
+    let tools_tokens = estimate_context_tokens(context);
+    let mut message_tokens = 0;
 
     for message in history {
         if !message_has_estimable_tokens(message) {
             continue;
         }
-        estimated += estimate_message_tokens(message);
+        message_tokens += estimate_message_tokens(message);
     }
 
     if let Some(draft) = draft_message.map(str::trim).filter(|text| !text.is_empty()) {
@@ -277,14 +281,18 @@ pub fn measure_context_usage(
             .find(|message| message.role == Role::User);
         let already_counted = last_user.is_some_and(|message| message.content.trim() == draft);
         if !already_counted {
-            estimated += estimate_tokens(draft);
+            message_tokens += estimate_tokens(draft);
         }
     }
 
+    let estimated = system_prompt_tokens + tools_tokens + message_tokens;
     let usage_ratio = estimated as f32 / context_window.max(1) as f32;
     ContextUsageMeasure {
         estimated_tokens: estimated,
         usage_ratio,
+        system_prompt_tokens,
+        tools_tokens,
+        message_tokens,
     }
 }
 

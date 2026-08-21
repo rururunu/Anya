@@ -10,6 +10,7 @@ export interface Workspace {
   createdAt: string;
   lastUsedAt: string;
   pinned: boolean;
+  archived?: boolean;
   sortOrder: number;
 }
 
@@ -29,6 +30,10 @@ export function workspaceSourceLabel(source?: string | null): string {
 
 export function listWorkspaces(): Promise<Workspace[]> {
   return invoke("list_workspaces");
+}
+
+export function listArchivedWorkspaces(): Promise<Workspace[]> {
+  return invoke("list_archived_workspaces");
 }
 
 export function getCurrentWorkspace(): Promise<Workspace | null> {
@@ -61,6 +66,10 @@ export function openWorkspaceFolder(id: string): Promise<void> {
 
 export function setWorkspacePinned(id: string, pinned: boolean): Promise<void> {
   return invoke("set_workspace_pinned", { id, pinned });
+}
+
+export function setWorkspaceArchived(id: string, archived: boolean): Promise<void> {
+  return invoke("set_workspace_archived", { id, archived });
 }
 
 export function reorderWorkspaces(ids: string[]): Promise<void> {

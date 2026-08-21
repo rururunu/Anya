@@ -430,7 +430,7 @@ impl AgentRunner {
         };
 
         // Spawn a background task to receive from rx concurrently to avoid channel deadlocks.
-        let answer = Arc::new(tokio::sync::Mutex::new(String::new()));
+        let answer = Arc::new(tokio::sync::Mutex::new((String::new(), Option::<String>::None)));
         let answer_clone = Arc::clone(&answer);
         let progress_bus = Arc::clone(&tool_ctx.event_bus);
         let progress_subagent_id = tool_ctx.subagent_id.clone();
@@ -439,9 +439,14 @@ impl AgentRunner {
             let mut reasoning_reported = false;
             while let Some(event) = rx.recv().await {
                 match event {
-                    StreamEvent::TurnComplete { content, .. } => {
+                    StreamEvent::TurnComplete {
+                        content,
+                        finish_reason,
+                        ..
+                    } => {
                         let mut lock = answer_clone.lock().await;
-                        *lock = content;
+                        lock.0 = content;
+                        lock.1 = finish_reason;
                     }
                     StreamEvent::Delta(delta) => {
                         if !response_reported {
@@ -456,7 +461,7 @@ impl AgentRunner {
                             response_reported = true;
                         }
                         let mut lock = answer_clone.lock().await;
-                        lock.push_str(&delta);
+                        lock.0.push_str(&delta);
                     }
                     StreamEvent::Reasoning(_) => {
                         if !reasoning_reported {
@@ -473,6 +478,7 @@ impl AgentRunner {
                     }
                     StreamEvent::Usage(usage) => {
                         progress_bus.emit(crate::core::event::BusEvent::TokenUsage {
+                            session_id: None,
                             model: "subagent".to_string(),
                             usage,
                         });
@@ -499,7 +505,10 @@ impl AgentRunner {
         // Wait for the receiver task to finish draining
         let _ = rx_task.await;
 
-        let final_answer = answer.lock().await.clone();
+        let (final_answer, finish_reason) = answer.lock().await.clone();
+        if finish_reason.as_deref() == Some("tool_failure_breaker") {
+            return Err(ToolError::new(final_answer));
+        }
         Ok(final_answer)
     }
 }

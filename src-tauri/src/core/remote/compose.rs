@@ -23,6 +23,8 @@ pub struct SessionCompose {
     pub chat_model_provider: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_model_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
 }
 
 impl Default for SessionCompose {
@@ -33,6 +35,7 @@ impl Default for SessionCompose {
             chat_model: String::new(),
             chat_model_provider: String::new(),
             chat_model_label: None,
+            reasoning_effort: None,
         }
     }
 }
@@ -58,6 +61,13 @@ impl SessionCompose {
                 Some(label.clone())
             };
         }
+        if let Some(effort) = patch.reasoning_effort.as_ref() {
+            self.reasoning_effort = if effort.is_empty() {
+                None
+            } else {
+                Some(effort.clone())
+            };
+        }
     }
 }
 
@@ -74,6 +84,8 @@ pub struct SessionComposePatch {
     pub chat_model_provider: Option<String>,
     #[serde(default)]
     pub chat_model_label: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 struct ComposeStore {
@@ -98,12 +110,20 @@ pub fn get(session_id: &str) -> SessionCompose {
 }
 
 pub fn set(session_id: &str, compose: SessionCompose) -> SessionCompose {
+    let mut next = compose;
     if let Ok(mut guard) = store().lock() {
+        // Desktop Pinia sync omits reasoningEffort. Replacing the whole record
+        // would wipe a Companion slider change and make the phone thumb snap back.
+        if next.reasoning_effort.is_none() {
+            if let Some(existing) = guard.by_session.get(session_id) {
+                next.reasoning_effort = existing.reasoning_effort.clone();
+            }
+        }
         guard
             .by_session
-            .insert(session_id.to_string(), compose.clone());
+            .insert(session_id.to_string(), next.clone());
     }
-    compose
+    next
 }
 
 pub fn patch(session_id: &str, patch: &SessionComposePatch) -> SessionCompose {

@@ -226,8 +226,8 @@
                 >
                   <input
                     type="checkbox"
-                    :checked="settingStore.collaborationModels.includes(option.value)"
-                    @change="toggleCollaborationModel(option.value)"
+                    :checked="isCollaborationModelSelected(option)"
+                    @change="toggleCollaborationModel(option)"
                   />
                   <component
                     :is="option.icon"
@@ -447,11 +447,10 @@ import {
 import { useSettingStore } from "@/stores/setting";
 import { useChatModelStore } from "@/stores/chatModel";
 import {
-  getProviderIcon,
+  getModelIcon,
   getModelDisplayLabel,
   isDeepSeekProvider,
   isGeminiProvider,
-  resolveCustomPresetId,
 } from "@/lib/providerIcons";
 import {
   findModelEntry,
@@ -654,10 +653,7 @@ const availableModelOptions = computed(() => {
     return {
       value: encodeModelSelection(model),
       label: showOwner ? `${name} · ${model.ownedBy}` : name,
-      icon: getProviderIcon(
-        model.provider,
-        resolveCustomPresetId(model.provider, settingStore.customProviders),
-      ),
+      icon: getModelIcon(model),
       model,
     };
   });
@@ -747,11 +743,36 @@ function toggleModelCollaboration() {
   });
 }
 
-function toggleCollaborationModel(model: string) {
-  const selected = new Set(settingStore.collaborationModels);
-  if (selected.has(model)) selected.delete(model);
-  else selected.add(model);
-  void settingStore.update({ collaborationModels: [...selected] });
+function isCollaborationModelSelected(option: {
+  value: string;
+  model: { id: string; provider: string };
+}) {
+  return settingStore.collaborationModels.some((token) => tokenMatchesOption(token, option));
+}
+
+function tokenMatchesOption(
+  token: string,
+  option: { value: string; model: { id: string; provider: string } },
+) {
+  if (token === option.value || token === option.model.id) return true;
+  try {
+    const parsed = JSON.parse(token) as [string, string];
+    return parsed[1] === option.model.id && (!parsed[0] || parsed[0] === option.model.provider);
+  } catch {
+    return false;
+  }
+}
+
+function toggleCollaborationModel(option: {
+  value: string;
+  model: { id: string; provider: string };
+}) {
+  const wasSelected = isCollaborationModelSelected(option);
+  const next = settingStore.collaborationModels.filter(
+    (token) => !tokenMatchesOption(token, option),
+  );
+  if (!wasSelected) next.push(option.value);
+  void settingStore.update({ collaborationModels: next });
 }
 
 function toggleActive(id: string) {

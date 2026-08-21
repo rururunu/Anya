@@ -11,50 +11,131 @@
     <template v-else-if="error && models.length === 0">
       <li class="picker-status error">{{ error }}</li>
     </template>
-    <template v-else-if="models.length === 0">
+    <template v-else-if="showingGroups && groups.length === 0">
       <li class="picker-status">{{ emptyText }}</li>
     </template>
+    <template v-else-if="!showingGroups && modelRows.length === 0">
+      <li class="picker-status">{{ emptyText }}</li>
+    </template>
+    <template v-else-if="showingGroups">
+      <TooltipProvider :delay-duration="220">
+        <li v-for="group in groups" :key="group.provider" class="model-picker-row">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <div
+                class="command-item model-picker-item model-group-item"
+                :class="{
+                  active: group.index === selectedIndex,
+                  current: group.hasCurrent,
+                }"
+                role="option"
+                :aria-selected="group.index === selectedIndex"
+                @mouseenter="$emit('hover', group.index)"
+                @mousedown.prevent="$emit('selectGroup', group.provider)"
+              >
+                <span class="model-group-leading" aria-hidden="true">
+                  <component
+                    :is="groupBrandIcon(group)"
+                    v-if="groupBrandIcon(group)"
+                    :size="13"
+                    class="model-group-icon"
+                  />
+                  <img
+                    v-else-if="groupFavicon(group)"
+                    :src="groupFavicon(group)!"
+                    alt=""
+                    class="model-group-favicon"
+                  />
+                  <span v-else class="model-icon-dot" />
+                </span>
+                <span class="model-name">{{ group.label }}</span>
+                <span class="model-meta">{{ groupCountLabel(group.models.length) }}</span>
+                <Check v-if="group.hasCurrent" :size="13" class="model-check" aria-hidden="true" />
+                <ChevronRight :size="13" class="model-group-chevron" aria-hidden="true" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent
+              v-if="providerHover(group.provider)"
+              side="right"
+              :side-offset="10"
+              class="model-provider-tooltip"
+            >
+              <ModelProviderTip
+                :name="providerHover(group.provider)!.name"
+                :detail="providerHover(group.provider)!.detail"
+                :brand-icon="providerHover(group.provider)!.brandIcon"
+                :favicon="providerHover(group.provider)!.favicon"
+              />
+            </TooltipContent>
+          </Tooltip>
+        </li>
+      </TooltipProvider>
+    </template>
     <template v-else>
-      <template v-for="group in groups" :key="group.provider">
-        <li class="model-group-header" role="presentation">
-          <span class="model-group-leading" aria-hidden="true">
-            <component
-              :is="providerIcon(group.provider === 'other' ? '' : group.provider)"
-              v-if="providerIcon(group.provider === 'other' ? '' : group.provider)"
-              :size="12"
-              class="model-group-icon"
-            />
-            <span v-else class="model-icon-dot" />
-          </span>
-          <span class="model-group-label">{{ group.label }}</span>
-        </li>
+      <li
+        v-if="hierarchical"
+        class="command-item model-picker-back"
+        role="option"
+        :aria-label="backText"
+        @mousedown.prevent="$emit('back')"
+      >
+        <ChevronLeft :size="13" class="back-icon" />
+        <span class="back-label">{{ activeGroupLabel }}</span>
+      </li>
+      <TooltipProvider :delay-duration="220">
         <li
-          v-for="entry in group.entries"
+          v-for="entry in modelRows"
           :key="`${entry.model.provider}:${entry.model.id}`"
-          class="command-item model-picker-item"
-          :class="{
-            active: entry.index === selectedIndex,
-            current: isModelEntrySelected(entry.model, selectedModelId, selectedProvider),
-          }"
-          role="option"
-          :aria-selected="entry.index === selectedIndex"
-          @mouseenter="$emit('hover', entry.index)"
-          @mousedown.prevent="$emit('select', entry.model)"
+          class="model-picker-row"
         >
-          <span class="model-name">{{ getModelDisplayLabel(entry.model) }}</span>
-
-          <span v-if="getModelDisplaySubtitle(entry.model)" class="model-meta">
-            {{ getModelDisplaySubtitle(entry.model) }}
-          </span>
-
-          <Check
-            v-if="isModelEntrySelected(entry.model, selectedModelId, selectedProvider)"
-            :size="13"
-            class="model-check"
-            aria-hidden="true"
-          />
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <div
+                class="command-item model-picker-item"
+                :class="{
+                  active: entry.index === selectedIndex,
+                  current: isModelEntrySelected(entry.model, selectedModelId, selectedProvider),
+                }"
+                role="option"
+                :aria-selected="entry.index === selectedIndex"
+                @mouseenter="$emit('hover', entry.index)"
+                @mousedown.prevent="$emit('select', entry.model)"
+              >
+                <component
+                  :is="modelIcon(entry.model)"
+                  v-if="modelIcon(entry.model)"
+                  :size="13"
+                  class="model-item-icon"
+                  aria-hidden="true"
+                />
+                <span class="model-name">{{ getModelDisplayLabel(entry.model) }}</span>
+                <span v-if="getModelDisplaySubtitle(entry.model)" class="model-meta">
+                  {{ getModelDisplaySubtitle(entry.model) }}
+                </span>
+                <Check
+                  v-if="isModelEntrySelected(entry.model, selectedModelId, selectedProvider)"
+                  :size="13"
+                  class="model-check"
+                  aria-hidden="true"
+                />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent
+              v-if="providerHover(entry.model.provider)"
+              side="right"
+              :side-offset="10"
+              class="model-provider-tooltip"
+            >
+              <ModelProviderTip
+                :name="providerHover(entry.model.provider)!.name"
+                :detail="providerHover(entry.model.provider)!.detail"
+                :brand-icon="providerHover(entry.model.provider)!.brandIcon"
+                :favicon="providerHover(entry.model.provider)!.favicon"
+              />
+            </TooltipContent>
+          </Tooltip>
         </li>
-      </template>
+      </TooltipProvider>
     </template>
 
     <li
@@ -73,16 +154,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { Check, RefreshCw } from "@lucide/vue";
+import { computed, watch } from "vue";
+import { Check, ChevronLeft, ChevronRight, RefreshCw } from "@lucide/vue";
 import type { ChatModelInfo } from "@/types/chat";
 import {
+  DEEPSEEK_PROVIDER,
+  GEMINI_PROVIDER,
   getModelDisplayLabel,
   getModelDisplaySubtitle,
+  getModelIcon,
+  getProviderHoverInfo,
   getProviderIcon,
   groupModelsByProvider,
-  resolveCustomPresetId,
+  type ModelProviderGroup,
 } from "@/lib/providerIcons";
+import { peekProviderFavicon, warmProviderFavicons } from "@/services/providerFavicon";
+import ModelProviderTip from "./ModelProviderTip.vue";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { isModelEntrySelected } from "@/lib/modelThinking";
 import { useSettingStore } from "@/stores/setting";
 
@@ -91,43 +179,98 @@ const props = defineProps<{
   selectedModelId: string;
   selectedProvider: string;
   selectedIndex: number;
+  /** `null` shows the provider list when more than one group exists. */
+  activeProvider: string | null;
   loading: boolean;
   refreshing?: boolean;
   error: string | null;
   loadingText: string;
   emptyText: string;
   refreshText: string;
+  backText: string;
+  modelCountText: string;
   ariaLabel: string;
 }>();
 
 defineEmits<{
   hover: [index: number];
   select: [model: ChatModelInfo];
+  selectGroup: [provider: string];
+  back: [];
   refresh: [];
 }>();
 
 const settingStore = useSettingStore();
 
-function providerIcon(provider: string) {
-  return getProviderIcon(provider, resolveCustomPresetId(provider, settingStore.customProviders));
+type Group = ModelProviderGroup & {
+  index: number;
+  hasCurrent: boolean;
+};
+
+function modelIcon(model: ChatModelInfo) {
+  return getModelIcon(model);
 }
 
-/** Flat model index for keyboard nav; headers are skipped. */
-const groups = computed(() => {
-  let index = 0;
-  return groupModelsByProvider(props.models, settingStore.customProviders).map((group) => ({
-    provider: group.provider,
-    label: group.label,
-    entries: group.models.map((model) => {
-      const entry = { model, index };
-      index += 1;
-      return entry;
-    }),
-  }));
+function groupBrandIcon(group: Pick<ModelProviderGroup, "provider">) {
+  if (group.provider === DEEPSEEK_PROVIDER || group.provider === GEMINI_PROVIDER) {
+    return getProviderIcon(group.provider);
+  }
+  return null;
+}
+
+function groupFavicon(group: Pick<ModelProviderGroup, "provider">) {
+  return peekProviderFavicon(group.provider);
+}
+
+function providerHover(providerId: string | null | undefined) {
+  return getProviderHoverInfo(providerId, settingStore.customProviders);
+}
+
+function groupCountLabel(count: number) {
+  return props.modelCountText.replace("{count}", String(count));
+}
+
+watch(
+  () => settingStore.customProviders,
+  (providers) => {
+    warmProviderFavicons(providers);
+  },
+  { immediate: true, deep: true },
+);
+
+const grouped = computed(() => groupModelsByProvider(props.models, settingStore.customProviders));
+
+const hierarchical = computed(() => grouped.value.length > 1);
+
+const showingGroups = computed(() => hierarchical.value && !props.activeProvider);
+
+const groups = computed<Group[]>(() =>
+  grouped.value.map((group, index) => ({
+    ...group,
+    index,
+    hasCurrent: group.models.some((model) =>
+      isModelEntrySelected(model, props.selectedModelId, props.selectedProvider),
+    ),
+  })),
+);
+
+const activeGroupLabel = computed(() => {
+  const match = grouped.value.find((group) => group.provider === props.activeProvider);
+  return match?.label ?? props.backText;
 });
 
-/** Refresh is always the last navigable row (models[0..n-1], then refresh). */
-const refreshIndex = computed(() => props.models.length);
+const modelRows = computed(() => {
+  const source = props.activeProvider
+    ? (grouped.value.find((group) => group.provider === props.activeProvider)?.models ?? [])
+    : grouped.value.length === 1
+      ? grouped.value[0].models
+      : props.models;
+  return source.map((model, index) => ({ model, index }));
+});
+
+const refreshIndex = computed(() =>
+  showingGroups.value ? groups.value.length : modelRows.value.length,
+);
 </script>
 
 <style scoped>
@@ -135,7 +278,6 @@ const refreshIndex = computed(() => props.models.length);
   --command-row-height: 32px;
   --command-list-padding: 6px;
   --command-list-visible-rows: 12;
-  --model-group-header-height: 24px;
   list-style: none;
   margin: 0;
   padding: 4px 0 0;
@@ -166,25 +308,6 @@ const refreshIndex = computed(() => props.models.length);
   color: color-mix(in srgb, var(--destructive) 82%, var(--peek-muted));
 }
 
-.model-group-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--model-group-header-height);
-  padding: 6px 12px 2px;
-  pointer-events: none;
-  user-select: none;
-}
-
-.model-group-header + .model-group-header {
-  margin-top: 2px;
-}
-
-.model-picker-item + .model-group-header {
-  margin-top: 5px;
-  border-top: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
-}
-
 .model-group-leading {
   flex: none;
   width: 16px;
@@ -200,25 +323,34 @@ const refreshIndex = computed(() => props.models.length);
   opacity: 0.9;
 }
 
-.model-group-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--peek-muted);
+.model-group-favicon {
+  width: 13px;
+  height: 13px;
+  border-radius: 2px;
+  object-fit: contain;
+}
+
+.model-picker-row {
+  display: block;
 }
 
 .command-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px 0 36px;
+  padding: 0 12px;
   height: var(--command-row-height);
   cursor: default;
 }
 
-.model-picker-refresh {
+.model-picker-item {
   padding-left: 12px;
+}
+
+.model-item-icon {
+  flex: none;
+  color: var(--peek-muted);
+  opacity: 0.9;
 }
 
 .command-item.active {
@@ -266,9 +398,44 @@ const refreshIndex = computed(() => props.models.length);
   opacity: 0.95;
 }
 
+.model-group-chevron {
+  flex: none;
+  color: var(--peek-muted);
+  opacity: 0.7;
+}
+
+.model-picker-back {
+  padding-left: 12px;
+  color: var(--peek-muted);
+  border-bottom: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
+}
+
+.model-picker-back:hover {
+  color: var(--peek-text);
+  background: var(--peek-list-active);
+}
+
+.back-icon {
+  flex: none;
+  opacity: 0.85;
+}
+
+.back-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .model-picker-refresh {
   margin-top: 2px;
   height: 30px;
+  padding-left: 12px;
   border-top: 1px solid color-mix(in srgb, var(--peek-border) 90%, transparent);
   color: var(--peek-muted);
   gap: 8px;

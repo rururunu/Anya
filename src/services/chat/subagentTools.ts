@@ -12,8 +12,6 @@ export const SUBAGENT_TOOL_NAMES = [
   "review_code",
   "review_security",
   "generate_word",
-  "generate_bid_tech",
-  "review_bid_tech",
   "docx",
   "pandoc",
 ] as const;

@@ -10,7 +10,7 @@
 
 <p align="center">
   Press a shortcut, and Anya is there — ready to help with documents, code, and everyday work.<br />
-  DeepSeek is first-class; more providers plug in when you need them.
+  Connect DeepSeek, OpenAI-compatible, Responses, or Anthropic Messages providers.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.11-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.12-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -39,10 +39,10 @@
 |                 |                                                                                                                             |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | **Overlay**     | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                    |
-| **Workbench**   | Full desktop UI for pinned chats, project workspaces, review, and embedded settings.                                        |
-| **Agent**       | Ask / Agent / Plan; tools, Skills, MCP, Office; complex tasks may auto-plan.                                                |
+| **Workbench**   | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                     |
+| **Agent**       | Ask / Agent / Plan; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                              |
 | **Companion**   | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone. |
-| **RAG**         | Optional semantic workspace search (API or local embeddings). Off until you enable it.                                      |
+| **RAG**         | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.         |
 | **Local-first** | Keys, history, and settings stay on your machine by default.                                                                |
 
 **Docs:** [Architecture](./docs/architecture-overview.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
@@ -113,7 +113,7 @@ The workbench is the full desktop surface: Quick Ask threads from the overlay si
 | Area           | What it is for                                                                                                          |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | **Pinned**     | Keep important threads at the top.                                                                                      |
-| **Workspaces** | Bind chats to a project folder so Agent edits stay in context.                                                          |
+| **Workspaces** | Bind chats to a project folder; pin, reorder, collapse, archive, restore, or open the folder directly.                  |
 | **Quick Ask**  | Temporary overlay sessions — continue, start new, or keep a long run here while you still summon the overlay elsewhere. |
 
 ### Review changes
@@ -136,7 +136,9 @@ Configure models, providers, agent behavior, RAG search, and extensions from the
   <img src="./docs/image/workspace-settings.png" alt="Anya settings" width="900" />
 </p>
 
-Common controls include default chat model, vision / multimodal fallback, reasoning effort and language, tool approval mode, Agent display density, context-window budget, and **RAG Search** (API or local embeddings; off by default).
+Common controls include provider and model protocol, disabled models, model-specific reasoning effort, vision / multimodal fallback, language, tool approval mode, Agent display density, context-window budget, and **RAG Search** (API or local embeddings; off by default).
+
+Reasoning controls follow the selected model's advertised family. DeepSeek exposes disabled / low / high / max; GPT, Grok, Claude, Qwen, Kimi, and other compatible families expose the levels their endpoint supports. Unsupported values are clamped before a request is sent.
 
 ---
 
@@ -158,28 +160,30 @@ Assistant turns interleave **reasoning**, **reply text**, and **tool activity** 
 
 ### Integrations
 
-| Integration            | Role                                                                                               |
-| ---------------------- | -------------------------------------------------------------------------------------------------- |
-| **Microsoft Office**   | Context and `word_*` / `excel_*` / `ppt_*` tools when Word, Excel, or PowerPoint is running (COM)  |
-| **Skills**             | Built-in and vendor playbooks (docx, pandoc, research, review, bid tech, …); can run as sub-agents |
-| **MCP**                | Stdio and remote MCP servers                                                                       |
-| **LSP**                | Diagnostics when configured                                                                        |
-| **Pinned-image badge** | Optional PixPin / Snipaste badge to open a chat with that image                                    |
-| **Sub-agents**         | Split larger work while progress stays visible on the main thread                                  |
-| **Memory**             | Local memory tools; optional mem0 cloud sync                                                       |
-| **Web search**         | Serper or Tavily when an API key is set                                                            |
-| **RAG Search**         | Optional semantic re-rank on `search_codebase` (OpenAI-compatible `/embeddings` or local ONNX)     |
-| **Companion**          | [Android remote](https://github.com/rururunu/AnyaAndroid) over LAN or Cloudflare Tunnel            |
+| Integration            | Role                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------- |
+| **Microsoft Office**   | Context and `word_*` / `excel_*` / `ppt_*` tools when Word, Excel, or PowerPoint is running (COM) |
+| **Skills**             | Built-in and vendor playbooks (docx, pandoc, research, review, …); can run as sub-agents          |
+| **MCP**                | Stdio and remote MCP servers                                                                      |
+| **LSP**                | Diagnostics when configured                                                                       |
+| **Pinned-image badge** | Optional PixPin / Snipaste badge to open a chat with that image                                   |
+| **Sub-agents**         | Split larger work while progress stays visible on the main thread                                 |
+| **Memory**             | Local memory tools; optional mem0 cloud sync                                                      |
+| **Web search**         | Serper or Tavily when an API key is set                                                           |
+| **RAG Search**         | Optional semantic re-rank on `search_codebase` (OpenAI-compatible `/embeddings` or local ONNX)    |
+| **Companion**          | [Android remote](https://github.com/rururunu/AnyaAndroid) over LAN or Cloudflare Tunnel           |
 
 ### Model providers
 
-| Provider     | How you connect                                                                              |
-| ------------ | -------------------------------------------------------------------------------------------- |
-| **DeepSeek** | API key — recommended default                                                                |
-| **Gemini**   | Google sign-in (Antigravity OAuth)                                                           |
-| **Custom**   | OpenAI-compatible Base URL + key; presets for MiMo, Zhipu GLM, Volcengine Ark, MiniMax, Kimi |
+| Provider                 | How you connect                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------ |
+| **DeepSeek**             | API key; native thinking and cache usage                                                   |
+| **Gemini**               | Google sign-in (Antigravity OAuth)                                                         |
+| **OpenAI-compatible**    | Base URL + key; Chat Completions or Responses protocol                                     |
+| **Anthropic-compatible** | Base URL + key; Anthropic Messages protocol                                                |
+| **Custom**               | Presets for MiMo, Zhipu GLM, Volcengine Ark, MiniMax, Kimi, and other compatible providers |
 
-For image input with a text-only primary model, set a vision model or enable multimodal split analysis in Settings. The composer shows session token estimates and context usage; you can change model and thinking level while tools run.
+For image input with a text-only primary model, set a vision model or enable multimodal split analysis in Settings. The composer shows session token estimates, cache usage, and context usage; you can change model and thinking level while tools run. For a custom provider, select the protocol explicitly when discovery cannot advertise it.
 
 ---
 
@@ -247,7 +251,8 @@ flowchart TB
   RAG -.->|optional| EMB
   CHAT --> STORE
   GW --> CHAT
-  CHAT -->|HTTPS stream| LLM
+  CHAT --> AI[ProviderRegistry · protocol fallback]
+  AI -->|HTTPS SSE stream| LLM
   IDE -->|context push| Host
   TOOLS -->|COM| OFFICE
   PH -->|LAN ws or Cloudflare wss| GW
@@ -286,7 +291,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.11_x64.msi`.
+The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.12_x64.msi`.
 
 For signing, `latest.json`, and GitHub Releases, see [Releases and remote updates](./docs/release.md).
 

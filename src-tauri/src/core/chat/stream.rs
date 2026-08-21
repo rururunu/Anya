@@ -359,6 +359,7 @@ impl StreamManager {
                             }
                         });
                         event_bus.emit(BusEvent::TokenUsage {
+                            session_id: Some(usage_session_id.clone()),
                             model: model.clone(),
                             usage,
                         });

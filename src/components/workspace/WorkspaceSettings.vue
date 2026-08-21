@@ -42,6 +42,17 @@
           type="button"
           variant="ghost"
           size="icon"
+          class="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+          :title="copy.archiveWorkspace"
+          :aria-label="copy.archiveWorkspace"
+          @click="archive(workspace)"
+        >
+          <Archive class="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
           class="size-8 shrink-0 text-muted-foreground hover:text-destructive"
           :title="copy.deleteWorkspace"
           :aria-label="copy.deleteWorkspace"
@@ -57,7 +68,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Check, Folder, FolderOpen, Plus, Trash2 } from "@lucide/vue";
+import { Archive, Check, Folder, FolderOpen, Plus, Trash2 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
@@ -69,6 +80,7 @@ import {
   getCurrentWorkspace,
   listWorkspaces,
   selectWorkspaceFolder,
+  setWorkspaceArchived,
   switchWorkspace,
   workspaceSourceLabel,
   type Workspace,
@@ -89,6 +101,7 @@ const copy = computed(() => {
     newWorkspace: tr(language, "workspace.newWorkspace"),
     empty: tr(language, "workspace.empty"),
     current: tr(language, "workspace.current"),
+    archiveWorkspace: tr(language, "workspace.archiveWorkspace"),
     deleteWorkspace: tr(language, "workspace.deleteWorkspace"),
     cancel: tr(language, "workspace.cancel"),
     confirmDelete: tr(language, "workspace.confirmDelete"),
@@ -121,6 +134,11 @@ async function select(workspace: Workspace) {
   if (workspace.id !== current.value?.id) {
     current.value = await switchWorkspace(workspace.id);
   }
+}
+
+async function archive(workspace: Workspace) {
+  await setWorkspaceArchived(workspace.id, true);
+  await load();
 }
 
 async function remove(workspace: Workspace) {

@@ -351,37 +351,46 @@ impl MemoryStore {
         } else {
             settings.mem0_api_key.clone()
         };
-        let configured = if settings.memory_enabled && !api_key.trim().is_empty() {
-            Mem0Backend::new(
-                api_key,
-                if settings.mem0_user_id.trim().is_empty() {
-                    DEFAULT_USER_ID.into()
-                } else {
-                    settings.mem0_user_id.clone()
-                },
-                if settings.mem0_base_url.trim().is_empty() {
-                    DEFAULT_MEM0_BASE_URL.into()
-                } else {
-                    settings.mem0_base_url.clone()
-                },
-            )
-            .map(Arc::new)
+        let user_id = if settings.mem0_user_id.trim().is_empty() {
+            DEFAULT_USER_ID.into()
+        } else {
+            settings.mem0_user_id.clone()
+        };
+        let base_url = if settings.mem0_base_url.trim().is_empty() {
+            DEFAULT_MEM0_BASE_URL.into()
+        } else {
+            settings.mem0_base_url.clone()
+        };
+        let want_enabled = settings.memory_enabled && !api_key.trim().is_empty();
+        {
+            let current = lock_recover(&self.mem0);
+            let unchanged = match current.as_ref() {
+                Some(left) => {
+                    want_enabled
+                        && left.api_key == api_key
+                        && left.user_id == user_id
+                        && left.base_url == base_url
+                }
+                None => !want_enabled,
+            };
+            if unchanged {
+                return;
+            }
+        }
+        let configured = if want_enabled {
+            crate::runtime::isolated::run_isolated(move || {
+                Mem0Backend::new(api_key, user_id, base_url).map(Arc::new)
+            })
         } else {
             None
         };
-        let mut current = lock_recover(&self.mem0);
-        let unchanged = match (current.as_ref(), configured.as_ref()) {
-            (Some(left), Some(right)) => {
-                left.api_key == right.api_key
-                    && left.user_id == right.user_id
-                    && left.base_url == right.base_url
-            }
-            (None, None) => true,
-            _ => false,
+        let previous = {
+            let mut current = lock_recover(&self.mem0);
+            std::mem::replace(&mut *current, configured)
         };
-        if !unchanged {
-            *current = configured;
-            self.mem0_unavailable_until.store(0, Ordering::Relaxed);
+        self.mem0_unavailable_until.store(0, Ordering::Relaxed);
+        if previous.is_some() {
+            crate::runtime::isolated::drop_isolated(previous);
         }
     }
 

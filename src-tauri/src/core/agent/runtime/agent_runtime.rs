@@ -656,7 +656,7 @@ struct AgentEventBridge {
 impl EventBus for AgentEventBridge {
     fn emit(&self, event: BusEvent) {
         match &event {
-            BusEvent::TokenUsage { model, usage } => {
+            BusEvent::TokenUsage { model, usage, .. } => {
                 self.inner.record_token_usage(&self.run_id, model, usage);
             }
             BusEvent::ToolStarted {

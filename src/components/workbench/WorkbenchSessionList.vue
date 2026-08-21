@@ -9,8 +9,8 @@
       tabindex="0"
       :title="sessionHoverText(session)"
       @click="emit('select', session.sessionId)"
-      @keydown.enter="emit('select', session.sessionId)"
-      @keydown.space.prevent="emit('select', session.sessionId)"
+      @keydown.enter.self="emit('select', session.sessionId)"
+      @keydown.space.self.prevent="emit('select', session.sessionId)"
     >
       <strong>{{ displayPreview(session) }}</strong>
       <span
@@ -34,18 +34,18 @@
       </span>
       <button
         type="button"
-        class="delete-session"
-        :title="deleteLabel"
-        @click.stop="emit('delete', session.sessionId)"
+        class="archive-session"
+        :title="archiveLabel"
+        @click.stop="emit('archive', session.sessionId)"
       >
-        <Trash2 :size="13" />
+        <Archive :size="13" />
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { LoaderCircle, PenLine, ShieldAlert, Trash2 } from "@lucide/vue";
+import { Archive, LoaderCircle, PenLine, ShieldAlert } from "@lucide/vue";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import type { ChatSessionSummary } from "@/types/chat";
 import type { AppLanguage } from "@/types/setting";
@@ -55,7 +55,7 @@ const props = defineProps<{
   activeSessionId: string;
   language: AppLanguage;
   untitledLabel: string;
-  deleteLabel: string;
+  archiveLabel: string;
   runningSessionIds: string[];
   attentionSessionIds: string[];
   unreadSessionIds: string[];
@@ -64,7 +64,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   select: [sessionId: string];
-  delete: [sessionId: string];
+  archive: [sessionId: string];
 }>();
 
 function displayPreview(session: ChatSessionSummary) {
@@ -121,21 +121,21 @@ function sessionStatusLabel(sessionId: string) {
 .session-row {
   position: relative;
   width: 100%;
-  height: 28px;
+  height: var(--peek-control-row, 30px);
   display: flex;
   align-items: center;
   padding: 0 5px 0 7px;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm, 6px);
   background: transparent;
   color: var(--peek-text);
   cursor: pointer;
   text-align: left;
 }
 .session-row:hover {
-  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
+  background: var(--peek-row-hover);
 }
 .session-row.active {
-  background: color-mix(in srgb, var(--peek-accent) 13%, transparent);
+  background: var(--peek-row-active);
 }
 .is-quick .session-row {
   padding-left: 9px;
@@ -145,7 +145,7 @@ function sessionStatusLabel(sessionId: string) {
   display: block;
   flex: 1;
   overflow: hidden;
-  font-size: 11px;
+  font-size: var(--peek-font-sm, 12px);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -174,27 +174,27 @@ function sessionStatusLabel(sessionId: string) {
   border-radius: 50%;
   background: var(--peek-accent);
 }
-.delete-session {
+.archive-session {
   flex: none;
-  width: 23px;
-  height: 23px;
+  width: var(--peek-control-icon, 28px);
+  height: var(--peek-control-icon, 28px);
   display: inline-grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm, 6px);
   background: transparent;
   color: var(--peek-muted);
   cursor: pointer;
   opacity: 0;
 }
-.session-row:hover .delete-session,
-.session-row:focus-within .delete-session {
+.session-row:hover .archive-session,
+.session-row:focus-within .archive-session {
   opacity: 1;
 }
-.delete-session:hover {
-  color: var(--peek-danger);
-  background: color-mix(in srgb, var(--peek-danger) 12%, transparent);
+.archive-session:hover {
+  color: var(--peek-text);
+  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
 }
 @keyframes session-running-spin {
   to {

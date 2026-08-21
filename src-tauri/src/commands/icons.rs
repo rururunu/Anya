@@ -24,8 +24,8 @@ fn icons_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn sanitize_cache_key(kind: &str, cache_key: &str) -> Result<(String, String), String> {
     let kind = kind.trim().to_ascii_lowercase();
-    if kind != "mcp" && kind != "skill" {
-        return Err("kind must be `mcp` or `skill`".into());
+    if kind != "mcp" && kind != "skill" && kind != "provider" {
+        return Err("kind must be `mcp`, `skill`, or `provider`".into());
     }
     let key = cache_key
         .trim()

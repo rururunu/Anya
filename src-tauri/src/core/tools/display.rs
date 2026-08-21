@@ -302,7 +302,14 @@ fn build_title(tool_name: &str, args: &Value) -> String {
         "complete_plan_step" => "Complete plan step".into(),
 
         "web_search" => {
-            let q = truncate(args["query"].as_str().unwrap_or(""), 80);
+            let q = truncate(
+                args["query"]
+                    .as_str()
+                    .or_else(|| args["q"].as_str())
+                    .or_else(|| args["search"].as_str())
+                    .unwrap_or(""),
+                80,
+            );
             if q.is_empty() {
                 "Web search".into()
             } else {
@@ -310,7 +317,14 @@ fn build_title(tool_name: &str, args: &Value) -> String {
             }
         }
         "browser_read" | "fetch_url" => {
-            let url = truncate(args["url"].as_str().unwrap_or(""), 80);
+            let url = truncate(
+                args["url"]
+                    .as_str()
+                    .or_else(|| args["uri"].as_str())
+                    .or_else(|| args["href"].as_str())
+                    .unwrap_or(""),
+                80,
+            );
             if url.is_empty() {
                 "Fetch page".into()
             } else {
@@ -530,6 +544,9 @@ fn word_range_title(args: &Value) -> String {
 }
 
 fn humanize_tool_name(name: &str) -> String {
+    if name.trim().is_empty() {
+        return "Unknown tool".into();
+    }
     let words: Vec<String> = name
         .split('_')
         .filter(|w| !w.is_empty())
@@ -653,5 +670,13 @@ mod tests {
         assert_eq!(search.title, "Search build_title");
         let find = build_activity_view("find_files", &json!({ "pattern": "**/*.rs" }), None);
         assert_eq!(find.title, "Find **/*.rs");
+    }
+
+    #[test]
+    fn empty_tool_name_uses_unknown_title_and_keeps_error() {
+        let view = build_activity_view("", &json!({}), Some("tool error: unknown tool: "));
+        assert_eq!(view.title, "Unknown tool");
+        assert_eq!(view.kind, "other");
+        assert_eq!(view.detail.as_deref(), Some("tool error: unknown tool: "));
     }
 }

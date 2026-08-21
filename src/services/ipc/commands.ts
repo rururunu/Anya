@@ -184,6 +184,10 @@ export function listChatSessions() {
   return ipcInvoke<ListChatSessionsResponse>(IPC_COMMANDS.listChatSessions);
 }
 
+export function listArchivedChatSessions() {
+  return ipcInvoke<ListChatSessionsResponse>(IPC_COMMANDS.listArchivedChatSessions);
+}
+
 export function listChatModels() {
   return ipcInvoke<ChatModelInfo[]>(IPC_COMMANDS.listChatModels);
 }
@@ -217,6 +221,10 @@ export function getEnvironmentContext() {
 
 export function deleteChatSession(sessionId: string) {
   return ipcInvoke<void>("delete_chat_session", { sessionId });
+}
+
+export function setChatSessionArchived(sessionId: string, archived: boolean) {
+  return ipcInvoke<void>("set_chat_session_archived", { sessionId, archived });
 }
 
 export function clearAllChatSessions() {

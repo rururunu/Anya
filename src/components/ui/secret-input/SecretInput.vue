@@ -33,11 +33,13 @@ function onInput(event: Event) {
       :placeholder="placeholder"
       spellcheck="false"
       autocomplete="off"
-      :class="cn(
-        'border-input focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-full min-w-0 rounded-lg border bg-transparent py-1 pl-2.5 pr-8 font-mono text-xs outline-none transition-colors focus-visible:ring-3 placeholder:text-muted-foreground',
-        !visible && 'secret-masked',
-        props.class,
-      )"
+      :class="
+        cn(
+          'border-input focus-visible:border-foreground/25 h-8 w-full min-w-0 rounded-lg border bg-transparent py-1 pl-2.5 pr-8 font-mono text-xs outline-none transition-colors focus-visible:ring-0 placeholder:text-muted-foreground',
+          !visible && 'secret-masked',
+          props.class,
+        )
+      "
       @input="onInput"
       @blur="emit('blur')"
     />

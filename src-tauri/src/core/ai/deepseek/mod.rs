@@ -1,5 +1,6 @@
 //! DeepSeek and OpenAI-compatible chat provider.
 
+mod anthropic;
 mod image_fallback;
 mod messages;
 mod models;
@@ -17,6 +18,10 @@ use crate::models::settings::{ProviderApiProtocol, ReasoningEffort};
 
 use super::provider::{AIProvider, ProviderError};
 
+use anthropic::{
+    build_anthropic_body, is_format_rejected, remaining_wire_protocols, resolve_wire_protocol,
+    url_for_wire_protocol, WireProtocol,
+};
 pub(crate) use messages::build_api_body;
 pub(crate) use messages::build_responses_body;
 pub use models::list_models;
@@ -25,12 +30,13 @@ pub use models::{list_openai_compatible_models, normalize_models_url};
 use stream::RETRY_BACKOFF;
 
 use image_fallback::{apply_image_input_fallback, FallbackPlan};
-use stream::{emit_stream_error, run_chat_stream, run_responses_stream};
+use stream::{emit_stream_error, run_anthropic_stream, run_chat_stream, run_responses_stream};
 
 const API_URL: &str = "https://api.deepseek.com/chat/completions";
 
 pub struct DeepSeekProvider {
     app: tauri::AppHandle,
+    provider_id: String,
     resolve_api_key: Arc<dyn Fn() -> String + Send + Sync>,
     resolve_model: Arc<dyn Fn() -> String + Send + Sync>,
     resolve_effort: Arc<dyn Fn() -> ReasoningEffort + Send + Sync>,
@@ -40,11 +46,15 @@ pub struct DeepSeekProvider {
     /// When `None` (or the resolver returns `None`) the default `API_URL` is used.
     resolve_base_url: Option<Arc<dyn Fn() -> Option<String> + Send + Sync>>,
     resolve_api_protocol: Arc<dyn Fn() -> ProviderApiProtocol + Send + Sync>,
+    /// Returns `Some(reason)` when the resolved model/provider pair has been
+    /// switched off in Settings — the send is refused before any network call.
+    resolve_blocked_reason: Arc<dyn Fn() -> Option<String> + Send + Sync>,
 }
 
 impl DeepSeekProvider {
     pub fn new(
         app: tauri::AppHandle,
+        provider_id: String,
         resolve_api_key: Arc<dyn Fn() -> String + Send + Sync>,
         resolve_model: Arc<dyn Fn() -> String + Send + Sync>,
         resolve_effort: Arc<dyn Fn() -> ReasoningEffort + Send + Sync>,
@@ -52,9 +62,11 @@ impl DeepSeekProvider {
         resolve_continue_thinking_after_tools: Arc<dyn Fn() -> bool + Send + Sync>,
         resolve_base_url: Option<Arc<dyn Fn() -> Option<String> + Send + Sync>>,
         resolve_api_protocol: Arc<dyn Fn() -> ProviderApiProtocol + Send + Sync>,
+        resolve_blocked_reason: Arc<dyn Fn() -> Option<String> + Send + Sync>,
     ) -> Self {
         Self {
             app,
+            provider_id,
             resolve_api_key,
             resolve_model,
             resolve_effort,
@@ -62,6 +74,7 @@ impl DeepSeekProvider {
             resolve_continue_thinking_after_tools,
             resolve_base_url,
             resolve_api_protocol,
+            resolve_blocked_reason,
         }
     }
 
@@ -83,6 +96,9 @@ impl DeepSeekProvider {
                 "No model selected. Configure a provider and choose a model in Settings first.",
             ));
         }
+        if let Some(reason) = (self.resolve_blocked_reason)() {
+            return Err(ProviderError::message(reason));
+        }
         Ok(trimmed.to_string())
     }
 
@@ -102,11 +118,13 @@ impl DeepSeekProvider {
         (self.resolve_api_protocol)()
     }
 
+    fn provider_base_url(&self) -> Option<String> {
+        self.resolve_base_url.as_ref().and_then(|resolver| resolver())
+    }
+
     fn request_url(&self, protocol: ProviderApiProtocol) -> String {
-        if let Some(resolver) = &self.resolve_base_url {
-            if let Some(base) = resolver() {
-                return endpoint_url_for_protocol(&base, protocol);
-            }
+        if let Some(base) = self.provider_base_url() {
+            return endpoint_url_for_protocol(&base, protocol);
         }
         API_URL.to_string()
     }
@@ -145,11 +163,22 @@ impl DeepSeekProvider {
         let primary_model = self.model()?;
         let primary_api_key = self.api_key()?;
         let primary_protocol = self.api_protocol();
-        let primary_url = self.request_url(primary_protocol);
+        let mut endpoint_base = self.provider_base_url();
+        let guess_url = endpoint_base
+            .clone()
+            .unwrap_or_else(|| self.request_url(primary_protocol));
+        let cached = crate::core::ai::registry::cached_model_protocol(
+            &settings,
+            &self.provider_id,
+            &primary_model,
+        )
+        .map(WireProtocol::from);
+        let primary_wire =
+            resolve_wire_protocol(primary_protocol, &primary_model, &guess_url, cached);
         let effort = self.effort();
         let pass_tool_reasoning = self.pass_tool_reasoning();
         let continue_thinking_after_tools = self.continue_thinking_after_tools();
-        let include_thinking = !primary_url.contains("generativelanguage.googleapis.com");
+        let include_thinking = !guess_url.contains("generativelanguage.googleapis.com");
 
         let has_images = request
             .messages
@@ -161,22 +190,24 @@ impl DeepSeekProvider {
 
         let mut model = primary_model.clone();
         let mut api_key = primary_api_key.clone();
-        let mut url = primary_url.clone();
-        let mut protocol = primary_protocol;
+        let mut protocol = primary_wire;
+        let mut remember_provider_id = self.provider_id.clone();
 
         if has_images {
-            match dispatch_stream(
+            match dispatch_with_protocol_fallback(
                 &client,
-                &primary_url,
-                &primary_api_key,
                 &request,
                 &primary_model,
+                &primary_api_key,
                 effort,
                 pass_tool_reasoning,
                 continue_thinking_after_tools,
                 include_thinking,
-                primary_protocol,
+                primary_wire,
+                endpoint_base.as_deref(),
                 &tx,
+                &self.app,
+                &self.provider_id,
             )
             .await
             {
@@ -194,8 +225,9 @@ impl DeepSeekProvider {
                         Ok(FallbackPlan::RetryPrimary) => {
                             model = primary_model;
                             api_key = primary_api_key;
-                            url = primary_url;
-                            protocol = primary_protocol;
+                            protocol = primary_wire;
+                            endpoint_base = self.provider_base_url();
+                            remember_provider_id = self.provider_id.clone();
                         }
                         Ok(FallbackPlan::SwitchToMultimodal {
                             model: mm_model,
@@ -205,8 +237,16 @@ impl DeepSeekProvider {
                         }) => {
                             model = mm_model;
                             api_key = mm_key;
-                            url = mm_url;
-                            protocol = mm_protocol;
+                            endpoint_base = Some(mm_url.clone());
+                            let mm_cached = crate::core::ai::registry::cached_model_protocol(
+                                &settings,
+                                &self.provider_id,
+                                &model,
+                            )
+                            .map(WireProtocol::from);
+                            protocol =
+                                resolve_wire_protocol(mm_protocol, &model, &mm_url, mm_cached);
+                            remember_provider_id = self.provider_id.clone();
                         }
                         Err(error) => return emit_stream_error(&tx, error).await,
                     }
@@ -219,18 +259,20 @@ impl DeepSeekProvider {
         // compact and retry" path; custom OpenAI-compatible providers keep the
         // existing surface-error behavior.
         let is_deepseek = model.trim().to_ascii_lowercase().starts_with("deepseek");
-        match dispatch_stream(
+        match dispatch_with_protocol_fallback(
             &client,
-            &url,
-            &api_key,
             &request,
             &model,
+            &api_key,
             effort,
             pass_tool_reasoning,
             continue_thinking_after_tools,
             include_thinking,
             protocol,
+            endpoint_base.as_deref(),
             &tx,
+            &self.app,
+            &remember_provider_id,
         )
         .await
         {
@@ -239,6 +281,63 @@ impl DeepSeekProvider {
             Err(error) => emit_stream_error(&tx, error).await,
         }
     }
+}
+
+async fn dispatch_with_protocol_fallback(
+    client: &reqwest::Client,
+    request: &ChatRequest,
+    model: &str,
+    api_key: &str,
+    effort: ReasoningEffort,
+    pass_tool_reasoning: bool,
+    continue_thinking_after_tools: bool,
+    include_thinking: bool,
+    initial: WireProtocol,
+    base_url: Option<&str>,
+    tx: &Sender<StreamEvent>,
+    app: &tauri::AppHandle,
+    provider_id: &str,
+) -> Result<(), ProviderError> {
+    let mut protocols = vec![initial];
+    protocols.extend(remaining_wire_protocols(initial));
+    let mut last_error: Option<ProviderError> = None;
+
+    for (index, protocol) in protocols.iter().copied().enumerate() {
+        let url = url_for_wire_protocol(base_url, protocol);
+        match dispatch_stream(
+            client,
+            &url,
+            api_key,
+            request,
+            model,
+            effort,
+            pass_tool_reasoning,
+            continue_thinking_after_tools,
+            include_thinking,
+            protocol,
+            tx,
+        )
+        .await
+        {
+            Ok(()) => {
+                crate::core::ai::registry::remember_model_protocol(
+                    app,
+                    provider_id,
+                    model,
+                    protocol.into(),
+                );
+                return Ok(());
+            }
+            Err(error)
+                if index + 1 < protocols.len() && is_format_rejected(&error.to_string()) =>
+            {
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| ProviderError::message("model is not supported")))
 }
 
 async fn dispatch_stream(
@@ -251,11 +350,11 @@ async fn dispatch_stream(
     pass_tool_reasoning: bool,
     continue_thinking_after_tools: bool,
     include_thinking: bool,
-    protocol: ProviderApiProtocol,
+    protocol: WireProtocol,
     tx: &Sender<StreamEvent>,
 ) -> Result<(), ProviderError> {
     match protocol {
-        ProviderApiProtocol::Responses => {
+        WireProtocol::Responses => {
             let body = build_responses_body(
                 request,
                 model,
@@ -265,7 +364,17 @@ async fn dispatch_stream(
             );
             run_responses_stream(client, url, api_key, &body, tx).await
         }
-        ProviderApiProtocol::ChatCompletions => {
+        WireProtocol::AnthropicMessages => {
+            let body = build_anthropic_body(
+                request,
+                model,
+                true,
+                effort,
+                continue_thinking_after_tools,
+            );
+            run_anthropic_stream(client, url, api_key, &body, tx).await
+        }
+        WireProtocol::ChatCompletions => {
             let body = build_api_body(
                 request,
                 model,
@@ -866,6 +975,92 @@ mod tests {
     }
 
     #[test]
+    fn build_api_body_sends_reasoning_effort_for_kimi_style_models() {
+        let body = build_api_body(
+            &sample_request(vec![]),
+            "kimi-k3",
+            true,
+            ReasoningEffort::High,
+            true,
+            true,
+            true,
+        );
+        let obj = body.as_object().expect("object body");
+        assert!(!obj.contains_key("thinking"));
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("high")));
+    }
+
+    #[test]
+    fn build_api_body_sends_deepseek_low_effort() {
+        let body = build_api_body(
+            &sample_request(vec![]),
+            "deepseek-v4-pro",
+            true,
+            ReasoningEffort::Low,
+            true,
+            true,
+            true,
+        );
+        assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+        assert_eq!(body["reasoning_effort"], json!("low"));
+    }
+
+    #[test]
+    fn build_api_body_sends_openai_none_effort() {
+        let body = build_api_body(
+            &sample_request(vec![]),
+            "gpt-5.1",
+            true,
+            ReasoningEffort::None,
+            true,
+            true,
+            true,
+        );
+        let obj = body.as_object().expect("object body");
+        assert!(!obj.contains_key("thinking"));
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("none")));
+    }
+
+    #[test]
+    fn build_api_body_sends_qwen38_official_levels() {
+        let off = build_api_body(
+            &sample_request(vec![]),
+            "qwen3.8-max",
+            true,
+            ReasoningEffort::Disabled,
+            true,
+            true,
+            true,
+        );
+        assert_eq!(off["enable_thinking"], json!(false));
+        assert!(off.get("reasoning_effort").is_none());
+
+        let on = build_api_body(
+            &sample_request(vec![]),
+            "qwen3.8-max",
+            true,
+            ReasoningEffort::Medium,
+            true,
+            true,
+            true,
+        );
+        assert_eq!(on["enable_thinking"], json!(true));
+        assert_eq!(on["reasoning_effort"], json!("medium"));
+    }
+
+    #[test]
+    fn build_responses_body_sends_grok_medium() {
+        let body = build_responses_body(
+            &sample_request(vec![]),
+            "grok-4.6",
+            true,
+            ReasoningEffort::Medium,
+            true,
+        );
+        assert_eq!(body["reasoning"]["effort"], json!("medium"));
+    }
+
+    #[test]
     fn normalize_responses_url_from_chat_completions() {
         assert_eq!(
             super::models::normalize_responses_url("https://api.x.ai/v1/chat/completions"),
@@ -881,6 +1076,20 @@ mod tests {
                 crate::models::settings::ProviderApiProtocol::Responses
             ),
             "https://api.x.ai/v1/responses"
+        );
+    }
+
+    #[test]
+    fn normalize_anthropic_messages_url_from_chat_completions() {
+        assert_eq!(
+            super::models::normalize_anthropic_messages_url(
+                "https://opencode.ai/zen/go/v1/chat/completions"
+            ),
+            "https://opencode.ai/zen/go/v1/messages"
+        );
+        assert_eq!(
+            super::models::normalize_anthropic_messages_url("https://proxy.example/v1"),
+            "https://proxy.example/v1/messages"
         );
     }
 
@@ -939,8 +1148,10 @@ mod tests {
                 base_url: "https://api.openai.com/v1/chat/completions".into(),
                 api_key: "sk-test".into(),
                 models: "gpt-4o, gpt-4o-mini".into(),
+                disabled_models: String::new(),
                 preset_id: None,
                 api_protocol: Default::default(),
+                model_protocols: Default::default(),
             });
         let endpoint = resolve_multimodal_endpoint(&settings, "gpt-4o", "openai").unwrap();
         assert_eq!(endpoint.api_key, "sk-test");
@@ -955,8 +1166,10 @@ mod tests {
             base_url: format!("https://{id}.example/v1"),
             api_key: key.into(),
             models: "shared-vision-model".into(),
+            disabled_models: String::new(),
             preset_id: None,
             api_protocol: Default::default(),
+            model_protocols: Default::default(),
         };
         let settings = crate::models::settings::AppSettings {
             custom_providers: vec![provider("first", "key-1"), provider("second", "key-2")],

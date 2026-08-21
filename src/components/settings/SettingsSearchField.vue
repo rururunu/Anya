@@ -106,6 +106,13 @@ function clear() {
   font-size: 13px;
   line-height: 1.3;
   outline: none;
+  box-shadow: none;
+}
+
+.search-field:focus,
+.search-field:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .search-field::placeholder {

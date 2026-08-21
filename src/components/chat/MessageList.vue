@@ -1294,12 +1294,12 @@ onUnmounted(() => {
   position: absolute;
   z-index: 4;
   top: 42px;
-  right: 7px;
+  right: 2px;
   bottom: 10px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  width: 14px;
+  gap: 2px;
+  width: 28px;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -1339,8 +1339,8 @@ onUnmounted(() => {
 .message-preview-mark {
   position: relative;
   flex: none;
-  width: 14px;
-  height: 10px;
+  width: 28px;
+  height: 14px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1348,8 +1348,8 @@ onUnmounted(() => {
 }
 .mark-line {
   position: absolute;
-  top: 4px;
-  right: 1px;
+  top: 6px;
+  right: 7px;
   width: 7px;
   height: 2px;
   border-radius: 1px;
@@ -1359,6 +1359,7 @@ onUnmounted(() => {
     background 120ms ease;
 }
 .message-preview-mark:hover .mark-line,
+.message-preview-mark:focus-visible .mark-line,
 .message-preview-mark.active .mark-line {
   width: 11px;
   background: var(--peek-accent);
@@ -1370,11 +1371,11 @@ onUnmounted(() => {
   width: min(250px, calc(100vw - 48px));
   padding: 6px 8px;
   border: 1px solid var(--peek-border);
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm, 6px);
   background: var(--peek-list-bg);
   color: var(--peek-text);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
-  font-size: 11px;
+  box-shadow: var(--peek-elev-md);
+  font-size: var(--peek-font-xs, 11px);
   line-height: 1.45;
   text-align: left;
   opacity: 0;
@@ -1385,7 +1386,8 @@ onUnmounted(() => {
     opacity 100ms ease,
     transform 100ms ease;
 }
-.message-preview-mark:hover .message-preview-tooltip {
+.message-preview-mark:hover .message-preview-tooltip,
+.message-preview-mark:focus-visible .message-preview-tooltip {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -1427,10 +1429,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   max-width: min(220px, 100%);
-  height: 26px;
+  height: var(--peek-control-icon, 28px);
   padding: 0 10px;
   border: 1px solid var(--peek-border);
-  border-radius: 7px;
+  border-radius: var(--peek-radius-sm, 6px);
   background: color-mix(in srgb, var(--peek-user-bubble-bg) 88%, var(--peek-surface));
   color: var(--peek-user-bubble-text);
   font-size: 12px;
@@ -1485,15 +1487,16 @@ onUnmounted(() => {
   max-width: 100%;
   padding: 9px 12px;
   border: 1px solid color-mix(in srgb, var(--peek-user-bubble-border) 70%, transparent);
-  border-radius: 14px 14px 5px 14px;
+  border-radius: var(--peek-radius-lg, 12px) var(--peek-radius-lg, 12px) var(--peek-radius-sm, 6px)
+    var(--peek-radius-lg, 12px);
   background: var(--peek-user-bubble-bg);
   color: var(--peek-user-bubble-text);
-  font-size: 13px;
+  font-size: var(--peek-font-md, 13px);
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
-  box-shadow: 0 1px 0 color-mix(in srgb, #000 4%, transparent);
+  box-shadow: var(--peek-elev-sm);
 }
 .user-message-text {
   display: inline;
@@ -1503,7 +1506,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 26px;
+  min-height: var(--peek-control-icon, 28px);
 }
 .user-message-actions {
   justify-content: flex-end;
@@ -1523,11 +1526,11 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--peek-control-icon, 28px);
+  height: var(--peek-control-icon, 28px);
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--peek-radius-sm, 6px);
   background: transparent;
   color: var(--peek-icon, var(--peek-muted));
   cursor: pointer;
@@ -1539,15 +1542,15 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--peek-accent) 14%, transparent);
 }
 .message-action-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--peek-accent) 55%, transparent);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: var(--peek-focus-ring);
 }
 .message-action-btn.copied {
-  color: #36a269;
+  color: var(--peek-success);
   opacity: 1;
 }
 .message-action-btn.failed {
-  color: #d35f5f;
+  color: var(--peek-danger);
   opacity: 1;
 }
 .message-action-btn:disabled {

@@ -143,9 +143,9 @@ mod windows_imp {
         // Acrylic (accent 4) adds a heavy noise texture; BlurBehind is the same
         // desktop blur without that grain.
         let tint = if dark {
-            (10_u8, 10_u8, 12_u8, 204_u8)
+            (18_u8, 18_u8, 20_u8, 236_u8)
         } else {
-            (255_u8, 255_u8, 255_u8, 200_u8)
+            (232_u8, 232_u8, 232_u8, 232_u8)
         };
         visit_hwnds(hwnd, |child| {
             set_blur(child, enabled, tint);

@@ -10,7 +10,7 @@ import {
 
 describe("hashMentions", () => {
   it("formats and parses skill/mcp tokens", () => {
-    expect(formatHashMention("skill", "generate_bid_tech")).toBe("#skill:generate_bid_tech");
+    expect(formatHashMention("skill", "generate_word")).toBe("#skill:generate_word");
     expect(parseHashMentions("use #skill:docx and #mcp:gmail")).toEqual([
       { kind: "skill", id: "docx" },
       { kind: "mcp", id: "gmail" },

@@ -16,12 +16,15 @@ pub struct JinaReaderProvider {
 
 impl JinaReaderProvider {
     pub fn new(base_url: impl Into<String>, api_key: Option<String>) -> Result<Self, ToolError> {
-        let client = Client::builder()
-            .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(12))
-            .user_agent("Anya-Runtime/3")
-            .build()
-            .map_err(|error| ToolError::new(error.to_string()))?;
+        let client = crate::runtime::isolated::run_isolated(|| {
+            Client::builder()
+                .connect_timeout(Duration::from_secs(3))
+                .timeout(Duration::from_secs(12))
+                .user_agent("Anya-Runtime/3")
+                .build()
+                .map_err(|error| error.to_string())
+        })
+        .map_err(ToolError::new)?;
         Ok(Self {
             base_url: base_url.into().trim_end_matches('/').into(),
             api_key,

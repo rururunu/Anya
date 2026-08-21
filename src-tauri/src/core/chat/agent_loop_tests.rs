@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use crate::core::ai::provider::{AIProvider, ProviderError};
 use crate::core::chat::agent::AgentRunner;
 use crate::core::chat::conversation_manager::ConversationManager;
-use crate::core::chat::limits::TOOL_OUTPUT_MAX_CHARS;
+use crate::core::chat::limits::{MAX_CONSECUTIVE_TOOL_FAILURES, TOOL_OUTPUT_MAX_CHARS};
 use crate::core::event::{BusEvent, EventBus};
 use crate::core::runtime::{
     ChatMessage, ChatRequest, MessageStatus, RequestContext, Role, StreamEvent, ToolCallPayload,
@@ -138,10 +138,14 @@ impl Tool for CountingTool {
 }
 
 fn tool_call(id: &str, name: &str) -> ToolCallPayload {
+    tool_call_args(id, name, "{}")
+}
+
+fn tool_call_args(id: &str, name: &str, arguments: &str) -> ToolCallPayload {
     ToolCallPayload {
         id: id.into(),
         name: name.into(),
-        arguments: "{}".into(),
+        arguments: arguments.into(),
         thought_signature: None,
     }
 }
@@ -1087,7 +1091,7 @@ async fn stops_after_repeated_identical_tool_error() {
 }
 
 #[tokio::test]
-async fn stops_after_consecutive_failures() {
+async fn challenges_then_continues_after_consecutive_failures() {
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(FailingTool { name: "fail_a" }));
     registry.register(Arc::new(FailingTool { name: "fail_b" }));
@@ -1108,10 +1112,61 @@ async fn stops_after_consecutive_failures() {
                 tool_calls: vec![tool_call("3", "fail_c")],
             },
             ProviderTurn {
-                content: "unreachable".into(),
+                content: "switched strategy after the consecutive-failure challenge".into(),
                 tool_calls: vec![],
             },
         ]),
+    });
+    let (ctx, db) = make_ctx(tools.registry());
+    let runner = AgentRunner::new(provider, tools);
+    let (tx, mut rx) = mpsc::channel(16);
+    runner
+        .run(
+            base_request(),
+            ctx,
+            tx,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(Mutex::new(std::collections::VecDeque::new())),
+        )
+        .await
+        .unwrap();
+    let finish = collect_finish(&mut rx).await.expect("finish");
+    match finish {
+        StreamEvent::TurnComplete {
+            content,
+            finish_reason,
+            ..
+        } => {
+            assert_ne!(finish_reason.as_deref(), Some("tool_failure_breaker"));
+            assert!(!content.contains("连续失败"), "{content}");
+        }
+        _ => panic!("unexpected"),
+    }
+    let _ = std::fs::remove_file(db);
+}
+
+#[tokio::test]
+async fn stops_after_consecutive_failures() {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(FailingTool { name: "flaky" }));
+    let tools = Arc::new(ToolManager::new(registry));
+    let mut scripts = Vec::new();
+    for i in 1..=MAX_CONSECUTIVE_TOOL_FAILURES {
+        scripts.push(ProviderTurn {
+            content: String::new(),
+            tool_calls: vec![tool_call_args(
+                &format!("{i}"),
+                "flaky",
+                &format!(r#"{{"n":{i}}}"#),
+            )],
+        });
+    }
+    scripts.push(ProviderTurn {
+        content: "unreachable".into(),
+        tool_calls: vec![],
+    });
+    let provider = Arc::new(ScriptedProvider {
+        scripts: Mutex::new(scripts),
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub use crate::core::runtime::ChatMessage;
+use crate::core::token::TokenUsage;
 use crate::models::settings::{ChatMode, ToolApprovalMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +128,23 @@ pub struct ChatFinishedEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ChatTokenUsageEvent {
+    pub session_id: String,
+    pub model: String,
+    pub usage: TokenUsage,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCacheUsage {
+    pub input_tokens: usize,
+    pub cache_read_tokens: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatSessionTitleUpdatedEvent {
     pub session_id: String,
     pub title: String,
@@ -174,6 +192,12 @@ pub struct ContextUsageResponse {
     pub usage_ratio: f32,
     pub estimated_tokens: usize,
     pub context_window_tokens: usize,
+    #[serde(default)]
+    pub system_prompt_tokens: usize,
+    #[serde(default)]
+    pub tools_tokens: usize,
+    #[serde(default)]
+    pub message_tokens: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +211,8 @@ pub struct ChatHistoryRequest {
 pub struct ChatHistoryResponse {
     pub session_id: String,
     pub messages: Vec<ChatMessage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_cache_usage: Option<SessionCacheUsage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,6 +226,8 @@ pub struct ChatSessionSummary {
     pub turn_count: usize,
     pub estimated_tokens: usize,
     pub updated_at: u64,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,6 +247,17 @@ pub struct ModelThinkingVariant {
     pub recommended: bool,
 }
 
+/// Reasoning/thinking capability advertised by a `/models` listing.
+/// `None` on the parent model means the listing did not say — UI may guess.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelReasoningInfo {
+    pub supported: bool,
+    /// Whether thinking can be turned off. `None` = listing did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_disable: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatModelInfo {
@@ -232,6 +271,9 @@ pub struct ChatModelInfo {
     /// Alternate thinking tiers for the same model family (High / Low / Agent).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_variants: Option<Vec<ModelThinkingVariant>>,
+    /// Capability advertised by the provider listing, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<ModelReasoningInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

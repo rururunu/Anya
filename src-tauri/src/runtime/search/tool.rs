@@ -20,6 +20,31 @@ fn today_local() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
+fn first_string(args: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        args.get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+pub(crate) fn search_query_from_args(args: &Value) -> String {
+    first_string(
+        args,
+        &["query", "q", "search", "search_query", "keyword", "keywords"],
+    )
+    .unwrap_or_default()
+}
+
+fn max_results_from_args(args: &Value) -> usize {
+    ["max_results", "num", "n", "limit", "count"]
+        .iter()
+        .find_map(|key| args.get(*key).and_then(Value::as_u64))
+        .unwrap_or(8) as usize
+}
+
 impl Tool for SearchTool {
     fn name(&self) -> &str {
         "web_search"
@@ -59,24 +84,27 @@ impl Tool for SearchTool {
         })?;
         let today = today_local();
         let query = SearchQuery {
-            query: args["query"]
-                .as_str()
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
-            max_results: args["max_results"].as_u64().unwrap_or(8) as usize,
-            language: args["language"].as_str().map(str::to_string),
-            freshness: args["freshness"].as_str().map(str::to_string),
+            query: search_query_from_args(&args),
+            max_results: max_results_from_args(&args),
+            language: first_string(&args, &["language", "hl", "lang"]).filter(|s| !s.is_empty()),
+            freshness: first_string(&args, &["freshness"]).filter(|s| !s.is_empty()),
         };
         if query.query.is_empty() {
-            return Err(ToolError::new("search query is required"));
+            return Err(ToolError::new(
+                "search query is required (parameter `query`; aliases: q, search, search_query)",
+            ));
         }
-        serde_json::to_string_pretty(&json!({
-            "provider": provider.id(),
-            "asOf": today,
-            "results": provider.search(&query)?,
-        }))
-        .map_err(|error| ToolError::new(error.to_string()))
+        crate::runtime::isolated::run_isolated_or(
+            move || {
+                serde_json::to_string_pretty(&json!({
+                    "provider": provider.id(),
+                    "asOf": today,
+                    "results": provider.search(&query)?,
+                }))
+                .map_err(|error| ToolError::new(error.to_string()))
+            },
+            |panic| Err(ToolError::new(format!("web_search panicked: {panic}"))),
+        )
     }
 
     fn schema(&self) -> Value {
@@ -91,5 +119,30 @@ impl Tool for SearchTool {
                 "parameters": self.parameters_schema(),
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_query_accepts_common_aliases() {
+        assert_eq!(
+            search_query_from_args(&json!({ "query": "official" })),
+            "official"
+        );
+        assert_eq!(search_query_from_args(&json!({ "q": "news" })), "news");
+        assert_eq!(
+            search_query_from_args(&json!({ "search_query": "booking" })),
+            "booking"
+        );
+        assert_eq!(search_query_from_args(&json!({ "query": "  " })), "");
+    }
+
+    #[test]
+    fn max_results_accepts_num_alias() {
+        assert_eq!(max_results_from_args(&json!({ "num": 5 })), 5);
+        assert_eq!(max_results_from_args(&json!({})), 8);
     }
 }

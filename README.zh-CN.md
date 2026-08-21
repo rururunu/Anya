@@ -10,7 +10,7 @@
 
 <p align="center">
   按下快捷键，Anya 就会出现——文档润色、代码疑难、日常事务，她都能帮你。<br />
-  目前高度适配 DeepSeek；需要时也可接入更多模型服务商。
+  支持 DeepSeek、OpenAI 兼容、Responses 与 Anthropic Messages 服务商。
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.11-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.12-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -39,10 +39,10 @@
 |               |                                                                                                |
 | ------------- | ---------------------------------------------------------------------------------------------- |
 | **悬浮窗**    | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                                          |
-| **工作台**    | 完整桌面界面：置顶会话、项目工作区、变更审查与内嵌设置。                                       |
-| **Agent**     | Ask / Agent / Plan；工具、Skills、MCP、Office；复杂任务可自动进计划。                          |
+| **工作台**    | 完整桌面界面：置顶会话、项目工作区、归档 / 恢复、变更审查与内嵌设置。                          |
+| **Agent**     | Ask / Agent / Plan；工具、Skills、MCP、Office；复杂任务可自动进入带写操作门禁的计划。          |
 | **Companion** | [安卓远程](https://github.com/rururunu/AnyaAndroid) — 扫码后即可在手机上对话、审批、收发文件。 |
-| **RAG**       | 可选语义工作区检索（API 或本地嵌入）。关闭前不下载、不发请求。                                 |
+| **RAG**       | 可选语义工作区检索（API 或本地嵌入）。启用前不下载模型、不发请求。                             |
 | **本地优先**  | 密钥、历史与设置默认保存在本机。                                                               |
 
 **文档：** [架构](./docs/architecture-overview.zh-CN.md) · [发布](./docs/release.zh-CN.md) · [索引](./docs/README.zh-CN.md)
@@ -113,7 +113,7 @@ flowchart LR
 | 区域         | 用途                                                                                               |
 | ------------ | -------------------------------------------------------------------------------------------------- |
 | **置顶**     | 重要会话固定在上方。                                                                               |
-| **工作区**   | 将会话绑定到项目目录，便于 Agent 在正确上下文中改代码。                                            |
+| **工作区**   | 将会话绑定到项目目录，并支持置顶、排序、折叠、归档、恢复和直接打开目录。                           |
 | **快速提问** | 与悬浮窗发起的临时会话同一批记录；可在此继续、新建，或把长对话留在工作台，同时仍可在别处唤出浮窗。 |
 
 ### 审查变更
@@ -136,7 +136,9 @@ Agent 修改文件后，Anya 会给出按文件汇总，并提供 Diff 视图。
   <img src="./docs/image/workspace-settings.png" alt="Anya 设置" width="900" />
 </p>
 
-常用项包括：默认对话模型、视觉 / 多模态回退、思考力度与语言、工具审批模式、Agent 展示密度、上下文窗口预算，以及 **RAG 检索**（API 或本地嵌入；默认关闭）。
+常用项包括：服务商与模型协议、禁用模型、按模型族配置思考力度、视觉 / 多模态回退、语言、工具审批模式、Agent 展示密度、上下文窗口预算，以及 **RAG 检索**（API 或本地嵌入；默认关闭）。
+
+思考控制会跟随当前模型声明的能力。DeepSeek 提供 disabled / low / high / max；GPT、Grok、Claude、Qwen、Kimi 等兼容模型使用服务端支持的档位。发送请求前会自动限制不支持的值。
 
 ---
 
@@ -161,7 +163,7 @@ Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（�
 | 集成                 | 作用                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------ |
 | **Microsoft Office** | Word / Excel / PowerPoint 运行时可采集上下文，并使用 `word_*` / `excel_*` / `ppt_*`（COM） |
-| **Skills**           | 内置与厂商技能（docx、pandoc、research、review、技术标等），可按子 Agent 执行              |
+| **Skills**           | 内置与厂商技能（docx、pandoc、research、review 等），可按子 Agent 执行                     |
 | **MCP**              | 连接 stdio / 远程 MCP 服务                                                                 |
 | **LSP**              | 配置后提供语言服务诊断                                                                     |
 | **贴图角标**         | 可选为 PixPin / Snipaste 贴图启用角标，带着图片开聊                                        |
@@ -173,13 +175,15 @@ Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（�
 
 ### 模型服务商
 
-| 服务商       | 接入方式                                                                   |
-| ------------ | -------------------------------------------------------------------------- |
-| **DeepSeek** | API Key — 推荐默认                                                         |
-| **Gemini**   | Google 账号登录（Antigravity OAuth）                                       |
-| **自定义**   | OpenAI 兼容 Base URL + Key；预设含 MiMo、智谱 GLM、火山方舟、MiniMax、Kimi |
+| 服务商             | 接入方式                                                               |
+| ------------------ | ---------------------------------------------------------------------- |
+| **DeepSeek**       | API Key；原生支持思考和缓存用量                                        |
+| **Gemini**         | Google 账号登录（Antigravity OAuth）                                   |
+| **OpenAI 兼容**    | Base URL + Key；支持 Chat Completions 或 Responses 协议                |
+| **Anthropic 兼容** | Base URL + Key；支持 Anthropic Messages 协议                           |
+| **自定义**         | 预设含 MiMo、智谱 GLM、火山方舟、MiniMax、Kimi，也可接入其他兼容服务商 |
 
-主模型不支持图片时，请配置视觉模型或启用多模态分拆分析。输入栏会显示会话级 token 估算与上下文用量；可切换模型与思考档位，并查看工具执行过程。
+主模型不支持图片时，请配置视觉模型或启用多模态分拆分析。输入栏会显示会话级 token 估算、缓存用量与上下文用量；可切换模型与思考档位，并查看工具执行过程。自定义服务商无法声明协议时，请在设置中手动选择协议。
 
 ---
 
@@ -247,7 +251,8 @@ flowchart TB
   RAG -.->|可选| EMB
   CHAT --> STORE
   GW --> CHAT
-  CHAT -->|HTTPS 流式| LLM
+  CHAT --> AI[ProviderRegistry · 协议回退]
+  AI -->|HTTPS SSE 流式| LLM
   IDE -->|上下文推送| Host
   TOOLS -->|COM| OFFICE
   PH -->|局域网 ws 或 Cloudflare wss| GW
@@ -286,7 +291,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.11_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.12_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 

@@ -32,8 +32,6 @@ pub fn is_async_runtime_tool(name: &str) -> bool {
             | "review_code"
             | "review_security"
             | "generate_word"
-            | "generate_bid_tech"
-            | "review_bid_tech"
             | "docx"
             | "pandoc"
     )
@@ -59,6 +57,7 @@ pub async fn run_subagent(
     let full_prompt = format!("{SUBAGENT_PROMPT}\n\n## Assignment\n{prompt}");
     execute_child(
         provider,
+        ctx.provider.clone(),
         registry,
         child,
         full_prompt,
@@ -84,6 +83,16 @@ fn run_subagent_sync_with_model(
     model: Option<&str>,
 ) -> Result<String, ToolError> {
     block_on_tool_future(run_subagent(ctx, prompt, read_only, model))
+}
+
+fn model_token(args: &Value) -> Option<String> {
+    crate::core::ai::model_ref::model_ref_from_value(&args["model"]).map(|parsed| {
+        if parsed.provider.is_empty() {
+            parsed.id
+        } else {
+            serde_json::json!([parsed.provider, parsed.id]).to_string()
+        }
+    })
 }
 
 fn resolve_subagent_provider(
@@ -117,26 +126,25 @@ fn resolve_subagent_provider(
         return parent();
     }
 
-    if !settings
-        .collaboration_models
-        .iter()
-        .any(|allowed| allowed == model)
-    {
-        let enabled = if settings.collaboration_models.is_empty() {
-            "(none)".to_string()
-        } else {
-            settings.collaboration_models.join(", ")
-        };
-        return Err(ToolError::new(format!(
-            "model `{model}` is not enabled for collaboration; enabled: {enabled}"
-        )));
+    let (provider_hint, model_id) = crate::core::ai::model_ref::select_collaboration_model(
+        &settings.collaboration_models,
+        model,
+    )
+    .map_err(ToolError::new)?;
+
+    // mimo-v2-omni (etc.) must not be POSTed to DeepSeek/Console Go.
+    if !crate::core::ai::registry::can_serve_chat_model(&settings, &model_id, &provider_hint) {
+        return parent();
     }
 
-    let provider =
-        crate::core::ai::registry::resolve_provider_for_model(app.clone(), model.to_string());
+    let provider = if provider_hint.is_empty() {
+        crate::core::ai::registry::resolve_provider_for_model(app.clone(), model_id.clone())
+    } else {
+        crate::core::ai::resolve_provider_for_selection(app.clone(), model_id.clone(), provider_hint)
+    };
     Ok(Arc::new(AccountingProvider::new(
         provider,
-        model.to_string(),
+        model_id,
         Some(app),
     )))
 }
@@ -166,18 +174,27 @@ pub async fn run_parallel_subagents(
             return Err(ToolError::new("subagent depth limit reached"));
         }
         let prompt = task["prompt"].as_str().unwrap_or("").to_string();
-        let model = task["model"].as_str().map(str::to_string);
+        let model = model_token(&task);
         let child = ctx.child_subagent(&prompt);
         // Keep the real resolve error — do not collapse to "runtime unavailable".
         let provider = resolve_subagent_provider(ctx, model.as_deref());
+        let fallback = ctx.provider.clone();
         let registry = Arc::clone(&registry);
         let parent_subagent_id = parent_subagent_id.clone();
+        // Concurrent shared-gateway backends (e.g. Console Go) can 500 when hit
+        // with a burst of simultaneous streams. Stagger job starts so they do
+        // not all open a connection in the same instant.
+        let stagger = std::time::Duration::from_millis(350 * idx as u64);
         jobs.push(async move {
+            if !stagger.is_zero() {
+                tokio::time::sleep(stagger).await;
+            }
             let result = match provider {
                 Ok(provider) => {
                     let full = format!("{SUBAGENT_PROMPT}\n\n## Assignment\n{prompt}");
                     execute_child(
                         provider,
+                        fallback,
                         registry,
                         child,
                         full,
@@ -212,6 +229,7 @@ pub async fn run_parallel_subagents(
 
 async fn execute_child(
     provider: Arc<dyn AIProvider>,
+    fallback: Option<Arc<dyn AIProvider>>,
     registry: Arc<ToolRegistry>,
     child: ToolContext,
     full_prompt: String,
@@ -235,7 +253,40 @@ async fn execute_child(
         timestamp_ms: now_millis(),
     });
 
-    let result = AgentRunner::run_subagent(provider, registry, child, full_prompt, read_only).await;
+    let mut result = AgentRunner::run_subagent(
+        Arc::clone(&provider),
+        Arc::clone(&registry),
+        child.clone(),
+        full_prompt.clone(),
+        read_only,
+    )
+    .await;
+    // The per-request HTTP retry already absorbs isolated 429/500s, but a
+    // shared gateway under concurrent parallel-subagent load can still fail
+    // every attempt within that short window. Give the whole child one more
+    // independent run after backing off, before accepting the failure.
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(is_transient_provider_error)
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(1_500)).await;
+        result = AgentRunner::run_subagent(
+            Arc::clone(&provider),
+            Arc::clone(&registry),
+            child.clone(),
+            full_prompt.clone(),
+            read_only,
+        )
+        .await;
+    }
+    if result.as_ref().err().is_some_and(is_unservable_model_error) {
+        if let Some(fallback) = fallback {
+            result = AgentRunner::run_subagent(fallback, registry, child, full_prompt, read_only)
+                .await;
+        }
+    }
+
     let (success, summary) = match &result {
         Ok(answer) => (true, truncate_debug_text(answer, 1_200)),
         Err(error) => (false, truncate_debug_text(&error.to_string(), 1_200)),
@@ -253,6 +304,32 @@ async fn execute_child(
             "subagent failed: {error}\n\n### Conclusion\nFailed.\n\n### Evidence\n- See error above."
         ))),
     }
+}
+
+/// True for gateway/backend errors worth one whole-child retry: rate limits
+/// and transient server failures, as opposed to a bad model id or a genuine
+/// application error the model itself raised.
+fn is_transient_provider_error(error: &ToolError) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("internal server error")
+        || text.contains("500 internal")
+        || text.contains("502 bad gateway")
+        || text.contains("503 service unavailable")
+        || text.contains("504 gateway")
+        || text.contains("429 too many requests")
+        || text.contains("network error")
+}
+
+fn is_unservable_model_error(error: &ToolError) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("unsupported model")
+        || text.contains("model not found")
+        || text.contains("invalid model")
+        || text.contains("does not exist")
+        || text.contains("not supported for format")
+        || text.contains("modelerror")
+        || (text.contains("401") && text.contains("model"))
+        || (text.contains("400") && text.contains("model"))
 }
 
 fn format_subagent_return(
@@ -312,7 +389,8 @@ pub async fn execute_async_tool(
         "run_subagent" => {
             let prompt = args["prompt"].as_str().unwrap_or("");
             let read_only = args["read_only"].as_bool().unwrap_or(false);
-            run_subagent(ctx, prompt, read_only, args["model"].as_str()).await
+            let model = model_token(&args);
+            run_subagent(ctx, prompt, read_only, model.as_deref()).await
         }
         "run_parallel_subagents" => {
             let tasks = args["tasks"].as_array().cloned().unwrap_or_default();
@@ -322,19 +400,15 @@ pub async fn execute_async_tool(
             let skill = args["name"].as_str().unwrap_or("");
             crate::core::tools::skills::require_skill_enabled(skill)?;
             let task = args["task"].as_str().unwrap_or("");
-            let prompt = if matches!(skill, "generate_bid_tech" | "bid_tech" | "tech_bid") {
-                crate::core::tools::skills::build_bid_tech_prompt(task, &ctx.workspace_root)?
-            } else if matches!(skill, "review_bid_tech" | "bid_tech_review") {
-                crate::core::tools::skills::build_review_bid_tech_prompt(task, &ctx.workspace_root)?
-            } else if matches!(skill, "docx" | "docx_skill" | "word_docx") {
+            let prompt = if matches!(skill, "docx" | "docx_skill" | "word_docx") {
                 crate::core::tools::skills::build_docx_prompt(task, &ctx.workspace_root)?
             } else {
                 let body = crate::core::tools::skills::resolve_skill_body(skill)?;
                 format!("{body}\n\n## Task\n{task}")
             };
-            let default_ro = matches!(skill, "review_bid_tech" | "bid_tech_review");
-            let read_only = args["read_only"].as_bool().unwrap_or(default_ro);
-            run_subagent(ctx, &prompt, read_only, args["model"].as_str()).await
+            let read_only = args["read_only"].as_bool().unwrap_or(false);
+            let model = model_token(&args);
+            run_subagent(ctx, &prompt, read_only, model.as_deref()).await
         }
         "explore_codebase" => {
             run_builtin_skill(ctx, "explore", args["task"].as_str().unwrap_or(""), true).await
@@ -362,22 +436,6 @@ pub async fn execute_async_tool(
                 false,
             )
             .await
-        }
-        "generate_bid_tech" => {
-            crate::core::tools::skills::require_skill_enabled("generate_bid_tech")?;
-            let task = args["task"].as_str().unwrap_or("");
-            let prompt =
-                crate::core::tools::skills::build_bid_tech_prompt(task, &ctx.workspace_root)?;
-            run_subagent(ctx, &prompt, false, None).await
-        }
-        "review_bid_tech" => {
-            crate::core::tools::skills::require_skill_enabled("review_bid_tech")?;
-            let task = args["task"].as_str().unwrap_or("");
-            let prompt = crate::core::tools::skills::build_review_bid_tech_prompt(
-                task,
-                &ctx.workspace_root,
-            )?;
-            run_subagent(ctx, &prompt, true, None).await
         }
         "docx" => {
             crate::core::tools::skills::require_skill_enabled("docx")?;
@@ -445,7 +503,8 @@ Usage:
     fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
         let prompt = args["prompt"].as_str().unwrap_or("");
         let read_only = args["read_only"].as_bool().unwrap_or(false);
-        run_subagent_sync_with_model(ctx, prompt, read_only, args["model"].as_str())
+        let model = model_token(&args);
+        run_subagent_sync_with_model(ctx, prompt, read_only, model.as_deref())
     }
 }
 
@@ -494,6 +553,7 @@ mod tests {
     use crate::core::event::EventBus;
     use crate::core::runtime::{ChatRequest, StreamEvent};
     use crate::core::tools::context::{AskStore, PathPermissionStore, TaskItem};
+    use crate::core::tools::error::ToolError;
     use async_trait::async_trait;
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
@@ -567,5 +627,32 @@ mod tests {
         assert!(err.to_string().contains("provider unavailable"));
         drop(ctx);
         let _ = std::fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn transient_gateway_errors_are_detected_for_whole_child_retry() {
+        assert!(super::is_transient_provider_error(&ToolError::new(
+            r#"subagent failed: DeepSeek API 500 Internal Server Error: {"type":"error","error":{"type":"error","message":"Internal server error"}}"#,
+        )));
+        assert!(super::is_transient_provider_error(&ToolError::new(
+            "DeepSeek API 429 Too Many Requests: rate limited"
+        )));
+        assert!(!super::is_transient_provider_error(&ToolError::new(
+            r#"DeepSeek API 400 Bad Request: {"error":{"message":"Unsupported model mimo-v2-omni"}}"#
+        )));
+    }
+
+    #[test]
+    fn unsupported_model_errors_are_detected_for_parent_fallback() {
+        let error = ToolError::new(
+            r#"subagent failed: DeepSeek API 400 Bad Request: {"error":{"message":"Unsupported model mimo-v2-omni"}}"#,
+        );
+        assert!(super::is_unservable_model_error(&error));
+        assert!(!super::is_unservable_model_error(&ToolError::new(
+            "DeepSeek API 500 Internal Server Error: Internal server error"
+        )));
+        assert!(super::is_unservable_model_error(&ToolError::new(
+            r#"DeepSeek API 401 Unauthorized: {"type":"error","error":{"type":"ModelError","message":"Model minimax-m3 is not supported for format openai"}}"#
+        )));
     }
 }

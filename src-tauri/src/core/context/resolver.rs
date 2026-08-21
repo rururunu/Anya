@@ -197,6 +197,7 @@ mod tests {
             created_at: Utc::now(),
             last_used_at: Utc::now(),
             pinned: false,
+            archived: false,
             sort_order: 0,
         }
     }

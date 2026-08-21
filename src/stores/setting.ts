@@ -7,6 +7,7 @@ import { applyOpacity, applyChromeFrostedGlass } from "@/services/overlay/appear
 import {
   normalizeColorScheme,
   normalizeChatMode,
+  normalizeReasoningEffort,
   type AppLanguage,
   type AppSettings,
   type AppSettingsPatch,
@@ -179,7 +180,7 @@ function applyCommonSettings(target: AppSettings, settings: AppSettings) {
   target.multimodalModelProvider = settings.multimodalModelProvider ?? "";
   target.multimodalSplitAnalysis = settings.multimodalSplitAnalysis ?? true;
   target.largeContextEnabled = settings.largeContextEnabled ?? true;
-  target.reasoningEffort = settings.reasoningEffort ?? "disabled";
+  target.reasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
   target.reasoningLanguage = settings.reasoningLanguage ?? "auto";
   target.passToolReasoning = settings.passToolReasoning ?? true;
   target.continueThinkingAfterTools = settings.continueThinkingAfterTools ?? true;

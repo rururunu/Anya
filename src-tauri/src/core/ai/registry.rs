@@ -5,7 +5,9 @@ use tauri::AppHandle;
 use super::antigravity::AntigravityProvider;
 use super::deepseek::DeepSeekProvider;
 use super::provider::AIProvider;
-use crate::models::settings::{AppSettings, CustomProviderConfig, ProviderApiProtocol, ReasoningEffort};
+use crate::models::settings::{
+    AppSettings, CustomProviderConfig, ModelWireProtocol, ProviderApiProtocol, ReasoningEffort,
+};
 use crate::services::gemini_oauth;
 use crate::services::settings_store;
 
@@ -25,6 +27,14 @@ pub fn resolve_provider_for_model(app: AppHandle, model: String) -> Arc<dyn AIPr
 fn provider_has_model(provider: &CustomProviderConfig, model: &str) -> bool {
     provider
         .models
+        .split([',', '\n'])
+        .map(str::trim)
+        .any(|id| !id.is_empty() && id == model)
+}
+
+pub fn provider_model_is_disabled(provider: &CustomProviderConfig, model: &str) -> bool {
+    provider
+        .disabled_models
         .split([',', '\n'])
         .map(str::trim)
         .any(|id| !id.is_empty() && id == model)
@@ -61,6 +71,96 @@ fn custom_provider_for_selection<'a>(
         .custom_providers
         .iter()
         .find(|provider| provider_has_model(provider, model))
+}
+
+pub(crate) fn looks_like_deepseek_model(model: &str) -> bool {
+    model.trim().to_ascii_lowercase().contains("deepseek")
+}
+
+/// Whether this model can be POSTed to a dedicated endpoint (custom provider,
+/// Gemini, or DeepSeek). MiniMax on an aggregator is served via Anthropic
+/// Messages, not by falling through to official DeepSeek.
+pub(crate) fn can_serve_chat_model(
+    settings: &AppSettings,
+    model: &str,
+    provider_hint: &str,
+) -> bool {
+    let model = model.trim();
+    let hint = provider_hint.trim();
+    if (hint.is_empty() || hint == "gemini")
+        && gemini_oauth::is_gemini_model(model)
+        && settings.gemini_oauth.is_logged_in()
+    {
+        return true;
+    }
+    if custom_provider_for_selection(settings, model, hint).is_some() {
+        return true;
+    }
+    looks_like_deepseek_model(model)
+}
+
+/// Drop collaboration entries the current endpoints cannot actually host.
+pub(crate) fn filter_servable_collaboration_models(
+    settings: &AppSettings,
+    allowed: &[String],
+) -> Vec<String> {
+    allowed
+        .iter()
+        .filter(|entry| {
+            let parsed = super::model_ref::parse_model_ref(entry);
+            !parsed.id.is_empty() && can_serve_chat_model(settings, &parsed.id, &parsed.provider)
+        })
+        .cloned()
+        .collect()
+}
+
+pub(crate) fn cached_model_protocol(
+    settings: &AppSettings,
+    provider_id: &str,
+    model: &str,
+) -> Option<ModelWireProtocol> {
+    let model = model.trim();
+    let provider_id = provider_id.trim();
+    if provider_id.is_empty() || model.is_empty() {
+        return None;
+    }
+    settings
+        .custom_providers
+        .iter()
+        .find(|provider| provider.id == provider_id)?
+        .model_protocols
+        .get(model)
+        .copied()
+}
+
+pub(crate) fn remember_model_protocol(
+    app: &AppHandle,
+    provider_id: &str,
+    model: &str,
+    protocol: ModelWireProtocol,
+) {
+    let provider_id = provider_id.trim();
+    let model = model.trim();
+    if provider_id.is_empty() || model.is_empty() {
+        return;
+    }
+    let Ok(mut settings) = settings_store::get_settings(app) else {
+        return;
+    };
+    let Some(provider) = settings
+        .custom_providers
+        .iter_mut()
+        .find(|provider| provider.id == provider_id)
+    else {
+        return;
+    };
+    if provider.model_protocols.get(model) == Some(&protocol) {
+        return;
+    }
+    provider
+        .model_protocols
+        .insert(model.to_string(), protocol);
+    let _ = settings_store::set_settings(app, settings);
 }
 
 /// Resolve the provider by an explicit model + provider-hint selection.
@@ -141,8 +241,8 @@ pub(crate) fn resolve_provider_for_selection(
 
     let resolve_api_protocol = {
         let app = app.clone();
-        let selected_model = model;
-        let selected_provider = provider_hint;
+        let selected_model = model.clone();
+        let selected_provider = provider_hint.clone();
         Arc::new(move || -> ProviderApiProtocol {
             let settings = settings_store::get_settings(&app).unwrap_or_default();
             custom_provider_for_selection(&settings, &selected_model, &selected_provider)
@@ -151,8 +251,34 @@ pub(crate) fn resolve_provider_for_selection(
         })
     };
 
+    let resolve_blocked_reason = {
+        let app = app.clone();
+        let selected_model = model;
+        let selected_provider = provider_hint.clone();
+        Arc::new(move || -> Option<String> {
+            let settings = settings_store::get_settings(&app).unwrap_or_default();
+            let provider = if selected_provider.is_empty() {
+                custom_provider_for_selection(&settings, &selected_model, "")
+            } else {
+                settings
+                    .custom_providers
+                    .iter()
+                    .find(|provider| provider.id == selected_provider)
+            };
+            let disabled = provider
+                .map(|provider| provider_model_is_disabled(provider, &selected_model))
+                .unwrap_or(false);
+            disabled.then(|| {
+                format!(
+                    "模型 “{selected_model}” 已在设置中被禁用，请先在供应商设置里重新启用后再使用。"
+                )
+            })
+        })
+    };
+
     Arc::new(DeepSeekProvider::new(
         app.clone(),
+        provider_hint.clone(),
         resolve_api_key,
         resolve_model,
         resolve_effort,
@@ -160,12 +286,13 @@ pub(crate) fn resolve_provider_for_selection(
         resolve_continue_thinking_after_tools,
         Some(resolve_base_url),
         resolve_api_protocol,
+        resolve_blocked_reason,
     ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::custom_provider_for_selection;
+    use super::{custom_provider_for_selection, provider_model_is_disabled};
     use crate::models::settings::{AppSettings, CustomProviderConfig};
 
     fn provider(id: &str, api_key: &str) -> CustomProviderConfig {
@@ -175,8 +302,10 @@ mod tests {
             base_url: format!("https://{id}.example/v1"),
             api_key: api_key.into(),
             models: "shared-model".into(),
+            disabled_models: String::new(),
             preset_id: None,
             api_protocol: Default::default(),
+            model_protocols: Default::default(),
         }
     }
 
@@ -203,5 +332,120 @@ mod tests {
         let selected = custom_provider_for_selection(&settings, "shared-model", "")
             .expect("legacy model lookup should match");
         assert_eq!(selected.id, "first");
+    }
+
+    #[test]
+    fn disabled_model_is_flagged_and_survives_comma_or_newline_lists() {
+        let mut p = provider("first", "key-1");
+        p.disabled_models = "shared-model\nother-model".into();
+        assert!(provider_model_is_disabled(&p, "shared-model"));
+        assert!(provider_model_is_disabled(&p, "other-model"));
+        assert!(!provider_model_is_disabled(&p, "enabled-model"));
+
+        p.disabled_models = "a, b ,c".into();
+        assert!(provider_model_is_disabled(&p, "b"));
+        assert!(!provider_model_is_disabled(&p, "d"));
+    }
+
+    #[test]
+    fn mimo_does_not_fall_through_to_deepseek_without_a_custom_provider() {
+        let settings = AppSettings::default();
+        assert!(!super::can_serve_chat_model(
+            &settings,
+            "mimo-v2-omni",
+            "deepseek"
+        ));
+        assert!(super::can_serve_chat_model(
+            &settings,
+            "deepseek-v4-pro",
+            "deepseek"
+        ));
+
+        let mut hosted = provider("console-go", "key");
+        hosted.models = "mimo-v2-omni,deepseek-v4-flash".into();
+        let settings = AppSettings {
+            custom_providers: vec![hosted],
+            ..Default::default()
+        };
+        assert!(super::can_serve_chat_model(
+            &settings,
+            "mimo-v2-omni",
+            "console-go"
+        ));
+        assert!(super::can_serve_chat_model(
+            &settings,
+            "deepseek-v4-flash",
+            "console-go"
+        ));
+    }
+
+    #[test]
+    fn minimax_on_custom_aggregator_is_served() {
+        let mut hosted = provider("console-go", "key");
+        hosted.name = "Console Go".into();
+        hosted.models = "deepseek-v4-pro,minimax-m3".into();
+        let settings = AppSettings {
+            custom_providers: vec![hosted],
+            ..Default::default()
+        };
+        assert!(super::can_serve_chat_model(
+            &settings,
+            "minimax-m3",
+            "console-go"
+        ));
+        assert!(super::can_serve_chat_model(
+            &settings,
+            "deepseek-v4-pro",
+            "console-go"
+        ));
+
+        let allowed = vec![
+            r#"["console-go","deepseek-v4-pro"]"#.into(),
+            r#"["console-go","minimax-m3"]"#.into(),
+        ];
+        let filtered = super::filter_servable_collaboration_models(&settings, &allowed);
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn dedicated_minimax_openai_endpoint_is_still_served() {
+        let mut hosted = provider("minimax", "key");
+        hosted.name = "MiniMax".into();
+        hosted.models = "minimax-m3".into();
+        let settings = AppSettings {
+            custom_providers: vec![hosted],
+            ..Default::default()
+        };
+        assert!(super::can_serve_chat_model(
+            &settings,
+            "minimax-m3",
+            "minimax"
+        ));
+    }
+
+    #[test]
+    fn cached_model_protocol_reads_learned_map() {
+        let mut hosted = provider("console-go", "key");
+        hosted.models = "minimax-m3,deepseek-v4-pro".into();
+        hosted.model_protocols.insert(
+            "minimax-m3".into(),
+            crate::models::settings::ModelWireProtocol::AnthropicMessages,
+        );
+        let settings = AppSettings {
+            custom_providers: vec![hosted],
+            ..Default::default()
+        };
+        assert_eq!(
+            super::cached_model_protocol(&settings, "console-go", "minimax-m3"),
+            Some(crate::models::settings::ModelWireProtocol::AnthropicMessages)
+        );
+        assert_eq!(
+            super::cached_model_protocol(&settings, "console-go", "deepseek-v4-pro"),
+            None
+        );
+        assert_eq!(
+            super::cached_model_protocol(&settings, "", "unknown"),
+            None
+        );
     }
 }

@@ -75,8 +75,10 @@ export function summarizeProcessActivities(
   language: AppLanguage,
 ): string {
   if (activities.length === 0) return tr(language, "processSummary");
-  if (activities.length === 1)
-    return activities[0]?.title?.trim() || tr(language, "processSummary");
+  if (activities.length === 1) {
+    const activity = activities[0];
+    return activity?.title?.trim() || activity?.toolName?.trim() || tr(language, "processSummary");
+  }
 
   let files = 0;
   let searches = 0;

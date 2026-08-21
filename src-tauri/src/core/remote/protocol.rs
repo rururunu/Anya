@@ -79,6 +79,19 @@ pub enum ClientMessage {
         chat_model_provider: Option<String>,
         #[serde(rename = "chatModelLabel", default)]
         chat_model_label: Option<String>,
+        #[serde(rename = "reasoningEffort", default)]
+        reasoning_effort: Option<String>,
+    },
+    #[serde(rename = "context.usage")]
+    ContextUsage {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId", default)]
+        session_id: Option<String>,
+        #[serde(rename = "draftMessage", default)]
+        draft_message: Option<String>,
+        #[serde(rename = "modelId", default)]
+        model_id: Option<String>,
     },
     #[serde(rename = "models.list")]
     ModelsList {

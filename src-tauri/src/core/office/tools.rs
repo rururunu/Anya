@@ -258,7 +258,7 @@ impl Tool for WordInsertTableTool {
         "word_insert_table"
     }
     fn description(&self) -> &str {
-        "Insert a real Word table at the current selection. Prefer python-docx / generate_bid_tech for whole technical bids; use this for small live edits. `cells` is a row-major flat array of length rows*cols."
+        "Insert a real Word table at the current selection. Prefer python-docx (generate_word) for building a whole document; use this for small live edits. `cells` is a row-major flat array of length rows*cols."
     }
     fn parameters_schema(&self) -> Value {
         json!({

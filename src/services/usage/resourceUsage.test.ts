@@ -79,9 +79,9 @@ describe("resourceUsage", () => {
       kind: "skill",
       id: "docx",
     });
-    expect(resourceFromToolActivity("generate_bid_tech")).toEqual({
+    expect(resourceFromToolActivity("generate_word")).toEqual({
       kind: "skill",
-      id: "generate_bid_tech",
+      id: "generate_word",
     });
     expect(resourceFromToolActivity("review_security")).toEqual({
       kind: "skill",

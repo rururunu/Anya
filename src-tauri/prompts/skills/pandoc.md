@@ -1,6 +1,6 @@
 ---
 name: pandoc
-description: Convert documents between Markdown, DOCX, PDF, HTML, LaTeX with pandoc. Use for md→docx/pdf, docx→md extraction, reference-doc styling, batch format conversion. For OOXML edit/redline use docx; for 技术标 use generate_bid_tech.
+description: Convert documents between Markdown, DOCX, PDF, HTML, LaTeX with pandoc. Use for md→docx/pdf, docx→md extraction, reference-doc styling, batch format conversion. For OOXML edit/redline use docx.
 ---
 
 # Pandoc document conversion
@@ -17,7 +17,6 @@ Use `pandoc` whenever the task is a **format conversion** with no structural edi
 |---|---|
 | Edit existing .docx OOXML / tracked changes | `docx` |
 | Build new Word document from a Python script with custom logic | `generate_word` |
-| 技术标 / 评分表 | `generate_bid_tech` |
 
 <example>
 User: "把 README.md 转成 PDF 发给客户。"
@@ -107,7 +106,6 @@ pandoc input.docx --track-changes=accept -o output.md
 
 1. **Draft in Markdown** → `pandoc` → `.docx`
 2. **Polish / redline in Word** → `#skill:docx` for OOXML edits
-3. **Technical bid** → do not stop at pandoc; use `generate_bid_tech` for table-first delivery
 
 ## Output
 

@@ -343,6 +343,7 @@ pub(super) fn to_chat_model_infos(groups: Vec<GroupedCatalogModel>) -> Vec<ChatM
                 provider: "gemini".to_string(),
                 display_name: Some(display),
                 thinking_variants,
+                reasoning: None,
             }
         })
         .collect()

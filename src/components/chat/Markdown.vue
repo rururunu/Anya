@@ -1,4 +1,6 @@
 <template>
+  <!-- Content is sanitized with DOMPurify before it reaches the template. -->
+  <!-- eslint-disable-next-line vue/no-v-html -->
   <div ref="rootRef" class="markdown-body" v-html="html" @click="onMarkdownClick" />
 </template>
 
@@ -24,6 +26,7 @@ import { computed, h, onMounted, onUnmounted, onUpdated, ref, render, type Compo
 import "katex/dist/katex.min.css";
 import { copyText } from "@/services/clipboard";
 import { parseChartSpec } from "@/services/chat/chartSpec";
+import { normalizeMarkdownInput } from "@/services/chat/markdownNormalize";
 import { disposeChartBlocks, hydrateChartBlocks } from "./chartHydration";
 
 const props = defineProps<{
@@ -185,7 +188,9 @@ marked.setOptions({
 
 const html = computed(() => {
   try {
-    const raw = marked.parse(normalizeLegacyMath(props.content || ""), { async: false }) as string;
+    const raw = marked.parse(normalizeMarkdownInput(normalizeLegacyMath(props.content || "")), {
+      async: false,
+    }) as string;
     return DOMPurify.sanitize(raw, {
       ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|file|sms):|[^&#]*?:|data:image\/)/i,
       // Tables are part of the default allowlist, but some DOM environments

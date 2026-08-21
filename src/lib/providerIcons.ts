@@ -1,13 +1,18 @@
 import type { Component } from "vue";
+import ClaudeIcon from "@/components/icons/ClaudeIcon.vue";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
 import GeminiIcon from "@/components/icons/GeminiIcon.vue";
+import GrokIcon from "@/components/icons/GrokIcon.vue";
 import KimiIcon from "@/components/icons/KimiIcon.vue";
 import MiMoIcon from "@/components/icons/MiMoIcon.vue";
 import MiniMaxIcon from "@/components/icons/MiniMaxIcon.vue";
+import OpenAiIcon from "@/components/icons/OpenAiIcon.vue";
+import QwenIcon from "@/components/icons/QwenIcon.vue";
 import VolcengineIcon from "@/components/icons/VolcengineIcon.vue";
 import ZhipuIcon from "@/components/icons/ZhipuIcon.vue";
 import type { ChatModelInfo } from "@/types/chat";
 import type { CustomProviderConfig } from "@/types/setting";
+import { peekProviderFavicon } from "@/services/providerFavicon";
 
 export const DEEPSEEK_PROVIDER = "deepseek";
 export const GEMINI_PROVIDER = "gemini";
@@ -20,31 +25,104 @@ const providerIcons: Record<string, Component> = {
   volcengine: VolcengineIcon,
   minimax: MiniMaxIcon,
   kimi: KimiIcon,
+  openai: OpenAiIcon,
+  claude: ClaudeIcon,
+  anthropic: ClaudeIcon,
+  grok: GrokIcon,
+  xai: GrokIcon,
+  qwen: QwenIcon,
 };
+
+/**
+ * Keyword fallback for brand icons when a model comes from an arbitrary
+ * custom/aggregator provider whose id/presetId doesn't match a known key
+ * (e.g. an OpenRouter-style provider serving many vendors' models).
+ * Matched in order against provider id, presetId, model id, and display name.
+ */
+const providerIconKeywords: Array<{ pattern: RegExp; icon: Component }> = [
+  { pattern: /deepseek/i, icon: DeepSeekIcon },
+  { pattern: /gemini|antigravity/i, icon: GeminiIcon },
+  { pattern: /glm|zhipu|智谱/i, icon: ZhipuIcon },
+  { pattern: /kimi|moonshot/i, icon: KimiIcon },
+  { pattern: /mimo|小米/i, icon: MiMoIcon },
+  { pattern: /volcengine|doubao|豆包|火山/i, icon: VolcengineIcon },
+  { pattern: /minimax/i, icon: MiniMaxIcon },
+  { pattern: /qwen|qwq|qvq|tongyi|通义千问|千问/i, icon: QwenIcon },
+  { pattern: /claude|anthropic/i, icon: ClaudeIcon },
+  { pattern: /grok|x-?ai\b/i, icon: GrokIcon },
+  { pattern: /gpt|o[1-4](?:-mini|-pro)?\b|openai|chatgpt/i, icon: OpenAiIcon },
+];
+
+function matchProviderIconByKeyword(...texts: Array<string | null | undefined>): Component | null {
+  for (const text of texts) {
+    const value = text?.trim();
+    if (!value) continue;
+    for (const { pattern, icon } of providerIconKeywords) {
+      if (pattern.test(value)) return icon;
+    }
+  }
+  return null;
+}
 
 export function getProviderIcon(
   provider?: string | null,
   presetId?: string | null,
+  modelId?: string | null,
 ): Component | null {
   const preset = presetId?.trim();
   if (preset && providerIcons[preset]) {
     return providerIcons[preset];
   }
   const key = provider?.trim();
-  if (!key) return null;
-  return providerIcons[key] ?? null;
+  if (key && providerIcons[key]) {
+    return providerIcons[key];
+  }
+  return matchProviderIconByKeyword(preset, key, modelId);
 }
 
-export function resolveCustomPresetId(
-  providerId: string | null | undefined,
-  customProviders: CustomProviderConfig[],
-): string | undefined {
-  if (!providerId) return undefined;
-  return customProviders.find((item) => item.id === providerId)?.presetId;
+/**
+ * Resolve a model's own brand icon from its id / display name only.
+ * Never inherit the hosting provider's vendor logo — a Claude model on an
+ * OpenAI-compatible proxy should show Claude, not the proxy or a preset brand.
+ */
+export function getModelIcon(
+  model: Pick<ChatModelInfo, "id" | "displayName">,
+  _presetId?: string | null,
+): Component | null {
+  return matchProviderIconByKeyword(model.id, model.displayName);
 }
 
 export function isDeepSeekProvider(provider?: string | null): boolean {
   return provider === DEEPSEEK_PROVIDER;
+}
+
+/** True when the selected chat model reports DeepSeek prompt-cache usage. */
+export function isDeepSeekChatModel(modelId?: string | null, provider?: string | null): boolean {
+  if (isDeepSeekProvider(provider)) return true;
+  return (modelId ?? "").trim().toLowerCase().startsWith("deepseek");
+}
+
+export type ProviderHoverInfo = {
+  name: string;
+  detail: string | null;
+  brandIcon: Component | null;
+  favicon: string | null;
+};
+
+/** Provider name + domain icon/url for hover cards on the model chip and picker. */
+export function getProviderHoverInfo(
+  providerId: string | null | undefined,
+  customProviders: CustomProviderConfig[] = [],
+): ProviderHoverInfo | null {
+  const key = providerId?.trim();
+  if (!key) return null;
+  const custom = customProviders.find((item) => item.id === key);
+  return {
+    name: getProviderDisplayName(key, customProviders),
+    detail: custom?.baseUrl?.trim() || (isGeminiProvider(key) ? "Antigravity" : null),
+    brandIcon: isDeepSeekProvider(key) || isGeminiProvider(key) ? getProviderIcon(key) : null,
+    favicon: peekProviderFavicon(key),
+  };
 }
 
 export function isGeminiProvider(provider?: string | null): boolean {
@@ -68,6 +146,12 @@ export function getProviderDisplayName(
   if (preset === "volcengine") return "火山方舟";
   if (preset === "minimax") return "MiniMax";
   if (preset === "kimi") return "Kimi";
+  if (preset === "openai" || key === "openai") return "OpenAI";
+  if (preset === "claude" || preset === "anthropic" || key === "claude" || key === "anthropic") {
+    return "Claude";
+  }
+  if (preset === "grok" || preset === "xai" || key === "grok" || key === "xai") return "Grok";
+  if (preset === "qwen" || key === "qwen") return "通义千问";
   return key
     .split(/[-_\s]+/)
     .filter(Boolean)

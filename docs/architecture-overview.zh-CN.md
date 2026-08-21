@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.11                            |
+| **版本**   | v0.2.12                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -56,16 +56,16 @@ flowchart LR
   Host --> Disk[(SQLite · 设置 · 索引 · 模型)]
 ```
 
-| 参与方            | 交互方式                                                           |
-| ----------------- | ------------------------------------------------------------------ |
-| 用户              | 全局热键、托盘、输入栏、Diff 审查、工作台内嵌设置                  |
-| Anya Companion    | 安卓远程；局域网 `ws` 或 Cloudflare `wss`；文件走 HTTP Range `/f/` |
-| IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）                     |
-| Microsoft Office  | COM：文档上下文与 `word_*` / `excel_*` / `ppt_*` 工具              |
-| 模型服务商        | 鉴权 HTTPS；支持处使用流式                                         |
-| 嵌入              | 可选 RAG：OpenAI 兼容 `/embeddings` 或本地 ONNX（`fastembed`）     |
-| MCP / 搜索 / mem0 | 可选；在设置中显式启用                                             |
-| 本地磁盘          | 聊天库、设置、`.anya/index`、嵌入模型缓存、更新公钥、检查点        |
+| 参与方            | 交互方式                                                               |
+| ----------------- | ---------------------------------------------------------------------- |
+| 用户              | 全局热键、托盘、输入栏、Diff 审查、工作台内嵌设置                      |
+| Anya Companion    | 安卓远程；局域网 `ws` 或 Cloudflare `wss`；文件走 HTTP Range `/f/`     |
+| IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）                         |
+| Microsoft Office  | COM：文档上下文与 `word_*` / `excel_*` / `ppt_*` 工具                  |
+| 模型服务商        | 鉴权 HTTPS SSE；支持 Chat Completions、Responses 或 Anthropic Messages |
+| 嵌入              | 可选 RAG：OpenAI 兼容 `/embeddings` 或本地 ONNX（`fastembed`）         |
+| MCP / 搜索 / mem0 | 可选；在设置中显式启用                                                 |
+| 本地磁盘          | 聊天库、设置、`.anya/index`、嵌入模型缓存、更新公钥、检查点            |
 
 ---
 
@@ -295,7 +295,7 @@ sequenceDiagram
 | DB / journal       | `core/chat/db.rs`、`core/chat/journal.rs`  | Schema、存取、崩溃恢复                                                         |
 | 提示词             | `core/chat/prompts/`、`prompts/*.md`       | system / tools / policies / skills                                             |
 | Agent runtime      | `core/agent/runtime/`                      | Run 状态机、取消、soft-inject、debug                                           |
-| AI providers       | `core/ai/`                                 | DeepSeek、Gemini/Antigravity、多模态                                           |
+| AI providers       | `core/ai/`                                 | Provider 注册表、模型能力、协议回退、DeepSeek、Gemini、多模态                  |
 | 嵌入 / RAG         | `core/ai/embed.rs`、`commands/semantic.rs` | 可选 retrieve-then-rerank；API 或本地 ONNX                                     |
 | Tools              | `core/tools/`                              | 注册表、审批、计划门禁、文件、shell、skills、子 Agent                          |
 | 工作区索引         | `core/tools/workspace_index.rs`            | 分块关键词索引，落在 `.anya/index`（增量 JSONL）                               |
@@ -576,9 +576,30 @@ flowchart TB
 
 计划门禁开启时，非只读写工具在注册表 / authorize 层被拒绝；`update_tasks`（与只读探索）仍可用，供助手输出可批准的步骤列表。
 
-Skills 位于 `src-tauri/prompts/skills/`（含厂商资源）。调用时常注入 playbook，并可按子 Agent 执行（可选 `read_only`）。
+Skills 位于 `src-tauri/prompts/skills/`（含厂商资源）。调用时常注入 playbook，并可按子 Agent 执行（可选 `read_only`）。内置 `bid_tech` Python 工具包已不再随应用发布，文档生成技能改走外部技能流程。
 
-### 11.1 工作区索引与 RAG
+### 11.1 Provider 协议与思考能力解析
+
+Provider 边界将模型选择、能力元数据、协议选择和线路解析集中处理，`ChatService` 不需要感知具体 Provider。
+
+```mermaid
+flowchart LR
+  Settings[服务商设置] --> Registry[ProviderRegistry]
+  Registry --> ModelRef[ModelRef + 能力]
+  ModelRef --> Reasoning[ReasoningProfile]
+  ModelRef --> Protocol[WireProtocol]
+  Protocol -->|主协议| Request[Provider 请求]
+  Request -->|格式拒绝| Fallback[协议回退]
+  Fallback --> Request
+  Request --> Stream[Chat / Responses / Anthropic SSE]
+  Stream --> Cache[记忆模型协议]
+```
+
+`reasoningProfiles` 为模型族提供支持的档位；`reasoningControl` 优先使用 Provider 广告的能力，其次根据模型和服务商推断。请求层会限制不支持的值，并按协议发送 `thinking`、`enable_thinking`、`reasoning.effort` 或 `reasoning_effort`。
+
+自定义服务商可以选择 Chat Completions、Responses 或 Anthropic Messages。识别到格式不兼容时，注册表会尝试剩余线路协议，并按服务商和模型记住成功协议。禁用模型会在网络请求前被拒绝。
+
+### 11.2 工作区索引与 RAG
 
 `search_codebase` 始终走关键词索引。语义重排**默认关闭**（设置 → RAG 检索）。启用前不下载、不发请求。
 
@@ -638,9 +659,10 @@ API 路径会把 **查询与候选片段** 发到配置的嵌入主机。本地�
 | 快速提问                        | 无工作区     | IDE 外悬浮窗                                 |
 | 工作区会话                      | 绑定文件夹   | IDE 前台、`/work`、选择器                    |
 | 置顶                            | 用户置顶标记 | 工作台侧栏                                   |
+| 已归档工作区                    | 绑定文件夹   | 工作台归档 / 恢复                            |
 | Companion FAB（无 workspaceId） | 无工作区     | 手机新会话——**不得**继承桌面当前选中的工作区 |
 
-悬浮窗与工作台共享会话存储；「在工作台打开」复用同一 `session_id`。Companion 经网关投影同一存储。
+悬浮窗与工作台共享会话存储；「在工作台打开」复用同一 `session_id`。工作区的排序、置顶、折叠状态和归档状态独立于聊天消息持久化。Companion 经网关投影同一存储。
 
 ---
 

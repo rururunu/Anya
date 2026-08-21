@@ -48,12 +48,12 @@ pnpm tauri:build
 3. Generate **`release/latest.json`**:
 
 ```powershell
-pnpm release:json -- --tag v0.2.11 --notes "Optional release notes"
+pnpm release:json -- --tag v0.2.12 --notes "Reasoning profiles, Anthropic Messages, protocol fallback, workspace archive, Companion, and token usage improvements"
 ```
 
-4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.11` and upload:
-   - `Anya_0.2.11_x64.msi`
-   - `Anya_0.2.11_x64.msi.sig`
+4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.12` and upload:
+   - `Anya_0.2.12_x64.msi`
+   - `Anya_0.2.12_x64.msi.sig`
    - `latest.json` (from `release/latest.json`)
 
 5. Verify `https://github.com/rururunu/Anya/releases/latest/download/latest.json` and check for updates in the app.

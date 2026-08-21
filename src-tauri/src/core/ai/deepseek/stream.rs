@@ -32,10 +32,20 @@ struct ApiStreamResponse {
 struct ApiTokenUsage {
     prompt_tokens: usize,
     completion_tokens: usize,
+    /// First-party DeepSeek field. Prefer this when present.
+    #[serde(default)]
+    prompt_cache_hit_tokens: usize,
     #[serde(default)]
     prompt_tokens_details: ApiPromptTokensDetails,
     #[serde(default)]
     completion_tokens_details: ApiCompletionTokensDetails,
+}
+
+impl ApiTokenUsage {
+    fn cache_read_tokens(&self) -> usize {
+        self.prompt_cache_hit_tokens
+            .max(self.prompt_tokens_details.cached_tokens)
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -90,6 +100,45 @@ struct ToolCallBuilder {
     arguments: String,
 }
 
+impl ToolCallBuilder {
+    /// Later SSE deltas often repeat `name: ""`. Never let that wipe a name
+    /// we already collected. If the provider streams the name in growing
+    /// prefixes, keep the longest value.
+    fn set_name(&mut self, name: impl AsRef<str>) {
+        let name = name.as_ref().trim();
+        if name.is_empty() {
+            return;
+        }
+        if self.name.is_empty() || name.starts_with(&self.name) || !self.name.starts_with(name) {
+            self.name = name.to_string();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tool_call_builder_tests {
+    use super::ToolCallBuilder;
+
+    #[test]
+    fn empty_name_delta_does_not_wipe_existing_name() {
+        let mut builder = ToolCallBuilder::default();
+        builder.set_name("web_search");
+        builder.set_name("");
+        builder.set_name("   ");
+        assert_eq!(builder.name, "web_search");
+    }
+
+    #[test]
+    fn growing_name_prefix_is_kept() {
+        let mut builder = ToolCallBuilder::default();
+        builder.set_name("mcp__");
+        builder.set_name("mcp__puppeteer__navigate");
+        assert_eq!(builder.name, "mcp__puppeteer__navigate");
+        builder.set_name("mcp__");
+        assert_eq!(builder.name, "mcp__puppeteer__navigate");
+    }
+}
+
 #[derive(Debug, Default)]
 pub(super) struct StreamReadOutcome {
     pub(super) saw_done: bool,
@@ -117,7 +166,8 @@ impl StreamReadOutcome {
 #[derive(Clone, Copy)]
 enum SseKind {
     ChatCompletions { is_deepseek: bool },
-    Responses,
+    Responses { is_deepseek: bool },
+    AnthropicMessages,
 }
 
 pub(super) async fn run_chat_stream(
@@ -151,7 +201,29 @@ pub(super) async fn run_responses_stream(
     body: &Value,
     tx: &Sender<StreamEvent>,
 ) -> Result<(), ProviderError> {
-    run_sse_stream(client, url, api_key, body, tx, SseKind::Responses).await
+    let is_deepseek = body
+        .get("model")
+        .and_then(Value::as_str)
+        .is_some_and(|model| model.trim().to_ascii_lowercase().starts_with("deepseek"));
+    run_sse_stream(
+        client,
+        url,
+        api_key,
+        body,
+        tx,
+        SseKind::Responses { is_deepseek },
+    )
+    .await
+}
+
+pub(super) async fn run_anthropic_stream(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    body: &Value,
+    tx: &Sender<StreamEvent>,
+) -> Result<(), ProviderError> {
+    run_sse_stream(client, url, api_key, body, tx, SseKind::AnthropicMessages).await
 }
 
 async fn run_sse_stream(
@@ -169,7 +241,7 @@ async fn run_sse_stream(
             tokio::time::sleep(RETRY_BACKOFF * attempt).await;
         }
 
-        let response = match post_stream_request(client, url, api_key, body).await {
+        let response = match post_stream_request(client, url, api_key, body, kind).await {
             Ok(response) => response,
             Err(error) => {
                 last_error = Some(error.clone());
@@ -184,7 +256,10 @@ async fn run_sse_stream(
             SseKind::ChatCompletions { is_deepseek } => {
                 read_sse_stream(response, tx, is_deepseek).await
             }
-            SseKind::Responses => read_responses_sse_stream(response, tx).await,
+            SseKind::Responses { is_deepseek } => {
+                read_responses_sse_stream(response, tx, is_deepseek).await
+            }
+            SseKind::AnthropicMessages => read_anthropic_sse_stream(response, tx).await,
         };
 
         match read {
@@ -237,11 +312,18 @@ async fn post_stream_request(
     url: &str,
     api_key: &str,
     body: &Value,
+    kind: SseKind,
 ) -> Result<reqwest::Response, ProviderError> {
-    let response = client
+    let mut request = client
         .post(url)
         .header("Authorization", format!("Bearer {api_key}"))
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+    if matches!(kind, SseKind::AnthropicMessages) {
+        request = request
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01");
+    }
+    let response = request
         .json(body)
         .send()
         .await
@@ -309,7 +391,7 @@ async fn read_sse_stream(
                 // `inputTokens` reflects actual (non-cached) input.
                 let (cache_read, reasoning) = if is_deepseek {
                     (
-                        usage.prompt_tokens_details.cached_tokens,
+                        usage.cache_read_tokens(),
                         usage.completion_tokens_details.reasoning_tokens,
                     )
                 } else {
@@ -321,7 +403,7 @@ async fn read_sse_stream(
                         input,
                         usage.completion_tokens,
                         "provider/usage",
-                        (is_deepseek && cache_read > 0).then_some(cache_read),
+                        is_deepseek.then_some(cache_read),
                         (is_deepseek && reasoning > 0).then_some(reasoning),
                     )))
                     .await;
@@ -356,7 +438,7 @@ async fn read_sse_stream(
                         }
                         if let Some(function) = call.function {
                             if let Some(name) = function.name {
-                                entry.name = name;
+                                entry.set_name(name);
                             }
                             if let Some(args) = function.arguments {
                                 entry.arguments.push_str(&args);
@@ -420,6 +502,7 @@ fn chat_reasoning_delta(delta: &ApiStreamDelta) -> Option<&str> {
 async fn read_responses_sse_stream(
     response: reqwest::Response,
     tx: &Sender<StreamEvent>,
+    is_deepseek: bool,
 ) -> Result<StreamReadOutcome, ProviderError> {
     let mut stream = response.bytes_stream();
     let mut pending_utf8 = Vec::new();
@@ -475,12 +558,22 @@ async fn read_responses_sse_stream(
                 return Err(ProviderError::message(message));
             }
             if let Some((input, output, cache_read, reasoning_tokens)) = tick.usage {
+                let cache = cache_read.unwrap_or(0);
+                let billed_input = if is_deepseek {
+                    input.saturating_sub(cache)
+                } else {
+                    input
+                };
                 let _ = tx
                     .send(StreamEvent::Usage(TokenUsage::exact_with_breakdown(
-                        input,
+                        billed_input,
                         output,
                         "provider/usage",
-                        cache_read.filter(|value| *value > 0),
+                        if is_deepseek {
+                            Some(cache)
+                        } else {
+                            cache_read.filter(|value| *value > 0)
+                        },
                         reasoning_tokens.filter(|value| *value > 0),
                     )))
                     .await;
@@ -538,6 +631,294 @@ async fn read_responses_sse_stream(
         .await;
 
     Ok(outcome)
+}
+
+async fn read_anthropic_sse_stream(
+    response: reqwest::Response,
+    tx: &Sender<StreamEvent>,
+) -> Result<StreamReadOutcome, ProviderError> {
+    let mut stream = response.bytes_stream();
+    let mut pending_utf8 = Vec::new();
+    let mut buffer = String::new();
+    let mut outcome = StreamReadOutcome::default();
+    let mut content = String::new();
+    let mut reasoning = String::new();
+    let mut tool_calls: HashMap<usize, ToolCallBuilder> = HashMap::new();
+    let mut sse_event = String::new();
+    let mut block_kind: HashMap<usize, String> = HashMap::new();
+    let mut tool_index_for_block: HashMap<usize, usize> = HashMap::new();
+    let mut next_tool = 0usize;
+
+    loop {
+        let chunk = match tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()).await {
+            Ok(Some(Ok(chunk))) => chunk,
+            Ok(Some(Err(error))) => {
+                return Err(map_read_error(error.to_string(), outcome.emitted));
+            }
+            Ok(None) => break,
+            Err(_) => return Err(ProviderError::message(USER_STREAM_STALLED)),
+        };
+
+        crate::runtime::encoding::append_utf8_chunk(&mut pending_utf8, &chunk, &mut buffer);
+
+        while let Some(line) = next_sse_line(&mut buffer) {
+            if let Some(name) = line.strip_prefix("event:") {
+                sse_event = name.trim().to_string();
+                continue;
+            }
+            let Some(payload) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let payload = payload.trim();
+            if payload.is_empty() {
+                continue;
+            }
+            if payload == "[DONE]" {
+                outcome.saw_done = true;
+                break;
+            }
+
+            let mut parsed: Value = serde_json::from_str(payload).map_err(|error| {
+                ProviderError::message(format!("invalid stream payload: {error}"))
+            })?;
+            if parsed.get("type").and_then(Value::as_str).is_none() && !sse_event.is_empty() {
+                if let Some(obj) = parsed.as_object_mut() {
+                    obj.insert("type".into(), json!(sse_event.clone()));
+                }
+            }
+
+            let tick = apply_anthropic_event(
+                &parsed,
+                &mut content,
+                &mut reasoning,
+                &mut tool_calls,
+                &mut block_kind,
+                &mut tool_index_for_block,
+                &mut next_tool,
+                &mut outcome,
+            );
+            if let Some(message) = tick.error {
+                return Err(ProviderError::message(message));
+            }
+            if let Some((input, output, _, _)) = tick.usage {
+                let _ = tx
+                    .send(StreamEvent::Usage(TokenUsage::exact_with_breakdown(
+                        input,
+                        output,
+                        "provider/usage",
+                        None,
+                        None,
+                    )))
+                    .await;
+            }
+            if !tick.reasoning_delta.is_empty() {
+                let _ = tx
+                    .send(StreamEvent::Reasoning(tick.reasoning_delta))
+                    .await;
+            }
+            if !tick.content_delta.is_empty() {
+                let _ = tx.send(StreamEvent::Delta(tick.content_delta)).await;
+            }
+            if outcome.saw_done {
+                break;
+            }
+        }
+
+        if outcome.saw_done {
+            break;
+        }
+    }
+
+    if !outcome.is_complete() {
+        return Err(ProviderError::message(USER_STREAM_INTERRUPTED));
+    }
+
+    let mut merged_calls: Vec<_> = tool_calls.into_iter().collect();
+    merged_calls.sort_by_key(|(index, _)| *index);
+    let tool_call_payloads: Vec<ToolCallPayload> = merged_calls
+        .into_iter()
+        .map(|(index, builder)| ToolCallPayload {
+            id: if builder.id.trim().is_empty() {
+                format!("call-{index}")
+            } else {
+                builder.id
+            },
+            name: builder.name,
+            arguments: builder.arguments,
+            thought_signature: None,
+        })
+        .collect();
+
+    if outcome.finish_reason.is_none() && !tool_call_payloads.is_empty() {
+        outcome.finish_reason = Some("tool_calls".into());
+    }
+
+    let _ = tx
+        .send(StreamEvent::TurnComplete {
+            content,
+            reasoning: non_empty_option(reasoning),
+            tool_calls: tool_call_payloads,
+            finish_reason: outcome.finish_reason.clone(),
+        })
+        .await;
+
+    Ok(outcome)
+}
+
+fn apply_anthropic_event(
+    event: &Value,
+    content: &mut String,
+    reasoning: &mut String,
+    tool_calls: &mut HashMap<usize, ToolCallBuilder>,
+    block_kind: &mut HashMap<usize, String>,
+    tool_index_for_block: &mut HashMap<usize, usize>,
+    next_tool: &mut usize,
+    outcome: &mut StreamReadOutcome,
+) -> ResponsesTick {
+    let mut tick = ResponsesTick::default();
+    let event_type = event.get("type").and_then(Value::as_str).unwrap_or("");
+    match event_type {
+        "error" => {
+            tick.error = Some(
+                event
+                    .pointer("/error/message")
+                    .and_then(Value::as_str)
+                    .or_else(|| event.get("message").and_then(Value::as_str))
+                    .unwrap_or("Anthropic API request failed")
+                    .to_string(),
+            );
+        }
+        "message_start" => {
+            if let Some(input) = event
+                .pointer("/message/usage/input_tokens")
+                .and_then(Value::as_u64)
+            {
+                tick.usage = Some((input as usize, 0, None, None));
+            }
+        }
+        "content_block_start" => {
+            let index = json_index(event, "index");
+            let block = event.get("content_block").unwrap_or(event);
+            let kind = block
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            block_kind.insert(index, kind.clone());
+            if kind == "tool_use" {
+                let tool_idx = *next_tool;
+                *next_tool += 1;
+                tool_index_for_block.insert(index, tool_idx);
+                let entry = tool_calls.entry(tool_idx).or_default();
+                if let Some(id) = block.get("id").and_then(Value::as_str) {
+                    entry.id = id.to_string();
+                }
+                if let Some(name) = block.get("name").and_then(Value::as_str) {
+                    entry.set_name(name);
+                }
+                if let Some(input) = block.get("input") {
+                    if !input.is_null() && input != &json!({}) {
+                        entry.arguments = input.to_string();
+                    }
+                }
+                outcome.emitted = true;
+            }
+        }
+        "content_block_delta" => {
+            let index = json_index(event, "index");
+            let delta = event.get("delta").unwrap_or(event);
+            let delta_type = delta.get("type").and_then(Value::as_str).unwrap_or("");
+            match delta_type {
+                "text_delta" => {
+                    append_delta(
+                        delta.get("text").and_then(Value::as_str),
+                        content,
+                        &mut tick.content_delta,
+                        outcome,
+                    );
+                }
+                "thinking_delta" => {
+                    append_delta(
+                        delta
+                            .get("thinking")
+                            .and_then(Value::as_str)
+                            .or_else(|| delta.get("text").and_then(Value::as_str)),
+                        reasoning,
+                        &mut tick.reasoning_delta,
+                        outcome,
+                    );
+                }
+                "input_json_delta" => {
+                    if let Some(partial) = delta.get("partial_json").and_then(Value::as_str) {
+                        if !partial.is_empty() {
+                            let tool_idx = tool_index_for_block
+                                .get(&index)
+                                .copied()
+                                .unwrap_or_else(|| {
+                                    let kind = block_kind.get(&index).map(String::as_str);
+                                    if kind == Some("tool_use") {
+                                        index
+                                    } else {
+                                        0
+                                    }
+                                });
+                            tool_calls
+                                .entry(tool_idx)
+                                .or_default()
+                                .arguments
+                                .push_str(partial);
+                            outcome.emitted = true;
+                        }
+                    }
+                }
+                _ => {
+                    if block_kind.get(&index).map(String::as_str) == Some("thinking") {
+                        append_delta(
+                            delta.get("thinking").and_then(Value::as_str),
+                            reasoning,
+                            &mut tick.reasoning_delta,
+                            outcome,
+                        );
+                    } else {
+                        append_delta(
+                            delta.get("text").and_then(Value::as_str),
+                            content,
+                            &mut tick.content_delta,
+                            outcome,
+                        );
+                    }
+                }
+            }
+        }
+        "message_delta" => {
+            if let Some(reason) = event
+                .pointer("/delta/stop_reason")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+            {
+                outcome.finish_reason = Some(if reason == "tool_use" {
+                    "tool_calls".into()
+                } else {
+                    reason.to_string()
+                });
+            }
+            let input = event
+                .pointer("/usage/input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize;
+            if let Some(output) = event
+                .pointer("/usage/output_tokens")
+                .and_then(Value::as_u64)
+            {
+                tick.usage = Some((input, output as usize, None, None));
+            }
+        }
+        "message_stop" => {
+            outcome.saw_done = true;
+        }
+        _ => {}
+    }
+    tick
 }
 
 #[derive(Default)]
@@ -673,9 +1054,8 @@ fn apply_responses_output_item(
             if let Some(name) = item
                 .get("name")
                 .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
             {
-                entry.name = name.to_string();
+                entry.set_name(name);
             }
             if let Some(args) = item.get("arguments").and_then(Value::as_str) {
                 if !args.is_empty() {
@@ -760,12 +1140,20 @@ fn responses_usage(response: &Value) -> Option<(usize, usize, Option<usize>, Opt
         .get("output_tokens")
         .or_else(|| usage.get("completion_tokens"))
         .and_then(Value::as_u64)? as usize;
-    let cache_read = usage
-        .get("input_tokens_details")
-        .or_else(|| usage.get("prompt_tokens_details"))
-        .and_then(|details| details.get("cached_tokens"))
-        .and_then(Value::as_u64)
-        .map(|value| value as usize);
+    let cache_read = {
+        let hit = usage
+            .get("prompt_cache_hit_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let details = usage
+            .get("input_tokens_details")
+            .or_else(|| usage.get("prompt_tokens_details"))
+            .and_then(|details| details.get("cached_tokens"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        (hit > 0 || details > 0 || usage.get("prompt_cache_hit_tokens").is_some())
+            .then_some(hit.max(details) as usize)
+    };
     let reasoning_tokens = usage
         .get("output_tokens_details")
         .or_else(|| usage.get("completion_tokens_details"))
@@ -823,7 +1211,7 @@ fn collect_responses_tool_calls(
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
         {
-            entry.name = name.to_string();
+            entry.set_name(name);
         }
         if let Some(args) = item.get("arguments").and_then(Value::as_str) {
             if entry.arguments.is_empty() {
@@ -938,17 +1326,22 @@ fn is_retryable_stream_error(error: &ProviderError) -> bool {
     match error {
         ProviderError::Cancelled => false,
         ProviderError::Message(message) => {
-            if message.starts_with("DeepSeek API") {
-                return false;
-            }
             if message.contains("API Key") {
                 return false;
+            }
+            if let Some(status) = deepseek_http_status(message) {
+                return matches!(status, 429 | 500 | 502 | 503 | 504);
             }
             message == USER_STREAM_INTERRUPTED
                 || message == USER_STREAM_STALLED
                 || is_connection_error(message)
         }
     }
+}
+
+fn deepseek_http_status(message: &str) -> Option<u16> {
+    let rest = message.strip_prefix("DeepSeek API ")?;
+    rest.split_whitespace().next()?.parse().ok()
 }
 
 fn map_read_error(message: String, emitted: bool) -> ProviderError {
@@ -1086,5 +1479,64 @@ mod responses_event_tests {
         }));
         assert!(outcome.is_complete());
         assert_eq!(outcome.finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[test]
+    fn cache_read_prefers_first_party_hit_tokens() {
+        let usage: ApiTokenUsage = serde_json::from_value(json!({
+            "prompt_tokens": 100,
+            "completion_tokens": 10,
+            "prompt_cache_hit_tokens": 80,
+            "prompt_tokens_details": { "cached_tokens": 0 }
+        }))
+        .unwrap();
+        assert_eq!(usage.cache_read_tokens(), 80);
+
+        let usage: ApiTokenUsage = serde_json::from_value(json!({
+            "prompt_tokens": 100,
+            "completion_tokens": 10,
+            "prompt_tokens_details": { "cached_tokens": 72 }
+        }))
+        .unwrap();
+        assert_eq!(usage.cache_read_tokens(), 72);
+    }
+
+    #[test]
+    fn responses_usage_reads_deepseek_cache_hit_field() {
+        let parsed = responses_usage(&json!({
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 8,
+                "prompt_cache_hit_tokens": 90
+            }
+        }))
+        .expect("usage");
+        assert_eq!(parsed, (100, 8, Some(90), None));
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::{deepseek_http_status, is_retryable_stream_error};
+    use crate::core::ai::provider::ProviderError;
+
+    #[test]
+    fn retries_transient_deepseek_http_errors_but_not_client_errors() {
+        assert!(is_retryable_stream_error(&ProviderError::message(
+            r#"DeepSeek API 500 Internal Server Error: {"type":"error"}"#
+        )));
+        assert!(is_retryable_stream_error(&ProviderError::message(
+            "DeepSeek API 429 Too Many Requests: rate limited"
+        )));
+        assert!(!is_retryable_stream_error(&ProviderError::message(
+            r#"DeepSeek API 400 Bad Request: {"error":{"message":"Unsupported model mimo-v2-omni"}}"#
+        )));
+        assert!(!is_retryable_stream_error(&ProviderError::message(
+            "DeepSeek API 401 Unauthorized: bad key"
+        )));
+        assert_eq!(
+            deepseek_http_status("DeepSeek API 500 Internal Server Error: x"),
+            Some(500)
+        );
     }
 }

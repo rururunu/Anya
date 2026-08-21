@@ -8,6 +8,7 @@ use super::error::ToolError;
 use super::Tool;
 
 fn normalize_tool_name(name: &str) -> &str {
+    let name = name.trim();
     match name {
         // File edits
         "write_to_file" | "create_file" | "Write" | "write" => "write_file",
@@ -21,6 +22,8 @@ fn normalize_tool_name(name: &str) -> &str {
         // Search
         "Grep" | "grep" | "rg" => "search_files",
         "Glob" | "glob" => "find_files",
+        "WebSearch" | "websearch" | "google_search" | "search_web" | "bing_search" => "web_search",
+        "WebFetch" | "fetch_page" | "read_url" | "browse_url" => "browser_read",
         // Task / ask aliases
         "todo_write" | "TodoWrite" | "todoWrite" | "update_task_list" => "update_tasks",
         "AskQuestion" | "ask_question" | "AskUser" => "ask_user",
@@ -124,10 +127,13 @@ impl ToolRegistry {
         args: &Value,
     ) -> Result<Arc<dyn Tool>, ToolError> {
         let name = normalize_tool_name(name);
+        if name.is_empty() {
+            return Err(ToolError::new(self.unknown_tool_message("")));
+        }
         crate::core::rules::RuleEngine::authorize_tool(name, args)?;
-        let tool = self
-            .get(name)
-            .ok_or_else(|| ToolError::new(format!("unknown tool: {name}")))?;
+        let tool = self.get(name).ok_or_else(|| {
+            ToolError::new(self.unknown_tool_message(name))
+        })?;
         crate::core::tools::plan_mode::shared_plan_mode_store().authorize(
             ctx.root_session_id(),
             tool.name(),
@@ -154,6 +160,19 @@ impl ToolRegistry {
             )?;
         }
         Ok(tool)
+    }
+
+    fn unknown_tool_message(&self, requested: &str) -> String {
+        format_unknown_tool_error(requested, &self.schema_tool_names())
+    }
+
+    /// Names currently exposed in model-facing schemas (unavailable tools omitted).
+    fn schema_tool_names(&self) -> Vec<String> {
+        self.schemas()
+            .iter()
+            .filter_map(schema_function_name)
+            .map(str::to_string)
+            .collect()
     }
 
     pub fn names(&self) -> Vec<String> {
@@ -234,6 +253,38 @@ impl ToolRegistry {
 impl Default for ToolRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn schema_function_name(schema: &Value) -> Option<&str> {
+    schema
+        .pointer("/function/name")
+        .and_then(Value::as_str)
+        .or_else(|| schema.get("name").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+}
+
+fn format_unknown_tool_error(requested: &str, available: &[String]) -> String {
+    let catalog = if available.is_empty() {
+        "Available tools this turn: (none).".to_string()
+    } else {
+        format!(
+            "Available tools this turn: {}.",
+            available
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let requested = requested.trim();
+    if requested.is_empty() {
+        format!("malformed tool call: empty tool name. Do not invent names. {catalog}")
+    } else {
+        format!(
+            "unknown tool: {requested}. That name is not in this turn's schema — do not invent tools. {catalog}"
+        )
     }
 }
 
@@ -325,5 +376,58 @@ mod tests {
         assert!(names.contains(&"ask_user".to_string()));
         assert!(names.contains(&"update_tasks".to_string()));
         assert!(!names.contains(&"write_file".to_string()));
+    }
+
+    struct HiddenTool;
+
+    impl Tool for HiddenTool {
+        fn name(&self) -> &str {
+            "hidden_tool"
+        }
+        fn description(&self) -> &str {
+            "not in schema"
+        }
+        fn parameters_schema(&self) -> Value {
+            serde_json::json!({ "type": "object" })
+        }
+        fn available(&self) -> bool {
+            false
+        }
+        fn execute(&self, _ctx: &ToolContext, _args: Value) -> Result<String, ToolError> {
+            Ok(String::new())
+        }
+    }
+
+    #[test]
+    fn unknown_tool_error_lists_schema_names() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(StubTool {
+            name: "browser_read",
+            read_only: true,
+        }));
+        registry.register(Arc::new(StubTool {
+            name: "web_search",
+            read_only: true,
+        }));
+        registry.register(Arc::new(HiddenTool));
+
+        let message = registry.unknown_tool_message("puppeteer_navigate");
+        assert!(message.contains("unknown tool: puppeteer_navigate"), "{message}");
+        assert!(message.contains("`browser_read`"), "{message}");
+        assert!(message.contains("`web_search`"), "{message}");
+        assert!(!message.contains("hidden_tool"), "{message}");
+        assert!(message.contains("Available tools this turn"), "{message}");
+    }
+
+    #[test]
+    fn empty_tool_name_error_lists_schema_names() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(StubTool {
+            name: "ask_user",
+            read_only: false,
+        }));
+        let message = registry.unknown_tool_message("");
+        assert!(message.contains("empty tool name"), "{message}");
+        assert!(message.contains("`ask_user`"), "{message}");
     }
 }

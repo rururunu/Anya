@@ -218,19 +218,18 @@ impl ChatService {
         }
         let known_workspaces = self.workspace_manager.list();
         let is_new_session = self.conversation.messages(&session_id).is_empty();
-        if !using_inbox && is_new_session && !quick_ask {
-            if let Some(resolved) = context.workspace.as_ref() {
-                let workspace_id = known_workspaces
-                    .iter()
-                    .find(|workspace| workspace.root == PathBuf::from(&resolved.root))
-                    .map(|workspace| workspace.id.clone())
-                    .unwrap_or_else(|| resolved.root.clone());
-                self.conversation.bind_workspace(&session_id, &workspace_id);
-            }
-        } else if !using_inbox && !quick_ask {
-            // Keep the session sticky even when later turns omit workspace_id.
+        if !using_inbox && !quick_ask {
             if let Some(workspace) = workspace.as_ref() {
                 self.conversation.bind_workspace(&session_id, &workspace.id);
+            } else if is_new_session {
+                if let Some(resolved) = context.workspace.as_ref() {
+                    let workspace_id = known_workspaces
+                        .iter()
+                        .find(|workspace| workspace.root == PathBuf::from(&resolved.root))
+                        .map(|workspace| workspace.id.clone())
+                        .unwrap_or_else(|| resolved.root.clone());
+                    self.conversation.bind_workspace(&session_id, &workspace_id);
+                }
             }
         }
         let user_message = create_message(&session_id, Role::User, content, MessageStatus::Done);
@@ -376,7 +375,12 @@ impl ChatService {
         let collaboration_models = settings
             .as_ref()
             .filter(|settings| settings.multi_model_collaboration)
-            .map(|settings| settings.collaboration_models.clone())
+            .map(|settings| {
+                crate::core::ai::registry::filter_servable_collaboration_models(
+                    settings,
+                    &settings.collaboration_models,
+                )
+            })
             .unwrap_or_default();
         let minimal_coding = settings
             .as_ref()
@@ -638,6 +642,14 @@ impl ChatService {
         self.conversation.list_sessions()
     }
 
+    pub fn list_archived_sessions(&self) -> Vec<crate::models::chat::ChatSessionSummary> {
+        self.conversation.list_archived_sessions()
+    }
+
+    pub fn set_session_archived(&self, session_id: &str, archived: bool) {
+        self.conversation.set_session_archived(session_id, archived);
+    }
+
     pub fn context_usage(
         &self,
         app: &tauri::AppHandle,
@@ -683,6 +695,9 @@ impl ChatService {
             usage_ratio: measure.usage_ratio,
             estimated_tokens: measure.estimated_tokens,
             context_window_tokens: context_window,
+            system_prompt_tokens: measure.system_prompt_tokens,
+            tools_tokens: measure.tools_tokens,
+            message_tokens: measure.message_tokens,
         })
     }
 

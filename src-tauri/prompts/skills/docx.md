@@ -1,6 +1,6 @@
 ---
 name: docx
-description: Create, read, edit Word .docx/.dotx with docx-js, OOXML unzip/edit, tracked changes, comments, validation. Use for professional Word deliverables, editing existing docs, redlining. For 技术标/投标技术方案 prefer generate_bid_tech; for md→docx bulk conversion prefer pandoc.
+description: Create, read, edit Word .docx/.dotx with docx-js, OOXML unzip/edit, tracked changes, comments, validation. Use for professional Word deliverables, editing existing docs, redlining. For md→docx bulk conversion prefer pandoc.
 ---
 
 # DOCX creation, editing, and analysis
@@ -17,7 +17,6 @@ Use `docx` when the task touches the **existing binary structure** of a Word fil
 |---|---|
 | Markdown → Word/PDF/HTML format conversion | `pandoc` |
 | Simple new doc, script-generated, no special layout | `generate_word` |
-| 技术标 / 评分表 / 表驱动投标 | `generate_bid_tech` |
 
 <example>
 User: "把这份季度报告转成 Word，保留标题层级。"

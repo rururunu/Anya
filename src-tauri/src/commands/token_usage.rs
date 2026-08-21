@@ -84,6 +84,12 @@ fn add_usage(target: &mut TokenUsage, row: &sqlx::sqlite::SqliteRow) {
     target.tool_result_tokens += row.get::<i64, _>("tool_result_tokens").max(0) as usize;
     target.memory_tokens += row.get::<i64, _>("memory_tokens").max(0) as usize;
     target.total_tokens = target.input_tokens.saturating_add(target.output_tokens);
+    if let Ok(cache_read) = row.try_get::<i64, _>("cache_read_tokens") {
+        if cache_read > 0 {
+            target.cache_read_tokens =
+                Some(target.cache_read_tokens.unwrap_or(0).saturating_add(cache_read as usize));
+        }
+    }
     let accuracy = match row.get::<String, _>("accuracy").as_str() {
         "exact" => TokenAccuracy::Exact,
         "mixed" => TokenAccuracy::Mixed,

@@ -63,6 +63,7 @@ type CategoryKey =
   | "plugins"
   | "workspace"
   | "history"
+  | "archive"
   | "about"
   | "provider"
   | "rag";
@@ -94,6 +95,7 @@ type HistoryKey =
   | "deleteGroup"
   | "messages"
   | "open"
+  | "archiveLabel"
   | "publicGroup"
   | "yesterday"
   | "cancel"
@@ -141,6 +143,29 @@ type RagKey =
   | "fetchFail"
   | "incomplete";
 
+type ArchiveKey =
+  | "title"
+  | "description"
+  | "conversations"
+  | "workspaces"
+  | "emptyConversations"
+  | "emptyWorkspaces"
+  | "noMatchingConversations"
+  | "noMatchingWorkspaces"
+  | "search"
+  | "searchSubmit"
+  | "searchClear"
+  | "selectAll"
+  | "restoreSelected"
+  | "deleteSelected"
+  | "restore"
+  | "delete"
+  | "deleteConversation"
+  | "deleteWorkspace"
+  | "deleteSelectedConversations"
+  | "deleteSelectedWorkspaces"
+  | "deleteSelectedMixed";
+
 export type SettingsI18nKey =
   | "settings.title"
   | "settings.minimize"
@@ -185,6 +210,8 @@ export type SettingsI18nKey =
   | "settings.provider.addModel"
   | "settings.provider.modelsEmpty"
   | "settings.provider.removeModel"
+  | "settings.provider.enableModel"
+  | "settings.provider.disableModel"
   | "settings.provider.configured"
   | "settings.provider.notConfigured"
   | "settings.provider.presets"
@@ -211,6 +238,7 @@ export type SettingsI18nKey =
   | `settings.fields.${SettingHelpFieldId}.help`
   | `settings.history.${HistoryKey}`
   | `settings.historyConfirm.${HistoryConfirmKey}`
+  | `settings.archive.${ArchiveKey}`
   | `settings.rag.${RagKey}`;
 
 export const settingsEn: Record<SettingsI18nKey, string> = {
@@ -263,6 +291,8 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.addModel": "Add",
   "settings.provider.modelsEmpty": "No models yet.",
   "settings.provider.removeModel": "Remove model",
+  "settings.provider.enableModel": "Enable model",
+  "settings.provider.disableModel": "Disable model",
   "settings.provider.configured": "Configured",
   "settings.provider.notConfigured": "Not configured",
   "settings.provider.presets": "Add provider",
@@ -294,6 +324,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.categories.plugins": "Pin tools",
   "settings.categories.workspace": "Workspace",
   "settings.categories.history": "History",
+  "settings.categories.archive": "Archive",
   "settings.categories.about": "About",
   "settings.categories.provider": "Provider",
   "settings.categories.rag": "RAG Search",
@@ -406,7 +437,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Raise the compaction / turn budget ceiling to 1,000,000 tokens. The effective window is still capped by the selected model's native limit (unknown models stay at 256k).",
   "settings.fields.reasoningEffort.title": "Reasoning Effort",
   "settings.fields.reasoningEffort.description":
-    "Thinking depth for DeepSeek and Responses models (Grok). Disabled turns DeepSeek thinking off; Grok maps it to high.",
+    "Preferred thinking depth. The input bar shows each model's official levels and names (DeepSeek: off/low/high/max; GPT: none/minimal/low/…; Grok: low/medium/high/xhigh). Unsupported values are mapped.",
   "settings.fields.reasoningLanguage.title": "Reasoning Language",
   "settings.fields.reasoningLanguage.description":
     "Preferences for visible reasoning and final answer language (transient injection).",
@@ -488,6 +519,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.history.deleteGroup": "Delete all chats in this group",
   "settings.history.messages": "{count} messages",
   "settings.history.open": "Open",
+  "settings.history.archiveLabel": "Archive",
   "settings.history.publicGroup": "Public",
   "settings.history.yesterday": "Yesterday",
   "settings.history.cancel": "Cancel",
@@ -503,6 +535,34 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.historyConfirm.clearTitle": "Clear history",
   "settings.historyConfirm.clearDesc": "Clear all chat history? This cannot be undone.",
   "settings.historyConfirm.deleteAllLabel": "Delete all",
+
+  "settings.archive.title": "Archive",
+  "settings.archive.description":
+    "Archived conversations and workspaces stay on this device until you restore or delete them.",
+  "settings.archive.conversations": "Conversations",
+  "settings.archive.workspaces": "Workspaces",
+  "settings.archive.emptyConversations": "No archived conversations.",
+  "settings.archive.emptyWorkspaces": "No archived workspaces.",
+  "settings.archive.noMatchingConversations": "No matching archived conversations.",
+  "settings.archive.noMatchingWorkspaces": "No matching archived workspaces.",
+  "settings.archive.search": "Search archived conversations and workspaces",
+  "settings.archive.searchSubmit": "Search",
+  "settings.archive.searchClear": "Clear",
+  "settings.archive.selectAll": "Select all",
+  "settings.archive.restoreSelected": "Restore selected ({count})",
+  "settings.archive.deleteSelected": "Delete selected ({count})",
+  "settings.archive.restore": "Restore",
+  "settings.archive.delete": "Delete",
+  "settings.archive.deleteConversation":
+    "Permanently delete this conversation? This cannot be undone.",
+  "settings.archive.deleteWorkspace":
+    'Permanently delete workspace "{name}"? Project files will not be deleted.',
+  "settings.archive.deleteSelectedConversations":
+    "Permanently delete {count} archived conversations? This cannot be undone.",
+  "settings.archive.deleteSelectedWorkspaces":
+    "Permanently delete {count} archived workspaces? Project files will not be deleted.",
+  "settings.archive.deleteSelectedMixed":
+    "Permanently delete {sessionCount} conversations and {workspaceCount} workspaces? Project files will not be deleted.",
 };
 
 export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey, string>>> = {
@@ -531,6 +591,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.plugins": "贴图工具",
     "settings.categories.workspace": "工作区",
     "settings.categories.history": "历史",
+    "settings.categories.archive": "归档",
     "settings.categories.about": "关于",
     "settings.categories.provider": "提供商",
     "settings.categories.rag": "RAG 检索",
@@ -603,6 +664,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.addModel": "添加",
     "settings.provider.modelsEmpty": "暂无模型",
     "settings.provider.removeModel": "移除模型",
+    "settings.provider.enableModel": "启用模型",
+    "settings.provider.disableModel": "禁用模型",
     "settings.provider.configured": "已配置",
     "settings.provider.notConfigured": "未配置",
     "settings.provider.presets": "添加提供商",
@@ -688,7 +751,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "将压缩与单轮预算上限提到约 100 万 token。实际窗口仍受当前模型原生上限约束（未知模型按 256k）。",
     "settings.fields.reasoningEffort.title": "思考深度",
     "settings.fields.reasoningEffort.description":
-      "DeepSeek 与 Responses 模型（如 Grok）的思考深度。关闭会关掉 DeepSeek 思考；Grok 无法关闭，会按高强度发送。",
+      "默认思考强度。输入栏会按当前模型显示官方档位和名称（DeepSeek：关闭/低/高/最高；GPT：none/minimal/low…；Grok：low/medium/high/xhigh）。不支持的值会自动映射。",
     "settings.fields.reasoningLanguage.title": "推理语言",
     "settings.fields.reasoningLanguage.description": "推理文本与回答语言偏好",
     "settings.fields.showReasoning.title": "显示思考过程",
@@ -764,6 +827,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.history.deleteGroup": "删除该分组的所有对话",
     "settings.history.messages": "{count} 条消息",
     "settings.history.open": "打开",
+    "settings.history.archiveLabel": "归档",
     "settings.history.publicGroup": "公共记录",
     "settings.history.yesterday": "昨天",
     "settings.history.cancel": "取消",
@@ -779,6 +843,31 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.historyConfirm.clearTitle": "清空历史记录",
     "settings.historyConfirm.clearDesc": "确定要清空所有历史对话吗？此操作不可逆！",
     "settings.historyConfirm.deleteAllLabel": "全部删除",
+
+    "settings.archive.title": "归档",
+    "settings.archive.description": "归档的对话和工作区会留在本机，直到你恢复或永久删除。",
+    "settings.archive.conversations": "对话",
+    "settings.archive.workspaces": "工作区",
+    "settings.archive.emptyConversations": "暂无归档对话。",
+    "settings.archive.emptyWorkspaces": "暂无归档工作区。",
+    "settings.archive.noMatchingConversations": "没有匹配的归档对话。",
+    "settings.archive.noMatchingWorkspaces": "没有匹配的归档工作区。",
+    "settings.archive.search": "搜索归档的对话和工作区",
+    "settings.archive.searchSubmit": "搜索",
+    "settings.archive.searchClear": "清除",
+    "settings.archive.selectAll": "全选",
+    "settings.archive.restoreSelected": "恢复选中 ({count})",
+    "settings.archive.deleteSelected": "删除选中 ({count})",
+    "settings.archive.restore": "恢复",
+    "settings.archive.delete": "删除",
+    "settings.archive.deleteConversation": "永久删除这个对话？此操作无法撤销。",
+    "settings.archive.deleteWorkspace": "永久删除工作区“{name}”？项目文件不会被删除。",
+    "settings.archive.deleteSelectedConversations":
+      "永久删除选中的 {count} 个对话？此操作无法撤销。",
+    "settings.archive.deleteSelectedWorkspaces":
+      "永久删除选中的 {count} 个工作区？项目文件不会被删除。",
+    "settings.archive.deleteSelectedMixed":
+      "永久删除 {sessionCount} 个对话和 {workspaceCount} 个工作区？项目文件不会被删除。",
   },
   "ja-JP": {
     "settings.title": "設定",
@@ -797,6 +886,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.skills": "技能",
     "settings.categories.workspace": "ワークスペース",
     "settings.categories.history": "履歴",
+    "settings.categories.archive": "アーカイブ",
     "settings.categories.about": "情報",
     "settings.categories.provider": "プロバイダー",
     "settings.provider.deepseek": "DeepSeek プロバイダー",
@@ -812,6 +902,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.addModel": "追加",
     "settings.provider.modelsEmpty": "モデルなし",
     "settings.provider.removeModel": "モデルを削除",
+    "settings.provider.enableModel": "モデルを有効化",
+    "settings.provider.disableModel": "モデルを無効化",
     "settings.provider.configured": "設定済み",
     "settings.provider.notConfigured": "未設定",
     "settings.provider.presets": "クイック追加",
@@ -864,7 +956,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.description":
       "画像などのビジョン入力を含む場合に自動的に使用されるモデルです（例: gpt-4o）。",
     "settings.fields.reasoningEffort.title": "推論の強度",
-    "settings.fields.reasoningEffort.description": "DeepSeek の思考の深さを調整します。",
+    "settings.fields.reasoningEffort.description":
+      "優先する思考の深さ。入力バーはモデル公式の段階名を表示し、非対応値は自動で割り当てます。",
     "settings.fields.reasoningLanguage.title": "回答言語",
     "settings.fields.reasoningLanguage.description": "推論テキストと最終回答の言語設定です。",
     "settings.fields.passToolReasoning.title": "ツール回合の推論を返す",
@@ -950,6 +1043,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.skills": "Скиллы",
     "settings.categories.workspace": "Рабочая область",
     "settings.categories.history": "История",
+    "settings.categories.archive": "Архив",
     "settings.categories.about": "О программе",
     "settings.categories.provider": "Провайдер",
     "settings.provider.deepseek": "Провайдер DeepSeek",
@@ -965,6 +1059,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.addModel": "Добавить",
     "settings.provider.modelsEmpty": "Моделей пока нет",
     "settings.provider.removeModel": "Удалить модель",
+    "settings.provider.enableModel": "Включить модель",
+    "settings.provider.disableModel": "Отключить модель",
     "settings.provider.configured": "Настроен",
     "settings.provider.notConfigured": "Не настроен",
     "settings.provider.presets": "Быстрое добавление",
@@ -1018,7 +1114,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.description":
       "Модель, автоматически используемая при обработке изображений или мультимедиа (например, gpt-4o).",
     "settings.fields.reasoningEffort.title": "Глубина рассуждений",
-    "settings.fields.reasoningEffort.description": "Управляет глубиной рассуждений DeepSeek.",
+    "settings.fields.reasoningEffort.description":
+      "Предпочтительная глубина рассуждений. В чате показываются официальные уровни текущей модели.",
     "settings.fields.reasoningLanguage.title": "Язык ответа",
     "settings.fields.reasoningLanguage.description": "Язык видимых рассуждений и итогового ответа.",
     "settings.fields.passToolReasoning.title": "Возврат reasoning в tool-ходах",
@@ -1106,6 +1203,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.skills": "Skills",
     "settings.categories.workspace": "Arbeitsbereich",
     "settings.categories.history": "Verlauf",
+    "settings.categories.archive": "Archiv",
     "settings.categories.about": "Info",
     "settings.categories.provider": "Anbieter",
     "settings.provider.deepseek": "DeepSeek-Anbieter",
@@ -1121,6 +1219,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.addModel": "Hinzufügen",
     "settings.provider.modelsEmpty": "Noch keine Modelle",
     "settings.provider.removeModel": "Modell entfernen",
+    "settings.provider.enableModel": "Modell aktivieren",
+    "settings.provider.disableModel": "Modell deaktivieren",
     "settings.provider.configured": "Konfiguriert",
     "settings.provider.notConfigured": "Nicht konfiguriert",
     "settings.provider.presets": "Schnell hinzufügen",
@@ -1174,7 +1274,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.description":
       "Das Modell, das automatisch bei Bild- oder multimodalen Eingaben verwendet wird (z. B. gpt-4o).",
     "settings.fields.reasoningEffort.title": "Denkintensität",
-    "settings.fields.reasoningEffort.description": "Steuert die Denktiefe von DeepSeek.",
+    "settings.fields.reasoningEffort.description":
+      "Bevorzugte Denktiefe. Die Eingabeleiste zeigt die offiziellen Stufen des aktuellen Modells.",
     "settings.fields.reasoningLanguage.title": "Antwortsprache",
     "settings.fields.reasoningLanguage.description":
       "Sprache für sichtbare Gedankengänge und endgültige Antworten.",
@@ -1264,6 +1365,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.skills": "Skills",
     "settings.categories.workspace": "Espace de travail",
     "settings.categories.history": "Historique",
+    "settings.categories.archive": "Archive",
     "settings.categories.about": "À propos",
     "settings.categories.provider": "Fournisseur",
     "settings.provider.deepseek": "Fournisseur DeepSeek",
@@ -1279,6 +1381,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.addModel": "Ajouter",
     "settings.provider.modelsEmpty": "Aucun modèle",
     "settings.provider.removeModel": "Retirer le modèle",
+    "settings.provider.enableModel": "Activer le modèle",
+    "settings.provider.disableModel": "Désactiver le modèle",
     "settings.provider.configured": "Configuré",
     "settings.provider.notConfigured": "Non configuré",
     "settings.provider.presets": "Ajout rapide",
@@ -1335,7 +1439,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "Le modèle utilisé automatiquement pour les entrées visuelles ou multimodales (ex. gpt-4o).",
     "settings.fields.reasoningEffort.title": "Intensité du raisonnement",
     "settings.fields.reasoningEffort.description":
-      "Contrôle la profondeur de réflexion de DeepSeek.",
+      "Profondeur de raisonnement préférée. La barre d'entrée affiche les niveaux officiels du modèle actuel.",
     "settings.fields.reasoningLanguage.title": "Langue de réponse",
     "settings.fields.reasoningLanguage.description":
       "Langue du raisonnement visible et de la réponse finale.",
@@ -1425,6 +1529,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.skills": "스킬",
     "settings.categories.workspace": "작업 영역",
     "settings.categories.history": "기록",
+    "settings.categories.archive": "보관함",
     "settings.categories.about": "정보",
     "settings.categories.provider": "제공자",
     "settings.provider.deepseek": "DeepSeek 제공자",
@@ -1440,6 +1545,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.addModel": "추가",
     "settings.provider.modelsEmpty": "모델 없음",
     "settings.provider.removeModel": "모델 제거",
+    "settings.provider.enableModel": "모델 활성화",
+    "settings.provider.disableModel": "모델 비활성화",
     "settings.provider.configured": "구성됨",
     "settings.provider.notConfigured": "미구성",
     "settings.provider.presets": "빠른 추가",
@@ -1492,7 +1599,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.description":
       "이미지 등 비주얼 입력이 포함될 때 자동으로 사용되는 모델입니다 (예: gpt-4o).",
     "settings.fields.reasoningEffort.title": "추론 강도",
-    "settings.fields.reasoningEffort.description": "DeepSeek의 사고 깊이를 조절합니다.",
+    "settings.fields.reasoningEffort.description":
+      "선호하는 사고 깊이입니다. 입력줄은 현재 모델의 공식 단계를 보여 주고, 미지원 값은 자동으로 맞춥니다.",
     "settings.fields.reasoningLanguage.title": "응답 언어",
     "settings.fields.reasoningLanguage.description": "표시되는 추론과 최종 응답의 언어 설정입니다.",
     "settings.fields.passToolReasoning.title": "도구 턴 추론 회수",

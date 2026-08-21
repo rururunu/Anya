@@ -33,13 +33,32 @@ impl Tool for BrowserTool {
         crate::runtime::search::shared_search_runtime().is_available()
     }
     fn execute(&self, _ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
-        let document = self
-            .provider
-            .read(args["url"].as_str().unwrap_or_default())?;
-        serde_json::to_string_pretty(&json!({
-            "provider": self.provider.id(),
-            "document": document,
-        }))
-        .map_err(|error| ToolError::new(error.to_string()))
+        let provider = Arc::clone(&self.provider);
+        let url = ["url", "uri", "href", "link"]
+            .iter()
+            .find_map(|key| {
+                args.get(*key)
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
+            .unwrap_or("")
+            .to_string();
+        if url.is_empty() {
+            return Err(ToolError::new(
+                "url is required (parameter `url`; aliases: uri, href, link)",
+            ));
+        }
+        crate::runtime::isolated::run_isolated_or(
+            move || {
+                let document = provider.read(&url)?;
+                serde_json::to_string_pretty(&json!({
+                    "provider": provider.id(),
+                    "document": document,
+                }))
+                .map_err(|error| ToolError::new(error.to_string()))
+            },
+            |panic| Err(ToolError::new(format!("browser_read panicked: {panic}"))),
+        )
     }
 }

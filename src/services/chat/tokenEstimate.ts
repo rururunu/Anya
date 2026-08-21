@@ -51,3 +51,12 @@ export function formatTokenCount(tokens: number, _language?: string): string {
   }
   return `${compactNumber(n / 1_000_000)}M`;
 }
+
+/** DeepSeek prompt-cache hit rate: cacheRead / (input + cacheRead). */
+export function promptCacheHitPercent(inputTokens: number, cacheReadTokens: number): number | null {
+  const input = Math.max(0, Number.isFinite(inputTokens) ? inputTokens : 0);
+  const cached = Math.max(0, Number.isFinite(cacheReadTokens) ? cacheReadTokens : 0);
+  const prompt = input + cached;
+  if (prompt <= 0) return null;
+  return Math.round((cached / prompt) * 100);
+}

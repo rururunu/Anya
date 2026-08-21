@@ -24,6 +24,7 @@ import type {
   ChatMessage,
   ContextUsageSnapshot,
   FileOfferEvent,
+  SessionCacheUsage,
   SharedFileOffer,
   SharedUrlOffer,
   TaskItem,
@@ -286,6 +287,8 @@ export const useChatStore = defineStore("chat", {
     overlayDraftSessionId: "" as string,
     contextNotices: {} as Record<string, string | undefined>,
     contextUsage: {} as Record<string, ContextUsageSnapshot | undefined>,
+    /** Last DeepSeek prompt-cache snapshot per conversation. */
+    sessionCacheUsage: {} as Record<string, SessionCacheUsage | undefined>,
     /** Live in-session task list from update_tasks. */
     sessionTasks: {} as Record<string, TaskItem[]>,
     /** Session plan-mode gate (writer tools blocked until approve). */
@@ -607,6 +610,15 @@ export const useChatStore = defineStore("chat", {
       }
       this.contextUsage = {
         ...this.contextUsage,
+        [sessionId]: usage,
+      };
+    },
+    setSessionCacheUsage(sessionId: string, usage: SessionCacheUsage | undefined) {
+      if (!sessionId) {
+        return;
+      }
+      this.sessionCacheUsage = {
+        ...this.sessionCacheUsage,
         [sessionId]: usage,
       };
     },
@@ -1097,11 +1109,15 @@ export const useChatStore = defineStore("chat", {
       const next = [...messages];
       const current = next[index];
       if (kind.startsWith("stream_retry")) {
+        const keptActivities = current.toolActivities?.filter(
+          (activity) => activity.status !== "running",
+        );
         next[index] = {
           ...current,
           content: "",
           reasoning: undefined,
           workTimeline: undefined,
+          toolActivities: keptActivities?.length ? keptActivities : undefined,
           activityStatus: kind,
           status: "streaming",
         };
@@ -1360,21 +1376,25 @@ export const useChatStore = defineStore("chat", {
         activities[existingIndex] = { ...activities[existingIndex], ...activity };
       }
 
+      const alreadyOnTimeline = current.workTimeline?.some(
+        (item) => item.type === "tool" && item.toolActivityId === activity.id,
+      );
       const next = [...messages];
       next[index] = {
         ...current,
         toolActivities: activities,
         estimatedTokens: undefined,
-        workTimeline: isNewActivity
-          ? [
-              ...(current.workTimeline ?? []),
-              {
-                type: "tool" as const,
-                id: `tool-${activity.id}`,
-                toolActivityId: activity.id,
-              },
-            ]
-          : current.workTimeline,
+        workTimeline:
+          isNewActivity && !alreadyOnTimeline
+            ? [
+                ...(current.workTimeline ?? []),
+                {
+                  type: "tool" as const,
+                  id: `tool-${activity.id}`,
+                  toolActivityId: activity.id,
+                },
+              ]
+            : current.workTimeline,
         status:
           current.status === "pending" || current.status === "streaming"
             ? "streaming"
@@ -1615,6 +1635,9 @@ export const useChatStore = defineStore("chat", {
             ? mergeActiveHistory(messages, this.sessions[sessionId] ?? [])
             : settleInterruptedMessages(messages),
         );
+        if (!this.sending[sessionId] || !this.sessionCacheUsage[sessionId]) {
+          this.setSessionCacheUsage(sessionId, response.lastCacheUsage);
+        }
         if (!this.sending[sessionId]) {
           this.clearSending(sessionId);
         }
@@ -1738,6 +1761,9 @@ export const useChatStore = defineStore("chat", {
         const composeForSend = this.ensureCompose(sessionId);
         const workspaceId = options?.workspaceId ?? composeForSend.draftWorkspaceId ?? undefined;
         const quickAsk = options?.quickAsk ?? !workspaceId;
+        this.setComposeDraft(sessionId, composeForSend.draft ?? "", {
+          workspaceId: quickAsk ? null : (workspaceId ?? null),
+        });
         const response = await chat({
           message: trimmed,
           sessionId,

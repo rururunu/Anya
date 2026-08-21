@@ -59,7 +59,7 @@
 .settings-card {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 10px;
+  border-radius: var(--peek-radius-lg, 12px);
   background: var(--peek-list-bg);
 }
 
@@ -92,7 +92,7 @@
   max-width: 100%;
   margin: 0;
   color: var(--peek-text);
-  font-size: 13px;
+  font-size: var(--peek-font-md, 13px);
   font-weight: 600;
   line-height: 1.35;
 }
@@ -100,7 +100,7 @@
 .settings-row-copy p {
   margin: 3px 0 0;
   color: var(--peek-muted);
-  font-size: 11.5px;
+  font-size: var(--peek-font-xs, 11px);
   line-height: 1.45;
 }
 
@@ -149,20 +149,20 @@
   width: 100%;
   padding: 2px;
   border: 1px solid var(--peek-border);
-  border-radius: 8px;
+  border-radius: var(--peek-radius-md, 8px);
   background: color-mix(in srgb, var(--peek-text) 4%, var(--peek-surface));
 }
 
 .settings-seg button {
   flex: 1;
-  height: 26px;
+  height: var(--peek-control-icon, 28px);
   margin: 0;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--peek-radius-sm, 6px);
   background: transparent;
   color: var(--peek-muted);
-  font-size: 11px;
+  font-size: var(--peek-font-sm, 12px);
   cursor: pointer;
 }
 
@@ -185,18 +185,18 @@
   gap: 2px;
   margin: 0 0 14px;
   padding: 3px;
-  border-radius: 8px;
+  border-radius: var(--peek-radius-md, 8px);
   background: color-mix(in srgb, var(--peek-text) 5%, transparent);
 }
 
 .settings-tab {
-  height: 26px;
+  height: var(--peek-control-icon, 28px);
   padding: 0 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--peek-radius-sm, 6px);
   background: transparent;
   color: var(--peek-muted);
-  font-size: 12px;
+  font-size: var(--peek-font-sm, 12px);
   cursor: pointer;
 }
 
@@ -226,25 +226,25 @@
 @container settings-page (max-width: 620px) {
   .settings-page-header {
     flex-direction: column;
-    align-items: center;
-    text-align: center;
+    align-items: stretch;
+    text-align: left;
   }
 
   .settings-page-header-actions {
-    justify-content: center;
+    justify-content: flex-end;
   }
 
   .settings-row,
   .settings-row.is-wide {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
-    justify-items: center;
-    text-align: center;
+    justify-items: stretch;
+    text-align: left;
   }
 
   .settings-row-control,
   .settings-row-control.is-stack {
-    justify-content: center;
-    align-items: center;
+    justify-content: flex-start;
+    align-items: stretch;
   }
 }

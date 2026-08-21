@@ -26,8 +26,6 @@ const SKILL_TOOL_IDS = new Set([
   "security_review",
   "review_security",
   "generate_word",
-  "generate_bid_tech",
-  "review_bid_tech",
   "docx",
   "pandoc",
 ]);

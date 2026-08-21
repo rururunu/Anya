@@ -55,6 +55,11 @@ pub(super) fn resolve_multimodal_endpoint(
         if !hint_matches && !custom_ids.contains(&mm_model) {
             continue;
         }
+        if crate::core::ai::registry::provider_model_is_disabled(custom, mm_model) {
+            return Err(ProviderError::message(format!(
+                "模型 “{mm_model}” 已在设置中被禁用，请先在供应商设置里重新启用后再使用。"
+            )));
+        }
         if !configured {
             if hint_matches {
                 return Err(ProviderError::message(

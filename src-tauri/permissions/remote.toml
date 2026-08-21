@@ -9,5 +9,7 @@ commands.allow = [
   "remote_list_devices",
   "remote_revoke_device",
   "remote_get_tunnel_prefs",
-  "remote_set_tunnel_prefs"
+  "remote_set_tunnel_prefs",
+  "remote_sync_session_compose",
+  "remote_get_session_compose"
 ]

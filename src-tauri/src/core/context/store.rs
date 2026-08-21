@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::core::context::manager::{ContextCaptureOutcome, ContextManager};
 use crate::core::context::models::ChatContext;
@@ -47,24 +47,37 @@ impl CaptureGate {
     }
 
     fn wait_until_ready(&self) {
-        let Ok(mut state) = self.state.lock() else {
-            return;
-        };
-        while state.active_captures > 0 {
-            match self.ready.wait(state) {
-                Ok(next) => state = next,
-                Err(_) => return,
-            }
-        }
+        self.wait_while(Duration::from_millis(1500), |state| state.active_captures > 0);
     }
 
     fn wait_for_completed_capture(&self) {
+        // Do not wait for a capture that never started (workbench `/context`).
+        // Only block while an overlay capture is currently in flight.
+        self.wait_until_ready();
+    }
+
+    fn wait_while(&self, timeout: Duration, mut pending: impl FnMut(&CaptureState) -> bool) {
         let Ok(mut state) = self.state.lock() else {
             return;
         };
-        while state.completed_captures == 0 || state.active_captures > 0 {
-            match self.ready.wait(state) {
-                Ok(next) => state = next,
+        let deadline = Instant::now() + timeout;
+        while pending(&state) {
+            let now = Instant::now();
+            if now >= deadline {
+                tracing::warn!("context capture wait timed out");
+                return;
+            }
+            match self
+                .ready
+                .wait_timeout(state, deadline.saturating_duration_since(now))
+            {
+                Ok((next, waited)) => {
+                    state = next;
+                    if waited.timed_out() && pending(&state) {
+                        tracing::warn!("context capture wait timed out");
+                        return;
+                    }
+                }
                 Err(_) => return,
             }
         }
@@ -168,7 +181,10 @@ pub fn latest_request_context() -> RequestContext {
     map_to_request_context(context.as_ref().map(|stored| &stored.context))
 }
 
-/// `/context` uses this stronger gate so it cannot return a startup-time empty snapshot.
+/// Wait for an in-flight overlay capture, then return.
+///
+/// Workbench `/context` must not block until overlay capture has ever run —
+/// that wait never completes and freezes the workbench IPC thread.
 pub fn wait_for_completed_capture() {
     CAPTURE_GATE
         .get_or_init(CaptureGate::default)
@@ -262,7 +278,7 @@ mod capture_timing_tests {
     }
 
     #[test]
-    fn overlay_context_is_unavailable_until_first_snapshot_is_published() {
+    fn overlay_context_waits_only_while_capture_is_in_flight() {
         let gate = Arc::new(CaptureGate::default());
         let snapshot = Arc::new(Mutex::new(None::<RequestContext>));
         gate.begin();
@@ -277,7 +293,7 @@ mod capture_timing_tests {
         std::thread::sleep(Duration::from_millis(20));
         assert!(
             !waiter.is_finished(),
-            "/context must be blocked before capture"
+            "/context must wait while overlay capture is running"
         );
 
         *snapshot.lock().expect("snapshot lock") = Some(RequestContext {
@@ -291,5 +307,16 @@ mod capture_timing_tests {
             .expect("context waiter")
             .expect("non-empty snapshot");
         assert_eq!(resolved.active_window.as_deref(), Some("Code.exe - Anya"));
+    }
+
+    #[test]
+    fn workbench_context_does_not_wait_for_overlay_capture() {
+        let gate = CaptureGate::default();
+        let started = Instant::now();
+        gate.wait_for_completed_capture();
+        assert!(
+            started.elapsed() < Duration::from_millis(200),
+            "/context in the workbench must not block until overlay capture has run"
+        );
     }
 }

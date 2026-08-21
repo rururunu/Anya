@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.11                                            |
+| **Version** | v0.2.12                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -65,7 +65,7 @@ flowchart LR
 | Anya Companion      | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`      |
 | IDE plugins         | Best-effort local context push (file, workspace, selection)                    |
 | Microsoft Office    | COM for document context and `word_*` / `excel_*` / `ppt_*` tools              |
-| Model providers     | Authenticated HTTPS; streaming where supported                                 |
+| Model providers     | Authenticated HTTPS SSE; Chat Completions, Responses, or Anthropic Messages    |
 | Embeddings          | Optional RAG: OpenAI-compatible `/embeddings` or local ONNX (`fastembed`)      |
 | MCP / search / mem0 | Optional; enabled explicitly in settings                                       |
 | Local disk          | Chat DB, settings, `.anya/index`, embedding cache, updater pubkey, checkpoints |
@@ -298,28 +298,28 @@ sequenceDiagram
 
 ### 5.1 Rust domain (`src-tauri/src/core`)
 
-| Module              | Path                                       | Role                                                                           |
-| ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------ |
-| Chat service        | `core/chat/service.rs`                     | Entry: persist messages, resolve context/model, start or soft-inject           |
-| Stream manager      | `core/chat/stream.rs`                      | Background task, cancel, stream aggregation, UI events, timeline text          |
-| Agent runner        | `core/chat/agent.rs`                       | **Primary** model↔tools loop                                                   |
-| Agent loop policies | `core/chat/agent_loop/`                    | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure |
-| Conversation store  | `core/chat/conversation_manager.rs`        | In-memory sessions + async SQLite; work timeline                               |
-| DB / journal        | `core/chat/db.rs`, `core/chat/journal.rs`  | Schema, save/load, crash recovery                                              |
-| Prompts             | `core/chat/prompts/`, `prompts/*.md`       | System / tools / policies / skills markdown                                    |
-| Agent runtime       | `core/agent/runtime/`                      | Run state machine, cancel, soft-inject queue, debug                            |
-| AI providers        | `core/ai/`                                 | DeepSeek, Gemini/Antigravity, multimodal helpers                               |
-| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs` | Optional retrieve-then-rerank; API or local ONNX                               |
-| Tools               | `core/tools/`                              | Registry, approval, plan gate, files, shell, skills, agent tools               |
-| Workspace index     | `core/tools/workspace_index.rs`            | Chunked keyword index under `.anya/index` (incremental JSONL)                  |
-| Plan mode           | `core/tools/plan_mode.rs`                  | Session write gate; Agent auto-enter heuristic for complex tasks               |
-| Context             | `core/context/`                            | IDE, selection, clipboard, environment, Office hints                           |
-| Checkpoint          | `core/checkpoint/`                         | Undo / review of applied file changes                                          |
-| Token               | `core/token/`                              | Accounting (incl. cache-read / reasoning tokens), usage persistence            |
-| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                     |
-| Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                               |
-| Event bus           | `core/event/`                              | Domain events                                                                  |
-| Remote gateway      | `core/remote/`                             | WS `/remote/v1`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`    |
+| Module              | Path                                       | Role                                                                                           |
+| ------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Chat service        | `core/chat/service.rs`                     | Entry: persist messages, resolve context/model, start or soft-inject                           |
+| Stream manager      | `core/chat/stream.rs`                      | Background task, cancel, stream aggregation, UI events, timeline text                          |
+| Agent runner        | `core/chat/agent.rs`                       | **Primary** model↔tools loop                                                                   |
+| Agent loop policies | `core/chat/agent_loop/`                    | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure                 |
+| Conversation store  | `core/chat/conversation_manager.rs`        | In-memory sessions + async SQLite; work timeline                                               |
+| DB / journal        | `core/chat/db.rs`, `core/chat/journal.rs`  | Schema, save/load, crash recovery                                                              |
+| Prompts             | `core/chat/prompts/`, `prompts/*.md`       | System / tools / policies / skills markdown                                                    |
+| Agent runtime       | `core/agent/runtime/`                      | Run state machine, cancel, soft-inject queue, debug                                            |
+| AI providers        | `core/ai/`                                 | Provider registry, model capabilities, protocol fallback, DeepSeek, Gemini, multimodal helpers |
+| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs` | Optional retrieve-then-rerank; API or local ONNX                                               |
+| Tools               | `core/tools/`                              | Registry, approval, plan gate, files, shell, skills, agent tools                               |
+| Workspace index     | `core/tools/workspace_index.rs`            | Chunked keyword index under `.anya/index` (incremental JSONL)                                  |
+| Plan mode           | `core/tools/plan_mode.rs`                  | Session write gate; Agent auto-enter heuristic for complex tasks                               |
+| Context             | `core/context/`                            | IDE, selection, clipboard, environment, Office hints                                           |
+| Checkpoint          | `core/checkpoint/`                         | Undo / review of applied file changes                                                          |
+| Token               | `core/token/`                              | Accounting (incl. cache-read / reasoning tokens), usage persistence                            |
+| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                                     |
+| Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                               |
+| Event bus           | `core/event/`                              | Domain events                                                                                  |
+| Remote gateway      | `core/remote/`                             | WS `/remote/v1`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`                    |
 
 ### 5.2 Naming: three “runtime” modules
 
@@ -604,9 +604,38 @@ assistant can emit an approvable step list.
 
 Skills are markdown playbooks under `src-tauri/prompts/skills/` (plus vendor
 assets). Invoking a skill typically injects the playbook and may run a subagent
-with optional `read_only`.
+with optional `read_only`. The former built-in `bid_tech` Python package is no
+longer shipped; document-generation skills use the external skill flow.
 
-### 11.1 Workspace index & RAG
+### 11.1 Provider protocol and reasoning resolution
+
+The provider boundary keeps model selection, capability metadata, protocol
+selection, and wire parsing together while leaving `ChatService` provider-neutral.
+
+```mermaid
+flowchart LR
+  Settings[Provider settings] --> Registry[ProviderRegistry]
+  Registry --> ModelRef[ModelRef + capabilities]
+  ModelRef --> Reasoning[ReasoningProfile]
+  ModelRef --> Protocol[WireProtocol]
+  Protocol -->|primary| Request[Provider request]
+  Request -->|format rejected| Fallback[Protocol fallback]
+  Fallback --> Request
+  Request --> Stream[Chat / Responses / Anthropic SSE]
+  Stream --> Cache[Remember model protocol]
+```
+
+`reasoningProfiles` maps model families to supported levels. `reasoningControl`
+uses advertised capabilities first and provider/model inference second. The
+request layer clamps unsupported values and emits the provider-specific fields:
+`thinking`, `enable_thinking`, or `reasoning.effort` / `reasoning_effort`.
+
+Custom providers may select Chat Completions, Responses, or Anthropic Messages.
+When a format rejection is recognizable, the registry tries the remaining wire
+protocols and remembers the successful protocol per provider and model. Disabled
+models are rejected before any network request.
+
+### 11.2 Workspace index & RAG
 
 `search_codebase` always hits the keyword index. Semantic re-rank is **off by
 default** (Settings → RAG Search). Nothing is downloaded or requested until enabled.
@@ -672,10 +701,13 @@ event-driven.
 | Quick Ask                      | No workspace  | Overlay outside IDE                                                  |
 | Workspace session              | Bound folder  | IDE foreground, `/work`, picker                                      |
 | Pinned                         | User pin flag | Workbench sidebar                                                    |
+| Archived workspace             | Bound folder  | Workbench archive / restore                                          |
 | Companion FAB (no workspaceId) | No workspace  | Phone new chat — **must not** inherit the desktop selected workspace |
 
 Overlay and workbench share the conversation store; “open in workbench” reuses
-the same `session_id`. Companion projects that store over the gateway.
+the same `session_id`. Workspace ordering, pinning, collapsed state, and archive
+status are persisted separately from chat messages. Companion projects the same
+store over the gateway.
 
 ---
 

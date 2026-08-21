@@ -10,7 +10,10 @@ use crate::models::settings::{AppLanguage, ReasoningLanguage};
 fn collaboration_models_are_injected_only_when_configured() {
     let context = RequestContext::default();
     let preferences = PromptPreferences {
-        collaboration_models: vec!["model-a".into(), "model-b".into()],
+        collaboration_models: vec![
+            r#"["deepseek","deepseek-v4-pro"]"#.into(),
+            "deepseek-v4-flash".into(),
+        ],
         ..PromptPreferences::default()
     };
     let request = PromptBuilder::build(PromptBuildInput {
@@ -29,8 +32,9 @@ fn collaboration_models_are_injected_only_when_configured() {
         .iter()
         .find(|message| message.id.starts_with("collaboration-models-"));
     assert!(collaboration.is_some_and(|message| {
-        message.content.contains("`model-a`")
-            && message.content.contains("`model-b`")
+        message.content.contains("- `deepseek-v4-pro`")
+            && message.content.contains("- `deepseek-v4-flash`")
+            && !message.content.contains("- `[\"deepseek\",\"deepseek-v4-pro\"]`")
             && message.content.contains("Routing policy")
             && message.content.contains("exact selected model ID")
             && message.content.contains("Never omit `model`")

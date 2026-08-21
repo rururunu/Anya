@@ -1,6 +1,6 @@
 ---
 name: generate_word
-description: Generate .docx Word documents with python-docx. Use when the user asks for Word、docx、Word 文档、导出文档. For 技术标/综合评分表/投标技术方案 prefer generate_bid_tech.
+description: Generate .docx Word documents with python-docx. Use when the user asks for Word、docx、Word 文档、导出文档.
 ---
 
 # Generate Word document
@@ -17,18 +17,11 @@ Use `generate_word` for a **general, short, script-generated** document with no 
 |---|---|
 | Edit an existing .docx / tracked changes / OOXML / comments | `#skill:docx` |
 | Markdown ↔ DOCX/PDF/HTML conversion | `#skill:pandoc` |
-| 技术标 / 综合评分技术部分 (scoring-table bid, table-first + gate) | `generate_bid_tech` |
 
 <example>
 User: "帮我写一份两页的项目周报，导出成 Word。"
-Reasoning: short, new document, no existing file, no scoring-table requirements.
+Reasoning: short, new document, no existing file to preserve.
 Correct: `generate_word`.
-</example>
-
-<example>
-User: "这是招标文件，按评分表写一份技术标。"
-Reasoning: scoring-table bids need forced table structures, a chapter planner, and a completion gate that `generate_word` does not enforce — using it here would produce a document that fails the actual scoring criteria.
-Correct: `generate_bid_tech`, not `generate_word`.
 </example>
 
 ## Rules
@@ -39,7 +32,7 @@ Correct: `generate_bid_tech`, not `generate_word`.
 5. Do not claim success until the file exists on disk. Return the **absolute or workspace-relative path**.
 6. Reuse one script and iterate with small edits. Stop only after the document has been opened or rendered enough to verify its structure and readability.
 7. **Tables are first-class**: any row/column structure must use `Document.add_table` (or helpers). Never simulate a table with tab-separated paragraphs.
-8. **Table borders**: prefer `table.style = "Table Grid"` or bid_tech `style.apply_grid_borders(table)` so cells show full grid lines by default.
+8. **Table borders**: prefer `table.style = "Table Grid"` so cells show full grid lines by default.
 
 ## Document quality
 - Clear title + heading hierarchy

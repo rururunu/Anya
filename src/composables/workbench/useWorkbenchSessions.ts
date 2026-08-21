@@ -2,7 +2,13 @@ import { computed, nextTick, ref, watch, type ComputedRef, type Ref } from "vue"
 
 import type ChatInputBar from "@/components/chat/ChatInputBar.vue";
 import type { AppConfirmDialog } from "@/components/ui/confirm-dialog";
-import { chatCancel, deleteChatSession, listChatSessions, listCheckpoints } from "@/services/ipc";
+import {
+  chatCancel,
+  deleteChatSession,
+  listChatSessions,
+  listCheckpoints,
+  setChatSessionArchived,
+} from "@/services/ipc";
 import { estimateMessageTokens } from "@/services/chat/tokenEstimate";
 import { useChatStore } from "@/stores/chat";
 import {
@@ -59,9 +65,13 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
 
   const sessionsWithLiveTokens = computed(() => {
     const base = sessions.value.map((session) => {
-      if (session.sessionId !== activeSessionId.value) return session;
+      const compose = chatStore.sessionCompose[session.sessionId];
+      const workspaceId = session.workspaceId || compose?.draftWorkspaceId || undefined;
+      const withWorkspace =
+        workspaceId === session.workspaceId ? session : { ...session, workspaceId };
+      if (withWorkspace.sessionId !== activeSessionId.value) return withWorkspace;
       return {
-        ...session,
+        ...withWorkspace,
         estimatedTokens: messages.value.reduce(
           (total, message) => total + estimateMessageTokens(message),
           0,
@@ -164,7 +174,7 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
       sessions.value = chatResponse.sessions;
       workspaces.value = workspaceResponse;
       if (chatResponse && chatResponse.sessions) {
-        chatStore.setStartedSessionIds(chatResponse.sessions.map((s: any) => s.sessionId));
+        chatStore.setStartedSessionIds(chatResponse.sessions.map((session) => session.sessionId));
       }
     } catch (error) {
       console.error("list_chat_sessions failed:", error);
@@ -225,21 +235,8 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     void nextTick(() => inputRef.value?.focusInput());
   }
 
-  async function removeConversation(sessionId: string) {
-    const confirmed = await confirmDialogRef.value?.ask({
-      title: labels.value.deleteConversation,
-      description: labels.value.deleteConfirm,
-      confirmLabel: navigationLabels.value.confirmDelete,
-      cancelLabel: navigationLabels.value.cancel,
-    });
-    if (!confirmed) return;
+  async function leaveConversation(sessionId: string) {
     pendingStagedEdit.value = null;
-    try {
-      await deleteChatSession(sessionId);
-    } catch (error) {
-      // Draft-only sessions may not exist on the backend yet.
-      console.warn("delete_chat_session skipped:", error);
-    }
     chatStore.removeCompose(sessionId);
     delete chatStore.sessions[sessionId];
     clearSessionUnread(sessionId);
@@ -252,6 +249,35 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
       if (next) await selectConversation(next);
       else await createQuickConversation();
     }
+  }
+
+  async function archiveConversation(sessionId: string) {
+    const known = sessions.value.some((session) => session.sessionId === sessionId);
+    if (known) {
+      try {
+        await setChatSessionArchived(sessionId, true);
+      } catch (error) {
+        console.warn("set_chat_session_archived skipped:", error);
+      }
+    }
+    await leaveConversation(sessionId);
+  }
+
+  async function removeConversation(sessionId: string) {
+    const confirmed = await confirmDialogRef.value?.ask({
+      title: labels.value.deleteConversation,
+      description: labels.value.deleteConfirm,
+      confirmLabel: navigationLabels.value.confirmDelete,
+      cancelLabel: navigationLabels.value.cancel,
+    });
+    if (!confirmed) return;
+    try {
+      await deleteChatSession(sessionId);
+    } catch (error) {
+      // Draft-only sessions may not exist on the backend yet.
+      console.warn("delete_chat_session skipped:", error);
+    }
+    await leaveConversation(sessionId);
   }
 
   async function guideStaged(index: number) {
@@ -365,6 +391,7 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     createQuickConversation,
     refreshCheckpoints,
     selectConversation,
+    archiveConversation,
     removeConversation,
     guideStaged,
     startStagedEdit,

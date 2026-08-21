@@ -143,6 +143,16 @@
             <Button
               variant="ghost"
               size="icon"
+              class="size-8 text-muted-foreground hover:text-foreground"
+              :title="historyText.archiveLabel"
+              :aria-label="historyText.archiveLabel"
+              @click="archiveSingleSession(session.sessionId)"
+            >
+              <Archive class="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               class="size-8 text-muted-foreground hover:text-destructive"
               :title="historyText.deleteLabel"
               :aria-label="historyText.deleteLabel"
@@ -161,6 +171,7 @@
 import { computed, onMounted, ref } from "vue";
 import { emit as tauriEmit } from "@tauri-apps/api/event";
 import {
+  Archive,
   AlertTriangle,
   ChevronDown,
   ChevronRight,
@@ -176,6 +187,7 @@ import { listWorkspaces, switchWorkspace, type Workspace } from "@/commands/work
 import {
   listChatSessions,
   deleteChatSession,
+  setChatSessionArchived,
   clearAllChatSessions,
   openSessionInOverlay,
 } from "@/services/ipc";
@@ -209,6 +221,7 @@ const historyText = computed(() => {
     publicGroup: tr(language, "settings.history.publicGroup"),
     yesterday: tr(language, "settings.history.yesterday"),
     cancel: tr(language, "settings.history.cancel"),
+    archiveLabel: tr(language, "settings.history.archiveLabel"),
     deleteLabel: tr(language, "settings.history.deleteLabel"),
     openError: tr(language, "history.openError"),
   };
@@ -381,6 +394,17 @@ async function deleteHistoryGroup(group: HistoryGroup) {
     await tauriEmit("history-updated");
   } catch (error) {
     console.error("Failed to delete history group:", error);
+  }
+}
+
+async function archiveSingleSession(sessionId: string) {
+  try {
+    await setChatSessionArchived(sessionId, true);
+    selectedSessionIds.value = selectedSessionIds.value.filter((id) => id !== sessionId);
+    await loadSessions();
+    await tauriEmit("history-updated");
+  } catch (error) {
+    console.error("Failed to archive session:", error);
   }
 }
 

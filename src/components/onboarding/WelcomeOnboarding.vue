@@ -140,11 +140,10 @@
             <article class="provider-panel" :class="{ open: providerTab === 'custom' }">
               <button type="button" class="provider-panel-head" @click="providerTab = 'custom'">
                 <span class="provider-icon">
-                  <component :is="selectedPresetIcon" v-if="selectedPresetIcon" :size="18" />
-                  <Globe2 v-else :size="18" />
+                  <Globe2 :size="18" />
                 </span>
                 <span class="provider-copy">
-                  <strong>{{ customPanelTitle }}</strong>
+                  <strong>{{ t("settings.provider.custom") }}</strong>
                   <small>{{ t("onboarding.providerCustomHint") }}</small>
                 </span>
                 <span v-if="hasCustomProvider" class="ready-pill">
@@ -152,37 +151,8 @@
                 </span>
               </button>
               <div v-if="providerTab === 'custom'" class="provider-panel-body custom-body">
-                <div class="preset-grid" role="list">
-                  <button
-                    v-for="preset in providerPresets"
-                    :key="preset.id"
-                    type="button"
-                    class="preset-option"
-                    :class="{ active: customPresetId === preset.id }"
-                    role="listitem"
-                    @click="selectPreset(preset)"
-                  >
-                    <component
-                      :is="presetIcon(preset.id)"
-                      v-if="presetIcon(preset.id)"
-                      :size="14"
-                      class="preset-option-icon"
-                    />
-                    <span>{{ preset.name }}</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="preset-option"
-                    :class="{ active: customPresetId === undefined && customFormOpen }"
-                    @click="selectBlankCustom"
-                  >
-                    <Globe2 :size="14" class="preset-option-icon" />
-                    <span>{{ t("settings.provider.addBlank") }}</span>
-                  </button>
-                </div>
-
-                <div v-if="customFormOpen" class="custom-fields">
-                  <div v-if="!customPresetId" class="field-row">
+                <div class="custom-fields">
+                  <div class="field-row">
                     <label for="onboarding-custom-name">{{ t("onboarding.customName") }}</label>
                     <input
                       id="onboarding-custom-name"
@@ -194,7 +164,7 @@
                       autocomplete="off"
                     />
                   </div>
-                  <div v-if="!customPresetId" class="field-row">
+                  <div class="field-row">
                     <label for="onboarding-custom-url">{{ t("onboarding.customBaseUrl") }}</label>
                     <input
                       id="onboarding-custom-url"
@@ -300,16 +270,8 @@ import { Eye, EyeOff, Globe2 } from "@lucide/vue";
 import { useDebounceFn } from "@vueuse/core";
 import { gsap, safeGsap } from "@/services/motion/gsapSafe";
 
-import type { Component } from "vue";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
 import GeminiIcon from "@/components/icons/GeminiIcon.vue";
-import { getProviderIcon } from "@/lib/providerIcons";
-import {
-  CUSTOM_PROVIDER_PRESETS,
-  type ProviderPreset,
-  type ProviderPresetId,
-  serializeProviderModels,
-} from "@/lib/providerPresets";
 import { tr } from "@/services/i18n";
 import { geminiOauthCancelLogin, geminiOauthLogin, geminiOauthLogout } from "@/services/ipc";
 import { gsapOnboardingReveal } from "@/services/motion/gsapPresets";
@@ -340,9 +302,6 @@ const customName = ref("");
 const customUrl = ref("");
 const customKey = ref("");
 const customModels = ref("");
-const customPresetId = ref<ProviderPresetId | undefined>(undefined);
-const customFormOpen = ref(false);
-const providerPresets = CUSTOM_PROVIDER_PRESETS;
 
 const t = (key: Parameters<typeof tr>[1]) => tr(settingStore.language, key);
 
@@ -357,38 +316,6 @@ const hasCustomProvider = computed(() =>
 const hasAnyProvider = computed(
   () => isDeepSeekConfigured.value || isGeminiConfigured.value || hasCustomProvider.value,
 );
-const selectedPresetIcon = computed(() =>
-  customPresetId.value ? getProviderIcon(null, customPresetId.value) : null,
-);
-const customPanelTitle = computed(() => {
-  if (customPresetId.value) {
-    const preset = providerPresets.find((item) => item.id === customPresetId.value);
-    if (preset) return preset.name;
-  }
-  return t("settings.provider.custom");
-});
-
-function presetIcon(presetId: string): Component | null {
-  return getProviderIcon(null, presetId);
-}
-
-function selectPreset(preset: ProviderPreset) {
-  customPresetId.value = preset.id;
-  customName.value = preset.name;
-  customUrl.value = preset.baseUrl;
-  customModels.value = serializeProviderModels(preset.models);
-  customFormOpen.value = true;
-  providerTab.value = "custom";
-}
-
-function selectBlankCustom() {
-  customPresetId.value = undefined;
-  customName.value = "";
-  customUrl.value = "";
-  customModels.value = "";
-  customFormOpen.value = true;
-  providerTab.value = "custom";
-}
 
 function resetOnboardingScroll() {
   const el = overlayRef.value;
@@ -503,26 +430,18 @@ async function logoutGemini() {
 
 async function saveCustom() {
   if (!customUrl.value.trim() || !customKey.value.trim()) return;
-  const preset = customPresetId.value
-    ? providerPresets.find((item) => item.id === customPresetId.value)
-    : undefined;
-  const existing = preset
-    ? settingStore.customProviders.find((p) => p.presetId === preset.id)
-    : undefined;
-  const id = existing?.id ?? Math.random().toString(36).substring(2, 11);
+  const id = Math.random().toString(36).substring(2, 11);
   const next = {
     id,
-    name: customName.value.trim() || preset?.name || `Custom - ${id}`,
+    name: customName.value.trim() || `Custom - ${id}`,
     baseUrl: customUrl.value.trim(),
     apiKey: customKey.value.trim(),
     models: customModels.value.trim(),
-    presetId: customPresetId.value,
-    apiProtocol: existing?.apiProtocol ?? "chatCompletions",
+    apiProtocol: "chatCompletions" as const,
   };
-  const list = existing
-    ? settingStore.customProviders.map((p) => (p.id === id ? next : p))
-    : [...settingStore.customProviders, next];
-  await settingStore.update({ customProviders: list });
+  await settingStore.update({
+    customProviders: [...settingStore.customProviders, next],
+  });
   await chatModelStore.refresh();
   customKey.value = "";
 }
@@ -881,45 +800,6 @@ async function completeOnboarding() {
 
 .custom-body {
   gap: 12px;
-}
-
-.preset-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.preset-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 10px;
-  border: 1px solid rgba(28, 25, 21, 0.14);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
-  color: #1c1915;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 550;
-  text-align: left;
-  cursor: pointer;
-}
-
-.preset-option:hover {
-  border-color: rgba(28, 25, 21, 0.28);
-  background: #fff;
-}
-
-.preset-option.active {
-  border-color: rgba(28, 25, 21, 0.45);
-  background: #fff;
-  box-shadow: inset 0 0 0 1px rgba(28, 25, 21, 0.12);
-}
-
-.preset-option-icon {
-  flex: 0 0 auto;
-  color: rgba(28, 25, 21, 0.72);
 }
 
 .custom-fields {

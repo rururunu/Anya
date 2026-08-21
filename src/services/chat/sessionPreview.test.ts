@@ -12,7 +12,7 @@ describe("formatSessionPreview", () => {
   });
 
   it("shortens #skill/#mcp tokens", () => {
-    expect(formatSessionPreview("#skill:generate_bid_tech 写技术方案")).toBe("写技术方案");
+    expect(formatSessionPreview("#skill:generate_word 写技术方案")).toBe("写技术方案");
     expect(formatSessionPreview("#mcp:filesystem 列出目录")).toBe("列出目录");
   });
 

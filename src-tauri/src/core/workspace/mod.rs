@@ -18,6 +18,8 @@ pub struct Workspace {
     pub created_at: DateTime<Utc>,
     pub last_used_at: DateTime<Utc>,
     pub pinned: bool,
+    #[serde(default)]
+    pub archived: bool,
     pub sort_order: i64,
 }
 
@@ -61,6 +63,20 @@ impl WorkspaceManager {
     }
 
     pub fn list(&self) -> Vec<Workspace> {
+        self.sorted_workspaces()
+            .into_iter()
+            .filter(|workspace| !workspace.archived)
+            .collect()
+    }
+
+    pub fn list_archived(&self) -> Vec<Workspace> {
+        self.sorted_workspaces()
+            .into_iter()
+            .filter(|workspace| workspace.archived)
+            .collect()
+    }
+
+    fn sorted_workspaces(&self) -> Vec<Workspace> {
         let mut workspaces = self
             .workspaces
             .read()
@@ -80,7 +96,19 @@ impl WorkspaceManager {
         validate_root(&root)?;
 
         let id = root.to_string_lossy().to_string();
-        if let Some(existing) = self.list().into_iter().find(|workspace| workspace.id == id) {
+        if let Some(existing) = self
+            .sorted_workspaces()
+            .into_iter()
+            .find(|workspace| workspace.id == id)
+        {
+            if existing.archived {
+                self.set_archived(&existing.id, false).await?;
+                return self
+                    .sorted_workspaces()
+                    .into_iter()
+                    .find(|workspace| workspace.id == id)
+                    .ok_or_else(|| "Workspace not found".to_string());
+            }
             return Ok(existing);
         }
 
@@ -102,6 +130,7 @@ impl WorkspaceManager {
             created_at: now,
             last_used_at: now,
             pinned: false,
+            archived: false,
             sort_order,
         };
         let should_select = self.current().is_none();
@@ -207,6 +236,7 @@ impl WorkspaceManager {
             created_at: now,
             last_used_at: now,
             pinned: false,
+            archived: false,
             sort_order,
         };
         sqlx::query(
@@ -395,6 +425,48 @@ impl WorkspaceManager {
         Ok(())
     }
 
+    pub async fn set_archived(&self, id: &str, archived: bool) -> Result<(), String> {
+        sqlx::query("UPDATE workspace SET archived = ?, pinned = CASE WHEN ? THEN 0 ELSE pinned END WHERE id = ?")
+            .bind(archived)
+            .bind(archived)
+            .bind(id)
+            .execute(&self.db_pool)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        {
+            let mut workspaces = self
+                .workspaces
+                .write()
+                .map_err(|_| "Workspace lock is poisoned".to_string())?;
+            let workspace = workspaces
+                .iter_mut()
+                .find(|workspace| workspace.id == id)
+                .ok_or_else(|| "Workspace not found".to_string())?;
+            workspace.archived = archived;
+            if archived {
+                workspace.pinned = false;
+            }
+        }
+
+        let should_clear_current =
+            archived && self.current().is_some_and(|current| current.id == id);
+        if should_clear_current {
+            self.clear_current().await?;
+        } else if let Ok(mut current) = self.current.write() {
+            if current.as_ref().is_some_and(|workspace| workspace.id == id) {
+                if let Some(updated) = self
+                    .sorted_workspaces()
+                    .into_iter()
+                    .find(|workspace| workspace.id == id)
+                {
+                    *current = Some(updated);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub async fn clear_current(&self) -> Result<(), String> {
         let mut transaction = self
             .db_pool
@@ -414,7 +486,11 @@ impl WorkspaceManager {
     }
 
     pub async fn delete(&self, id: WorkspaceId) -> Result<(), String> {
-        if !self.list().iter().any(|workspace| workspace.id == id) {
+        if !self
+            .sorted_workspaces()
+            .iter()
+            .any(|workspace| workspace.id == id)
+        {
             return Err("Workspace not found".to_string());
         }
 
@@ -492,6 +568,7 @@ async fn init_schema(pool: &SqlitePool) -> Result<(), String> {
             created_at TEXT NOT NULL,
             last_used_at TEXT NOT NULL,
             pinned INTEGER NOT NULL DEFAULT 0,
+            archived INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 0
         )",
     )
@@ -543,6 +620,15 @@ async fn init_schema(pool: &SqlitePool) -> Result<(), String> {
             .await
             .map_err(|error| error.to_string())?;
     }
+    if !columns
+        .iter()
+        .any(|row| row.get::<String, _>("name") == "archived")
+    {
+        sqlx::query("ALTER TABLE workspace ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+            .execute(pool)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS workspace_state (
             singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
@@ -580,7 +666,7 @@ async fn init_schema(pool: &SqlitePool) -> Result<(), String> {
 
 async fn load_state(pool: &SqlitePool) -> Result<(Vec<Workspace>, Option<Workspace>), String> {
     let rows = sqlx::query(
-        "SELECT id, root, source, created_at, last_used_at, pinned, sort_order
+        "SELECT id, root, source, created_at, last_used_at, pinned, archived, sort_order
              FROM workspace
              ORDER BY pinned DESC, sort_order ASC, created_at DESC",
     )
@@ -600,7 +686,7 @@ async fn load_state(pool: &SqlitePool) -> Result<(Vec<Workspace>, Option<Workspa
     let current = current_id.and_then(|id| {
         workspaces
             .iter()
-            .find(|workspace| workspace.id == id)
+            .find(|workspace| workspace.id == id && !workspace.archived)
             .cloned()
     });
     Ok((workspaces, current))
@@ -624,6 +710,7 @@ fn workspace_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Workspace, String>
         created_at,
         last_used_at,
         pinned: row.get::<bool, _>("pinned"),
+        archived: row.get::<bool, _>("archived"),
         sort_order: row.get::<i64, _>("sort_order"),
     })
 }

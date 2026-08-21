@@ -785,8 +785,12 @@ async function handleSubmit(text: string) {
     return;
   }
 
+  // Snapshot before enterChat/contextConsumed. Consuming capture context used
+  // to clear the composer workspace and mis-file the turn as Quick Ask.
+  const sendOptions = resolveOverlaySendOptions();
+
   if (props.mode === "chat") {
-    await chatStore.send(trimmed, activeSessionId.value, resolveOverlaySendOptions());
+    await chatStore.send(trimmed, activeSessionId.value, sendOptions);
     return;
   }
 
@@ -798,13 +802,16 @@ async function handleSubmit(text: string) {
   const messageWithSelection = attachSelection(trimmed, selectedText.value);
 
   chatStore.setOverlayDraftSession(sessionId);
+  chatStore.setComposeDraft(sessionId, "", {
+    workspaceId: sendOptions.quickAsk ? null : (sendOptions.workspaceId ?? null),
+  });
   chatStore.stageTurn(sessionId, messageWithSelection);
   emit("enterChat", sessionId);
   emit("contextConsumed");
 
   void chatStore.send(messageWithSelection, sessionId, {
     staged: true,
-    ...resolveOverlaySendOptions(),
+    ...sendOptions,
   });
 }
 

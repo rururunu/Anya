@@ -246,7 +246,7 @@ fn tool_hint_for_app(app: &str) -> String {
     match app {
         "excel" => "Prefer excel_* tools (excel_get_selection, excel_get_used_range, excel_set_selection, excel_save_workbook) for Excel tasks.".to_string(),
         "powerpoint" => "Prefer ppt_* tools (ppt_get_selection, ppt_get_slide_text, ppt_replace_selection, ppt_insert_text, ppt_save_presentation) for PowerPoint tasks.".to_string(),
-        _ => "Prefer word_* tools (word_get_document_content, word_get_selection, word_replace_selection, word_insert_text, word_save_document) for live Word editing. For new/edit .docx files use #skill:docx; for md↔docx conversion use #skill:pandoc; for simple python-docx use generate_word; for 技术标 use generate_bid_tech.".to_string(),
+        _ => "Prefer word_* tools (word_get_document_content, word_get_selection, word_replace_selection, word_insert_text, word_save_document) for live Word editing. For new/edit .docx files use #skill:docx; for md↔docx conversion use #skill:pandoc; for simple python-docx use generate_word.".to_string(),
     }
 }
 

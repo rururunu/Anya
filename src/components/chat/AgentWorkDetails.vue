@@ -184,7 +184,9 @@ function pushActivity(segments: TimelineSegment[], activity: ToolActivity) {
   const operations = isOperationsActivity(activity);
   const last = segments[segments.length - 1];
   if (last && last.type === kind && last.operations === operations) {
-    last.activities.push(activity);
+    if (!last.activities.some((item) => item.id === activity.id)) {
+      last.activities.push(activity);
+    }
     return;
   }
   const base = {
@@ -193,6 +195,37 @@ function pushActivity(segments: TimelineSegment[], activity: ToolActivity) {
     operations,
   };
   segments.push(kind === "inline" ? { type: "inline", ...base } : { type: "process", ...base });
+}
+
+/** Same parallel batch can be recorded under new activity ids on stream retry. */
+function parallelSubagentFingerprint(activity: ToolActivity): string | undefined {
+  if (activity.toolName !== "run_parallel_subagents") return undefined;
+  const tasks = activity.arguments?.tasks;
+  if (!Array.isArray(tasks)) return activity.id;
+  const prompts = tasks.map((value) => {
+    if (typeof value !== "object" || value == null) return "";
+    return String((value as Record<string, unknown>).prompt ?? "").trim();
+  });
+  return `${activity.toolName}:${prompts.join("\0")}`;
+}
+
+function considerActivity(segments: TimelineSegment[], seen: Set<string>, activity: ToolActivity) {
+  if (seen.has(activity.id)) return;
+  seen.add(activity.id);
+  const fingerprint = parallelSubagentFingerprint(activity);
+  if (fingerprint) {
+    for (const segment of segments) {
+      if (segment.type !== "process" && segment.type !== "inline") continue;
+      const index = segment.activities.findIndex(
+        (item) => parallelSubagentFingerprint(item) === fingerprint,
+      );
+      if (index !== -1) {
+        segment.activities[index] = activity;
+        return;
+      }
+    }
+  }
+  pushActivity(segments, activity);
 }
 
 type TextSegment = Extract<TimelineSegment, { type: "reasoning" | "content" }>;
@@ -363,8 +396,7 @@ const segments = computed<TimelineSegment[]>(() => {
     }
     const activity = activityById.value.get(item.toolActivityId);
     if (!activity) continue;
-    seen.add(activity.id);
-    pushActivity(out, activity);
+    considerActivity(out, seen, activity);
   }
 
   reconcileTrailingText(out, "reasoning", props.message.reasoning);
@@ -377,8 +409,7 @@ const segments = computed<TimelineSegment[]>(() => {
   }
 
   for (const activity of topLevelActivities.value) {
-    if (seen.has(activity.id)) continue;
-    pushActivity(out, activity);
+    considerActivity(out, seen, activity);
   }
   return coalesceCompletedNarration(coalesceCompletedReasoning(out));
 });
@@ -433,6 +464,14 @@ function isFirstReasoningSegment(index: number) {
 }
 
 function processSegmentCollapsible(segment: Extract<TimelineSegment, { type: "process" }>) {
+  // The subagent card already shows title + child rows; wrapping it in another
+  // "Subagents (N)" process chrome duplicates the same block.
+  if (
+    segment.activities.length === 1 &&
+    SUBAGENT_TOOLS.has(segment.activities[0]?.toolName ?? "")
+  ) {
+    return false;
+  }
   return isProcessSegmentCollapsible(segment.activities, visibleActivities.value);
 }
 

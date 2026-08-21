@@ -331,9 +331,9 @@ mod tests {
     #[test]
     fn formats_preferred_skill_and_mcp_tokens() {
         let block =
-            format_preferred_resources("Use #skill:generate_bid_tech and #mcp:filesystem please")
+            format_preferred_resources("Use #skill:generate_word and #mcp:filesystem please")
                 .unwrap();
-        assert!(block.contains("generate_bid_tech"));
+        assert!(block.contains("generate_word"));
         assert!(block.contains("mcp__filesystem__"));
         assert!(block.contains("<preferred-resources>"));
     }

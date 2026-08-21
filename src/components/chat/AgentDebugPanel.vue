@@ -561,7 +561,7 @@ function accuracyLabel(accuracy: TokenAccuracy) {
   return tr(settingStore.language, `runtime.accuracy.${accuracy}`);
 }
 function tokenBreakdown(usage: TokenUsage) {
-  return [
+  const items = [
     {
       key: "input",
       label: tr(settingStore.language, "runtime.inputTokens"),
@@ -598,6 +598,21 @@ function tokenBreakdown(usage: TokenUsage) {
       value: usage.memoryTokens,
     },
   ];
+  if ((usage.cacheReadTokens ?? 0) > 0) {
+    items.push({
+      key: "cacheRead",
+      label: tr(settingStore.language, "usage.cacheRead"),
+      value: usage.cacheReadTokens ?? 0,
+    });
+  }
+  if ((usage.reasoningTokens ?? 0) > 0) {
+    items.push({
+      key: "reasoning",
+      label: tr(settingStore.language, "usage.reasoning"),
+      value: usage.reasoningTokens ?? 0,
+    });
+  }
+  return items;
 }
 function isCopied(key: string) {
   return copiedKey.value === key;

@@ -13,7 +13,7 @@ impl Tool for RunSlashCommandTool {
         "run_slash_command"
     }
     fn description(&self) -> &str {
-        "Run a slash command. Known commands: history, model, plan, settings, work, exit, compact, clear, context. Emits a UI event for frontend-handled commands."
+        "Run a slash command. Known commands: history, model, thinking, plan, settings, work, exit, compact, clear, context. Emits a UI event for frontend-handled commands."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -37,7 +37,8 @@ impl Tool for RunSlashCommandTool {
         }
 
         let known = [
-            "history", "model", "plan", "settings", "work", "exit", "compact", "clear", "context",
+            "history", "model", "thinking", "plan", "settings", "work", "exit", "compact", "clear",
+            "context",
         ];
         if !known.contains(&command.as_str()) {
             return Err(ToolError::new(format!(

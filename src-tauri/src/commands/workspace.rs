@@ -118,6 +118,7 @@ pub fn open_workspace_folder(state: State<'_, AppState>, id: String) -> Result<(
         .workspaces()
         .list()
         .into_iter()
+        .chain(state.core.workspaces().list_archived())
         .find(|workspace| workspace.id == id)
         .ok_or_else(|| "Workspace not found".to_string())?;
     if !workspace.root.is_dir() {
@@ -185,6 +186,38 @@ pub async fn reorder_workspaces(
 ) -> Result<(), String> {
     let manager = state.core.workspaces();
     manager.reorder(&ids).await?;
+    app.emit("workspaces-changed", manager.current())
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_archived_workspaces(state: State<'_, AppState>) -> Vec<Workspace> {
+    state.core.workspaces().list_archived()
+}
+
+#[tauri::command]
+pub async fn set_workspace_archived(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    archived: bool,
+) -> Result<(), String> {
+    let manager = state.core.workspaces();
+    manager.set_archived(&id, archived).await?;
+    let sessions = if archived {
+        state.core.chat().list_sessions()
+    } else {
+        state.core.chat().list_archived_sessions()
+    };
+    for session in sessions {
+        if session.workspace_id.as_deref() == Some(id.as_str()) {
+            state
+                .core
+                .chat()
+                .set_session_archived(&session.session_id, archived);
+        }
+    }
     app.emit("workspaces-changed", manager.current())
         .map_err(|error| error.to_string())?;
     Ok(())

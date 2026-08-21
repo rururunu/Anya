@@ -39,10 +39,10 @@
       >
         <div class="tool-activity-header">
           <div v-if="!canExpandItem(item.activity)" class="tool-activity-main tool-activity-static">
-            <span v-if="!flat" class="tool-activity-icon" aria-hidden="true">
+            <span class="tool-activity-icon" aria-hidden="true">
               <component :is="icon(item.activity)" :size="12" />
             </span>
-            <span class="tool-activity-title">{{ item.activity.title }}</span>
+            <span class="tool-activity-title">{{ activityTitle(item.activity) }}</span>
             <span v-if="isFuzzy(item.activity) && !flat" class="fuzzy-badge">
               {{ tr(settingStore.language, "fuzzyMatch") }}
             </span>
@@ -77,7 +77,7 @@
             <span class="tool-activity-icon" aria-hidden="true">
               <component :is="icon(item.activity)" :size="12" />
             </span>
-            <span class="tool-activity-title">{{ item.activity.title }}</span>
+            <span class="tool-activity-title">{{ activityTitle(item.activity) }}</span>
             <span v-if="isFuzzy(item.activity)" class="fuzzy-badge">
               {{ tr(settingStore.language, "fuzzyMatch") }}
             </span>
@@ -111,6 +111,12 @@
           >
             <PanelRightOpen :size="13" />
           </button>
+        </div>
+
+        <div v-if="shouldShowErrorBody(item.activity)" class="tool-activity-body">
+          <div class="tool-activity-detail">
+            <Markdown :content="errorBody(item.activity)" />
+          </div>
         </div>
 
         <div
@@ -240,7 +246,9 @@ const TASK_LIST_TOOLS = new Set(["update_tasks", "todo_write"]);
 const enrichedActivities = computed(() =>
   props.activities
     .filter((activity) => {
-      if (activity.kind === "read" && !props.nested) return false;
+      // Read/search rows live in process-detail folds. Keep them visible there
+      // (`flat`) and under subagents (`nested`); hide them from the open stream.
+      if (activity.kind === "read" && !props.nested && !props.flat) return false;
       return !(activity.toolName === "ask_user" && activity.status !== "running");
     })
     .map((activity) => {
@@ -313,6 +321,12 @@ function collectHunks(activity: ToolActivity): DiffHunk[] {
   return [];
 }
 
+function activityTitle(activity: ToolActivity) {
+  return (
+    activity.title?.trim() || activity.toolName?.trim() || tr(settingStore.language, "unknownTool")
+  );
+}
+
 function shouldShowResult(activity: ToolActivity) {
   return shouldShowActivityResult(activity);
 }
@@ -323,6 +337,20 @@ function canExpandItem(activity: ToolActivity) {
     childCount: childActivities(activity).length,
     showSubagentDetails: props.showSubagentDetails,
   });
+}
+
+function shouldShowErrorBody(activity: ToolActivity) {
+  if (activity.status !== "error") return false;
+  if (isExpanded(activity) && (!isSubagentTool(activity) || props.showSubagentDetails)) {
+    return false;
+  }
+  return Boolean(activity.detail?.trim() || activity.result?.trim());
+}
+
+function errorBody(activity: ToolActivity) {
+  const detail = activity.detail?.trim();
+  if (detail) return detail;
+  return formatResult(activity.result ?? "");
 }
 
 function isFuzzy(activity: ToolActivity) {

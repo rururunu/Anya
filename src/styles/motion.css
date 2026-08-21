@@ -19,12 +19,25 @@ select {
 
 button:focus-visible,
 a:focus-visible,
-[role="button"]:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: var(--peek-focus-ring);
+}
+
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 1px solid var(--peek-focus, var(--peek-accent));
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: none;
+}
+
+html.peek-window button:focus-visible,
+html.peek-window a:focus-visible,
+html.peek-window [role="button"]:focus-visible,
+html.peek-window input:focus-visible,
+html.peek-window textarea:focus-visible,
+html.peek-window select:focus-visible {
+  box-shadow: none;
 }
 
 @media (hover: hover) {

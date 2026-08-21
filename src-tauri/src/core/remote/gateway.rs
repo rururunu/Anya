@@ -637,13 +637,23 @@ async fn resolve_session_compose(
             }
         }
     }
-    if compose.chat_model.trim().is_empty() {
+    if compose.chat_model.trim().is_empty() || compose.reasoning_effort.is_none() {
         if let Some(state) = app.try_state::<crate::services::settings_store::SettingsState>() {
             if let Ok(settings) = state.settings.lock() {
-                compose.chat_model = settings.chat_model.clone();
-                compose.chat_model_provider = settings.chat_model_provider.clone();
-                compose.chat_mode = settings.chat_mode;
-                compose.tool_approval_mode = settings.tool_approval_mode;
+                if compose.chat_model.trim().is_empty() {
+                    compose.chat_model = settings.chat_model.clone();
+                    compose.chat_model_provider = settings.chat_model_provider.clone();
+                    compose.chat_mode = settings.chat_mode;
+                    compose.tool_approval_mode = settings.tool_approval_mode;
+                }
+                if compose.reasoning_effort.is_none() {
+                    compose.reasoning_effort = Some(
+                        serde_json::to_value(settings.reasoning_effort)
+                            .ok()
+                            .and_then(|value| value.as_str().map(str::to_string))
+                            .unwrap_or_else(|| "disabled".into()),
+                    );
+                }
             }
         }
         if !compose.chat_model.trim().is_empty() {
@@ -921,13 +931,18 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             chat_model,
             chat_model_provider,
             chat_model_label,
+            reasoning_effort,
         } => {
+            if let Some(effort) = reasoning_effort.as_deref() {
+                apply_remote_reasoning_effort(&app, effort);
+            }
             let patch = super::compose::SessionComposePatch {
                 chat_mode: parse_chat_mode(chat_mode.as_deref()),
                 tool_approval_mode: parse_approval_mode(tool_approval_mode.as_deref()),
                 chat_model,
                 chat_model_provider,
                 chat_model_label,
+                reasoning_effort,
             };
             let compose = super::compose::patch(&session_id, &patch);
             // Notify desktop UI so Pinia stays in sync with the phone.
@@ -952,13 +967,35 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             )
             .await
         }
+        ClientMessage::ContextUsage {
+            request_id,
+            session_id,
+            draft_message,
+            model_id,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            match state.core.chat().context_usage(
+                &app,
+                session_id,
+                draft_message,
+                None,
+                model_id,
+            ) {
+                Ok(usage) => send_msg(
+                    ws,
+                    &ServerMessage::rpc_ok(request_id, json!(usage)),
+                )
+                .await,
+                Err(error) => {
+                    send_msg(ws, &ServerMessage::rpc_err(request_id, error.to_string())).await
+                }
+            }
+        }
         ClientMessage::ModelsList { request_id } => {
-            let models = list_remote_models(app).await;
-            send_msg(
-                ws,
-                &ServerMessage::rpc_ok(request_id, json!({ "models": models })),
-            )
-            .await
+            let payload = list_remote_models_payload(app).await;
+            send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await
         }
         ClientMessage::PlanApprove {
             request_id,
@@ -1151,6 +1188,7 @@ async fn handle_chat_send(
             chat_model: chat_model.clone(),
             chat_model_provider: chat_model_provider.clone(),
             chat_model_label: None,
+            reasoning_effort: None,
         };
         if patch.chat_mode.is_some()
             || patch.tool_approval_mode.is_some()
@@ -1236,21 +1274,172 @@ fn parse_approval_mode(raw: Option<&str>) -> Option<crate::models::settings::Too
     }
 }
 
-async fn list_remote_models(app: &AppHandle) -> Vec<serde_json::Value> {
-    match crate::commands::chat::list_chat_models(app.clone()).await {
-        Ok(models) => models
-            .into_iter()
-            .map(|m| {
-                json!({
-                    "id": m.id,
-                    "provider": m.provider,
-                    "displayName": m.display_name,
-                    "ownedBy": m.owned_by,
-                })
-            })
-            .collect(),
+async fn list_remote_models_payload(app: &AppHandle) -> serde_json::Value {
+    let settings = crate::services::settings_store::get_settings(app).ok();
+    let models = match crate::commands::chat::list_chat_models(app.clone()).await {
+        Ok(models) => models,
         Err(_) => Vec::new(),
+    };
+    let catalog = remote_provider_catalog(settings.as_ref(), &models);
+    let enriched: Vec<serde_json::Value> = models
+        .into_iter()
+        .filter_map(|model| {
+            let provider = model.provider.clone();
+            let mut value = serde_json::to_value(model).ok()?;
+            if let Some(meta) = catalog.get(&provider) {
+                if let Some(obj) = value.as_object_mut() {
+                    obj.insert("providerName".into(), json!(meta.name));
+                    if let Some(preset) = meta.preset_id.as_ref() {
+                        obj.insert("providerPresetId".into(), json!(preset));
+                    }
+                    if let Some(favicon) = meta.favicon_url.as_ref() {
+                        obj.insert("providerFaviconUrl".into(), json!(favicon));
+                    }
+                }
+            }
+            Some(value)
+        })
+        .collect();
+    json!({
+        "models": enriched,
+        "providers": catalog.values().collect::<Vec<_>>(),
+    })
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteProviderMeta {
+    id: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preset_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    favicon_url: Option<String>,
+}
+
+fn remote_provider_catalog(
+    settings: Option<&crate::models::settings::AppSettings>,
+    models: &[crate::models::chat::ChatModelInfo],
+) -> std::collections::BTreeMap<String, RemoteProviderMeta> {
+    let mut catalog = std::collections::BTreeMap::new();
+    let custom = settings
+        .map(|item| item.custom_providers.as_slice())
+        .unwrap_or(&[]);
+    for model in models {
+        let key = model.provider.trim();
+        if key.is_empty() || catalog.contains_key(key) {
+            continue;
+        }
+        catalog.insert(key.to_string(), remote_provider_meta(key, custom));
     }
+    catalog
+}
+
+fn remote_provider_meta(
+    provider_id: &str,
+    custom_providers: &[crate::models::settings::CustomProviderConfig],
+) -> RemoteProviderMeta {
+    let custom = custom_providers.iter().find(|item| item.id == provider_id);
+    RemoteProviderMeta {
+        id: provider_id.to_string(),
+        name: remote_provider_display_name(provider_id, custom),
+        preset_id: custom
+            .and_then(|item| item.preset_id.as_ref())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| match provider_id {
+                "deepseek" | "gemini" => Some(provider_id.to_string()),
+                _ => None,
+            }),
+        favicon_url: custom
+            .and_then(|item| favicon_url_for_base(&item.base_url))
+            .filter(|_| provider_id != "deepseek" && provider_id != "gemini"),
+    }
+}
+
+fn remote_provider_display_name(
+    provider_id: &str,
+    custom: Option<&crate::models::settings::CustomProviderConfig>,
+) -> String {
+    if provider_id == "deepseek" {
+        return "DeepSeek".into();
+    }
+    if provider_id == "gemini" {
+        return "Gemini".into();
+    }
+    if let Some(name) = custom.map(|item| item.name.trim()).filter(|name| !name.is_empty()) {
+        return name.to_string();
+    }
+    let preset = custom
+        .and_then(|item| item.preset_id.as_deref())
+        .unwrap_or("")
+        .trim();
+    match if preset.is_empty() { provider_id } else { preset } {
+        "mimo" => "小米 MiMo".into(),
+        "zhipu" | "glm" => "智谱 GLM".into(),
+        "volcengine" => "火山方舟".into(),
+        "minimax" => "MiniMax".into(),
+        "kimi" | "moonshot" => "Kimi".into(),
+        "openai" => "OpenAI".into(),
+        "claude" | "anthropic" => "Claude".into(),
+        "grok" | "xai" => "Grok".into(),
+        "qwen" => "通义千问".into(),
+        other => other
+            .split(|ch: char| ch == '-' || ch == '_' || ch.is_whitespace())
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                let mut chars = part.chars();
+                match chars.next() {
+                    Some(first) => {
+                        first.to_uppercase().collect::<String>() + chars.as_str()
+                    }
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+fn favicon_url_for_base(base_url: &str) -> Option<String> {
+    let trimmed = base_url.trim();
+    let rest = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))?;
+    let host = rest
+        .split('/')
+        .next()?
+        .split(':')
+        .next()?
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    if host.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "https://www.google.com/s2/favicons?sz=64&domain={host}"
+    ))
+}
+
+fn apply_remote_reasoning_effort(app: &AppHandle, effort: &str) {
+    let trimmed = effort.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let Ok(parsed) = serde_json::from_value::<crate::models::settings::ReasoningEffort>(
+        json!(trimmed.to_ascii_lowercase()),
+    ) else {
+        return;
+    };
+    let Ok(mut settings) = crate::services::settings_store::get_settings(app) else {
+        return;
+    };
+    if settings.reasoning_effort == parsed {
+        return;
+    }
+    settings.reasoning_effort = parsed;
+    let _ = crate::services::settings_store::set_settings(app, settings);
 }
 
 fn session_history(app: &AppHandle, session_id: &str) -> serde_json::Value {

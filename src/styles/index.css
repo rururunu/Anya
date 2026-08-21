@@ -54,13 +54,13 @@ html.peek-window.frosted-glass .composer-dock.glass {
 
 html.chrome-frosted-glass {
   color-scheme: normal !important;
-  --workbench-glass-fill: rgb(255 255 255 / 0.7);
-  --workbench-glass-fill-covering: rgb(255 255 255 / 0.94);
+  --workbench-glass-fill: rgb(232 232 232 / 0.9);
+  --workbench-glass-fill-covering: rgb(243 243 243 / 0.98);
 }
 
 html.chrome-frosted-glass[data-theme="dark"] {
-  --workbench-glass-fill: rgb(10 10 12 / 0.72);
-  --workbench-glass-fill-covering: rgb(12 12 14 / 0.94);
+  --workbench-glass-fill: rgb(18 18 20 / 0.92);
+  --workbench-glass-fill-covering: rgb(22 22 24 / 0.98);
 }
 
 html.chrome-frosted-glass,
@@ -118,10 +118,10 @@ html.chrome-frosted-glass[data-theme="dark"] .settings-workbench {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: var(--peek-radius-sm);
+  --radius-md: var(--peek-radius-md);
+  --radius-lg: var(--peek-radius-lg);
+  --radius-xl: var(--peek-radius-composer);
 }
 
 :root {
@@ -143,7 +143,8 @@ html.chrome-frosted-glass[data-theme="dark"] .settings-workbench {
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+    outline-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
@@ -196,7 +197,7 @@ html.peek-window .chat-input-shell {
   border-radius: 50%;
   background: var(--primary);
   border: 2px solid var(--background);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px var(--peek-shadow);
   cursor: pointer;
   transition:
     transform 0.1s ease,
@@ -217,7 +218,7 @@ html.peek-window .chat-input-shell {
   border-radius: 50%;
   background: var(--primary);
   border: 2px solid var(--background);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px var(--peek-shadow);
   cursor: pointer;
   transition:
     transform 0.1s ease,
@@ -253,11 +254,11 @@ html.peek-window .chat-input-shell {
 .peek-card-tab {
   position: relative;
   box-sizing: border-box;
-  height: 30px;
+  height: var(--peek-control-row, 30px);
   display: flex;
   align-items: center;
   border: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
-  border-radius: 5px;
+  border-radius: var(--peek-radius-sm, 6px);
   background: color-mix(in srgb, var(--peek-surface) 82%, transparent);
   color: var(--peek-muted);
   cursor: pointer;
@@ -285,6 +286,81 @@ html.peek-window .chat-input-shell {
 }
 
 .peek-card-tab:focus-visible {
-  outline: 1px solid var(--peek-accent);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: var(--peek-focus-ring);
+}
+
+.peek-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: var(--peek-control-icon, 28px);
+  height: var(--peek-control-icon, 28px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--peek-radius-sm, 6px);
+  background: transparent;
+  color: var(--peek-muted);
+  cursor: pointer;
+}
+
+.peek-icon-btn:hover,
+.peek-icon-btn.active {
+  color: var(--peek-text);
+  background: var(--peek-hover-bg);
+}
+
+.peek-icon-btn.active {
+  color: var(--peek-accent);
+}
+
+.peek-icon-btn:disabled,
+.peek-icon-btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.peek-row {
+  min-width: 0;
+  height: var(--peek-control-row, 30px);
+  display: flex;
+  align-items: center;
+  border-radius: var(--peek-radius-sm, 6px);
+  background: transparent;
+  color: var(--peek-text);
+  cursor: pointer;
+}
+
+.peek-row:hover {
+  background: var(--peek-row-hover);
+}
+
+.peek-row.active,
+.peek-row[aria-current="true"],
+.peek-row[data-active="true"] {
+  background: var(--peek-row-active);
+}
+
+.peek-pane {
+  border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: var(--peek-radius-lg, 12px) 0 0 0;
+  background: var(--peek-list-bg);
+  box-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
+}
+
+.peek-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--peek-control-icon, 28px);
+  padding: 0 10px;
+  border: 1px solid var(--peek-border);
+  border-radius: var(--peek-radius-sm, 6px);
+  background: color-mix(in srgb, var(--peek-surface) 88%, transparent);
+  color: var(--peek-text);
+  font-size: var(--peek-font-sm, 12px);
+  font-weight: 500;
+  line-height: 1;
 }

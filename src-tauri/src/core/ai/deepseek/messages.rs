@@ -55,8 +55,8 @@ pub(crate) fn build_api_body(
         );
     }
 
-    if include_thinking && is_deepseek {
-        apply_thinking_effort(&mut body, effective_effort);
+    if include_thinking {
+        apply_chat_reasoning(&mut body, model, is_deepseek, effective_effort);
     }
 
     Value::Object(body)
@@ -105,7 +105,7 @@ pub(crate) fn build_responses_body(
     Value::Object(body)
 }
 
-fn prepared_messages(request: &ChatRequest) -> Vec<ChatMessage> {
+pub(super) fn prepared_messages(request: &ChatRequest) -> Vec<ChatMessage> {
     let mut messages: Vec<_> = request
         .messages
         .iter()
@@ -235,8 +235,10 @@ fn apply_xai_reasoning(body: &mut Map<String, Value>, effort: ReasoningEffort) {
     // grok-4.5 / 4.6 cannot disable reasoning. App default is Disabled (DeepSeek
     // off); map that to xAI's default `high` so summaries actually come back.
     let effort = match effort {
-        ReasoningEffort::Disabled | ReasoningEffort::High => "high",
-        ReasoningEffort::Max => "xhigh",
+        ReasoningEffort::Disabled | ReasoningEffort::None | ReasoningEffort::High => "high",
+        ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
+        ReasoningEffort::Medium => "medium",
+        ReasoningEffort::Xhigh | ReasoningEffort::Max => "xhigh",
     };
     body.insert(
         "reasoning".into(),
@@ -246,6 +248,13 @@ fn apply_xai_reasoning(body: &mut Map<String, Value>, effort: ReasoningEffort) {
 
 /// Session-stable thinking policy for one provider round.
 ///
+/// Default (`continue_thinking_after_tools = true`): keep the configured
+/// effort for every agent-loop round, including after tools.
+/// Opt-out: disable thinking on continuation rounds to save tokens.
+pub(super) fn is_thinking_off(effort: ReasoningEffort) -> bool {
+    matches!(effort, ReasoningEffort::Disabled | ReasoningEffort::None)
+}
+
 /// Default (`continue_thinking_after_tools = true`): keep the configured
 /// effort for every agent-loop round, including after tools.
 /// Opt-out: disable thinking on continuation rounds to save tokens.
@@ -268,10 +277,11 @@ fn resolve_pass_tool_reasoning(
     messages: &[ChatMessage],
 ) -> bool {
     let protocol_requires = continuing && messages_have_tool_call_reasoning(messages);
-    match effort {
-        ReasoningEffort::Disabled => protocol_requires,
+    if is_thinking_off(effort) {
+        protocol_requires
+    } else {
         // Prefer the user setting; still force-pass when the protocol requires it.
-        _ => pass_tool_reasoning || protocol_requires,
+        pass_tool_reasoning || protocol_requires
     }
 }
 
@@ -519,19 +529,184 @@ pub(super) fn message_to_api_json(
     })
 }
 
-fn apply_thinking_effort(body: &mut Map<String, Value>, effort: ReasoningEffort) {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReasoningFamily {
+    DeepSeek,
+    OpenAi,
+    KimiK3,
+    KimiK2,
+    Qwen38,
+    Qwen,
+    Glm52,
+    Glm,
+    Claude,
+    MiniMax,
+    Other,
+}
+
+fn reasoning_family(model: &str) -> ReasoningFamily {
+    let model = model.trim().to_ascii_lowercase();
+    if model.contains("deepseek") {
+        return ReasoningFamily::DeepSeek;
+    }
+    if model.contains("kimi-k3") || model.contains("kimi_k3") || model.contains("kimik3") {
+        return ReasoningFamily::KimiK3;
+    }
+    if model.contains("kimi") || model.contains("moonshot") {
+        return ReasoningFamily::KimiK2;
+    }
+    if model.contains("qwen3.8") || model.contains("qwen3-8") || model.contains("qwen38") {
+        return ReasoningFamily::Qwen38;
+    }
+    if model.contains("qwen") || model.contains("qwq") || model.contains("qvq") {
+        return ReasoningFamily::Qwen;
+    }
+    if model.contains("glm-5") || model.contains("glm5") || model.contains("glm_5") {
+        return ReasoningFamily::Glm52;
+    }
+    if model.contains("glm") || model.contains("chatglm") {
+        return ReasoningFamily::Glm;
+    }
+    if model.contains("claude") || model.contains("anthropic") {
+        return ReasoningFamily::Claude;
+    }
+    if model.contains("minimax") || model.contains("mimo") {
+        return ReasoningFamily::MiniMax;
+    }
+    if model.contains("gpt-5") || is_openai_o_series(&model) {
+        return ReasoningFamily::OpenAi;
+    }
+    ReasoningFamily::Other
+}
+
+fn is_openai_o_series(model: &str) -> bool {
+    ["o1", "o3", "o4"].iter().any(|needle| {
+        model == *needle
+            || model.contains(&format!("{needle}-"))
+            || model.contains(&format!("-{needle}"))
+            || model.contains(&format!("/{needle}"))
+            || model.contains(&format!(".{needle}"))
+    })
+}
+
+fn apply_chat_reasoning(
+    body: &mut Map<String, Value>,
+    model: &str,
+    is_deepseek: bool,
+    effort: ReasoningEffort,
+) {
+    if is_deepseek {
+        apply_deepseek_thinking(body, effort);
+        return;
+    }
+    match reasoning_family(model) {
+        ReasoningFamily::DeepSeek => apply_deepseek_thinking(body, effort),
+        ReasoningFamily::KimiK3 => apply_kimi_k3_effort(body, effort),
+        ReasoningFamily::KimiK2 => apply_toggle_thinking(body, effort),
+        ReasoningFamily::Qwen38 => apply_qwen38_effort(body, effort),
+        ReasoningFamily::Qwen => apply_qwen_thinking(body, effort),
+        ReasoningFamily::Glm52 => apply_glm52_effort(body, effort),
+        ReasoningFamily::Glm => apply_toggle_thinking(body, effort),
+        ReasoningFamily::OpenAi | ReasoningFamily::Claude | ReasoningFamily::MiniMax => {
+            apply_openai_reasoning_effort(body, effort);
+        }
+        ReasoningFamily::Other => {}
+    }
+}
+
+fn openai_effort_wire(effort: ReasoningEffort) -> Option<&'static str> {
     match effort {
-        ReasoningEffort::Disabled => {
-            body.insert("thinking".into(), json!({ "type": "disabled" }));
+        ReasoningEffort::Disabled => None,
+        ReasoningEffort::None => Some("none"),
+        ReasoningEffort::Minimal => Some("minimal"),
+        ReasoningEffort::Low => Some("low"),
+        ReasoningEffort::Medium => Some("medium"),
+        ReasoningEffort::High => Some("high"),
+        ReasoningEffort::Xhigh => Some("xhigh"),
+        ReasoningEffort::Max => Some("max"),
+    }
+}
+
+fn apply_openai_reasoning_effort(body: &mut Map<String, Value>, effort: ReasoningEffort) {
+    if let Some(value) = openai_effort_wire(effort) {
+        body.insert("reasoning_effort".into(), json!(value));
+    }
+}
+
+fn apply_deepseek_thinking(body: &mut Map<String, Value>, effort: ReasoningEffort) {
+    if is_thinking_off(effort) {
+        body.insert("thinking".into(), json!({ "type": "disabled" }));
+        return;
+    }
+    let mapped = match effort {
+        ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
+        ReasoningEffort::Max => "max",
+        _ => "high",
+    };
+    body.insert("thinking".into(), json!({ "type": "enabled" }));
+    body.insert("reasoning_effort".into(), json!(mapped));
+}
+
+fn apply_toggle_thinking(body: &mut Map<String, Value>, effort: ReasoningEffort) {
+    if is_thinking_off(effort) {
+        body.insert("thinking".into(), json!({ "type": "disabled" }));
+        body.insert("enable_thinking".into(), json!(false));
+        return;
+    }
+    body.insert("thinking".into(), json!({ "type": "enabled" }));
+    body.insert("enable_thinking".into(), json!(true));
+}
+
+fn apply_kimi_k3_effort(body: &mut Map<String, Value>, effort: ReasoningEffort) {
+    let mapped = match effort {
+        ReasoningEffort::Disabled | ReasoningEffort::None => "max",
+        ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
+        ReasoningEffort::Max | ReasoningEffort::Xhigh => "max",
+        ReasoningEffort::Medium | ReasoningEffort::High => "high",
+    };
+    body.insert("reasoning_effort".into(), json!(mapped));
+}
+
+fn apply_qwen38_effort(body: &mut Map<String, Value>, effort: ReasoningEffort) {
+    if is_thinking_off(effort) {
+        body.insert("enable_thinking".into(), json!(false));
+        return;
+    }
+    let mapped = match effort {
+        ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
+        ReasoningEffort::Medium => "medium",
+        _ => "xhigh",
+    };
+    body.insert("enable_thinking".into(), json!(true));
+    body.insert("reasoning_effort".into(), json!(mapped));
+}
+
+fn apply_qwen_thinking(body: &mut Map<String, Value>, effort: ReasoningEffort) {
+    if is_thinking_off(effort) {
+        body.insert("enable_thinking".into(), json!(false));
+        return;
+    }
+    body.insert("enable_thinking".into(), json!(true));
+    if let Some(value) = openai_effort_wire(effort) {
+        body.insert("reasoning_effort".into(), json!(value));
+    }
+}
+
+fn apply_glm52_effort(body: &mut Map<String, Value>, effort: ReasoningEffort) {
+    if is_thinking_off(effort) || matches!(effort, ReasoningEffort::Minimal) {
+        body.insert("thinking".into(), json!({ "type": "disabled" }));
+        body.insert("enable_thinking".into(), json!(false));
+        if matches!(effort, ReasoningEffort::None | ReasoningEffort::Minimal) {
+            if let Some(value) = openai_effort_wire(effort) {
+                body.insert("reasoning_effort".into(), json!(value));
+            }
         }
-        ReasoningEffort::High => {
-            body.insert("thinking".into(), json!({ "type": "enabled" }));
-            body.insert("reasoning_effort".into(), json!("high"));
-        }
-        ReasoningEffort::Max => {
-            body.insert("thinking".into(), json!({ "type": "enabled" }));
-            body.insert("reasoning_effort".into(), json!("max"));
-        }
+        return;
+    }
+    body.insert("thinking".into(), json!({ "type": "enabled" }));
+    body.insert("enable_thinking".into(), json!(true));
+    if let Some(value) = openai_effort_wire(effort) {
+        body.insert("reasoning_effort".into(), json!(value));
     }
 }
 

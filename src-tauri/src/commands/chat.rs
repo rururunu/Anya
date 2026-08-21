@@ -1,4 +1,4 @@
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::app_state::AppState;
 use crate::core::agent::AgentDebugEvent;
@@ -69,7 +69,7 @@ pub fn agent_debug_snapshot(state: State<'_, AppState>) -> Result<Vec<AgentDebug
 }
 
 #[tauri::command]
-pub fn chat_history(
+pub async fn chat_history(
     state: State<'_, AppState>,
     request: ChatHistoryRequest,
 ) -> Result<ChatHistoryResponse, String> {
@@ -82,10 +82,17 @@ pub fn chat_history(
         .chat()
         .history(&session_id)
         .map_err(|error| error.to_string())?;
+    let last_cache_usage = crate::core::chat::db::load_last_session_cache_usage(
+        &state.core.chat().conversation().db_pool(),
+        &session_id,
+    )
+    .await
+    .unwrap_or(None);
 
     Ok(ChatHistoryResponse {
         session_id,
         messages,
+        last_cache_usage,
     })
 }
 
@@ -93,6 +100,49 @@ pub fn chat_history(
 pub fn list_chat_sessions(state: State<'_, AppState>) -> Result<ListChatSessionsResponse, String> {
     let sessions = state.core.chat().list_sessions();
     Ok(ListChatSessionsResponse { sessions })
+}
+
+#[tauri::command]
+pub fn list_archived_chat_sessions(
+    state: State<'_, AppState>,
+) -> Result<ListChatSessionsResponse, String> {
+    let sessions = state.core.chat().list_archived_sessions();
+    Ok(ListChatSessionsResponse { sessions })
+}
+
+#[tauri::command]
+pub async fn set_chat_session_archived(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    archived: bool,
+) -> Result<(), String> {
+    if session_id.trim().is_empty() {
+        return Err("Session id is required".into());
+    }
+    let workspace_id = state
+        .core
+        .chat()
+        .conversation()
+        .workspace_for_session(&session_id);
+    state.core.chat().set_session_archived(&session_id, archived);
+    if !archived {
+        if let Some(workspace_id) = workspace_id {
+            if state
+                .core
+                .workspaces()
+                .list_archived()
+                .iter()
+                .any(|workspace| workspace.id == workspace_id)
+            {
+                let manager = state.core.workspaces();
+                manager.set_archived(&workspace_id, false).await?;
+                app.emit("workspaces-changed", manager.current())
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -126,6 +176,8 @@ pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, Stri
             continue;
         }
 
+        let is_disabled = |id: &str| crate::core::ai::registry::provider_model_is_disabled(custom, id);
+
         let mut remote_ok = false;
         if !key.is_empty() {
             let models_url = deepseek::normalize_models_url(base);
@@ -138,7 +190,7 @@ pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, Stri
             .await
             {
                 Ok(models) if !models.is_empty() => {
-                    all_models.extend(models);
+                    all_models.extend(models.into_iter().filter(|m| !is_disabled(&m.id)));
                     remote_ok = true;
                 }
                 Ok(_) => {}
@@ -154,13 +206,14 @@ pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, Stri
                 .models
                 .split([',', '\n'])
                 .map(str::trim)
-                .filter(|s| !s.is_empty())
+                .filter(|s| !s.is_empty() && !is_disabled(s))
                 .map(|id| ChatModelInfo {
                     id: id.to_string(),
                     owned_by: custom.name.clone(),
                     provider: custom.id.clone(),
                     display_name: None,
                     thinking_variants: None,
+                    reasoning: None,
                 })
                 .collect();
             all_models.extend(custom_models);

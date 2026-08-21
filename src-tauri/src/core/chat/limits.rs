@@ -25,8 +25,12 @@ pub const CONTEXT_BLOCKS_TOTAL_MAX_CHARS: usize = 16_000;
 /// real multi-file work mid-task. Context pressure is handled Codex-style:
 /// auto-compact near the window and continue (no hard token stop).
 pub const DEFAULT_MAX_STEPS: u32 = 0;
-/// Consecutive tool failures that trip the circuit breaker and stop the turn.
-pub const MAX_CONSECUTIVE_TOOL_FAILURES: u32 = 3;
+/// Consecutive failed tool *steps* before injecting a change-strategy challenge.
+/// A step is one model tool batch; parallel children in that batch count as one.
+pub const CONSECUTIVE_TOOL_FAILURE_CHALLENGE: u32 = 3;
+/// Consecutive failed tool *steps* before a hard stop. Keep this well above the
+/// challenge threshold so exploratory web/booking work can recover.
+pub const MAX_CONSECUTIVE_TOOL_FAILURES: u32 = 8;
 /// Mid-turn auto-compact window when large context is off (keep in sync with `compact::DEFAULT_CONTEXT_WINDOW`).
 pub const DEFAULT_MAX_TURN_TOKENS: usize = 64_000;
 /// Mid-turn auto-compact window when large context is on (keep in sync with `compact::LARGE_CONTEXT_WINDOW`).
