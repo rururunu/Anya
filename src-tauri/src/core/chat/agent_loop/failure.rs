@@ -257,7 +257,10 @@ mod tests {
             FailureAction::Continue
         ));
         match breaker.check(&[outcome("c", "3", "e3", false)]) {
-            FailureAction::Challenge { status_kind, message } => {
+            FailureAction::Challenge {
+                status_kind,
+                message,
+            } => {
                 assert_eq!(status_kind, "consecutive_failure");
                 assert!(message.contains("Last errors"), "{message}");
                 assert!(message.contains("`c`"), "{message}");
@@ -313,10 +316,7 @@ mod tests {
             matches!(breaker.check(&batch(1)), FailureAction::Continue),
             "three parallel failures must not trip the consecutive breaker in one step"
         );
-        assert!(matches!(
-            breaker.check(&batch(2)),
-            FailureAction::Continue
-        ));
+        assert!(matches!(breaker.check(&batch(2)), FailureAction::Continue));
         match breaker.check(&batch(3)) {
             FailureAction::Challenge { status_kind, .. } => {
                 assert_eq!(status_kind, "consecutive_failure");

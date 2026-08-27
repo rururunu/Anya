@@ -149,6 +149,24 @@ pub fn register_all(registry: &mut ToolRegistry) {
     registry.register(Arc::new(PandocSkillTool));
 }
 
+pub fn is_skill_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "load_skill"
+            | "run_skill"
+            | "list_skills"
+            | "install_skill"
+            | "uninstall_skill"
+            | "explore_codebase"
+            | "research_topic"
+            | "review_code"
+            | "review_security"
+            | "generate_word"
+            | "docx"
+            | "pandoc"
+    )
+}
+
 fn builtin_skill_body(name: &str) -> Option<&'static str> {
     match name {
         "explore" | "explore_codebase" => Some(EXPLORE_SKILL),

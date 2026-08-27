@@ -29,6 +29,9 @@ pub const MINIMAL_CODING_PROMPT: &str = include_str!("../../../../prompts/minima
 /// Injected while session plan mode is active (auto or manual).
 pub const PLAN_MODE_PROMPT: &str = include_str!("../../../../prompts/plan-mode.md");
 
+/// Injected while Image chat mode is active.
+pub const IMAGE_MODE_PROMPT: &str = include_str!("../../../../prompts/image-mode.md");
+
 /// Injected when the current turn was sent from the paired phone (Companion app).
 pub const COMPANION_ORIGIN_PROMPT: &str = include_str!("../../../../prompts/companion-origin.md");
 
@@ -154,5 +157,13 @@ mod tests {
         assert!(PLAN_MODE_PROMPT.contains("update_tasks"));
         assert!(PLAN_MODE_PROMPT.contains("Stop"));
         assert!(PLAN_MODE_PROMPT.contains("Do not retry with a different command"));
+    }
+
+    #[test]
+    fn image_mode_prompt_requires_generate_image() {
+        assert!(IMAGE_MODE_PROMPT.contains("Image generation mode is active"));
+        assert!(IMAGE_MODE_PROMPT.contains("generate_image"));
+        assert!(IMAGE_MODE_PROMPT.contains("{{SIZE}}"));
+        assert!(IMAGE_MODE_PROMPT.contains("{{N}}"));
     }
 }

@@ -7,7 +7,9 @@ import {
   deleteChatSession,
   listChatSessions,
   listCheckpoints,
+  branchChatSession,
   setChatSessionArchived,
+  setChatSessionWorkspace,
 } from "@/services/ipc";
 import { estimateMessageTokens } from "@/services/chat/tokenEstimate";
 import { useChatStore } from "@/stores/chat";
@@ -79,8 +81,8 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
       };
     });
     const knownIds = base.map((session) => session.sessionId);
-    // Touch compose map so draft-only sessions recompute when drafts change.
-    void chatStore.sessionCompose;
+    // Draft-only rows / draft icons — not every keystroke into sessionCompose.
+    void chatStore.draftListVersion;
     const draftOnly = chatStore.listDraftOnlySessions(knownIds).map((draft) => ({
       sessionId: draft.sessionId,
       workspaceId: draft.workspaceId,
@@ -94,7 +96,7 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   });
 
   const draftSessionIds = computed(() => {
-    void chatStore.sessionCompose;
+    void chatStore.draftListVersion;
     const ids: string[] = [];
     for (const session of sessionsWithLiveTokens.value) {
       if (chatStore.sessionHasDraft(session.sessionId)) {
@@ -219,20 +221,35 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     const summary = sessions.value.find((session) => session.sessionId === sessionId);
     const compose = chatStore.ensureCompose(sessionId);
     const workspaceId = summary?.workspaceId ?? compose.draftWorkspaceId ?? null;
-    activeSessionWorkspaceId.value = workspaceId;
+    const previousWorkspaceId = activeSessionWorkspaceId.value;
     if (workspaceId && compose.draftWorkspaceId !== workspaceId) {
       chatStore.setComposeDraft(sessionId, compose.draft ?? "", { workspaceId });
     }
-    if (workspaceId) {
-      await switchWorkspace(workspaceId);
-    } else {
-      await clearCurrentWorkspace();
-    }
+
+    // Switch the visible conversation immediately so the UI is not blocked on IPC.
+    activeSessionWorkspaceId.value = workspaceId;
     activeSessionId.value = sessionId;
     chatStore.setOverlayDraftSession(sessionId);
-    await chatStore.loadHistory(sessionId);
-    await refreshCheckpoints();
     void nextTick(() => inputRef.value?.focusInput());
+
+    // Same workspace: skip the round-trip (and workspaces-changed fan-out).
+    if (workspaceId !== previousWorkspaceId) {
+      if (workspaceId) {
+        await switchWorkspace(workspaceId);
+      } else {
+        await clearCurrentWorkspace();
+      }
+    }
+
+    const cached = chatStore.sessions[sessionId];
+    const hasCachedMessages = Array.isArray(cached);
+    if (hasCachedMessages) {
+      // Show memory immediately; refresh from disk/DB in the background.
+      void chatStore.loadHistory(sessionId);
+    } else {
+      await chatStore.loadHistory(sessionId);
+    }
+    void refreshCheckpoints();
   }
 
   async function leaveConversation(sessionId: string) {
@@ -251,6 +268,37 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     }
   }
 
+  async function moveSessionToWorkspace(sessionId: string, workspaceId: string) {
+    if (!sessionId || !workspaceId) return;
+    const summary = sessionsWithLiveTokens.value.find((session) => session.sessionId === sessionId);
+    const sourceWorkspaceId = summary?.workspaceId ?? null;
+    if (sourceWorkspaceId === workspaceId) return;
+
+    const compose = chatStore.ensureCompose(sessionId);
+    const previousWorkspaceId = compose.draftWorkspaceId ?? sourceWorkspaceId;
+    chatStore.setComposeDraft(sessionId, compose.draft ?? "", { workspaceId });
+    sessions.value = sessions.value.map((session) =>
+      session.sessionId === sessionId ? { ...session, workspaceId } : session,
+    );
+
+    try {
+      await setChatSessionWorkspace(sessionId, workspaceId);
+    } catch (error) {
+      console.error("set_chat_session_workspace failed:", error);
+      chatStore.setComposeDraft(sessionId, compose.draft ?? "", {
+        workspaceId: previousWorkspaceId,
+      });
+      await refreshSessions();
+      return;
+    }
+
+    await refreshSessions();
+    if (activeSessionId.value === sessionId) {
+      activeSessionWorkspaceId.value = workspaceId;
+      await switchWorkspace(workspaceId);
+    }
+  }
+
   async function archiveConversation(sessionId: string) {
     const known = sessions.value.some((session) => session.sessionId === sessionId);
     if (known) {
@@ -261,6 +309,32 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
       }
     }
     await leaveConversation(sessionId);
+  }
+
+  async function branchConversation(sessionId: string, messageId?: string) {
+    if (!sessionId) return;
+    try {
+      const summary = await branchChatSession(sessionId, messageId);
+      const sourceCompose = chatStore.sessionCompose[sessionId];
+      if (sourceCompose) {
+        chatStore.setCompose(summary.sessionId, {
+          chatModel: sourceCompose.chatModel,
+          chatModelProvider: sourceCompose.chatModelProvider,
+          chatMode: sourceCompose.chatMode === "plan" ? "agent" : sourceCompose.chatMode,
+          toolApprovalMode: sourceCompose.toolApprovalMode,
+          imageGen: sourceCompose.imageGen,
+        });
+      } else {
+        chatStore.ensureCompose(summary.sessionId);
+      }
+      chatStore.setComposeDraft(summary.sessionId, "", {
+        workspaceId: summary.workspaceId ?? null,
+      });
+      await refreshSessions();
+      await selectConversation(summary.sessionId);
+    } catch (error) {
+      console.error("branch_chat_session failed:", error);
+    }
   }
 
   async function removeConversation(sessionId: string) {
@@ -391,7 +465,9 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     createQuickConversation,
     refreshCheckpoints,
     selectConversation,
+    moveSessionToWorkspace,
     archiveConversation,
+    branchConversation,
     removeConversation,
     guideStaged,
     startStagedEdit,

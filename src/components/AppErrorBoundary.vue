@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { onErrorCaptured, ref } from "vue";
+import { computed, onErrorCaptured, ref } from "vue";
 import { createLogger } from "@/services/logger";
+import { tr } from "@/services/i18n";
+import { useSettingStore } from "@/stores/setting";
 
 const log = createLogger("error-boundary");
+const settingStore = useSettingStore();
 
 const props = withDefaults(
   defineProps<{
@@ -14,6 +17,16 @@ const props = withDefaults(
 
 const errorMessage = ref<string | null>(null);
 const errorStack = ref<string | null>(null);
+const detailsOpen = ref(false);
+const generation = ref(0);
+const isDev = import.meta.env.DEV;
+
+const title = computed(() => tr(settingStore.language, "error.boundaryTitle"));
+const hint = computed(() =>
+  tr(settingStore.language, props.compact ? "error.boundaryHintCompact" : "error.boundaryHint"),
+);
+const retryLabel = computed(() => tr(settingStore.language, "error.boundaryRetry"));
+const detailsLabel = computed(() => tr(settingStore.language, "error.boundaryDetails"));
 
 function describeError(err: unknown): { message: string; stack: string | null } {
   if (err instanceof Error) {
@@ -33,7 +46,6 @@ function describeError(err: unknown): { message: string; stack: string | null } 
     if (typeof record.name === "string" && record.name.trim()) {
       return { message: record.name, stack: null };
     }
-    // Never JSON.stringify arbitrary objects (Vue proxies can hang the UI).
     return { message: Object.prototype.toString.call(err), stack: null };
   }
   return { message: String(err), stack: null };
@@ -43,6 +55,7 @@ onErrorCaptured((err, _instance, info) => {
   const described = describeError(err);
   errorMessage.value = described.message;
   errorStack.value = described.stack;
+  detailsOpen.value = false;
   log.error("captured", {
     message: described.message,
     info,
@@ -61,58 +74,92 @@ onErrorCaptured((err, _instance, info) => {
   } catch {
     // ignore quota / private mode
   }
-  // Stop propagation — the fallback UI already handled this error.
   return true;
 });
 
 function retry() {
   errorMessage.value = null;
   errorStack.value = null;
+  detailsOpen.value = false;
+  generation.value += 1;
 }
 </script>
 
 <template>
-  <div v-if="errorMessage" class="app-error-boundary" :class="{ compact: props.compact }">
-    <p class="title">Something went wrong</p>
-    <p class="message">{{ errorMessage }}</p>
-    <!-- Always show stack: overlay/prod builds otherwise hide the only clue. -->
-    <pre v-if="errorStack" class="stack">{{ errorStack }}</pre>
-    <button type="button" class="retry" @click="retry">Retry</button>
+  <div
+    class="error-boundary-root"
+    :class="{ compact: props.compact, failed: Boolean(errorMessage) }"
+  >
+    <div v-if="errorMessage" class="app-error-boundary" :class="{ compact: props.compact }">
+      <p class="title">{{ title }}</p>
+      <p class="hint">{{ hint }}</p>
+      <button type="button" class="retry" @click="retry">{{ retryLabel }}</button>
+      <button
+        v-if="isDev || errorStack"
+        type="button"
+        class="details-toggle"
+        @click="detailsOpen = !detailsOpen"
+      >
+        {{ detailsLabel }}
+      </button>
+      <pre v-if="detailsOpen" class="stack">{{ errorStack || errorMessage }}</pre>
+    </div>
+    <div v-else :key="generation" class="error-boundary-slot">
+      <slot />
+    </div>
   </div>
-  <slot v-else />
 </template>
 
 <style scoped>
+.error-boundary-root:not(.failed) {
+  display: contents;
+}
+.error-boundary-root.failed {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.error-boundary-root.failed.compact {
+  flex: 1;
+  min-width: 0;
+}
+
+.error-boundary-slot {
+  display: contents;
+}
+
 .app-error-boundary {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 10px;
   align-items: flex-start;
   justify-content: center;
   width: 100%;
   height: 100%;
-  padding: 1.5rem;
-  color: #e8e8e8;
-  background: #1f1f1f;
+  padding: 24px;
+  color: var(--peek-text, #e8e8e8);
+  background: var(--peek-bg, #1f1f1f);
   box-sizing: border-box;
 }
 
 .app-error-boundary.compact {
-  padding: 1rem;
+  padding: 20px 24px;
   min-height: 8rem;
+  background: transparent;
 }
 
 .title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 16px;
   font-weight: 600;
 }
 
-.message {
+.hint {
   margin: 0;
-  font-size: 0.875rem;
-  opacity: 0.85;
-  word-break: break-word;
+  max-width: 36em;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.78;
 }
 
 .stack {
@@ -120,26 +167,43 @@ function retry() {
   max-width: 100%;
   max-height: 12rem;
   overflow: auto;
-  padding: 0.75rem;
-  font-size: 0.7rem;
+  padding: 12px;
+  font-size: 11px;
   line-height: 1.4;
   white-space: pre-wrap;
-  background: #151515;
-  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--peek-text, #fff) 6%, transparent);
+  border-radius: 8px;
 }
 
-.retry {
+.retry,
+.details-toggle {
   appearance: none;
-  border: 1px solid #4a4a4a;
-  background: #2a2a2a;
-  color: inherit;
-  border-radius: 0.375rem;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.8125rem;
+  border-radius: 8px;
+  font-size: 13px;
   cursor: pointer;
 }
 
+.retry {
+  margin-top: 4px;
+  padding: 7px 14px;
+  border: 1px solid color-mix(in srgb, var(--peek-text, #fff) 16%, transparent);
+  background: color-mix(in srgb, var(--peek-text, #fff) 8%, transparent);
+  color: inherit;
+}
+
 .retry:hover {
-  background: #333;
+  background: color-mix(in srgb, var(--peek-text, #fff) 14%, transparent);
+}
+
+.details-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--peek-muted, #9a9a9a);
+  font-size: 12px;
+}
+
+.details-toggle:hover {
+  color: inherit;
 }
 </style>

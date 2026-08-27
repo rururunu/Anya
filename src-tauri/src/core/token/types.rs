@@ -125,8 +125,11 @@ impl TokenUsage {
             self.source = Some("multiple".to_string());
         }
         if let Some(cache_read) = delta.cache_read_tokens {
-            self.cache_read_tokens =
-                Some(self.cache_read_tokens.unwrap_or(0).saturating_add(cache_read));
+            self.cache_read_tokens = Some(
+                self.cache_read_tokens
+                    .unwrap_or(0)
+                    .saturating_add(cache_read),
+            );
         }
         if let Some(reasoning) = delta.reasoning_tokens {
             self.reasoning_tokens =

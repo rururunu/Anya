@@ -17,16 +17,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
-const SKIP_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "dist",
-    "build",
-    ".anya",
-    ".cursor",
-    "vendor",
-];
+use super::fs_skip;
 
 /// Maximum source file size to index (bytes).
 const MAX_FILE_BYTES: usize = 512 * 1024;
@@ -227,10 +218,7 @@ impl WorkspaceIndex {
         for entry in WalkDir::new(&self.root)
             .follow_links(false)
             .into_iter()
-            .filter_entry(|e| {
-                let name = e.file_name().to_string_lossy();
-                !(e.file_type().is_dir() && SKIP_DIRS.iter().any(|s| *s == name))
-            })
+            .filter_entry(|e| !fs_skip::should_skip_walk_entry(e))
         {
             let entry = entry.map_err(|e| e.to_string())?;
             if !entry.file_type().is_file() {

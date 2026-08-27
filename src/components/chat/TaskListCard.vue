@@ -11,7 +11,12 @@
       :aria-expanded="expanded"
       @click="expanded = !expanded"
     >
-      <ChevronRight class="task-list-chevron" :class="{ open: expanded }" :size="13" aria-hidden="true" />
+      <ChevronRight
+        class="task-list-chevron"
+        :class="{ open: expanded }"
+        :size="13"
+        aria-hidden="true"
+      />
       <ListTodo :size="13" aria-hidden="true" />
       <span class="task-list-title">{{ title }}</span>
       <span class="task-list-progress">{{ progressLabel }}</span>
@@ -49,14 +54,19 @@ import { Check, ChevronRight, ListTodo, Minus } from "@lucide/vue";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import type { TaskItem } from "@/types/chat";
+import { textIncludesQuery } from "@/services/chat/conversationFind";
+import { useExpandForFind } from "@/composables/chat/useConversationFind";
 
-const props = withDefaults(defineProps<{
-  tasks: TaskItem[];
-  /** When true, render in the chat transcript (expanded by default). */
-  embedded?: boolean;
-}>(), {
-  embedded: false,
-});
+const props = withDefaults(
+  defineProps<{
+    tasks: TaskItem[];
+    /** When true, render in the chat transcript (expanded by default). */
+    embedded?: boolean;
+  }>(),
+  {
+    embedded: false,
+  },
+);
 
 const settingStore = useSettingStore();
 const expanded = ref(props.embedded);
@@ -93,6 +103,16 @@ watch(
   },
 );
 
+useExpandForFind(
+  (query) =>
+    props.tasks.some(
+      (task) => textIncludesQuery(task.content, query) || textIncludesQuery(task.activeForm, query),
+    ),
+  () => {
+    expanded.value = true;
+  },
+);
+
 function normalizeStatus(status: string): string {
   return status.trim().toLowerCase().replace(/_/g, "-");
 }
@@ -110,10 +130,7 @@ function isCancelled(status: string): boolean {
 function isActive(status: string): boolean {
   const value = normalizeStatus(status);
   return (
-    value === "in-progress" ||
-    value === "inprogress" ||
-    value === "active" ||
-    value === "running"
+    value === "in-progress" || value === "inprogress" || value === "active" || value === "running"
   );
 }
 

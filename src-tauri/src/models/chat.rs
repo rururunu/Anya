@@ -4,6 +4,22 @@ pub use crate::core::runtime::ChatMessage;
 use crate::core::token::TokenUsage;
 use crate::models::settings::{ChatMode, ToolApprovalMode};
 
+/// Toolbar payload for Image chat mode. Empty fields fall back to generate_image defaults.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageGenSendOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub n: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example_image: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSendRequest {
@@ -24,6 +40,9 @@ pub struct ChatSendRequest {
     pub chat_mode: Option<ChatMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_approval_mode: Option<ToolApprovalMode>,
+    /// Image-mode toolbar (size / quality / count / style). Ignored unless chatMode is image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_gen: Option<ImageGenSendOptions>,
     /// When true, do not auto-enter plan mode for this send (e.g. approve & execute).
     #[serde(default)]
     pub skip_auto_plan: bool,
@@ -40,6 +59,7 @@ pub struct ChatSendOverrides {
     pub model_provider: Option<String>,
     pub chat_mode: Option<ChatMode>,
     pub tool_approval_mode: Option<ToolApprovalMode>,
+    pub image_gen: Option<ImageGenSendOptions>,
     pub skip_auto_plan: bool,
     pub resume_plan: bool,
 }
@@ -51,6 +71,7 @@ impl ChatSendOverrides {
             model_provider: request.model_provider.clone(),
             chat_mode: request.chat_mode,
             tool_approval_mode: request.tool_approval_mode,
+            image_gen: request.image_gen.clone(),
             skip_auto_plan: request.skip_auto_plan,
             resume_plan: request.resume_plan,
         }
@@ -130,6 +151,8 @@ pub struct ChatFinishedEvent {
 #[serde(rename_all = "camelCase")]
 pub struct ChatTokenUsageEvent {
     pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
     pub model: String,
     pub usage: TokenUsage,
 }
@@ -141,6 +164,14 @@ pub struct SessionCacheUsage {
     pub cache_read_tokens: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageCacheUsage {
+    pub message_id: String,
+    pub input_tokens: usize,
+    pub cache_read_tokens: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,7 +226,21 @@ pub struct ContextUsageResponse {
     #[serde(default)]
     pub system_prompt_tokens: usize,
     #[serde(default)]
+    pub environment_tokens: usize,
+    #[serde(default)]
     pub tools_tokens: usize,
+    #[serde(default)]
+    pub rules_tokens: usize,
+    #[serde(default)]
+    pub memories_tokens: usize,
+    #[serde(default)]
+    pub skills_tokens: usize,
+    #[serde(default)]
+    pub mcp_tokens: usize,
+    #[serde(default)]
+    pub subagent_tokens: usize,
+    #[serde(default)]
+    pub summarized_tokens: usize,
     #[serde(default)]
     pub message_tokens: usize,
 }
@@ -213,6 +258,10 @@ pub struct ChatHistoryResponse {
     pub messages: Vec<ChatMessage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_cache_usage: Option<SessionCacheUsage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub message_cache_usages: Vec<MessageCacheUsage>,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub message_completed_at: std::collections::HashMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

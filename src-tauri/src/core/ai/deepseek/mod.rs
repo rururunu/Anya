@@ -25,7 +25,9 @@ use anthropic::{
 pub(crate) use messages::build_api_body;
 pub(crate) use messages::build_responses_body;
 pub use models::list_models;
-pub(crate) use models::{endpoint_url_for_protocol, normalize_chat_completions_url};
+pub(crate) use models::{
+    endpoint_url_for_protocol, normalize_chat_completions_url, normalize_images_generations_url,
+};
 pub use models::{list_openai_compatible_models, normalize_models_url};
 use stream::RETRY_BACKOFF;
 
@@ -119,7 +121,9 @@ impl DeepSeekProvider {
     }
 
     fn provider_base_url(&self) -> Option<String> {
-        self.resolve_base_url.as_ref().and_then(|resolver| resolver())
+        self.resolve_base_url
+            .as_ref()
+            .and_then(|resolver| resolver())
     }
 
     fn request_url(&self, protocol: ProviderApiProtocol) -> String {
@@ -328,9 +332,7 @@ async fn dispatch_with_protocol_fallback(
                 );
                 return Ok(());
             }
-            Err(error)
-                if index + 1 < protocols.len() && is_format_rejected(&error.to_string()) =>
-            {
+            Err(error) if index + 1 < protocols.len() && is_format_rejected(&error.to_string()) => {
                 last_error = Some(error);
             }
             Err(error) => return Err(error),
@@ -355,23 +357,13 @@ async fn dispatch_stream(
 ) -> Result<(), ProviderError> {
     match protocol {
         WireProtocol::Responses => {
-            let body = build_responses_body(
-                request,
-                model,
-                true,
-                effort,
-                continue_thinking_after_tools,
-            );
+            let body =
+                build_responses_body(request, model, true, effort, continue_thinking_after_tools);
             run_responses_stream(client, url, api_key, &body, tx).await
         }
         WireProtocol::AnthropicMessages => {
-            let body = build_anthropic_body(
-                request,
-                model,
-                true,
-                effort,
-                continue_thinking_after_tools,
-            );
+            let body =
+                build_anthropic_body(request, model, true, effort, continue_thinking_after_tools);
             run_anthropic_stream(client, url, api_key, &body, tx).await
         }
         WireProtocol::ChatCompletions => {
@@ -906,13 +898,7 @@ mod tests {
                 "parameters": { "type": "object" }
             }
         })]);
-        let body = build_responses_body(
-            &request,
-            "grok-4.6",
-            true,
-            ReasoningEffort::High,
-            true,
-        );
+        let body = build_responses_body(&request, "grok-4.6", true, ReasoningEffort::High, true);
         let obj = body.as_object().expect("object body");
         assert!(obj.contains_key("input"));
         assert!(!obj.contains_key("messages"));
@@ -1122,6 +1108,34 @@ mod tests {
         assert_eq!(
             normalize_chat_completions_url("https://www.micuapi.ai/chat/completions"),
             "https://www.micuapi.ai/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn normalize_images_generations_url_from_chat_base() {
+        assert_eq!(
+            normalize_images_generations_url("https://api.openai.com/v1"),
+            "https://api.openai.com/v1/images/generations"
+        );
+        assert_eq!(
+            normalize_images_generations_url("https://api.openai.com/v1/chat/completions"),
+            "https://api.openai.com/v1/images/generations"
+        );
+        assert_eq!(
+            normalize_images_generations_url("https://api.openai.com/v1/images/generations"),
+            "https://api.openai.com/v1/images/generations"
+        );
+        assert_eq!(
+            normalize_images_generations_url("https://proxy.example"),
+            "https://proxy.example/v1/images/generations"
+        );
+        assert_eq!(
+            normalize_images_generations_url("https://image.kuaipao.pro/v1"),
+            "https://image.kuaipao.pro/v1/images/generations"
+        );
+        assert_eq!(
+            normalize_images_generations_url("https://image.kuaipao.pro/v1/"),
+            "https://image.kuaipao.pro/v1/images/generations"
         );
     }
 

@@ -22,11 +22,12 @@
         :cards-collapsed="displayMode === 'compact'"
         @inspect-subagent="emit('inspectSubagent', $event)"
         @preview-image="emit('previewImage', $event)"
+        @edit-from-image="emit('editFromImage', $event)"
         @toggle-process="toggleProcess"
       />
     </template>
 
-    <!-- Completed: fold thinking + tools into one collapsed block; keep final reply open. -->
+    <!-- Completed: fold thinking + tools; keep generated images and the final reply open. -->
     <template v-else>
       <details
         v-if="preambleSegments.length"
@@ -56,6 +57,7 @@
             :cards-collapsed="displayMode === 'compact'"
             @inspect-subagent="emit('inspectSubagent', $event)"
             @preview-image="emit('previewImage', $event)"
+            @edit-from-image="emit('editFromImage', $event)"
             @toggle-process="toggleProcess"
           />
         </div>
@@ -77,6 +79,7 @@
         :cards-collapsed="displayMode === 'compact'"
         @inspect-subagent="emit('inspectSubagent', $event)"
         @preview-image="emit('previewImage', $event)"
+        @edit-from-image="emit('editFromImage', $event)"
         @toggle-process="toggleProcess"
       />
     </template>
@@ -85,7 +88,7 @@
 
 <script setup lang="ts">
 import { ChevronRight } from "@lucide/vue";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, inject, reactive, ref, watch } from "vue";
 import AgentWorkSegment from "@/components/chat/AgentWorkSegment.vue";
 import type { ChatMessage, ToolActivity } from "@/types/chat";
 import type { AgentWorkDisplay, AppLanguage } from "@/types/setting";
@@ -94,6 +97,8 @@ import {
   isProcessSegmentCollapsible,
   summarizeProcessActivities,
 } from "@/services/chat/toolActivityDisplay";
+import { activityMatchesQuery, textIncludesQuery } from "@/services/chat/conversationFind";
+import { conversationFindKey } from "@/composables/chat/useConversationFind";
 import { tr } from "@/services/i18n";
 
 const props = withDefaults(
@@ -114,6 +119,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   inspectSubagent: [activityId: string];
   previewImage: [source: string];
+  editFromImage: [payload: import("@/services/chat/imageEditReference").ImageEditReferencePayload];
 }>();
 
 type TimelineSegment =
@@ -123,7 +129,7 @@ type TimelineSegment =
   | { type: "inline"; id: string; activities: ToolActivity[]; operations: boolean }
   | { type: "process"; id: string; activities: ToolActivity[]; operations: boolean };
 
-const SHOWCASE_KINDS = new Set(["shell", "create", "edit", "delete", "move"]);
+const SHOWCASE_KINDS = new Set(["shell", "create", "edit", "delete", "move", "image"]);
 const TASK_LIST_TOOLS = new Set(["update_tasks", "todo_write"]);
 
 const processOpen = reactive(new Map<string, boolean>());
@@ -164,26 +170,44 @@ const hasRunningSubagent = computed(() =>
   ),
 );
 
-/** Task lists + (in detailed mode) shell/file edits stay in the open stream. */
+/** Task lists + finished images + (in detailed mode) shell/file edits stay in the open stream. */
 function isInlineActivity(activity: ToolActivity): boolean {
+  if (activity.kind === "image") return activity.status !== "running";
   if (TASK_LIST_TOOLS.has(activity.toolName)) return true;
   if (props.displayMode === "compact") return false;
   return SHOWCASE_KINDS.has(activity.kind);
 }
 
 function isOperationsActivity(activity: ToolActivity): boolean {
-  return SHOWCASE_KINDS.has(activity.kind) && activity.kind !== "shell";
+  return (
+    SHOWCASE_KINDS.has(activity.kind) && activity.kind !== "shell" && activity.kind !== "image"
+  );
 }
 
 function segmentKind(activity: ToolActivity): "inline" | "process" {
   return isInlineActivity(activity) ? "inline" : "process";
 }
 
+function canMergeActivities(last: ToolActivity, next: ToolActivity): boolean {
+  // Keep image cards in their own segment so the completed fold can leave
+  // them visible without also un-collapsing adjacent shell/file work.
+  if (last.kind === "image" || next.kind === "image") {
+    return last.kind === "image" && next.kind === "image";
+  }
+  return isOperationsActivity(last) === isOperationsActivity(next);
+}
+
 function pushActivity(segments: TimelineSegment[], activity: ToolActivity) {
   const kind = segmentKind(activity);
   const operations = isOperationsActivity(activity);
   const last = segments[segments.length - 1];
-  if (last && last.type === kind && last.operations === operations) {
+  if (
+    last &&
+    last.type === kind &&
+    last.operations === operations &&
+    last.activities[0] &&
+    canMergeActivities(last.activities[0], activity)
+  ) {
     if (!last.activities.some((item) => item.id === activity.id)) {
       last.activities.push(activity);
     }
@@ -414,12 +438,23 @@ const segments = computed<TimelineSegment[]>(() => {
   return coalesceCompletedNarration(coalesceCompletedReasoning(out));
 });
 
+function isGeneratedImageSegment(segment: TimelineSegment): boolean {
+  return (
+    (segment.type === "inline" || segment.type === "process") &&
+    segment.activities.length > 0 &&
+    segment.activities.every((activity) => activity.kind === "image")
+  );
+}
+
+/** After the turn completes, images stay next to the reply instead of inside the fold. */
+function isReplySegment(segment: TimelineSegment): boolean {
+  return segment.type === "content" || isGeneratedImageSegment(segment);
+}
+
 const preambleSegments = computed(() =>
-  segments.value.filter((segment) => segment.type !== "content"),
+  segments.value.filter((segment) => !isReplySegment(segment)),
 );
-const replySegments = computed(() =>
-  segments.value.filter((segment) => segment.type === "content"),
-);
+const replySegments = computed(() => segments.value.filter((segment) => isReplySegment(segment)));
 
 const foldReasoningText = computed(() => {
   const fromSegments = preambleSegments.value
@@ -539,6 +574,33 @@ watch(
       if (segment.type !== "process") continue;
       if (userToggledProcess.has(segment.id)) continue;
       processOpen.set(segment.id, shouldAutoExpandProcess(segment));
+    }
+  },
+  { immediate: true },
+);
+
+const conversationFind = inject(conversationFindKey, null);
+
+function segmentMatchesQuery(segment: TimelineSegment, query: string) {
+  if (segment.type === "reasoning" || segment.type === "narration" || segment.type === "content") {
+    return textIncludesQuery(segment.content, query);
+  }
+  return segment.activities.some((activity) => activityMatchesQuery(activity, query));
+}
+
+watch(
+  () => [conversationFind?.active.value, conversationFind?.query.value, streaming.value] as const,
+  ([active, query]) => {
+    if (!active || !query?.trim()) return;
+    if (preambleSegments.value.some((segment) => segmentMatchesQuery(segment, query))) {
+      foldOpen.value = true;
+      foldPinned.value = true;
+    }
+    for (const segment of segments.value) {
+      if (segment.type !== "process") continue;
+      if (!segment.activities.some((activity) => activityMatchesQuery(activity, query))) continue;
+      userToggledProcess.add(segment.id);
+      processOpen.set(segment.id, true);
     }
   },
   { immediate: true },

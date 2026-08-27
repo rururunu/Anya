@@ -46,6 +46,10 @@ const defaultSettings: AppSettings = {
   chatModelProvider: "",
   multimodalModel: "gpt-4o",
   multimodalModelProvider: "",
+  imageModel: "gpt-image-2",
+  imageModelProvider: "",
+  imageProviders: [],
+  imageStyleTemplates: [],
   multimodalSplitAnalysis: true,
   largeContextEnabled: true,
   reasoningEffort: "disabled",
@@ -178,6 +182,10 @@ function applyCommonSettings(target: AppSettings, settings: AppSettings) {
   target.chatModelProvider = settings.chatModelProvider ?? "";
   target.multimodalModel = settings.multimodalModel ?? "gpt-4o";
   target.multimodalModelProvider = settings.multimodalModelProvider ?? "";
+  target.imageModel = settings.imageModel ?? "gpt-image-2";
+  target.imageModelProvider = settings.imageModelProvider ?? "";
+  target.imageProviders = settings.imageProviders ?? [];
+  target.imageStyleTemplates = settings.imageStyleTemplates ?? [];
   target.multimodalSplitAnalysis = settings.multimodalSplitAnalysis ?? true;
   target.largeContextEnabled = settings.largeContextEnabled ?? true;
   target.reasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);

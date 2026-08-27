@@ -2,9 +2,27 @@
   <DialogRoot :open="open" @update:open="handleOpenChange">
     <DialogPortal>
       <DialogOverlay class="confirm-overlay" />
-      <DialogContent class="confirm-dialog" :aria-describedby="undefined">
+      <DialogContent
+        class="confirm-dialog"
+        :class="{ 'is-detail': Boolean(options.detailLabel) }"
+        :aria-describedby="undefined"
+      >
+        <button
+          v-if="options.detailLabel"
+          type="button"
+          class="confirm-close"
+          :aria-label="options.cancelLabel"
+          @click="settle(false)"
+        >
+          <X :size="16" />
+        </button>
         <div class="confirm-body">
-          <span class="confirm-icon" :class="options.tone" aria-hidden="true">
+          <span
+            v-if="!options.detailLabel"
+            class="confirm-icon"
+            :class="options.tone"
+            aria-hidden="true"
+          >
             <TriangleAlert v-if="options.tone === 'danger'" :size="16" />
             <Info v-else :size="16" />
           </span>
@@ -13,6 +31,10 @@
             <DialogDescription class="confirm-description">
               {{ options.description }}
             </DialogDescription>
+            <div v-if="options.detailLabel" class="confirm-detail">
+              <Folder :size="16" />
+              <span>{{ options.detailLabel }}</span>
+            </div>
           </div>
         </div>
 
@@ -36,7 +58,7 @@
 
 <script setup lang="ts">
 import { reactive, ref } from "vue";
-import { Info, TriangleAlert } from "@lucide/vue";
+import { Folder, Info, TriangleAlert, X } from "@lucide/vue";
 import {
   DialogContent,
   DialogDescription,
@@ -54,22 +76,24 @@ export interface ConfirmDialogOptions {
   confirmLabel: string;
   cancelLabel: string;
   tone?: ConfirmDialogTone;
+  detailLabel?: string;
 }
 
 const open = ref(false);
-const options = reactive<Required<ConfirmDialogOptions>>({
+const options = reactive({
   title: "",
   description: "",
   confirmLabel: "Confirm",
   cancelLabel: "Cancel",
-  tone: "danger",
+  tone: "danger" as ConfirmDialogTone,
+  detailLabel: "",
 });
 let resolver: ((confirmed: boolean) => void) | null = null;
 
 /** Open the dialog and resolve when the user confirms or cancels. */
 function ask(nextOptions: ConfirmDialogOptions) {
   resolver?.(false);
-  Object.assign(options, { tone: "danger" }, nextOptions);
+  Object.assign(options, { tone: "danger", detailLabel: "" }, nextOptions);
   open.value = true;
   return new Promise<boolean>((resolve) => {
     resolver = resolve;
@@ -213,5 +237,92 @@ defineExpose({ ask });
   background: var(--peek-surface, #ffffff);
   color: var(--peek-text, #242424);
   box-shadow: var(--peek-elev-md);
+}
+
+.confirm-dialog.is-detail {
+  width: min(420px, calc(100vw - 32px));
+  padding: 22px 22px 18px;
+  border-radius: 16px;
+}
+
+.confirm-dialog .confirm-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--peek-muted, #8b909a);
+  cursor: pointer;
+}
+
+.confirm-dialog .confirm-close:hover {
+  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
+  color: var(--peek-text);
+}
+
+.confirm-dialog.is-detail .confirm-body {
+  display: block;
+  padding-right: 28px;
+}
+
+.confirm-dialog.is-detail .confirm-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.confirm-dialog.is-detail .confirm-description {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.confirm-dialog .confirm-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 14px;
+  color: var(--peek-muted, #8b909a);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.confirm-dialog .confirm-detail span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirm-dialog.is-detail .confirm-actions {
+  margin-top: 22px;
+}
+
+.confirm-dialog.is-detail .confirm-button {
+  min-width: 76px;
+  height: 32px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.confirm-dialog.is-detail .confirm-button.ghost {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
+}
+
+.confirm-dialog.is-detail .confirm-button.primary {
+  background: var(--peek-text, #171717);
+  color: var(--peek-surface, #ffffff);
+}
+
+.confirm-dialog.is-detail .confirm-button.primary:hover {
+  filter: none;
+  opacity: 0.88;
 }
 </style>

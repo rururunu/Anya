@@ -22,6 +22,8 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { ChevronRight } from "@lucide/vue";
 import { displayReasoningText } from "@/services/chat/reasoningDisplay";
+import { textIncludesQuery } from "@/services/chat/conversationFind";
+import { useExpandForFind } from "@/composables/chat/useConversationFind";
 import type { AppLanguage } from "@/types/setting";
 import { tr } from "@/services/i18n";
 
@@ -79,6 +81,15 @@ watch(
     }
   },
   { immediate: true },
+);
+
+useExpandForFind(
+  (query) => textIncludesQuery(props.reasoning, query),
+  () => {
+    isOpen.value = true;
+    if (!props.streaming) userPinned.value = true;
+  },
+  () => props.streaming,
 );
 
 function handleToggle(event: Event) {

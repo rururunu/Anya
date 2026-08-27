@@ -976,18 +976,12 @@ async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), S
             let Some(state) = app.try_state::<AppState>() else {
                 return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
             };
-            match state.core.chat().context_usage(
-                &app,
-                session_id,
-                draft_message,
-                None,
-                model_id,
-            ) {
-                Ok(usage) => send_msg(
-                    ws,
-                    &ServerMessage::rpc_ok(request_id, json!(usage)),
-                )
-                .await,
+            match state
+                .core
+                .chat()
+                .context_usage(&app, session_id, draft_message, None, model_id)
+            {
+                Ok(usage) => send_msg(ws, &ServerMessage::rpc_ok(request_id, json!(usage))).await,
                 Err(error) => {
                     send_msg(ws, &ServerMessage::rpc_err(request_id, error.to_string())).await
                 }
@@ -1216,6 +1210,7 @@ async fn handle_chat_send(
         },
         chat_mode: Some(compose.chat_mode),
         tool_approval_mode: Some(compose.tool_approval_mode),
+        image_gen: None,
         skip_auto_plan: false,
         resume_plan: false,
     };
@@ -1261,6 +1256,7 @@ fn parse_chat_mode(raw: Option<&str>) -> Option<crate::models::settings::ChatMod
         "ask" => Some(crate::models::settings::ChatMode::Ask),
         "agent" => Some(crate::models::settings::ChatMode::Agent),
         "plan" => Some(crate::models::settings::ChatMode::Plan),
+        "image" => Some(crate::models::settings::ChatMode::Image),
         _ => None,
     }
 }
@@ -1367,14 +1363,21 @@ fn remote_provider_display_name(
     if provider_id == "gemini" {
         return "Gemini".into();
     }
-    if let Some(name) = custom.map(|item| item.name.trim()).filter(|name| !name.is_empty()) {
+    if let Some(name) = custom
+        .map(|item| item.name.trim())
+        .filter(|name| !name.is_empty())
+    {
         return name.to_string();
     }
     let preset = custom
         .and_then(|item| item.preset_id.as_deref())
         .unwrap_or("")
         .trim();
-    match if preset.is_empty() { provider_id } else { preset } {
+    match if preset.is_empty() {
+        provider_id
+    } else {
+        preset
+    } {
         "mimo" => "小米 MiMo".into(),
         "zhipu" | "glm" => "智谱 GLM".into(),
         "volcengine" => "火山方舟".into(),
@@ -1390,9 +1393,7 @@ fn remote_provider_display_name(
             .map(|part| {
                 let mut chars = part.chars();
                 match chars.next() {
-                    Some(first) => {
-                        first.to_uppercase().collect::<String>() + chars.as_str()
-                    }
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
                     None => String::new(),
                 }
             })
@@ -1427,9 +1428,9 @@ fn apply_remote_reasoning_effort(app: &AppHandle, effort: &str) {
     if trimmed.is_empty() {
         return;
     }
-    let Ok(parsed) = serde_json::from_value::<crate::models::settings::ReasoningEffort>(
-        json!(trimmed.to_ascii_lowercase()),
-    ) else {
+    let Ok(parsed) = serde_json::from_value::<crate::models::settings::ReasoningEffort>(json!(
+        trimmed.to_ascii_lowercase()
+    )) else {
         return;
     };
     let Ok(mut settings) = crate::services::settings_store::get_settings(app) else {

@@ -60,8 +60,20 @@ export function deleteWorkspace(id: string): Promise<void> {
   return invoke("delete_workspace", { id });
 }
 
+export function updateWorkspace(
+  id: string,
+  name: string,
+  description?: string | null,
+): Promise<Workspace> {
+  return invoke("update_workspace", { id, name, description: description ?? null });
+}
+
 export function openWorkspaceFolder(id: string): Promise<void> {
   return invoke("open_workspace_folder", { id });
+}
+
+export function openWorkspaceInTerminal(id: string): Promise<void> {
+  return invoke("open_workspace_in_terminal", { id });
 }
 
 export function setWorkspacePinned(id: string, pinned: boolean): Promise<void> {

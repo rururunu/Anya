@@ -98,15 +98,15 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
         contextWindowTokens > 0
       ) {
         chatStore.setContextUsage(sId, {
+          ...(prev ?? { usageRatio: 0, estimatedTokens: 0, contextWindowTokens: 0 }),
           usageRatio: event.usageRatio,
           estimatedTokens,
           contextWindowTokens,
         });
       } else if (typeof event.usageRatio === "number") {
         chatStore.setContextUsage(sId, {
+          ...(prev ?? { usageRatio: 0, estimatedTokens: 0, contextWindowTokens: 0 }),
           usageRatio: event.usageRatio,
-          estimatedTokens: prev?.estimatedTokens ?? 0,
-          contextWindowTokens: prev?.contextWindowTokens ?? 0,
         });
       }
       // Compacted notices only refresh the usage ring. The in-thread
@@ -163,6 +163,11 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
         compacted.contextWindowTokens
       ) {
         chatStore.setContextUsage(sId, {
+          ...(chatStore.contextUsage[sId] ?? {
+            usageRatio: 0,
+            estimatedTokens: 0,
+            contextWindowTokens: 0,
+          }),
           usageRatio: compacted.usageRatio,
           estimatedTokens: compacted.estimatedTokens,
           contextWindowTokens: compacted.contextWindowTokens,
@@ -216,17 +221,24 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
   });
 
   await listenChatTokenUsage((payload) => {
-    const event = payload as ChatTokenUsageEvent & { session_id?: string };
+    const event = payload as ChatTokenUsageEvent & {
+      session_id?: string;
+      message_id?: string;
+    };
     const sId = resolveSessionId(event.sessionId, event.session_id);
     const cacheRead = event.usage?.cacheReadTokens;
     if (!sId || cacheRead == null || !Number.isFinite(cacheRead)) {
       return;
     }
-    chatStore.setSessionCacheUsage(sId, {
-      inputTokens: event.usage.inputTokens ?? 0,
-      cacheReadTokens: cacheRead,
-      model: event.model,
-    });
+    chatStore.addPromptCacheUsage(
+      sId,
+      {
+        inputTokens: event.usage.inputTokens ?? 0,
+        cacheReadTokens: cacheRead,
+        model: event.model,
+      },
+      event.messageId ?? event.message_id,
+    );
   });
 
   await listenChatError((payload) => {
@@ -303,7 +315,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
     await listen<{
       sessionId?: string;
       compose?: {
-        chatMode?: "ask" | "agent" | "plan";
+        chatMode?: "ask" | "agent" | "plan" | "image";
         toolApprovalMode?: "ask" | "auto" | "alwaysAllow";
         chatModel?: string;
         chatModelProvider?: string;

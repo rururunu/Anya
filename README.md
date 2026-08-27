@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.12-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.13-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -40,7 +40,7 @@
 | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | **Overlay**     | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                    |
 | **Workbench**   | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                     |
-| **Agent**       | Ask / Agent / Plan; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                              |
+| **Agent**       | Ask / Agent / Plan / Image; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                      |
 | **Companion**   | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone. |
 | **RAG**         | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.         |
 | **Local-first** | Keys, history, and settings stay on your machine by default.                                                                |
@@ -130,13 +130,13 @@ When Agent edits files, Anya shows a per-file summary and a focused Diff view.
 
 ### Settings
 
-Configure models, providers, agent behavior, RAG search, and extensions from the embedded settings page (no separate settings window). Optional frosted-glass chrome blurs the titlebar and sidebars.
+Configure models, providers, agent behavior, Image generation, RAG search, and extensions from the embedded settings page (no separate settings window). Optional frosted-glass chrome blurs the titlebar and sidebars.
 
 <p align="center">
   <img src="./docs/image/workspace-settings.png" alt="Anya settings" width="900" />
 </p>
 
-Common controls include provider and model protocol, disabled models, model-specific reasoning effort, vision / multimodal fallback, language, tool approval mode, Agent display density, context-window budget, and **RAG Search** (API or local embeddings; off by default).
+Common controls include provider and model protocol, disabled models, model-specific reasoning effort, vision / multimodal fallback, language, tool approval mode, Agent display density, context-window budget, **Image** providers/models, and **RAG Search** (API or local embeddings; off by default).
 
 Reasoning controls follow the selected model's advertised family. DeepSeek exposes disabled / low / high / max; GPT, Grok, Claude, Qwen, Kimi, and other compatible families expose the levels their endpoint supports. Unsupported values are clamped before a request is sent.
 
@@ -144,15 +144,16 @@ Reasoning controls follow the selected model's advertised family. DeepSeek expos
 
 ## Capabilities
 
-### Ask / Agent / Plan
+### Ask / Agent / Plan / Image
 
 | Mode      | Intent                              | Typical tools / constraints                                                        |
 | --------- | ----------------------------------- | ---------------------------------------------------------------------------------- |
 | **Ask**   | Read-only investigation             | Files, search, LSP, other read-only tools                                          |
 | **Agent** | Default; change the world carefully | Files, PowerShell, Git, Skills, MCP, sub-agents; complex tasks may auto-enter Plan |
 | **Plan**  | Agree on steps before writes        | Write tools locked; `update_tasks` + end-of-message approval card                  |
+| **Image** | Every turn draws a picture          | Only `generate_image`; Settings → Image providers (not chat providers)             |
 
-Ask withholds write / shell / git. Agent enables them under your approval policy. Plan (manual or auto) blocks writes via the plan gate until you approve at the end of the assistant reply. All three share the same `AgentRunner` loop — policy lives in tool exposure, approval, and the plan gate, not a second orchestrator.
+Ask withholds write / shell / git. Agent enables them under your approval policy. Plan (manual or auto) blocks writes via the plan gate until you approve at the end of the assistant reply. Image mode pins the Images API tool and prompt so each turn produces a real image. All four share the same `AgentRunner` loop — policy lives in tool exposure, approval, plan/image gates, not a second orchestrator.
 
 ### Timeline
 
@@ -270,7 +271,7 @@ invoke("chat")
   → ConversationManager persists messages (+ work_timeline)
 ```
 
-`AgentRunner` owns the model↔tools loop. `AgentRuntime` owns run lifecycle (cancel, soft-inject, debug). Ask / Agent / Plan share that loop; Plan gates writes via `plan_mode` until end-of-message approval. Do not add a second chat loop beside `AgentRunner`.
+`AgentRunner` owns the model↔tools loop. `AgentRuntime` owns run lifecycle (cancel, soft-inject, debug). Ask / Agent / Plan / Image share that loop; Plan gates writes via `plan_mode` until end-of-message approval; Image mode exposes only `generate_image` via `image_mode`. Do not add a second chat loop beside `AgentRunner`.
 
 Full diagrams: [Architecture overview](./docs/architecture-overview.md) · [简体中文](./docs/architecture-overview.zh-CN.md)
 
@@ -291,7 +292,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.12_x64.msi`.
+The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.13_x64.msi`.
 
 For signing, `latest.json`, and GitHub Releases, see [Releases and remote updates](./docs/release.md).
 

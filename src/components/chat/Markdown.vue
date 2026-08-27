@@ -27,6 +27,7 @@ import "katex/dist/katex.min.css";
 import { copyText } from "@/services/clipboard";
 import { parseChartSpec } from "@/services/chat/chartSpec";
 import { normalizeMarkdownInput } from "@/services/chat/markdownNormalize";
+import { resolveChatImageSrc } from "@/services/chat/localImageSrc";
 import { disposeChartBlocks, hydrateChartBlocks } from "./chartHydration";
 
 const props = defineProps<{
@@ -70,6 +71,13 @@ renderer.code = ({ text, lang }) => {
   const languageLabel = displayLanguage(language);
 
   return `<div class="code-block"><div class="code-block-toolbar"><span class="code-language"><span class="code-language-icon" data-code-language-icon="${language}"></span><span>${languageLabel}</span></span><button type="button" class="code-copy-button" data-code-copy aria-label="Copy code" title="Copy code"></button></div><pre><code class="hljs${languageClass}">${highlighted}</code></pre></div>\n`;
+};
+
+renderer.image = ({ href, title, text }) => {
+  const original = (href ?? "").trim();
+  const src = resolveChatImageSrc(original);
+  const titleAttr = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
+  return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(text ?? "")}" data-image-source="${escapeHtmlAttribute(original)}"${titleAttr} />`;
 };
 
 function iconForLanguage(language: string): Component {
@@ -193,6 +201,7 @@ const html = computed(() => {
     }) as string;
     return DOMPurify.sanitize(raw, {
       ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|file|sms):|[^&#]*?:|data:image\/)/i,
+      ADD_ATTR: ["data-image-source"],
       // Tables are part of the default allowlist, but some DOM environments
       // (e.g. certain test harnesses or webviews) resolve tag checks
       // differently. Declare the full table family explicitly so markdown
@@ -240,7 +249,8 @@ async function onMarkdownClick(event: MouseEvent) {
 
   const image = target.closest("img");
   if (image instanceof HTMLImageElement) {
-    const source = image.getAttribute("src")?.trim();
+    const source =
+      image.getAttribute("data-image-source")?.trim() || image.getAttribute("src")?.trim();
     if (!source) return;
     event.preventDefault();
     event.stopPropagation();

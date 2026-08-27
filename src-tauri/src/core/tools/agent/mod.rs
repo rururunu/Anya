@@ -21,6 +21,10 @@ pub fn register_all(registry: &mut ToolRegistry) {
     registry.register(Arc::new(RunParallelSubagentsTool));
 }
 
+pub fn is_subagent_tool(name: &str) -> bool {
+    matches!(name, "run_subagent" | "run_parallel_subagents")
+}
+
 pub fn is_async_runtime_tool(name: &str) -> bool {
     matches!(
         name,
@@ -140,7 +144,11 @@ fn resolve_subagent_provider(
     let provider = if provider_hint.is_empty() {
         crate::core::ai::registry::resolve_provider_for_model(app.clone(), model_id.clone())
     } else {
-        crate::core::ai::resolve_provider_for_selection(app.clone(), model_id.clone(), provider_hint)
+        crate::core::ai::resolve_provider_for_selection(
+            app.clone(),
+            model_id.clone(),
+            provider_hint,
+        )
     };
     Ok(Arc::new(AccountingProvider::new(
         provider,
@@ -282,8 +290,8 @@ async fn execute_child(
     }
     if result.as_ref().err().is_some_and(is_unservable_model_error) {
         if let Some(fallback) = fallback {
-            result = AgentRunner::run_subagent(fallback, registry, child, full_prompt, read_only)
-                .await;
+            result =
+                AgentRunner::run_subagent(fallback, registry, child, full_prompt, read_only).await;
         }
     }
 

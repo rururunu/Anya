@@ -33,6 +33,8 @@
     :operations="segment.operations"
     :cards-collapsed="false"
     @inspect-subagent="emit('inspectSubagent', $event)"
+    @preview-image="emit('previewImage', $event)"
+    @edit-from-image="emit('editFromImage', $event)"
   />
 
   <ToolActivityList
@@ -42,6 +44,8 @@
     :operations="segment.operations"
     flat
     @inspect-subagent="emit('inspectSubagent', $event)"
+    @preview-image="emit('previewImage', $event)"
+    @edit-from-image="emit('editFromImage', $event)"
   />
 
   <section v-else-if="segment.type === 'process'" class="agent-work-details">
@@ -62,6 +66,8 @@
         :cards-collapsed="cardsCollapsed"
         flat
         @inspect-subagent="emit('inspectSubagent', $event)"
+        @preview-image="emit('previewImage', $event)"
+        @edit-from-image="emit('editFromImage', $event)"
       />
     </div>
   </section>
@@ -100,6 +106,7 @@ defineProps<{
 const emit = defineEmits<{
   inspectSubagent: [activityId: string];
   previewImage: [source: string];
+  editFromImage: [payload: import("@/services/chat/imageEditReference").ImageEditReferencePayload];
   toggleProcess: [id: string];
 }>();
 </script>

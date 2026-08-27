@@ -12,6 +12,7 @@ export const settingsFieldIds = [
   "deepseekApiKey",
   "defaultModel",
   "multimodalModel",
+  "imageModel",
   "multimodalSplitAnalysis",
   "largeContextEnabled",
   "reasoningEffort",
@@ -55,6 +56,7 @@ export type SettingHelpFieldId = (typeof settingsFieldHelpIds)[number];
 type CategoryKey =
   | "appearance"
   | "ai"
+  | "image"
   | "memory"
   | "search"
   | "agent"
@@ -73,6 +75,7 @@ type GroupKey =
   | "hotkeys"
   | "performance"
   | "modelSelection"
+  | "imageGeneration"
   | "context"
   | "reasoning"
   | "memory"
@@ -84,7 +87,7 @@ type GroupKey =
   | "agentCapabilities"
   | "plugins"
   | "about";
-type PageDescKey = "appearance" | "ai" | "agent" | "memory" | "search" | "plugins";
+type PageDescKey = "appearance" | "ai" | "image" | "agent" | "memory" | "search" | "plugins";
 type HistoryKey =
   | "search"
   | "title"
@@ -109,6 +112,30 @@ type HistoryConfirmKey =
   | "clearTitle"
   | "clearDesc"
   | "deleteAllLabel";
+
+type ImageKey =
+  | "title"
+  | "description"
+  | "providersTitle"
+  | "addProvider"
+  | "urlPlaceholder"
+  | "namePlaceholder"
+  | "modelsHint"
+  | "noModels"
+  | "modelTitle"
+  | "templatesTitle"
+  | "templatesHint"
+  | "addTemplate"
+  | "templateName"
+  | "templateNamePlaceholder"
+  | "templatePrompt"
+  | "templatePromptPlaceholder"
+  | "templateExample"
+  | "templateExampleHint"
+  | "templatePickImage"
+  | "templateRemoveImage"
+  | "templateDelete"
+  | "templateEmpty";
 
 type RagKey =
   | "title"
@@ -239,7 +266,8 @@ export type SettingsI18nKey =
   | `settings.history.${HistoryKey}`
   | `settings.historyConfirm.${HistoryConfirmKey}`
   | `settings.archive.${ArchiveKey}`
-  | `settings.rag.${RagKey}`;
+  | `settings.rag.${RagKey}`
+  | `settings.image.${ImageKey}`;
 
 export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.title": "Settings",
@@ -316,6 +344,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
 
   "settings.categories.appearance": "Appearance",
   "settings.categories.ai": "Model",
+  "settings.categories.image": "Image",
   "settings.categories.memory": "Memory",
   "settings.categories.search": "Search",
   "settings.categories.agent": "Agent",
@@ -367,6 +396,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.groups.hotkeys": "Shortcuts",
   "settings.groups.performance": "Performance",
   "settings.groups.modelSelection": "Models",
+  "settings.groups.imageGeneration": "Model",
   "settings.groups.context": "Context",
   "settings.groups.reasoning": "Reasoning",
   "settings.groups.memory": "Memory",
@@ -381,7 +411,9 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
 
   "settings.pages.appearance.description": "Theme, window, and the shortcuts that wake Anya.",
   "settings.pages.ai.description":
-    "Default chat model, vision fallback, and reasoning. Configure API keys under Provider.",
+    "Default chat model, vision fallback, and reasoning. Configure API keys under Provider. Image generation is under Image.",
+  "settings.pages.image.description":
+    "Dedicated Images providers and models. Chat providers are never used for generate_image.",
   "settings.pages.agent.description": "Tool approval, work display, and coding behavior.",
   "settings.pages.memory.description":
     "Long-term preferences and project conventions. Leave the API key empty to use local memory.",
@@ -389,6 +421,33 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Give the model web_search. Use RAG Search for workspace semantics.",
   "settings.pages.plugins.description":
     "Show an AI badge on PixPin / Snipaste pins to attach the image to a message.",
+
+  "settings.image.title": "Image generation",
+  "settings.image.description":
+    "Chat providers are not used here. Add an Images API on this page. Official example: Base URL https://api.openai.com/v1, model gpt-image-2.",
+  "settings.image.providersTitle": "Images providers",
+  "settings.image.addProvider": "Add Images provider",
+  "settings.image.urlPlaceholder": "https://api.openai.com/v1",
+  "settings.image.namePlaceholder": "e.g. OpenAI Images",
+  "settings.image.modelsHint": "Only these IDs appear in the picker below. Do not add chat models.",
+  "settings.image.noModels": "Add a model ID on an Images provider first (e.g. gpt-image-2).",
+  "settings.image.modelTitle": "Image model",
+  "settings.image.templatesTitle": "Style templates",
+  "settings.image.templatesHint":
+    "Custom styles appear in Image mode. Hover the question mark in the list to preview the prompt. An example image enables image-to-image.",
+  "settings.image.addTemplate": "Add template",
+  "settings.image.templateName": "Name",
+  "settings.image.templateNamePlaceholder": "e.g. Film still",
+  "settings.image.templatePrompt": "Style prompt",
+  "settings.image.templatePromptPlaceholder":
+    "Appended to generate_image, e.g. cinematic lighting, 35mm, shallow depth of field",
+  "settings.image.templateExample": "Example image",
+  "settings.image.templateExampleHint":
+    "Optional. Used as the image-to-image reference when this template is selected (composer attachments take priority).",
+  "settings.image.templatePickImage": "Choose image",
+  "settings.image.templateRemoveImage": "Remove",
+  "settings.image.templateDelete": "Delete template",
+  "settings.image.templateEmpty": "No custom templates yet.",
 
   "settings.fields.colorScheme.title": "Color Scheme",
   "settings.fields.colorScheme.description": "Choose the built-in light or dark theme.",
@@ -429,6 +488,9 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.multimodalModel.title": "Multimodal model",
   "settings.fields.multimodalModel.description":
     "Fallback vision model used only when the primary chat model cannot see images (e.g. DeepSeek-R1). Gemini / GPT-4o already see images natively and ignore this.",
+  "settings.fields.imageModel.title": "Image model",
+  "settings.fields.imageModel.description":
+    "Used by generate_image (default gpt-image-2). Choose from Images providers on this page.",
   "settings.fields.multimodalSplitAnalysis.title": "Split multimodal analysis",
   "settings.fields.multimodalSplitAnalysis.description":
     "For text-only primary models: the multimodal model describes the image, then the primary model answers and runs tools. Not used when the primary model already supports vision (e.g. Gemini).",
@@ -583,6 +645,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
 
     "settings.categories.appearance": "外观",
     "settings.categories.ai": "模型",
+    "settings.categories.image": "生图",
     "settings.categories.memory": "记忆",
     "settings.categories.search": "搜索",
     "settings.categories.agent": "代理",
@@ -690,6 +753,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.hotkeys": "快捷键",
     "settings.groups.performance": "性能",
     "settings.groups.modelSelection": "模型选择",
+    "settings.groups.imageGeneration": "模型",
     "settings.groups.context": "上下文",
     "settings.groups.reasoning": "推理",
     "settings.groups.memory": "总开关",
@@ -704,12 +768,40 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
 
     "settings.pages.appearance.description": "主题、窗口与唤起快捷键。",
     "settings.pages.ai.description":
-      "默认对话模型、视觉回退与推理行为。API Key 在「提供商」中配置。",
+      "默认对话模型、视觉回退与推理行为。API Key 在「提供商」中配置。生图请到「生图」。",
+    "settings.pages.image.description":
+      "独立的生图提供商与模型。generate_image 不会使用聊天提供商。",
     "settings.pages.agent.description": "工具审批、过程展示与编码行为。",
     "settings.pages.memory.description": "长期偏好与项目约定。留空 API Key 时使用本地记忆。",
     "settings.pages.search.description": "给模型提供 web_search。工作区语义检索请到「RAG 检索」。",
     "settings.pages.plugins.description":
       "在 PixPin / Snipaste 贴图右下角显示 AI 角标，点击后把图片附加到消息。",
+
+    "settings.image.title": "生图",
+    "settings.image.description":
+      "聊天提供商不会用在这里。请在本页添加 Images API。官方示例：Base URL https://api.openai.com/v1，模型 gpt-image-2。",
+    "settings.image.providersTitle": "生图提供商",
+    "settings.image.addProvider": "添加生图提供商",
+    "settings.image.urlPlaceholder": "https://api.openai.com/v1",
+    "settings.image.namePlaceholder": "例如：OpenAI Images",
+    "settings.image.modelsHint": "只有这里列出的模型会出现在下方选择器里，不要填聊天模型。",
+    "settings.image.noModels": "请先在生图提供商里添加模型 ID（例如 gpt-image-2）。",
+    "settings.image.modelTitle": "生图模型",
+    "settings.image.templatesTitle": "风格模板",
+    "settings.image.templatesHint":
+      "自定义风格会出现在生图模式的风格列表里。列表项后的问号可预览提示词。添加例图后可做图生图。",
+    "settings.image.addTemplate": "添加模板",
+    "settings.image.templateName": "名称",
+    "settings.image.templateNamePlaceholder": "例如：电影静帧",
+    "settings.image.templatePrompt": "风格提示词",
+    "settings.image.templatePromptPlaceholder": "会附加到生图请求，例如：电影感布光、35mm、浅景深",
+    "settings.image.templateExample": "例图",
+    "settings.image.templateExampleHint":
+      "可选。选中该模板时作为图生图参考（输入框里贴的图优先）。",
+    "settings.image.templatePickImage": "选择图片",
+    "settings.image.templateRemoveImage": "移除",
+    "settings.image.templateDelete": "删除模板",
+    "settings.image.templateEmpty": "还没有自定义模板。",
 
     "settings.fields.colorScheme.title": "颜色主题",
     "settings.fields.colorScheme.description": "选择内置亮色或暗色主题。",
@@ -743,6 +835,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.title": "多模态模型",
     "settings.fields.multimodalModel.description":
       "仅当主模型本身不能看图时（如 DeepSeek-R1）才用作视觉回退；Gemini / GPT-4o 等原生识图模型不会走此路径。",
+    "settings.fields.imageModel.title": "生图模型",
+    "settings.fields.imageModel.description":
+      "generate_image 使用（默认 gpt-image-2）。只从本页的生图提供商里选。",
     "settings.fields.multimodalSplitAnalysis.title": "多模态分步分析",
     "settings.fields.multimodalSplitAnalysis.description":
       "面向无视觉能力的主模型：多模态模型先描述图片，再由主模型作答与调用工具。主模型已支持识图（如 Gemini）时不会启用。",
@@ -879,6 +974,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
 
     "settings.categories.appearance": "外観",
     "settings.categories.ai": "モデル",
+    "settings.categories.image": "画像生成",
     "settings.categories.memory": "記憶",
     "settings.categories.search": "検索",
     "settings.categories.agent": "代理",
@@ -926,6 +1022,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.hotkeys": "ショートカット",
     "settings.groups.performance": "パフォーマンス",
     "settings.groups.modelSelection": "モデル",
+    "settings.groups.imageGeneration": "モデル",
     "settings.groups.context": "コンテキスト",
     "settings.groups.reasoning": "推論",
     "settings.groups.memory": "メモリ",
@@ -955,6 +1052,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.title": "マルチモーダルモデル",
     "settings.fields.multimodalModel.description":
       "画像などのビジョン入力を含む場合に自動的に使用されるモデルです（例: gpt-4o）。",
+    "settings.fields.imageModel.title": "画像生成モデル",
+    "settings.fields.imageModel.description":
+      "generate_image が使うモデルです（既定 gpt-image-2）。Base URL は Images API（公式例: https://api.openai.com/v1）にしてください。",
     "settings.fields.reasoningEffort.title": "推論の強度",
     "settings.fields.reasoningEffort.description":
       "優先する思考の深さ。入力バーはモデル公式の段階名を表示し、非対応値は自動で割り当てます。",
@@ -1036,6 +1136,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
 
     "settings.categories.appearance": "Тема",
     "settings.categories.ai": "Модель",
+    "settings.categories.image": "Изображения",
     "settings.categories.memory": "Память",
     "settings.categories.search": "Поиск",
     "settings.categories.agent": "Агент",
@@ -1084,6 +1185,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.hotkeys": "Ярлыки",
     "settings.groups.performance": "Производительность",
     "settings.groups.modelSelection": "Модели",
+    "settings.groups.imageGeneration": "Модель",
     "settings.groups.context": "Контекст",
     "settings.groups.reasoning": "Рассуждения",
     "settings.groups.memory": "Память",
@@ -1113,6 +1215,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.title": "Мультимодальная модель",
     "settings.fields.multimodalModel.description":
       "Модель, автоматически используемая при обработке изображений или мультимедиа (например, gpt-4o).",
+    "settings.fields.imageModel.title": "Модель генерации изображений",
+    "settings.fields.imageModel.description":
+      "Используется generate_image (по умолчанию gpt-image-2). Base URL — Images API, например https://api.openai.com/v1, не чат-хост.",
     "settings.fields.reasoningEffort.title": "Глубина рассуждений",
     "settings.fields.reasoningEffort.description":
       "Предпочтительная глубина рассуждений. В чате показываются официальные уровни текущей модели.",
@@ -1196,6 +1301,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
 
     "settings.categories.appearance": "Design",
     "settings.categories.ai": "Modell",
+    "settings.categories.image": "Bilder",
     "settings.categories.memory": "Gedächtnis",
     "settings.categories.search": "Suche",
     "settings.categories.agent": "Agent",
@@ -1243,6 +1349,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.hotkeys": "Tastenkürzel",
     "settings.groups.performance": "Leistung",
     "settings.groups.modelSelection": "Modelle",
+    "settings.groups.imageGeneration": "Modell",
     "settings.groups.context": "Kontext",
     "settings.groups.reasoning": "Reasoning",
     "settings.groups.memory": "Gedächtnis",
@@ -1273,6 +1380,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.title": "Multimodales Modell",
     "settings.fields.multimodalModel.description":
       "Das Modell, das automatisch bei Bild- oder multimodalen Eingaben verwendet wird (z. B. gpt-4o).",
+    "settings.fields.imageModel.title": "Bildmodell",
+    "settings.fields.imageModel.description":
+      "Wird von generate_image genutzt (Standard gpt-image-2). Base URL muss die Images API sein, z. B. https://api.openai.com/v1 — nicht der Chat-Host.",
     "settings.fields.reasoningEffort.title": "Denkintensität",
     "settings.fields.reasoningEffort.description":
       "Bevorzugte Denktiefe. Die Eingabeleiste zeigt die offiziellen Stufen des aktuellen Modells.",
@@ -1358,6 +1468,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
 
     "settings.categories.appearance": "Thème",
     "settings.categories.ai": "Modèle",
+    "settings.categories.image": "Images",
     "settings.categories.memory": "Mémoire",
     "settings.categories.search": "Recherche",
     "settings.categories.agent": "Agent",
@@ -1405,6 +1516,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.hotkeys": "Raccourcis",
     "settings.groups.performance": "Performances",
     "settings.groups.modelSelection": "Modèles",
+    "settings.groups.imageGeneration": "Modèle",
     "settings.groups.context": "Contexte",
     "settings.groups.reasoning": "Raisonnement",
     "settings.groups.memory": "Mémoire",
@@ -1437,6 +1549,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.title": "Modèle multimodal",
     "settings.fields.multimodalModel.description":
       "Le modèle utilisé automatiquement pour les entrées visuelles ou multimodales (ex. gpt-4o).",
+    "settings.fields.imageModel.title": "Modèle d’image",
+    "settings.fields.imageModel.description":
+      "Utilisé par generate_image (défaut gpt-image-2). L’URL de base doit être l’API Images, p. ex. https://api.openai.com/v1, pas l’hôte de chat.",
     "settings.fields.reasoningEffort.title": "Intensité du raisonnement",
     "settings.fields.reasoningEffort.description":
       "Profondeur de raisonnement préférée. La barre d'entrée affiche les niveaux officiels du modèle actuel.",
@@ -1522,6 +1637,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
 
     "settings.categories.appearance": "테마",
     "settings.categories.ai": "모델",
+    "settings.categories.image": "이미지 생성",
     "settings.categories.memory": "기억",
     "settings.categories.search": "검색",
     "settings.categories.agent": "에이전트",
@@ -1569,6 +1685,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.hotkeys": "단축키",
     "settings.groups.performance": "성능",
     "settings.groups.modelSelection": "모델",
+    "settings.groups.imageGeneration": "모델",
     "settings.groups.context": "컨텍스트",
     "settings.groups.reasoning": "추론",
     "settings.groups.memory": "메모리",
@@ -1598,6 +1715,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.multimodalModel.title": "멀티모달 모델",
     "settings.fields.multimodalModel.description":
       "이미지 등 비주얼 입력이 포함될 때 자동으로 사용되는 모델입니다 (예: gpt-4o).",
+    "settings.fields.imageModel.title": "이미지 생성 모델",
+    "settings.fields.imageModel.description":
+      "generate_image가 사용합니다(기본 gpt-image-2). Base URL은 Images API여야 합니다(예: https://api.openai.com/v1). 채팅 호스트가 아닙니다.",
     "settings.fields.reasoningEffort.title": "추론 강도",
     "settings.fields.reasoningEffort.description":
       "선호하는 사고 깊이입니다. 입력줄은 현재 모델의 공식 단계를 보여 주고, 미지원 값은 자동으로 맞춥니다.",
@@ -1686,6 +1806,7 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     deepseekApiKey: "AI › DeepSeek › API Key",
     defaultModel: "AI / DeepSeek / Default Model",
     multimodalModel: "AI / DeepSeek / Multimodal Model",
+    imageModel: "Image / Image model",
     multimodalSplitAnalysis: "AI / DeepSeek / Split Multimodal Analysis",
     largeContextEnabled: "AI / Context / 1M Context Window",
     reasoningEffort: "AI › Reasoning › Reasoning Effort",
@@ -1726,6 +1847,7 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     deepseekApiKey: "AI › DeepSeek › API Key",
     defaultModel: "AI / DeepSeek / 默认模型",
     multimodalModel: "AI / DeepSeek / 多模态模型",
+    imageModel: "生图 / 生图模型",
     multimodalSplitAnalysis: "AI / DeepSeek / 多模态分步分析",
     largeContextEnabled: "AI / 上下文 / 1M 上下文",
     reasoningEffort: "AI › Reasoning › Reasoning Effort",
@@ -1789,6 +1911,7 @@ const settingsFieldKeywords: Record<
     deepseekApiKey: ["deepseek", "api", "key", "ai"],
     defaultModel: ["default", "model", "deepseek", "api"],
     multimodalModel: ["multimodal", "model", "vision", "image"],
+    imageModel: ["image", "generate", "generation", "gpt-image-2", "dalle", "draw", "openai"],
     multimodalSplitAnalysis: [
       "multimodal",
       "split",
@@ -1837,6 +1960,7 @@ const settingsFieldKeywords: Record<
     deepseekApiKey: ["deepseek", "api", "key", "密钥", "ai"],
     defaultModel: ["默认模型", "模型", "deepseek", "model", "api"],
     multimodalModel: ["多模态模型", "图片", "视觉", "multimodal", "vision", "image"],
+    imageModel: ["生图", "画图", "配图", "gpt-image-2", "dalle", "image", "generate", "openai"],
     multimodalSplitAnalysis: ["多模态分步分析", "分步", "分析", "图片", "视觉", "deepseek", "r1"],
     largeContextEnabled: ["上下文", "1m", "百万", "token", "压缩", "context", "window"],
     reasoningEffort: ["reasoning", "effort", "思考", "推理", "deepseek", "grok", "responses"],

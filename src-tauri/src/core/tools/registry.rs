@@ -24,6 +24,7 @@ fn normalize_tool_name(name: &str) -> &str {
         "Glob" | "glob" => "find_files",
         "WebSearch" | "websearch" | "google_search" | "search_web" | "bing_search" => "web_search",
         "WebFetch" | "fetch_page" | "read_url" | "browse_url" => "browser_read",
+        "generate_image" | "GenerateImage" | "dall_e" | "dalle" | "text2img" => "generate_image",
         // Task / ask aliases
         "todo_write" | "TodoWrite" | "todoWrite" | "update_task_list" => "update_tasks",
         "AskQuestion" | "ask_question" | "AskUser" => "ask_user",
@@ -131,9 +132,9 @@ impl ToolRegistry {
             return Err(ToolError::new(self.unknown_tool_message("")));
         }
         crate::core::rules::RuleEngine::authorize_tool(name, args)?;
-        let tool = self.get(name).ok_or_else(|| {
-            ToolError::new(self.unknown_tool_message(name))
-        })?;
+        let tool = self
+            .get(name)
+            .ok_or_else(|| ToolError::new(self.unknown_tool_message(name)))?;
         crate::core::tools::plan_mode::shared_plan_mode_store().authorize(
             ctx.root_session_id(),
             tool.name(),
@@ -226,6 +227,16 @@ impl ToolRegistry {
                     filtered.register(tool);
                 }
             }
+        }
+        filtered
+    }
+
+    /// Image generation mode: only `generate_image` is exposed so every turn
+    /// can produce a picture without file/shell side effects.
+    pub fn filter_for_image_mode(&self) -> ToolRegistry {
+        let mut filtered = ToolRegistry::new();
+        if let Some(tool) = self.get("generate_image") {
+            filtered.register(tool);
         }
         filtered
     }
@@ -378,6 +389,26 @@ mod tests {
         assert!(!names.contains(&"write_file".to_string()));
     }
 
+    #[test]
+    fn filter_for_image_mode_keeps_only_generate_image() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(StubTool {
+            name: "generate_image",
+            read_only: false,
+        }));
+        registry.register(Arc::new(StubTool {
+            name: "write_file",
+            read_only: false,
+        }));
+        registry.register(Arc::new(StubTool {
+            name: "read_file",
+            read_only: true,
+        }));
+
+        let names = registry.filter_for_image_mode().names();
+        assert_eq!(names, vec!["generate_image"]);
+    }
+
     struct HiddenTool;
 
     impl Tool for HiddenTool {
@@ -412,7 +443,10 @@ mod tests {
         registry.register(Arc::new(HiddenTool));
 
         let message = registry.unknown_tool_message("puppeteer_navigate");
-        assert!(message.contains("unknown tool: puppeteer_navigate"), "{message}");
+        assert!(
+            message.contains("unknown tool: puppeteer_navigate"),
+            "{message}"
+        );
         assert!(message.contains("`browser_read`"), "{message}");
         assert!(message.contains("`web_search`"), "{message}");
         assert!(!message.contains("hidden_tool"), "{message}");

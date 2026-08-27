@@ -32,19 +32,21 @@ impl ToolManager {
         self.registry.schemas_arc()
     }
 
-    /// Model-facing schemas for one request, derived from its mode:
+    /// Model-facing schemas for one request, derived from its mode.
     ///
-    /// - Plan mode active for `plan_session_id` → read-only tools plus the
+    /// Defense in depth with `ChatService` tool-set selection:
+    /// - Image mode for `session_id` → only `generate_image` (also set via
+    ///   `tools.image_mode()` when the turn starts).
+    /// - Plan mode active for `session_id` → read-only tools plus the
     ///   planning/interaction tools plan mode allows.
     /// - Question-only request (Answer/explain/review, Diagnose) → read-only
     ///   tools plus `ask_user` / `update_tasks`.
     /// - Otherwise → the full toolset.
-    pub fn schemas_for_request(
-        &self,
-        request: &ChatRequest,
-        plan_session_id: &str,
-    ) -> Arc<[Value]> {
-        if crate::core::tools::plan_mode::shared_plan_mode_store().is_active(plan_session_id) {
+    pub fn schemas_for_request(&self, request: &ChatRequest, session_id: &str) -> Arc<[Value]> {
+        if crate::core::tools::image_mode::is_image_mode(session_id) {
+            return self.registry.filter_for_image_mode().schemas_arc();
+        }
+        if crate::core::tools::plan_mode::shared_plan_mode_store().is_active(session_id) {
             return self.registry.filter_for_plan_mode().schemas_arc();
         }
         if is_question_only_request(request) {
@@ -129,6 +131,10 @@ impl ToolManager {
 
     pub fn ask_mode(&self) -> Self {
         Self::new(self.registry.filter_for_ask_mode())
+    }
+
+    pub fn image_mode(&self) -> Self {
+        Self::new(self.registry.filter_for_image_mode())
     }
 
     /// Unknown or missing tools are treated as non-read-only so the agent stays serial.

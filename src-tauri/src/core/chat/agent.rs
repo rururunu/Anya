@@ -118,6 +118,9 @@ impl AgentRunner {
         let mut context_compacted = false;
         let mut failure_breaker = FailureBreaker::new();
         let mut completion_gate = CompletionGate::new();
+        if crate::core::tools::image_mode::is_image_mode(&request.session_id) {
+            completion_gate.require_image();
+        }
         completion_gate.capture_goal_from_request(&request);
         let mut user_msg_index = request
             .messages
@@ -430,7 +433,10 @@ impl AgentRunner {
         };
 
         // Spawn a background task to receive from rx concurrently to avoid channel deadlocks.
-        let answer = Arc::new(tokio::sync::Mutex::new((String::new(), Option::<String>::None)));
+        let answer = Arc::new(tokio::sync::Mutex::new((
+            String::new(),
+            Option::<String>::None,
+        )));
         let answer_clone = Arc::clone(&answer);
         let progress_bus = Arc::clone(&tool_ctx.event_bus);
         let progress_subagent_id = tool_ctx.subagent_id.clone();
@@ -479,6 +485,7 @@ impl AgentRunner {
                     StreamEvent::Usage(usage) => {
                         progress_bus.emit(crate::core::event::BusEvent::TokenUsage {
                             session_id: None,
+                            message_id: None,
                             model: "subagent".to_string(),
                             usage,
                         });

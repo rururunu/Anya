@@ -14,6 +14,7 @@
       'attach-panel-open': attachPanelOpen,
       'chip-picker-open': chipPickerOpen,
       'interaction-request-open': interactionRequestOpen,
+      'has-image-gen': effectiveChatMode === 'image',
     }"
   >
     <Transition :css="false" mode="out-in" @enter="gsapPickerEnter" @leave="gsapPickerLeave">
@@ -194,6 +195,27 @@
         @select="selectApprovalMode"
       />
 
+      <ImageGenSettingsPanel
+        v-else-if="showImageGenSettingsPanel"
+        key="image-gen-settings"
+        :model-value="imageGenOptions"
+        :language="language"
+        :ariaLabel="imageGenPickerAriaLabel"
+        @update:model-value="setImageGenOptions"
+      />
+
+      <OptionPicker
+        v-else-if="showImageGenListPicker"
+        key="image-gen-list"
+        compact
+        :options="imageGenPickerOptions"
+        :selected-id="imageGenPickerSelectedId"
+        :selected-index="selectedIndex"
+        :ariaLabel="imageGenPickerAriaLabel"
+        @hover="selectedIndex = $event"
+        @select="selectImageGenOption"
+      />
+
       <FileMentionPicker
         v-else-if="showFileSuggestions"
         key="file-suggestions"
@@ -239,6 +261,7 @@
       :class="{
         'has-images': attachedImages.length > 0 || attachedFiles.length > 0,
         'drag-over': fileDragOver,
+        'has-image-gen': effectiveChatMode === 'image',
       }"
       data-tauri-drag-region="false"
       @mousedown="onInputBarMouseDown"
@@ -246,6 +269,13 @@
       @dragleave="onFileDragLeave"
       @drop.prevent="onFileDrop"
     >
+      <ImageGenToolbar
+        v-if="effectiveChatMode === 'image'"
+        :model-value="imageGenOptions"
+        :language="language"
+        :open-field="imageGenPickerOpen"
+        @open="toggleImageGenPicker"
+      />
       <div
         v-if="attachedImages.length"
         class="input-images peek-scrollbar"
@@ -549,11 +579,7 @@
             </span>
           </span>
 
-          <ContextUsageRing
-            v-if="contextUsage.contextWindowTokens > 0"
-            :ratio="contextUsage.usageRatio"
-            :tooltip="contextUsageTooltip"
-          />
+          <ContextUsageRing v-if="contextUsage.contextWindowTokens > 0" :usage="contextUsage" />
 
           <button
             v-if="sending && canSend"
@@ -619,6 +645,7 @@ import {
   X,
   Bot,
   MessageCircle,
+  Paintbrush,
   ShieldQuestion,
   Shield,
   ShieldCheck,
@@ -642,6 +669,8 @@ import HashMentionPicker from "./input/HashMentionPicker.vue";
 import CommandSuggestions from "./input/CommandSuggestions.vue";
 import WorkspacePickerPanel from "./input/WorkspacePickerPanel.vue";
 import AttachResourcePanel from "./input/AttachResourcePanel.vue";
+import ImageGenToolbar from "./input/ImageGenToolbar.vue";
+import ImageGenSettingsPanel from "./input/ImageGenSettingsPanel.vue";
 import ContextUsageRing from "./ContextUsageRing.vue";
 import ComposerEditable from "./ComposerEditable.vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -649,15 +678,9 @@ import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { executeSlashCommand, fetchEnvironmentContext, slashCommands } from "@/commands/slash";
 import { listSkills } from "@/commands/skills";
 import { peekInstallIcon, warmInstallIcons } from "@/services/iconCache";
-import { getContextUsage, getPlanMode, setOverlayPopupOpen, setPlanMode } from "@/services/ipc";
+import { getPlanMode, setOverlayPopupOpen, setPlanMode } from "@/services/ipc";
 import { createLogger } from "@/services/logger";
 import { tr } from "@/services/i18n";
-import {
-  formatAttachedFilesForMessage,
-  isImageFile,
-  readAttachedFile,
-  type AttachedFileChip,
-} from "@/services/chat/attachFiles";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
 import {
   formatMentionPath,
@@ -681,9 +704,9 @@ import {
   sortByResourceUsage,
 } from "@/services/usage/resourceUsage";
 import {
-  estimateMessageTokens,
   formatTokenCount,
   promptCacheHitPercent,
+  promptTokenTotal,
 } from "@/services/chat/tokenEstimate";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useChatModelStore } from "@/stores/chatModel";
@@ -695,7 +718,6 @@ import {
   getModelDisplaySubtitle,
   getProviderHoverInfo,
   groupModelsByProvider,
-  isDeepSeekChatModel,
 } from "@/lib/providerIcons";
 import {
   findModelEntry,
@@ -720,12 +742,24 @@ import {
   type ChatMode,
   type ToolApprovalMode,
 } from "@/types/setting";
+import {
+  applyImageGenField,
+  decodeImageModelSelection,
+  defaultImageGenCompose,
+  imageGenFieldDefs,
+  imageGenPickerWidth,
+  isImageGenListField,
+  isImageGenSettingsField,
+  listImageModelChoices,
+  normalizeImageGenCompose,
+  selectedImageModelChoiceId,
+  type ImageGenCompose,
+  type ImageGenFieldId,
+} from "@/services/chat/imageGenMode";
+import type { ChatI18nKey } from "@/services/locales/chat";
 import type {
-  AskDisplayOption,
-  AskUserQuestion,
   CapturedContext,
   ChatModelInfo,
-  ContextUsageSnapshot,
   ChatSessionSummary,
   PathPermissionDecision,
   ToolApprovalDecision,
@@ -741,12 +775,11 @@ import {
   switchWorkspace,
   type Workspace,
 } from "@/commands/workspace";
-import { compressImageDataUrl } from "@/services/chat/compressImage";
+import { useAskUserFlow, type AskUserSession } from "@/composables/chat/useAskUserFlow";
+import { useComposerAttachments } from "@/composables/chat/useComposerAttachments";
+import { useContextUsage } from "@/composables/chat/useContextUsage";
 
-export interface AskUserSession {
-  requestId: string;
-  questions: AskUserQuestion[];
-}
+export type { AskUserSession };
 
 export interface PathPermissionSession {
   requestId: string;
@@ -755,7 +788,6 @@ export interface PathPermissionSession {
   toolName: string;
 }
 
-const ASK_SKIP_MARKER = "__user_supplement__";
 const log = createLogger("chat-input");
 
 const props = withDefaults(
@@ -837,9 +869,6 @@ let composerShellResizeObserver: ResizeObserver | null = null;
 const hasComposerChips = computed(() =>
   composerSegments.value.some((seg) => seg.kind === "selection"),
 );
-const attachedImages = ref<string[]>([]);
-const attachedFiles = ref<AttachedFileChip[]>([]);
-const fileDragOver = ref(false);
 /** Esc closes @/# suggestion UI without deleting the typed token. */
 const mentionSuggestSuppressed = ref<{ trigger: "@" | "#"; start: number } | null>(null);
 
@@ -891,9 +920,13 @@ function clearComposerSegments() {
 
 /** Draft persistence is per-conversation: switching chats never loses input
  * and one conversation's draft is not shared with others. */
-function persistDraft(sessionId = props.sessionId, draft = serializeComposerSegments()) {
+function persistDraft(
+  sessionId = props.sessionId,
+  draft = serializeComposerSegments(),
+  immediate = false,
+) {
   if (!sessionId) return;
-  chatStore.setComposeDraft(sessionId, draft);
+  chatStore.setComposeDraft(sessionId, draft, immediate ? { persistImmediate: true } : undefined);
 }
 
 function loadDraft() {
@@ -911,77 +944,12 @@ function loadDraft() {
 const persistDraftDebounced = useDebounceFn((sessionId: string) => {
   if (!sessionId || sessionId !== props.sessionId) return;
   persistDraft(sessionId);
-}, 400);
+}, 1000);
 
-watch(
-  [message, composerSegments],
-  () => {
-    if (!props.sessionId) return;
-    persistDraftDebounced(props.sessionId);
-  },
-  { deep: true },
-);
-
-function previewImage(url: string) {
-  emit("previewImage", url);
-}
-
-function removeAttachedImage(index: number) {
-  attachedImages.value.splice(index, 1);
-  emitLayoutChange();
-}
-
-function removeAttachedFile(index: number) {
-  attachedFiles.value.splice(index, 1);
-  emitLayoutChange();
-}
-
-async function ingestDroppedOrPastedFiles(files: FileList | File[]) {
-  const list = Array.from(files);
-  if (list.length === 0) return;
-  for (const file of list) {
-    if (isImageFile(file)) {
-      const dataUrl = await new Promise<string | null>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result ?? "") || null);
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(file);
-      });
-      if (!dataUrl) continue;
-      const compressed = await compressImageDataUrl(dataUrl);
-      attachedImages.value.push(compressed);
-      continue;
-    }
-    const chip = await readAttachedFile(file);
-    attachedFiles.value.push(chip);
-  }
-  emitLayoutChange();
-}
-
-function onFileDragOver(event: DragEvent) {
-  if (!event.dataTransfer?.types?.includes("Files")) return;
-  fileDragOver.value = true;
-}
-
-function onFileDragLeave() {
-  fileDragOver.value = false;
-}
-
-async function onFileDrop(event: DragEvent) {
-  fileDragOver.value = false;
-  const files = event.dataTransfer?.files;
-  if (!files?.length) return;
-  await ingestDroppedOrPastedFiles(files);
-}
-
-async function applyCapturedImages(images?: string[]) {
-  if (!images?.length) {
-    return;
-  }
-  const compressed = await Promise.all(images.map((url) => compressImageDataUrl(url)));
-  attachedImages.value = compressed;
-  emitLayoutChange();
-}
+watch([message, composerSegments], () => {
+  if (!props.sessionId) return;
+  persistDraftDebounced(props.sessionId);
+});
 
 const composerRef = ref<InstanceType<typeof ComposerEditable> | null>(null);
 const chatInputShellRef = ref<HTMLElement | null>(null);
@@ -1027,9 +995,6 @@ const approvalPickerOpen = ref(false);
 const thinkingTierPickerOpen = ref(false);
 const thinkingPickerMode = ref<"slider" | "list">("slider");
 const chatModePickerOpen = ref(false);
-const askQuestionIndex = ref(0);
-const askAnswers = ref<Record<number, string[]>>({});
-const askUserFinishing = ref(false);
 
 const settingStore = useSettingStore();
 watch(
@@ -1042,141 +1007,77 @@ watch(
 const chatStore = useChatStore();
 const chatModelStore = useChatModelStore();
 const { language } = storeToRefs(settingStore);
-const { sessions } = storeToRefs(chatStore);
 
-const conversationTokenCount = computed(() =>
-  (sessions.value[props.sessionId] ?? []).reduce(
-    (total, message) => total + estimateMessageTokens(message),
-    0,
-  ),
-);
-
-const conversationTokenTitle = computed(() =>
-  tr(language.value, "tokens.sessionEstimated", {
-    count: new Intl.NumberFormat(language.value).format(conversationTokenCount.value),
-  }),
-);
-
-const sessionCacheUsage = computed(() => chatStore.sessionCacheUsage[props.sessionId] ?? undefined);
-
-const contextUsage = ref<ContextUsageSnapshot>({
-  usageRatio: 0,
-  estimatedTokens: 0,
-  contextWindowTokens: 64_000,
+const {
+  askQuestionIndex,
+  showAskUserPicker,
+  askQuestionCount,
+  activeAskQuestion,
+  activeAskOptions,
+  askConfirmRowIndex,
+  askSelectedCount,
+  askPickerRowCount,
+  isAskOptionSelected,
+  selectAskOption,
+  confirmAskSelection,
+} = useAskUserFlow({
+  language,
+  askUser: () => props.askUser,
+  selectedIndex,
+  emitAskUserComplete: (answer) => emit("askUserComplete", answer),
+  emitLayoutChange: () => emitLayoutChange(),
+  syncPopupState: (open) => syncPopupState(open),
 });
 
-const contextUsageTooltip = computed(() => {
-  const percent = Math.round(Math.max(0, Math.min(contextUsage.value.usageRatio, 1)) * 100);
-  const used = formatTokenCount(contextUsage.value.estimatedTokens, language.value);
-  const total = formatTokenCount(contextUsage.value.contextWindowTokens, language.value);
-  return `${tr(language.value, "contextUsedPercent", { percent })} · ${tr(language.value, "contextUsageHint", { used, total })}`;
+const {
+  attachedImages,
+  attachedEditSources,
+  attachedFiles,
+  fileDragOver,
+  previewImage,
+  removeAttachedImage,
+  removeAttachedFile,
+  ingestDroppedOrPastedFiles,
+  onFileDragOver,
+  onFileDragLeave,
+  onFileDrop,
+  applyCapturedImages,
+  attachImageEditReference,
+  formatAttachedImagesForMessage,
+  clearAttachedImages,
+  clearAttachedFiles,
+  attachedFilesMessagePrefix,
+} = useComposerAttachments({
+  language,
+  emitLayoutChange: () => emitLayoutChange(),
+  emitPreviewImage: (url) => emit("previewImage", url),
+  effectiveChatMode: () => effectiveChatMode.value,
+  selectChatMode: (mode) => selectChatMode(mode),
+  pushComposerUndo: (snapshot) => {
+    composerUndo.push(snapshot);
+  },
+  captureComposerSnapshot,
+  clearComposerSegments,
+  setMentionSuggestSuppressed: (value) => {
+    mentionSuggestSuppressed.value = value;
+  },
+  setComposerDraftText: (draft) => {
+    if (composerRef.value) {
+      composerRef.value.setText(draft, draft.length);
+    } else {
+      message.value = draft;
+    }
+  },
+  resizeComposerInput: () => {
+    resizeComposerInput();
+  },
+  focusInput: () => focusInput(),
 });
 
-function emptyContextUsage(): ContextUsageSnapshot {
-  return {
-    usageRatio: 0,
-    estimatedTokens: 0,
-    contextWindowTokens: 64_000,
-  };
-}
-
-function buildDraftMessage() {
-  return serializeComposerSegments().trim();
-}
-
-let contextUsageRequestId = 0;
-
-const loadContextUsage = useDebounceFn(async (requestId: number) => {
-  const sessionId = props.sessionId;
-  const draftMessage = buildDraftMessage();
-  const hasConversation = (sessions.value[sessionId] ?? []).some(
-    (item) => item.role === "user" || item.role === "assistant",
-  );
-
-  if (!hasConversation && !draftMessage) {
-    contextUsage.value = emptyContextUsage();
-    if (sessionId) {
-      chatStore.setContextUsage(sessionId, contextUsage.value);
-    }
-    return;
-  }
-
-  try {
-    const response = await getContextUsage({
-      sessionId: sessionId || undefined,
-      draftMessage: draftMessage || undefined,
-      context: props.capturedContext ?? undefined,
-      modelId: chatModel.value.trim() || undefined,
-    });
-    if (requestId !== contextUsageRequestId || sessionId !== props.sessionId) {
-      return;
-    }
-    contextUsage.value = {
-      usageRatio: response.usageRatio,
-      estimatedTokens: response.estimatedTokens,
-      contextWindowTokens: response.contextWindowTokens,
-    };
-    if (sessionId) {
-      chatStore.setContextUsage(sessionId, contextUsage.value);
-    }
-  } catch (error) {
-    console.error("Failed to load context usage:", error);
-  }
-}, 180);
-
-function refreshContextUsage() {
-  contextUsageRequestId += 1;
-  return loadContextUsage(contextUsageRequestId);
-}
-
-function sessionMessagesFingerprint(sessionId: string) {
-  const messages = sessions.value[sessionId] ?? [];
-  let chars = 0;
-  for (const item of messages) {
-    chars += item.content.length + (item.reasoning?.length ?? 0);
-  }
-  return `${messages.length}:${chars}`;
-}
-
-watch(
-  () =>
-    [
-      props.sessionId,
-      props.capturedContext,
-      settingStore.largeContextEnabled,
-      props.sessionId ? sessionMessagesFingerprint(props.sessionId) : "",
-    ] as const,
-  () => {
-    void refreshContextUsage();
-  },
-);
-
-watch(
-  () => (props.sessionId ? chatStore.contextUsage[props.sessionId] : undefined),
-  (usage) => {
-    if (!usage) {
-      return;
-    }
-    contextUsage.value = usage;
-  },
-);
-
-watch(
-  [message, composerSegments],
-  () => {
-    void refreshContextUsage();
-  },
-  { deep: true },
-);
-
-watch(
-  composerSegments,
-  () => {
-    void nextTick(resizeComposerInput);
-    emitLayoutChange();
-  },
-  { deep: true },
-);
+watch(composerSegments, () => {
+  void nextTick(() => scheduleResizeComposerInput(true));
+  emitLayoutChange();
+});
 
 watch(
   () => props.capturedContext?.selectedImages,
@@ -1210,8 +1111,16 @@ function formatTime(timestamp: number) {
 const chatModel = ref("");
 const chatModelProvider = ref("");
 
-watch(chatModel, () => {
-  void refreshContextUsage();
+const {
+  contextUsage,
+  conversationTokenCount,
+  conversationTokenTitle,
+  sessionCacheUsage,
+  refreshContextUsage,
+} = useContextUsage({
+  sessionId: () => props.sessionId,
+  capturedContext: () => props.capturedContext,
+  chatModel,
 });
 
 function syncComposeToModel() {
@@ -1232,7 +1141,7 @@ watch(
   () => props.sessionId,
   (next, prev) => {
     if (prev && prev !== next) {
-      persistDraft(prev, serializeComposerSegments());
+      persistDraft(prev, serializeComposerSegments(), true);
     }
     syncComposeToModel();
     loadDraft();
@@ -1343,14 +1252,6 @@ const currentModelEntry = computed(() =>
 );
 
 const cacheHitPercent = computed(() => {
-  if (
-    !isDeepSeekChatModel(
-      chatModel.value,
-      currentModelEntry.value?.provider || chatModelProvider.value,
-    )
-  ) {
-    return null;
-  }
   const usage = sessionCacheUsage.value;
   if (!usage) return null;
   return promptCacheHitPercent(usage.inputTokens, usage.cacheReadTokens);
@@ -1360,7 +1261,7 @@ const cacheHitTitle = computed(() => {
   const usage = sessionCacheUsage.value;
   const percent = cacheHitPercent.value;
   if (!usage || percent == null) return "";
-  const prompt = Math.max(0, usage.inputTokens) + Math.max(0, usage.cacheReadTokens);
+  const prompt = promptTokenTotal(usage.inputTokens, usage.cacheReadTokens);
   return tr(language.value, "tokens.cacheHitTitle", {
     percent,
     cached: formatTokenCount(usage.cacheReadTokens, language.value),
@@ -1477,6 +1378,28 @@ const sessionChatMode = computed(() => {
 });
 /** Session mode chip follows the user's picker choice only. */
 const effectiveChatMode = computed<ChatMode>(() => sessionChatMode.value);
+const overlayImageGen = ref(defaultImageGenCompose());
+const imageGenOptions = computed(() => {
+  if (!props.sessionId) return overlayImageGen.value;
+  return normalizeImageGenCompose(chatStore.sessionCompose[props.sessionId]?.imageGen);
+});
+
+function setImageGenOptions(next: ImageGenCompose) {
+  const value = normalizeImageGenCompose(next);
+  if (!props.sessionId) {
+    overlayImageGen.value = value;
+    return;
+  }
+  chatStore.ensureCompose(props.sessionId);
+  chatStore.setCompose(props.sessionId, { imageGen: value });
+}
+
+watch(effectiveChatMode, (mode) => {
+  if (mode !== "image") {
+    closeImageGenPicker();
+  }
+  emitLayoutChange();
+});
 const sessionToolApprovalMode = computed(() => {
   if (!props.sessionId) {
     return settingStore.toolApprovalMode;
@@ -1492,6 +1415,8 @@ const chatModeLabel = computed(() => {
       return tr(language.value, "chatModeAsk");
     case "plan":
       return tr(language.value, "chatModePlan");
+    case "image":
+      return tr(language.value, "chatModeImage");
     default:
       return tr(language.value, "chatModeAgent");
   }
@@ -1502,6 +1427,8 @@ const chatModeBadgeTitle = computed(() => {
       return tr(language.value, "currentChatModeAsk");
     case "plan":
       return tr(language.value, "currentChatModePlan");
+    case "image":
+      return tr(language.value, "currentChatModeImage");
     default:
       return tr(language.value, "currentChatModeAgent");
   }
@@ -1512,6 +1439,8 @@ const chatModeIcon = computed(() => {
       return MessageCircle;
     case "plan":
       return ListChecks;
+    case "image":
+      return Paintbrush;
     default:
       return Bot;
   }
@@ -1530,7 +1459,10 @@ async function syncPlanModeFromBackend(sessionId: string) {
 
 function updateCompose(
   patch: Partial<
-    Pick<SessionCompose, "chatModel" | "chatModelProvider" | "chatMode" | "toolApprovalMode">
+    Pick<
+      SessionCompose,
+      "chatModel" | "chatModelProvider" | "chatMode" | "toolApprovalMode" | "imageGen"
+    >
   >,
 ) {
   if (props.sessionId) {
@@ -1573,6 +1505,11 @@ const chatModePickerOptions = computed(() => [
     label: tr(language.value, "chatModePlan"),
     icon: ListChecks,
   },
+  {
+    id: "image",
+    label: tr(language.value, "chatModeImage"),
+    icon: Paintbrush,
+  },
 ]);
 const approvalPickerOptions = computed(() =>
   toolApprovalModeOptions.map((option) => ({
@@ -1611,12 +1548,68 @@ const showThinkingTierList = computed(
 const thinkingPopupOpen = computed(
   () => showThinkingTierSlider.value || showThinkingTierList.value,
 );
+const imageGenPickerOpen = ref<ImageGenFieldId | null>(null);
+const showImageGenPicker = computed(() => imageGenPickerOpen.value !== null);
+const showImageGenSettingsPanel = computed(() => isImageGenSettingsField(imageGenPickerOpen.value));
+const showImageGenListPicker = computed(() => isImageGenListField(imageGenPickerOpen.value));
+const imageGenFieldGroups = computed(() =>
+  imageGenFieldDefs(imageGenOptions.value, settingStore.imageStyleTemplates),
+);
+const imageGenPickerGroup = computed(
+  () => imageGenFieldGroups.value.find((group) => group.id === imageGenPickerOpen.value) ?? null,
+);
+const imageGenModelChoices = computed(() => listImageModelChoices(settingStore.imageProviders));
+const imageGenPickerOptions = computed(() => {
+  if (imageGenPickerOpen.value === "model") {
+    const choices = imageGenModelChoices.value;
+    if (choices.length === 0) {
+      return [{ id: "", label: tr(language.value, "imageGen.noModels") }];
+    }
+    return choices.map((option) => ({
+      id: option.id,
+      label: option.label ?? option.id,
+    }));
+  }
+  return (imageGenPickerGroup.value?.options ?? []).map((option) => ({
+    id: option.id,
+    label:
+      option.label ??
+      (option.labelKey
+        ? tr(language.value, option.labelKey as ChatI18nKey, option.labelParams)
+        : option.id),
+    hint: option.hint,
+  }));
+});
+const imageGenPickerSelectedId = computed(() => {
+  if (imageGenPickerOpen.value === "model") {
+    return selectedImageModelChoiceId(
+      settingStore.imageModelProvider,
+      settingStore.imageModel,
+      imageGenModelChoices.value,
+    );
+  }
+  return imageGenPickerGroup.value?.selectedId ?? "";
+});
+const imageGenPickerAriaLabel = computed(() => {
+  if (imageGenPickerOpen.value === "model") {
+    return tr(language.value, "imageGen.model");
+  }
+  return imageGenPickerGroup.value
+    ? tr(language.value, imageGenPickerGroup.value.titleKey as ChatI18nKey)
+    : tr(language.value, "selectOptionHint");
+});
+const imageGenPickerRowCount = computed(() => {
+  if (showImageGenSettingsPanel.value) return 8;
+  return showImageGenListPicker.value ? imageGenPickerOptions.value.length : 0;
+});
+
 const chipPickerOpen = computed(
   () =>
     showModelPicker.value ||
     showChatModePicker.value ||
     showApprovalPicker.value ||
-    thinkingPopupOpen.value,
+    thinkingPopupOpen.value ||
+    showImageGenPicker.value,
 );
 
 const modelPickerRowCount = computed(() => {
@@ -1715,48 +1708,6 @@ const toolApprovalOptions = computed(() => [
   },
 ]);
 
-const showAskUserPicker = computed(() =>
-  Boolean(props.askUser && props.askUser.questions.length > 0 && !askUserFinishing.value),
-);
-
-const askQuestionCount = computed(() => props.askUser?.questions.length ?? 0);
-
-const activeAskQuestion = computed(() => props.askUser?.questions[askQuestionIndex.value]);
-
-function toAskSlug(label: string) {
-  return label
-    .trim()
-    .toLowerCase()
-    .replace(/[^\w\u4e00-\u9fff]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 32);
-}
-
-const skipAskOption = computed<AskDisplayOption>(() => ({
-  label: tr(language.value, "customAnswer"),
-  slug: "custom",
-  description: tr(language.value, "customAnswerDesc"),
-  isSkip: true,
-}));
-
-const activeAskOptions = computed<AskDisplayOption[]>(() => {
-  const options = (activeAskQuestion.value?.options ?? []).map((option) => ({
-    label: option.label,
-    slug: toAskSlug(option.label) || "option",
-    description: option.description,
-  }));
-  return [...options, skipAskOption.value];
-});
-
-const askConfirmRowIndex = computed(() =>
-  activeAskQuestion.value?.multiSelect ? activeAskOptions.value.length : -1,
-);
-
-const askSelectedCount = computed(() => {
-  if (!activeAskQuestion.value?.multiSelect) return 0;
-  return (askAnswers.value[askQuestionIndex.value] ?? []).length;
-});
-
 const pathPermissionPickerRowCount = computed(() =>
   showPathPermissionPicker.value ? 3 + pathPermissionOptions.value.length : 0,
 );
@@ -1775,6 +1726,7 @@ const interactivePickerOpen = computed(
     showChatModePicker.value ||
     showApprovalPicker.value ||
     thinkingPopupOpen.value ||
+    showImageGenPicker.value ||
     workspacePickerOpen.value ||
     attachPanelOpen.value,
 );
@@ -1794,18 +1746,10 @@ const inputLockedForTyping = computed(
     showChatModePicker.value ||
     showApprovalPicker.value ||
     thinkingPopupOpen.value ||
+    showImageGenListPicker.value ||
     workspacePickerOpen.value ||
     attachPanelOpen.value,
 );
-
-const askPickerRowCount = computed(() => {
-  if (!showAskUserPicker.value) {
-    return 0;
-  }
-  const optionRows = activeAskOptions.value.length;
-  const confirmRow = activeAskQuestion.value?.multiSelect ? 1 : 0;
-  return 2 + optionRows + confirmRow;
-});
 
 const hasInlineAttachmentTags = computed(
   () =>
@@ -1829,7 +1773,12 @@ const inputPlaceholder = computed(() => {
   if (showModelPicker.value) {
     return tr(language.value, "selectModelHint");
   }
-  if (showChatModePicker.value || showApprovalPicker.value || thinkingPopupOpen.value) {
+  if (
+    showChatModePicker.value ||
+    showApprovalPicker.value ||
+    thinkingPopupOpen.value ||
+    showImageGenListPicker.value
+  ) {
     return tr(language.value, "selectOptionHint");
   }
   if (showPathPermissionPicker.value || showToolApprovalPicker.value) {
@@ -1840,6 +1789,9 @@ const inputPlaceholder = computed(() => {
       language.value,
       activeAskQuestion.value?.multiSelect ? "askMultiHint" : "askCustomHint",
     );
+  }
+  if (effectiveChatMode.value === "image") {
+    return tr(language.value, "imageGenPlaceholder");
   }
   return props.placeholder || tr(language.value, "askAnything");
 });
@@ -1860,6 +1812,7 @@ const sendButtonDisabled = computed(
 function removeTrailingAttachment(): boolean {
   if (attachedImages.value.length > 0) {
     attachedImages.value.pop();
+    attachedEditSources.value.pop();
     return true;
   }
   if (attachedFiles.value.length > 0) {
@@ -1932,6 +1885,12 @@ function estimateActivePickerHeight(pickerRows: number): number {
   if (showThinkingTierList.value) {
     return 10 + thinkingTierPickerOptions.value.length * 36;
   }
+  if (showImageGenSettingsPanel.value) {
+    return 292;
+  }
+  if (showImageGenListPicker.value) {
+    return 10 + imageGenPickerOptions.value.length * 36;
+  }
   if (showModelPicker.value) {
     if (modelPickerShowingGroups.value) {
       return 6 + Math.max(modelPickerGroups.value.length, 1) * 32 + 34;
@@ -1975,6 +1934,7 @@ function activePickerRowCount(): number {
   if (showChatModePicker.value) return chatModePickerRowCount.value;
   if (showApprovalPicker.value) return approvalPickerRowCount.value;
   if (thinkingPopupOpen.value) return thinkingTierPickerRowCount.value;
+  if (showImageGenPicker.value) return imageGenPickerRowCount.value;
   if (showSuggestions.value) return suggestionCount.value;
   return 0;
 }
@@ -2107,6 +2067,7 @@ function closeChipPickers() {
   approvalPickerOpen.value = false;
   chatModePickerOpen.value = false;
   thinkingTierPickerOpen.value = false;
+  imageGenPickerOpen.value = null;
 }
 
 function anyChipStillOpen() {
@@ -2114,7 +2075,8 @@ function anyChipStillOpen() {
     modelPickerOpen.value ||
     approvalPickerOpen.value ||
     chatModePickerOpen.value ||
-    thinkingTierPickerOpen.value
+    thinkingTierPickerOpen.value ||
+    Boolean(imageGenPickerOpen.value)
   );
 }
 
@@ -2158,6 +2120,17 @@ function closeThinkingTierPicker() {
     return;
   }
   thinkingTierPickerOpen.value = false;
+  if (!anyChipStillOpen()) {
+    void syncPopupState(false);
+  }
+  emitLayoutChange();
+}
+
+function closeImageGenPicker() {
+  if (!imageGenPickerOpen.value) {
+    return;
+  }
+  imageGenPickerOpen.value = null;
   if (!anyChipStillOpen()) {
     void syncPopupState(false);
   }
@@ -2376,6 +2349,50 @@ function toggleChatModeMenu() {
   void openChatModePicker();
 }
 
+async function toggleImageGenPicker(id: ImageGenFieldId, button: HTMLElement) {
+  if (imageGenPickerOpen.value === id) {
+    closeImageGenPicker();
+    return;
+  }
+  const stayingOnSettings =
+    isImageGenSettingsField(id) && isImageGenSettingsField(imageGenPickerOpen.value);
+  if (!stayingOnSettings) {
+    await prepareChipPicker();
+  }
+  imageGenPickerOpen.value = id;
+  if (isImageGenListField(id)) {
+    const selectedId = imageGenPickerSelectedId.value;
+    const idx = imageGenPickerOptions.value.findIndex((option) => option.id === selectedId);
+    selectedIndex.value = idx >= 0 ? idx : 0;
+  }
+  await positionChipPicker(button, imageGenPickerWidth(id));
+  await syncPopupState(true);
+  emitLayoutChange();
+  if (isImageGenListField(id)) {
+    void focusInput();
+  }
+}
+
+function selectImageGenOption(id: string) {
+  const field = imageGenPickerOpen.value;
+  if (!field) return;
+  if (field === "model") {
+    const selected = decodeImageModelSelection(id);
+    if (selected) {
+      void settingStore.update({
+        imageModel: selected.model,
+        imageModelProvider: selected.provider,
+      });
+    }
+    closeImageGenPicker();
+    return;
+  }
+  setImageGenOptions(applyImageGenField(imageGenOptions.value, field, id));
+  if (field === "style") {
+    closeImageGenPicker();
+  }
+}
+
 function flashModelChipConfirm() {
   modelChipConfirm.value = true;
   if (modelChipConfirmTimer) {
@@ -2458,7 +2475,7 @@ function selectChatMode(mode: string) {
   if (next === effectiveChatMode.value) {
     return;
   }
-  if (next === "ask") {
+  if (next === "ask" || next === "image") {
     closeApprovalPicker();
   }
   updateCompose({ chatMode: next });
@@ -2591,6 +2608,10 @@ watch(
 
 onUnmounted(() => {
   persistDraft();
+  if (composerResizeRaf) {
+    cancelAnimationFrame(composerResizeRaf);
+    composerResizeRaf = 0;
+  }
   composerShellResizeObserver?.disconnect();
   composerShellResizeObserver = null;
   unlistenWorkspaces?.();
@@ -2689,20 +2710,9 @@ function syncComposerCaret() {
   }
 }
 
-function onComposerCaretChange(caret: number) {
-  if (composerCaret.value !== caret) {
-    composerCaret.value = caret;
-  }
-}
-
 function onComposerInput() {
   syncComposerCaret();
-  const heightChanged = resizeComposerInput();
-  // Grow the Alt+Alt native window with wrapped lines (up to 4), not an
-  // inner scrollbar while the dock is still single-line tall.
-  if (props.appearance === "overlay" && heightChanged) {
-    void nextTick(() => emitLayoutChange());
-  }
+  scheduleResizeComposerInput();
 }
 
 watch(message, (value) => {
@@ -2710,6 +2720,30 @@ watch(message, (value) => {
     composerCaret.value = value.length;
   }
 });
+
+let composerResizeRaf = 0;
+let composerResizePendingForce = false;
+
+/** Coalesce auto-grow measurements to one layout pass per frame while typing. */
+function scheduleResizeComposerInput(force = false) {
+  composerResizePendingForce = composerResizePendingForce || force;
+  if (composerResizeRaf) return;
+  composerResizeRaf = requestAnimationFrame(() => {
+    composerResizeRaf = 0;
+    const forceMeasure = composerResizePendingForce;
+    composerResizePendingForce = false;
+    const heightChanged = resizeComposerInput(forceMeasure);
+    if (props.appearance === "overlay" && heightChanged) {
+      void nextTick(() => emitLayoutChange());
+    }
+  });
+}
+
+function onComposerCaretChange(caret: number) {
+  if (composerCaret.value !== caret) {
+    composerCaret.value = caret;
+  }
+}
 
 const activeFileMention = computed(() => {
   if (!currentWorkspace.value || interactivePickerOpen.value) {
@@ -3001,7 +3035,7 @@ function onInputBarMouseDown(event: MouseEvent) {
   });
 }
 
-function resizeComposerInput(): boolean {
+function resizeComposerInput(force = false): boolean {
   const editor = composerRef.value;
   if (!editor) return false;
   const el = editor.el;
@@ -3012,8 +3046,18 @@ function resizeComposerInput(): boolean {
   const maxHeight = lineHeight * maxLines;
   const prevHeight = el.offsetHeight;
 
-  // Auto-grow up to maxLines, then scroll. Measure via height:auto only when
-  // applying — skip layout emit when the pixel height is unchanged.
+  // Fast path while still single-line: scrollHeight grows even with a fixed
+  // min height, so we can skip the height:auto reflow until wrapping starts.
+  if (!force && prevHeight <= minHeight + 4) {
+    const probe = el.scrollHeight;
+    if (probe <= minHeight + 4) {
+      el.style.overflowY = "hidden";
+      composerInputMultiline.value = false;
+      return false;
+    }
+  }
+
+  // Auto-grow up to maxLines, then scroll.
   el.style.height = "auto";
   const contentHeight = el.scrollHeight;
   const nextHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
@@ -3201,6 +3245,7 @@ async function toggleWorkspacePicker() {
   closeApprovalMenu();
   closeChatModeMenu();
   closeThinkingTierMenu();
+  closeImageGenPicker();
   await loadWorkspaceState();
   if (workspaces.value.length === 0) {
     await addWorkspaceFromFolder();
@@ -3305,6 +3350,7 @@ async function openWorkspaceQuickPicker() {
   closeApprovalMenu();
   closeChatModeMenu();
   closeThinkingTierMenu();
+  closeImageGenPicker();
   await loadWorkspaceState();
   workspacePickerOpen.value = true;
   await syncPopupState(true);
@@ -3443,6 +3489,12 @@ async function submit() {
     return;
   }
 
+  if (showImageGenListPicker.value) {
+    const option = imageGenPickerOptions.value[selectedIndex.value];
+    if (option) selectImageGenOption(option.id);
+    return;
+  }
+
   if (showApprovalPicker.value) {
     const option = approvalPickerOptions.value[selectedIndex.value];
     if (option) selectApprovalMode(option.id);
@@ -3523,8 +3575,8 @@ async function submit() {
     return;
   }
 
-  const attachedFileBlocks = formatAttachedFilesForMessage(attachedFiles.value);
-  const imageTags = attachedImages.value.map((img) => `![image](${img})`).join("\n");
+  const attachedFileBlocks = attachedFilesMessagePrefix();
+  const imageTags = formatAttachedImagesForMessage();
   const submittedText = [text, attachedFileBlocks, imageTags]
     .filter((part) => part.length > 0)
     .join("\n\n");
@@ -3533,8 +3585,8 @@ async function submit() {
   clearComposerSegments();
   message.value = "";
   persistDraft();
-  attachedFiles.value = [];
-  attachedImages.value = [];
+  clearAttachedFiles();
+  clearAttachedImages();
   emitLayoutChange();
 }
 
@@ -3556,7 +3608,7 @@ function handlePaste(event: ClipboardEvent) {
 
   // Plain-text paste (including multiline) is handled by ComposerEditable.
   emitLayoutChange();
-  void nextTick(resizeComposerInput);
+  scheduleResizeComposerInput(true);
 }
 
 function selectPathPermission(decision: PathPermissionDecision) {
@@ -3608,7 +3660,7 @@ function handleKeydown(event: KeyboardEvent) {
     const next = `${message.value.slice(0, sel.start)}\n${message.value.slice(sel.end)}`;
     composerRef.value?.setText(next, sel.start + 1);
     void nextTick(() => {
-      resizeComposerInput();
+      scheduleResizeComposerInput(true);
       syncComposerCaret();
       emitLayoutChange();
     });
@@ -3885,6 +3937,40 @@ function handleKeydown(event: KeyboardEvent) {
     }
   }
 
+  if (showImageGenListPicker.value) {
+    const totalRows = imageGenPickerOptions.value.length;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      selectedIndex.value = (selectedIndex.value + 1) % Math.max(totalRows, 1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      selectedIndex.value =
+        (selectedIndex.value - 1 + Math.max(totalRows, 1)) % Math.max(totalRows, 1);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const option = imageGenPickerOptions.value[selectedIndex.value];
+      if (option) selectImageGenOption(option.id);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeImageGenPicker();
+      return;
+    }
+  }
+
+  if (showImageGenSettingsPanel.value) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeImageGenPicker();
+      return;
+    }
+  }
+
   if (showApprovalPicker.value) {
     const totalRows = approvalPickerOptions.value.length;
     if (event.key === "ArrowDown") {
@@ -4051,8 +4137,8 @@ function handleKeydown(event: KeyboardEvent) {
 
 function reset() {
   clearComposerSegments();
-  attachedFiles.value = [];
-  attachedImages.value = [];
+  clearAttachedFiles();
+  clearAttachedImages();
   mentionSuggestSuppressed.value = null;
   selectedIndex.value = 0;
   lastEmittedChromeHeight = 0;
@@ -4065,6 +4151,7 @@ function reset() {
   closeApprovalMenu();
   closeChatModeMenu();
   closeThinkingTierMenu();
+  closeImageGenPicker();
   workspacePickerOpen.value = false;
   workspaceQuickSelectOnly.value = false;
   attachPanelOpen.value = false;
@@ -4082,8 +4169,8 @@ function reset() {
 function setMessage(text: string) {
   composerUndo.push(captureComposerSnapshot());
   clearComposerSegments();
-  attachedFiles.value = [];
-  attachedImages.value = [];
+  clearAttachedFiles();
+  clearAttachedImages();
   mentionSuggestSuppressed.value = null;
   const parsed = parseComposerTextToSegments(text);
   const flat = serializeSegments(parsed.segments, parsed.liveMessage);
@@ -4096,109 +4183,6 @@ function setMessage(text: string) {
   void nextTick(resizeComposerInput);
   void focusInput();
 }
-
-function isAskOptionSelected(label: string) {
-  if (label === tr(language.value, "customAnswer")) {
-    return false;
-  }
-  const current = askAnswers.value[askQuestionIndex.value] ?? [];
-  return current.includes(label);
-}
-
-function selectAskOption(option: AskDisplayOption) {
-  if (option.isSkip) {
-    completeAskUserWithSkip();
-    return;
-  }
-
-  const question = activeAskQuestion.value;
-  if (!question) {
-    return;
-  }
-
-  if (question.multiSelect) {
-    const current = askAnswers.value[askQuestionIndex.value] ?? [];
-    askAnswers.value[askQuestionIndex.value] = current.includes(option.label)
-      ? current.filter((item) => item !== option.label)
-      : [...current, option.label];
-    return;
-  }
-
-  askAnswers.value[askQuestionIndex.value] = [option.label];
-  advanceAskQuestion();
-}
-
-function confirmAskSelection() {
-  const current = askAnswers.value[askQuestionIndex.value] ?? [];
-  if (current.length === 0) {
-    return;
-  }
-  advanceAskQuestion();
-}
-
-function completeAskUserWithSkip() {
-  if (!props.askUser) {
-    return;
-  }
-
-  const answers = { ...askAnswers.value };
-  for (let index = askQuestionIndex.value; index < props.askUser.questions.length; index += 1) {
-    answers[index] = [ASK_SKIP_MARKER];
-  }
-  finishAskUser(answers, true);
-}
-
-function finishAskUser(answers: Record<number, string[]>, skipped = false) {
-  if (!props.askUser || askUserFinishing.value) {
-    return;
-  }
-
-  askUserFinishing.value = true;
-
-  const payload = {
-    skipped,
-    answers: props.askUser.questions.map((question, index) => {
-      const selected = answers[index] ?? [];
-      const userSupplement = selected.includes(ASK_SKIP_MARKER);
-      return {
-        header: question.header,
-        question: question.question,
-        selected: userSupplement ? [] : selected.filter((item) => item !== ASK_SKIP_MARKER),
-        userSupplement,
-      };
-    }),
-  };
-
-  emit("askUserComplete", JSON.stringify(payload));
-  emitLayoutChange();
-}
-
-function advanceAskQuestion() {
-  if (!props.askUser) {
-    return;
-  }
-
-  if (askQuestionIndex.value < props.askUser.questions.length - 1) {
-    askQuestionIndex.value += 1;
-    selectedIndex.value = 0;
-    emitLayoutChange();
-    return;
-  }
-
-  finishAskUser(askAnswers.value);
-}
-
-watch(
-  () => props.askUser?.requestId,
-  (requestId) => {
-    askUserFinishing.value = false;
-    askQuestionIndex.value = 0;
-    askAnswers.value = {};
-    selectedIndex.value = 0;
-    void syncPopupState(Boolean(requestId));
-    emitLayoutChange();
-  },
-);
 
 watch(
   () => props.selectionLines,
@@ -4326,6 +4310,9 @@ watch(
     if (showSuggestions.value && thinkingTierPickerOpen.value) {
       closeThinkingTierMenu();
     }
+    if (showSuggestions.value && imageGenPickerOpen.value) {
+      closeImageGenPicker();
+    }
     emitLayoutChange(true);
   },
   { immediate: true },
@@ -4343,6 +4330,9 @@ watch(showAskUserPicker, async (open) => {
   }
   if (open && thinkingTierPickerOpen.value) {
     closeThinkingTierMenu();
+  }
+  if (open && imageGenPickerOpen.value) {
+    closeImageGenPicker();
   }
   if (open) {
     await nextTick();
@@ -4369,6 +4359,9 @@ watch(
       }
       if (thinkingTierPickerOpen.value) {
         closeThinkingTierMenu();
+      }
+      if (imageGenPickerOpen.value) {
+        closeImageGenPicker();
       }
       await syncPopupState(true);
       await nextTick();
@@ -4398,6 +4391,9 @@ watch(
       if (thinkingTierPickerOpen.value) {
         closeThinkingTierMenu();
       }
+      if (imageGenPickerOpen.value) {
+        closeImageGenPicker();
+      }
       await syncPopupState(true);
       await nextTick();
       document.querySelectorAll<HTMLElement>(".tool-approval-list").forEach((list) => {
@@ -4426,6 +4422,9 @@ watch(
       if (thinkingTierPickerOpen.value) {
         closeThinkingTierMenu();
       }
+      if (imageGenPickerOpen.value) {
+        closeImageGenPicker();
+      }
       await syncPopupState(true);
       void focusInput();
     }
@@ -4448,7 +4447,14 @@ watch(
   },
 );
 
-defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWorkspaceOptions });
+defineExpose({
+  focusInput,
+  reset,
+  setMessage,
+  insertFileMention,
+  resolveSendWorkspaceOptions,
+  attachImageEditReference,
+});
 </script>
 
 <style scoped>
@@ -4700,6 +4706,7 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: visible;
 }
 
 .input-footer,
@@ -4819,6 +4826,11 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   border-radius: var(--peek-radius-composer, 16px);
   background: var(--peek-list-bg);
   box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
+}
+
+.workbench-composer :deep(.image-gen-toolbar),
+.overlay-composer :deep(.image-gen-toolbar) {
+  flex: none;
 }
 
 :global([data-theme="dark"]) .workbench-composer .input-bar {
@@ -5099,6 +5111,13 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   box-shadow: 0 12px 30px color-mix(in srgb, #000 20%, transparent);
 }
 
+.workbench-composer.chip-picker-open :deep(.image-gen-settings-panel) {
+  max-height: none;
+  overflow: hidden;
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+}
+
 /* Keep compact width even after chip-picker-open is removed on close,
    otherwise the leaving panel inherits the fused full-span list styles. */
 .workbench-composer.overlay-pickers :deep(.thinking-effort-panel.command-list),
@@ -5145,6 +5164,14 @@ defineExpose({ focusInput, reset, setMessage, insertFileMention, resolveSendWork
   border-radius: 8px 8px 0 0;
   background: var(--peek-list-bg);
   box-shadow: none;
+}
+
+.overlay-composer.overlay-pickers.chip-picker-open :deep(.image-gen-settings-panel) {
+  margin: 0 0 8px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--peek-border);
+  border-radius: 14px;
+  background: var(--peek-surface);
 }
 
 .chat-input-shell.overlay-composer.overlay-pickers :deep(.thinking-effort-panel.command-list) {

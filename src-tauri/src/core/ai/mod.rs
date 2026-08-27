@@ -2,6 +2,8 @@ pub mod antigravity;
 pub mod deepseek;
 pub mod embed;
 pub mod image_analysis;
+pub mod image_gen;
+pub mod image_markdown;
 pub mod model_ref;
 pub mod multimodal;
 pub mod multimodal_response;

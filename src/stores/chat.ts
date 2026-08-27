@@ -11,14 +11,19 @@ import {
   resolveSessionId,
   type RawChatStarted,
 } from "@/services/chat/normalize";
-import { estimateMessageTokens } from "@/services/chat/tokenEstimate";
+import { accumulateCacheUsage, estimateMessageTokens } from "@/services/chat/tokenEstimate";
 import {
   CONFIGURE_PROVIDER_MARKER,
   isConfigureProviderError,
 } from "@/services/chat/ensureDefaultModel";
 import { isKnownModelSelection } from "@/lib/modelThinking";
 import { tr } from "@/services/i18n";
-import { normalizeChatMode } from "@/types/setting";
+import {
+  defaultImageGenCompose,
+  imageGenComposeEqual,
+  imageGenPayload,
+  normalizeImageGenCompose,
+} from "@/services/chat/imageGenMode";
 import type {
   AskUserAnswerItem,
   ChatMessage,
@@ -31,242 +36,39 @@ import type {
   ToolActivity,
   ToolPreviewPayload,
   UrlOfferEvent,
-  WorkTimelineItem,
 } from "@/types/chat";
+import { normalizeChatMode } from "@/types/setting";
+import {
+  composeCache,
+  defaultCompose,
+  flushPersistComposeCache,
+  loadComposeCache,
+  loadRejectedPlanFingerprints,
+  persistComposeCache,
+  persistRejectedPlanFingerprints,
+  sanitizeCompose,
+  scheduleDraftListBump,
+  schedulePersistComposeCache,
+  syncComposeToRemote,
+  type SessionCompose,
+} from "./chatCompose";
+import {
+  cacheUsagesFromHistory,
+  mergeActiveHistory,
+  messagesHistoryFingerprint,
+  settleInterruptedMessages,
+} from "./chatHistory";
+import { appendTimelineText, findLastMessageIndex } from "./chatStream";
+
+export type { SessionCompose } from "./chatCompose";
+export { defaultCompose } from "./chatCompose";
+export {
+  messagesHistoryFingerprint,
+  settleInterruptedMessages,
+  mergeActiveHistory,
+} from "./chatHistory";
 
 const log = createLogger("chat-store");
-
-/** Per-conversation compose settings. Each conversation remembers its own
- * model / mode / approval choice and input draft; unopened sessions inherit
- * the previous session's values on first open, then stay independent. */
-export interface SessionCompose {
-  chatModel: string;
-  chatModelProvider: string;
-  chatMode: "ask" | "agent" | "plan";
-  toolApprovalMode: "ask" | "auto" | "alwaysAllow";
-  draft: string;
-  /** Workspace binding for draft-only (not-yet-sent) sessions shown in the sidebar. */
-  draftWorkspaceId?: string | null;
-  draftUpdatedAt?: number;
-}
-
-function sanitizeCompose(raw: Partial<SessionCompose> | null | undefined): SessionCompose {
-  const base = defaultCompose();
-  if (!raw || typeof raw !== "object") {
-    return base;
-  }
-  const approval = raw.toolApprovalMode;
-  return {
-    chatModel: typeof raw.chatModel === "string" ? raw.chatModel : base.chatModel,
-    chatModelProvider:
-      typeof raw.chatModelProvider === "string" ? raw.chatModelProvider : base.chatModelProvider,
-    chatMode: normalizeChatMode(raw.chatMode),
-    toolApprovalMode:
-      approval === "ask" || approval === "auto" || approval === "alwaysAllow"
-        ? approval
-        : base.toolApprovalMode,
-    draft: typeof raw.draft === "string" ? raw.draft : "",
-    draftWorkspaceId: raw.draftWorkspaceId ?? null,
-    draftUpdatedAt: typeof raw.draftUpdatedAt === "number" ? raw.draftUpdatedAt : undefined,
-  };
-}
-
-export function defaultCompose(): SessionCompose {
-  return {
-    chatModel: "",
-    chatModelProvider: "",
-    chatMode: "agent",
-    toolApprovalMode: "ask",
-    draft: "",
-  };
-}
-
-const COMPOSE_STORAGE_KEY = "aaa.sessionCompose.v1";
-const REJECTED_PLAN_STORAGE_KEY = "aaa.rejectedPlanFingerprint.v1";
-
-interface ComposeCache {
-  entries: Record<string, SessionCompose>;
-  last: string;
-}
-
-let composeCacheLoaded = false;
-const composeCache: ComposeCache = { entries: {}, last: "" };
-
-function loadComposeCache(): void {
-  if (composeCacheLoaded) {
-    return;
-  }
-  composeCacheLoaded = true;
-  try {
-    const raw = localStorage.getItem(COMPOSE_STORAGE_KEY);
-    if (!raw) {
-      return;
-    }
-    const parsed = JSON.parse(raw) as Partial<ComposeCache>;
-    if (parsed && typeof parsed === "object") {
-      const entries: Record<string, SessionCompose> = {};
-      for (const [id, value] of Object.entries(parsed.entries ?? {})) {
-        entries[id] = sanitizeCompose(value as Partial<SessionCompose>);
-      }
-      composeCache.entries = entries;
-      composeCache.last = typeof parsed.last === "string" ? parsed.last : "";
-    }
-  } catch {
-    // Corrupted cache — start fresh.
-  }
-}
-
-function persistComposeCache(): void {
-  try {
-    localStorage.setItem(COMPOSE_STORAGE_KEY, JSON.stringify(composeCache));
-  } catch {
-    // Storage unavailable — keep in-memory state only.
-  }
-}
-
-async function syncComposeToRemote(sessionId: string, compose: SessionCompose): Promise<void> {
-  try {
-    const { remoteSyncSessionCompose } = await import("@/commands/remote");
-    const { useChatModelStore } = await import("@/stores/chatModel");
-    const chatModelStore = useChatModelStore();
-    const match = chatModelStore.models.find(
-      (model) =>
-        model.id === compose.chatModel &&
-        (!compose.chatModelProvider || model.provider === compose.chatModelProvider),
-    );
-    await remoteSyncSessionCompose(sessionId, {
-      chatMode: compose.chatMode,
-      toolApprovalMode: compose.toolApprovalMode,
-      chatModel: compose.chatModel,
-      chatModelProvider: compose.chatModelProvider,
-      chatModelLabel: match?.displayName ?? match?.id ?? null,
-    });
-  } catch {
-    // Gateway may be stopped — compose still lives in Pinia.
-  }
-}
-
-function loadRejectedPlanFingerprints(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(REJECTED_PLAN_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object") return {};
-    const entries: Record<string, string> = {};
-    for (const [sessionId, value] of Object.entries(parsed)) {
-      if (typeof value === "string" && value.trim()) {
-        entries[sessionId] = value;
-      }
-    }
-    return entries;
-  } catch {
-    return {};
-  }
-}
-
-function persistRejectedPlanFingerprints(entries: Record<string, string>): void {
-  try {
-    localStorage.setItem(REJECTED_PLAN_STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    // Storage unavailable — keep in-memory state only.
-  }
-}
-
-/** Mark crash-orphaned in-flight rows so the UI is not stuck "executing". */
-export function settleInterruptedMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => {
-    const statusStuck = message.status === "pending" || message.status === "streaming";
-    const toolsStuck = message.toolActivities?.some((activity) => activity.status === "running");
-    if (!statusStuck && !toolsStuck) {
-      return message;
-    }
-    return {
-      ...message,
-      status: statusStuck ? "cancelled" : message.status,
-      completedAt: message.completedAt ?? Date.now(),
-      activityStatus: undefined,
-      estimatedTokens: undefined,
-      toolActivities: message.toolActivities?.map((activity) =>
-        activity.status === "running"
-          ? {
-              ...activity,
-              status: "error" as const,
-              success: false,
-              result: activity.result?.trim() ? activity.result : "interrupted",
-            }
-          : activity,
-      ),
-    };
-  });
-}
-
-/** Merge a persisted history snapshot into an actively streaming session.
- * The database can lag behind realtime events, so it must never replace newer
- * optimistic/streaming messages that only exist in memory yet. */
-export function mergeActiveHistory(persisted: ChatMessage[], live: ChatMessage[]): ChatMessage[] {
-  const liveById = new Map(live.map((message) => [message.id, message]));
-  const persistedIds = new Set(persisted.map((message) => message.id));
-  const merged = persisted.map((stored) => {
-    const current = liveById.get(stored.id);
-    if (!current) {
-      return stored;
-    }
-
-    const currentIsActive = current.status === "pending" || current.status === "streaming";
-    const currentHasNewerContent =
-      current.content.length > stored.content.length ||
-      (current.reasoning?.length ?? 0) > (stored.reasoning?.length ?? 0) ||
-      (current.toolActivities?.length ?? 0) > (stored.toolActivities?.length ?? 0) ||
-      (current.workTimeline?.length ?? 0) > (stored.workTimeline?.length ?? 0);
-
-    return currentIsActive || currentHasNewerContent ? current : stored;
-  });
-
-  // Realtime events may have created messages that the history query has not
-  // persisted yet. Keep them in their existing order at the end of the turn.
-  for (const message of live) {
-    if (!persistedIds.has(message.id)) {
-      merged.push(message);
-    }
-  }
-  return merged;
-}
-
-/**
- * Append a text chunk (reasoning or regular content) to the work timeline,
- * merging into the trailing segment when it's the same kind so consecutive
- * deltas don't fragment into one segment per network chunk. Tool activities
- * are inserted separately (see `upsertToolActivity`), so a new segment only
- * starts here once a tool call has broken the run of same-kind text.
- */
-function appendTimelineText(
-  timeline: WorkTimelineItem[] | undefined,
-  chunk: string,
-  kind: "reasoning" | "content",
-): WorkTimelineItem[] {
-  const next = [...(timeline ?? [])];
-  const last = next[next.length - 1];
-  if (last?.type === kind) {
-    next[next.length - 1] = { ...last, content: last.content + chunk };
-  } else {
-    next.push({
-      type: kind,
-      id: `${kind}-${Date.now()}-${next.length}`,
-      content: chunk,
-    });
-  }
-  return next;
-}
-
-function findLastMessageIndex(
-  messages: ChatMessage[],
-  predicate: (message: ChatMessage) => boolean,
-) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (predicate(messages[index])) return index;
-  }
-  return -1;
-}
 
 /**
  * Thin UI store — 按 session 镜像 AI Runtime 状态。
@@ -287,10 +89,18 @@ export const useChatStore = defineStore("chat", {
     overlayDraftSessionId: "" as string,
     contextNotices: {} as Record<string, string | undefined>,
     contextUsage: {} as Record<string, ContextUsageSnapshot | undefined>,
-    /** Last DeepSeek prompt-cache snapshot per conversation. */
+    /** Aggregated DeepSeek prompt-cache snapshot per conversation. */
     sessionCacheUsage: {} as Record<string, SessionCacheUsage | undefined>,
+    /** Prompt-cache totals keyed by assistant message id. */
+    messageCacheUsage: {} as Record<string, Record<string, SessionCacheUsage>>,
     /** Live in-session task list from update_tasks. */
     sessionTasks: {} as Record<string, TaskItem[]>,
+    /**
+     * Bumps when draft presence / draft-only sidebar rows should refresh.
+     * Intentionally separate from sessionCompose so typing does not rebuild
+     * the whole session list on every keystroke.
+     */
+    draftListVersion: 0,
     /** Session plan-mode gate (writer tools blocked until approve). */
     sessionPlanMode: {} as Record<string, boolean>,
     /** How the active plan was entered. Auto plans (agent complexity
@@ -365,6 +175,7 @@ export const useChatStore = defineStore("chat", {
           chatModelProvider: settingStore.chatModelProvider ?? "",
           chatMode: settingStore.chatMode ?? "agent",
           toolApprovalMode: settingStore.toolApprovalMode ?? "ask",
+          imageGen: defaultImageGenCompose(),
           draft: "",
         });
         this.sessionCompose = { ...this.sessionCompose, [sessionId]: resolved };
@@ -379,8 +190,9 @@ export const useChatStore = defineStore("chat", {
           chatModel: source?.chatModel ?? settingStore.chatModel ?? "",
           chatModelProvider: source?.chatModelProvider ?? settingStore.chatModelProvider ?? "",
           // Plan is session-gated live state — never inherit a stale plan chip.
-          chatMode: source?.chatMode === "ask" ? "ask" : "agent",
+          chatMode: source?.chatMode === "plan" ? "agent" : normalizeChatMode(source?.chatMode),
           toolApprovalMode: source?.toolApprovalMode ?? settingStore.toolApprovalMode ?? "ask",
+          imageGen: normalizeImageGenCompose(source?.imageGen),
           draft: "",
         });
         this.sessionCompose = { ...this.sessionCompose, [sessionId]: resolved };
@@ -397,7 +209,10 @@ export const useChatStore = defineStore("chat", {
     setCompose(
       sessionId: string,
       patch: Partial<
-        Pick<SessionCompose, "chatModel" | "chatModelProvider" | "chatMode" | "toolApprovalMode">
+        Pick<
+          SessionCompose,
+          "chatModel" | "chatModelProvider" | "chatMode" | "toolApprovalMode" | "imageGen"
+        >
       >,
     ) {
       if (!sessionId) {
@@ -409,21 +224,25 @@ export const useChatStore = defineStore("chat", {
         current.chatModel === next.chatModel &&
         current.chatModelProvider === next.chatModelProvider &&
         current.chatMode === next.chatMode &&
-        current.toolApprovalMode === next.toolApprovalMode
+        current.toolApprovalMode === next.toolApprovalMode &&
+        imageGenComposeEqual(current.imageGen, next.imageGen)
       ) {
         return;
       }
       this.sessionCompose = { ...this.sessionCompose, [sessionId]: next };
       composeCache.entries[sessionId] = next;
       composeCache.last = sessionId;
-      persistComposeCache();
+      flushPersistComposeCache();
       void syncComposeToRemote(sessionId, next);
     },
     /** Apply compose patch originating from Companion (skip remote echo). */
     applyComposeFromRemote(
       sessionId: string,
       patch: Partial<
-        Pick<SessionCompose, "chatModel" | "chatModelProvider" | "chatMode" | "toolApprovalMode">
+        Pick<
+          SessionCompose,
+          "chatModel" | "chatModelProvider" | "chatMode" | "toolApprovalMode" | "imageGen"
+        >
       >,
     ) {
       if (!sessionId) {
@@ -435,36 +254,66 @@ export const useChatStore = defineStore("chat", {
         current.chatModel === next.chatModel &&
         current.chatModelProvider === next.chatModelProvider &&
         current.chatMode === next.chatMode &&
-        current.toolApprovalMode === next.toolApprovalMode
+        current.toolApprovalMode === next.toolApprovalMode &&
+        imageGenComposeEqual(current.imageGen, next.imageGen)
       ) {
         return;
       }
       this.sessionCompose = { ...this.sessionCompose, [sessionId]: next };
       composeCache.entries[sessionId] = next;
       composeCache.last = sessionId;
-      persistComposeCache();
+      flushPersistComposeCache();
     },
     /** Persist the input draft for one conversation (debounced by callers). */
-    setComposeDraft(sessionId: string, draft: string, options?: { workspaceId?: string | null }) {
+    setComposeDraft(
+      sessionId: string,
+      draft: string,
+      options?: { workspaceId?: string | null; persistImmediate?: boolean },
+    ) {
       if (!sessionId) {
         return;
       }
       const current = this.ensureCompose(sessionId);
       const trimmed = draft.trim();
-      const next: SessionCompose = {
-        ...current,
-        draft,
-        draftUpdatedAt: trimmed ? Date.now() : undefined,
-      };
-      if (options && "workspaceId" in options) {
-        next.draftWorkspaceId = options.workspaceId ?? null;
-      }
-      if (current.draft === next.draft && current.draftWorkspaceId === next.draftWorkspaceId) {
+      const hadDraft = Boolean(current.draft?.trim());
+      const hasDraft = Boolean(trimmed);
+      const prevWorkspaceId = current.draftWorkspaceId ?? null;
+      const nextWorkspaceId =
+        options && "workspaceId" in options ? (options.workspaceId ?? null) : prevWorkspaceId;
+      if (current.draft === draft && prevWorkspaceId === nextWorkspaceId) {
+        if (options?.persistImmediate) {
+          flushPersistComposeCache();
+        }
         return;
       }
-      this.sessionCompose = { ...this.sessionCompose, [sessionId]: next };
-      composeCache.entries[sessionId] = next;
-      persistComposeCache();
+
+      // Mutate in place so replacing sessionCompose does not invalidate the
+      // whole sidebar on every keystroke.
+      current.draft = draft;
+      current.draftUpdatedAt = hasDraft ? Date.now() : undefined;
+      if (options && "workspaceId" in options) {
+        current.draftWorkspaceId = options.workspaceId ?? null;
+      }
+      composeCache.entries[sessionId] = { ...current };
+      if (options?.persistImmediate) {
+        flushPersistComposeCache();
+      } else {
+        schedulePersistComposeCache(1000);
+      }
+
+      const messages = this.sessions[sessionId] ?? [];
+      const isDraftOnlySession =
+        !this.startedSessionIds[sessionId] &&
+        !messages.some((item) => item.role === "user" || item.role === "assistant");
+      // Draft icon / draft-only row membership — immediate on presence flip.
+      if (hadDraft !== hasDraft || prevWorkspaceId !== nextWorkspaceId) {
+        this.draftListVersion += 1;
+      } else if (isDraftOnlySession && hasDraft) {
+        // Preview text for brand-new chats: refresh at most ~1/s.
+        scheduleDraftListBump(() => {
+          this.draftListVersion += 1;
+        });
+      }
     },
     /** True when the conversation has unsent composer text cached. */
     sessionHasDraft(sessionId: string): boolean {
@@ -519,7 +368,8 @@ export const useChatStore = defineStore("chat", {
       if (composeCache.last === sessionId) {
         composeCache.last = "";
       }
-      persistComposeCache();
+      flushPersistComposeCache();
+      this.draftListVersion += 1;
     },
     setContextNotice(sessionId: string, message: string | undefined) {
       if (!sessionId) {
@@ -620,6 +470,35 @@ export const useChatStore = defineStore("chat", {
       this.sessionCacheUsage = {
         ...this.sessionCacheUsage,
         [sessionId]: usage,
+      };
+    },
+    setMessageCacheUsage(sessionId: string, usages: Record<string, SessionCacheUsage>) {
+      if (!sessionId) {
+        return;
+      }
+      this.messageCacheUsage = {
+        ...this.messageCacheUsage,
+        [sessionId]: usages,
+      };
+    },
+    addPromptCacheUsage(sessionId: string, usage: SessionCacheUsage, messageId?: string) {
+      if (!sessionId) {
+        return;
+      }
+      this.sessionCacheUsage = {
+        ...this.sessionCacheUsage,
+        [sessionId]: accumulateCacheUsage(this.sessionCacheUsage[sessionId], usage),
+      };
+      if (!messageId) {
+        return;
+      }
+      const current = this.messageCacheUsage[sessionId] ?? {};
+      this.messageCacheUsage = {
+        ...this.messageCacheUsage,
+        [sessionId]: {
+          ...current,
+          [messageId]: accumulateCacheUsage(current[messageId], usage),
+        },
       };
     },
     setSessionMessages(sessionId: string, messages: ChatMessage[]) {
@@ -1629,14 +1508,31 @@ export const useChatStore = defineStore("chat", {
         }
         // If this session is not actively streaming in the current process,
         // treat leftover pending/running rows from a crash as interrupted.
-        this.setSessionMessages(
-          sessionId,
-          this.sending[sessionId]
-            ? mergeActiveHistory(messages, this.sessions[sessionId] ?? [])
-            : settleInterruptedMessages(messages),
+        const completedAt = response.messageCompletedAt ?? {};
+        const loaded = messages.map((message) =>
+          completedAt[message.id] && !message.completedAt
+            ? { ...message, completedAt: completedAt[message.id] }
+            : message,
         );
+        const nextMessages = this.sending[sessionId]
+          ? mergeActiveHistory(loaded, this.sessions[sessionId] ?? [])
+          : settleInterruptedMessages(loaded);
+        const existing = this.sessions[sessionId];
+        if (
+          !existing ||
+          messagesHistoryFingerprint(existing) !== messagesHistoryFingerprint(nextMessages)
+        ) {
+          this.setSessionMessages(sessionId, nextMessages);
+        }
+        const historyCache = cacheUsagesFromHistory(response.messageCacheUsages);
         if (!this.sending[sessionId] || !this.sessionCacheUsage[sessionId]) {
           this.setSessionCacheUsage(sessionId, response.lastCacheUsage);
+          this.setMessageCacheUsage(sessionId, historyCache);
+        } else {
+          this.setMessageCacheUsage(sessionId, {
+            ...historyCache,
+            ...(this.messageCacheUsage[sessionId] ?? {}),
+          });
         }
         if (!this.sending[sessionId]) {
           this.clearSending(sessionId);
@@ -1773,6 +1669,10 @@ export const useChatStore = defineStore("chat", {
           modelProvider: compose.chatModelProvider.trim() || undefined,
           chatMode: compose.chatMode,
           toolApprovalMode: compose.toolApprovalMode,
+          imageGen:
+            compose.chatMode === "image"
+              ? imageGenPayload(compose.imageGen, useSettingStore().imageStyleTemplates)
+              : undefined,
           skipAutoPlan: options?.skipAutoPlan,
           resumePlan: options?.resumePlan,
         });

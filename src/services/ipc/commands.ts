@@ -24,6 +24,7 @@ import type {
   CheckpointInfo,
   RewindSessionRequest,
   RewindSessionResponse,
+  ChatSessionSummary,
 } from "@/types/chat";
 import { IPC_COMMANDS } from "@/types/ipc";
 import type {
@@ -223,8 +224,21 @@ export function deleteChatSession(sessionId: string) {
   return ipcInvoke<void>("delete_chat_session", { sessionId });
 }
 
+export function branchChatSession(sessionId: string, messageId?: string) {
+  return ipcInvoke<ChatSessionSummary>(IPC_COMMANDS.branchChatSession, {
+    sessionId,
+    session_id: sessionId,
+    messageId,
+    message_id: messageId,
+  });
+}
+
 export function setChatSessionArchived(sessionId: string, archived: boolean) {
   return ipcInvoke<void>("set_chat_session_archived", { sessionId, archived });
+}
+
+export function setChatSessionWorkspace(sessionId: string, workspaceId: string) {
+  return ipcInvoke<void>("set_chat_session_workspace", { sessionId, workspaceId });
 }
 
 export function clearAllChatSessions() {
@@ -298,6 +312,10 @@ export function rewindSession(request: RewindSessionRequest) {
 
 export function revealInExplorer(path: string) {
   return ipcInvoke<void>(IPC_COMMANDS.revealInExplorer, { path });
+}
+
+export function openInDefaultApp(path: string) {
+  return ipcInvoke<void>(IPC_COMMANDS.openInDefaultApp, { path });
 }
 
 export type {

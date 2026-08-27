@@ -64,6 +64,12 @@ pub const SHARE_DELIVERABLE_CHALLENGE: &str = concat!(
     "http://127.0.0.1:... preview. Do not wrap files in HTML. Then answer.",
 );
 
+pub const IMAGE_REQUIRED_CHALLENGE: &str = concat!(
+    "[System] No image was generated this turn. You described a picture that does not exist. ",
+    "Call `generate_image` now with a complete prompt. Do not write a caption, ",
+    "say the image is ready, or offer a follow-up edit until the tool returns markdown.",
+);
+
 /// Global ablation switch used by the eval harness (`--no-challenge`).
 static CHALLENGES_DISABLED: AtomicBool = AtomicBool::new(false);
 
@@ -76,6 +82,7 @@ pub fn challenges_enabled() -> bool {
 }
 
 /// What the loop should do after evaluating a tool-call-free final answer.
+#[derive(Debug)]
 pub enum ChallengeOutcome {
     /// A challenge was appended to `request` as a user message; the loop
     /// should emit the given status and run another provider turn.
@@ -109,6 +116,10 @@ pub struct CompletionGate {
     started_local_server: bool,
     shared_deliverable: bool,
     share_nudge_retries: u32,
+    /// Image chat mode: a turn cannot finish without a successful generate_image.
+    require_image: bool,
+    image_succeeded: bool,
+    image_retries: u32,
     /// Disable all challenges for this gate instance (eval ablation).
     disabled: bool,
 }
@@ -119,6 +130,10 @@ impl CompletionGate {
             disabled: !challenges_enabled(),
             ..Self::default()
         }
+    }
+
+    pub fn require_image(&mut self) {
+        self.require_image = true;
     }
 
     /// Capture path-like targets from the latest user message before the loop.
@@ -165,7 +180,11 @@ impl CompletionGate {
         if looks_like_local_dev_server(&outcome.tool_name, &outcome.arguments) {
             self.started_local_server = true;
         }
-        if self.mutation_succeeded && provides_verification_evidence(tools, outcome) {
+        if outcome.tool_name == "generate_image" {
+            self.image_succeeded = true;
+            self.mutation_succeeded = true;
+            self.verification_succeeded = true;
+        } else if self.mutation_succeeded && provides_verification_evidence(tools, outcome) {
             self.verification_succeeded = true;
         } else if provides_completion_evidence(tools, outcome) {
             self.mutation_succeeded = true;
@@ -204,6 +223,27 @@ impl CompletionGate {
                 content,
                 reasoning: non_empty(reasoning),
                 finish_reason,
+            };
+        }
+
+        if self.require_image && !self.image_succeeded {
+            if self.image_retries < MAX_COMPLETION_RETRIES {
+                self.image_retries += 1;
+                push_completion_feedback(
+                    request,
+                    user_msg_index,
+                    content,
+                    reasoning,
+                    IMAGE_REQUIRED_CHALLENGE,
+                );
+                return ChallengeOutcome::ContinueWithChallenge {
+                    status_kind: "require_image".to_string(),
+                };
+            }
+            return ChallengeOutcome::Finish {
+                content: image_missing_message(&content),
+                reasoning: non_empty(reasoning),
+                finish_reason: Some("missing_image".to_string()),
             };
         }
 
@@ -566,6 +606,19 @@ fn reject_unverified_completion(
     true
 }
 
+fn image_missing_message(content: &str) -> String {
+    if content
+        .chars()
+        .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
+    {
+        "未能生成图片：这一轮没有成功调用生图工具，所以没有新图。请再发送一次，或检查设置 → 生图。"
+            .to_string()
+    } else {
+        "No image was generated: generate_image did not succeed this turn, so there is no new picture. Send again, or check Settings → Image."
+            .to_string()
+    }
+}
+
 fn has_completion_claim(content: &str) -> bool {
     // Keep this strict: weak phrases like "搞定/修改了/done" used to false-trigger
     // an extra model round (and another full think cycle).
@@ -669,5 +722,54 @@ mod tests {
         ));
         assert!(is_write_tool("write_file"));
         assert!(is_share_tool("share_preview_url"));
+    }
+
+    fn empty_request() -> ChatRequest {
+        ChatRequest {
+            request_id: "r".into(),
+            session_id: "s".into(),
+            messages: vec![],
+            context: crate::core::runtime::RequestContext::default(),
+            provider: None,
+            stream: true,
+            tools: std::sync::Arc::from([]),
+            temperature: None,
+            max_tokens: None,
+        }
+    }
+
+    #[test]
+    fn image_mode_rejects_caption_without_generate_image() {
+        let mut gate = CompletionGate::new();
+        gate.require_image();
+        let mut request = empty_request();
+        let mut user_idx = None;
+        let first = gate.evaluate_final_answer(
+            &mut request,
+            &mut user_idx,
+            "新图来了 📸 衣服换成了雪碧风格。".into(),
+            String::new(),
+            Some("stop".into()),
+        );
+        match first {
+            ChallengeOutcome::ContinueWithChallenge { status_kind } => {
+                assert_eq!(status_kind, "require_image");
+            }
+            other => panic!("expected require_image challenge, got {other:?}"),
+        }
+        let second = gate.evaluate_final_answer(
+            &mut request,
+            &mut user_idx,
+            "已经生成好了。".into(),
+            String::new(),
+            Some("stop".into()),
+        );
+        match second {
+            ChallengeOutcome::Finish { content, finish_reason, .. } => {
+                assert!(content.contains("未能生成图片"));
+                assert_eq!(finish_reason.as_deref(), Some("missing_image"));
+            }
+            other => panic!("expected missing_image finish, got {other:?}"),
+        }
     }
 }

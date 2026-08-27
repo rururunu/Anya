@@ -68,6 +68,7 @@
             <div :key="activeCategory" class="settings-panel">
               <WorkspaceSettings v-if="activeCategory === 'workspace'" />
               <ProviderSettings v-else-if="activeCategory === 'provider'" />
+              <ImageSettings v-else-if="activeCategory === 'image'" />
               <RagSettings v-else-if="activeCategory === 'rag'" />
               <HistorySettings
                 v-else-if="activeCategory === 'history'"
@@ -105,6 +106,7 @@
                 @web-search-provider-change="onWebSearchProviderChange"
                 @default-model-change="onDefaultModelChange"
                 @multimodal-model-change="onMultimodalModelChange"
+                @image-model-change="onImageModelChange"
                 @save-api-key="saveApiKey"
                 @save-memory-settings="saveMemorySettings"
                 @save-web-search-settings="saveWebSearchSettings"
@@ -129,6 +131,7 @@ import {
   Folders,
   Globe2,
   History,
+  Image as ImageIcon,
   Info,
   Minus,
   Palette,
@@ -146,6 +149,7 @@ import TokenUsageSettings from "@/components/settings/TokenUsageSettings.vue";
 import AboutSettings from "@/components/settings/AboutSettings.vue";
 import ProviderSettings from "@/components/settings/ProviderSettings.vue";
 import RagSettings from "@/components/settings/RagSettings.vue";
+import ImageSettings from "@/components/settings/ImageSettings.vue";
 import SettingFieldList from "@/components/settings/SettingFieldList.vue";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
 import { gsapSettingsNavMount, gsapSettingsNavUnmount } from "@/services/motion/gsapPresets";
@@ -255,6 +259,7 @@ const t = computed(() => {
     categories: {
       appearance: tr(language, "settings.categories.appearance"),
       ai: tr(language, "settings.categories.ai"),
+      image: tr(language, "settings.categories.image"),
       memory: tr(language, "settings.categories.memory"),
       search: tr(language, "settings.categories.search"),
       agent: tr(language, "settings.categories.agent"),
@@ -272,6 +277,7 @@ const t = computed(() => {
 
 const categories = computed(() => [
   { id: "ai" as const, label: t.value.categories.ai, icon: Bot },
+  { id: "image" as const, label: t.value.categories.image, icon: ImageIcon },
   { id: "provider" as const, label: t.value.categories.provider, icon: Server },
   {
     id: "workspace" as const,
@@ -315,6 +321,7 @@ const categorySections = computed(() => {
     section("intelligence", tr(language, "settings.sections.intelligence"), [
       "provider",
       "ai",
+      "image",
       "agent",
       "memory",
       "search",
@@ -428,6 +435,14 @@ function onMultimodalModelChange(value: unknown) {
   void settingStore.update({
     multimodalModel: value.id,
     multimodalModelProvider: value.provider,
+  });
+}
+
+function onImageModelChange(value: unknown) {
+  if (!isModelSelection(value) || !value.id.trim()) return;
+  void settingStore.update({
+    imageModel: value.id,
+    imageModelProvider: value.provider,
   });
 }
 

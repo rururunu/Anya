@@ -55,9 +55,14 @@ export function useWorkbenchHotkeys(options: UseWorkbenchHotkeysOptions) {
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
     const code = event.code;
 
-    if (key === "f" || key === "k") {
+    if (key === "k" || (key === "f" && event.shiftKey)) {
       event.preventDefault();
       searchPaletteOpen.value = !searchPaletteOpen.value;
+      return;
+    }
+    if (key === "f") {
+      event.preventDefault();
+      searchPaletteOpen.value = false;
       return;
     }
     if (key === "n") {

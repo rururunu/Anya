@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTokenCount, promptCacheHitPercent } from "./tokenEstimate";
+import { accumulateCacheUsage, formatTokenCount, promptCacheHitPercent } from "./tokenEstimate";
 
 describe("formatTokenCount", () => {
   it("keeps small counts plain", () => {
@@ -26,5 +26,16 @@ describe("promptCacheHitPercent", () => {
     expect(promptCacheHitPercent(20, 80)).toBe(80);
     expect(promptCacheHitPercent(100, 0)).toBe(0);
     expect(promptCacheHitPercent(0, 0)).toBeNull();
+  });
+});
+
+describe("accumulateCacheUsage", () => {
+  it("sums prompt cache across turns", () => {
+    expect(
+      accumulateCacheUsage(
+        { inputTokens: 20, cacheReadTokens: 80 },
+        { inputTokens: 10, cacheReadTokens: 90 },
+      ),
+    ).toEqual({ inputTokens: 30, cacheReadTokens: 170 });
   });
 });

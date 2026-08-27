@@ -28,6 +28,29 @@
         <span v-if="option.description" class="option-desc">{{ option.description }}</span>
       </span>
 
+      <TooltipProvider v-if="option.hint" :delay-duration="180">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button
+              type="button"
+              class="option-hint"
+              :aria-label="option.hint"
+              @mousedown.stop.prevent
+              @click.stop
+            >
+              <CircleHelp :size="13" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent
+            side="top"
+            :side-offset="6"
+            class="max-w-72 text-left z-[80] whitespace-pre-wrap"
+          >
+            {{ option.hint }}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
       <Check v-if="option.id === selectedId" :size="13" class="option-check" aria-hidden="true" />
     </li>
   </ul>
@@ -35,12 +58,14 @@
 
 <script setup lang="ts">
 import type { Component } from "vue";
-import { Check } from "@lucide/vue";
+import { Check, CircleHelp } from "@lucide/vue";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export type OptionPickerItem = {
   id: string;
   label: string;
   description?: string;
+  hint?: string;
   icon?: Component;
 };
 
@@ -176,5 +201,25 @@ defineEmits<{
   flex: none;
   color: var(--peek-accent);
   opacity: 0.95;
+}
+
+.option-hint {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--peek-faint);
+  cursor: help;
+}
+.option-hint:hover {
+  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
+  color: var(--peek-text);
 }
 </style>

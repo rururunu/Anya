@@ -67,12 +67,10 @@ pub(super) fn remaining_wire_protocols(failed: WireProtocol) -> Vec<WireProtocol
 
 pub(super) fn url_for_wire_protocol(base_url: Option<&str>, protocol: WireProtocol) -> String {
     match (base_url, protocol) {
-        (None, WireProtocol::ChatCompletions) => {
-            "https://api.deepseek.com/chat/completions".into()
-        }
-        (base, WireProtocol::ChatCompletions) => {
-            super::models::normalize_chat_completions_url(base.unwrap_or("https://api.deepseek.com/v1"))
-        }
+        (None, WireProtocol::ChatCompletions) => "https://api.deepseek.com/chat/completions".into(),
+        (base, WireProtocol::ChatCompletions) => super::models::normalize_chat_completions_url(
+            base.unwrap_or("https://api.deepseek.com/v1"),
+        ),
         (base, WireProtocol::Responses) => {
             super::models::normalize_responses_url(base.unwrap_or("https://api.deepseek.com/v1"))
         }
@@ -163,7 +161,10 @@ pub(super) fn build_anthropic_body(
         body.insert("temperature".into(), json!(temperature));
     }
     if !request.tools.is_empty() {
-        body.insert("tools".into(), Value::Array(anthropic_tools(&request.tools)));
+        body.insert(
+            "tools".into(),
+            Value::Array(anthropic_tools(&request.tools)),
+        );
     }
     apply_anthropic_thinking(&mut body, model, effective_effort);
     Value::Object(body)
@@ -250,6 +251,7 @@ fn anthropic_messages(messages: &[ChatMessage]) -> (String, Vec<Value>) {
 }
 
 fn anthropic_user_content(content: &str) -> Value {
+    let content = crate::core::ai::image_gen::strip_edit_region_images(content);
     if !content.contains("![image](") {
         return json!(content);
     }
@@ -258,7 +260,7 @@ fn anthropic_user_content(content: &str) -> Value {
     };
     let mut parts = Vec::new();
     let mut last = 0;
-    for cap in re.captures_iter(content) {
+    for cap in re.captures_iter(&content) {
         let Some(mat) = cap.get(0) else { continue };
         let before = &content[last..mat.start()];
         if !before.trim().is_empty() {
@@ -323,7 +325,11 @@ fn anthropic_assistant_message(message: &ChatMessage) -> Value {
             "text": message.content,
         }));
     }
-    if let Some(calls) = message.tool_calls.as_ref().filter(|calls| !calls.is_empty()) {
+    if let Some(calls) = message
+        .tool_calls
+        .as_ref()
+        .filter(|calls| !calls.is_empty())
+    {
         for call in calls {
             blocks.push(json!({
                 "type": "tool_use",
@@ -435,10 +441,7 @@ mod tests {
         let request = ChatRequest {
             request_id: "r".into(),
             session_id: "s".into(),
-            messages: vec![
-                msg(Role::System, "be brief"),
-                msg(Role::User, "hello"),
-            ],
+            messages: vec![msg(Role::System, "be brief"), msg(Role::User, "hello")],
             context: RequestContext::default(),
             provider: None,
             stream: true,
@@ -490,13 +493,7 @@ mod tests {
             temperature: None,
             max_tokens: Some(1024),
         };
-        let body = build_anthropic_body(
-            &request,
-            "minimax-m3",
-            true,
-            ReasoningEffort::High,
-            true,
-        );
+        let body = build_anthropic_body(&request, "minimax-m3", true, ReasoningEffort::High, true);
         assert_eq!(body["messages"][1]["content"][0]["type"], "tool_use");
         assert_eq!(body["messages"][1]["content"][0]["input"]["q"], "news");
         assert_eq!(body["messages"][2]["content"][0]["type"], "tool_result");
@@ -555,7 +552,10 @@ mod tests {
         );
         assert_eq!(
             remaining_wire_protocols(WireProtocol::Responses),
-            vec![WireProtocol::AnthropicMessages, WireProtocol::ChatCompletions]
+            vec![
+                WireProtocol::AnthropicMessages,
+                WireProtocol::ChatCompletions
+            ]
         );
     }
 

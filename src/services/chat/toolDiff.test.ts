@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  fileBasename,
-  hunkFromPlainEdit,
-  parseUnifiedDiffHunks,
-} from "./toolDiff";
+import { fileBasename, fileParentDir, hunkFromPlainEdit, parseUnifiedDiffHunks } from "./toolDiff";
 
 describe("parseUnifiedDiffHunks", () => {
   it("keeps interleaved context and change lines with line numbers", () => {
@@ -48,5 +44,12 @@ describe("fileBasename", () => {
   it("returns the last path segment", () => {
     expect(fileBasename("src/core/chat/limits.rs")).toBe("limits.rs");
     expect(fileBasename("src\\core\\chat\\service.rs")).toBe("service.rs");
+  });
+});
+
+describe("fileParentDir", () => {
+  it("returns the directory without the file name", () => {
+    expect(fileParentDir("src/main/java/VirtualThreadsDemo.java")).toBe("src/main/java");
+    expect(fileParentDir("VirtualThreadsDemo.java")).toBe("");
   });
 });

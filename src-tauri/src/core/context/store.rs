@@ -47,7 +47,9 @@ impl CaptureGate {
     }
 
     fn wait_until_ready(&self) {
-        self.wait_while(Duration::from_millis(1500), |state| state.active_captures > 0);
+        self.wait_while(Duration::from_millis(1500), |state| {
+            state.active_captures > 0
+        });
     }
 
     fn wait_for_completed_capture(&self) {

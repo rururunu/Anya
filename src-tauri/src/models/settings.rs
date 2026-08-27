@@ -96,7 +96,8 @@ pub enum AgentWorkDisplay {
 }
 
 /// Chat interaction mode: Agent can mutate; Ask is read-only; Plan drafts
-/// first and blocks writers until the user approves.
+/// first and blocks writers until the user approves; Image generates a picture
+/// on every turn.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum ChatMode {
@@ -104,6 +105,7 @@ pub enum ChatMode {
     Agent,
     Ask,
     Plan,
+    Image,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -207,12 +209,28 @@ pub struct CustomProviderConfig {
     pub preset_id: Option<String>,
     /// Wire protocol for this custom endpoint. Existing providers default to
     /// Chat Completions so previously saved settings keep working.
-    #[serde(default, skip_serializing_if = "ProviderApiProtocol::is_chat_completions")]
+    #[serde(
+        default,
+        skip_serializing_if = "ProviderApiProtocol::is_chat_completions"
+    )]
     pub api_protocol: ProviderApiProtocol,
     /// Learned wire format per model id. Empty until a successful stream
     /// records which protocol the gateway actually accepted.
     #[serde(default, skip_serializing_if = "model_protocols_is_empty")]
     pub model_protocols: HashMap<String, ModelWireProtocol>,
+}
+
+/// User-defined image style template (Settings → Image).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageStyleTemplate {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub prompt: String,
+    /// Optional data-URL used as an image-to-image reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example_image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -347,6 +365,17 @@ pub struct AppSettings {
     pub multimodal_model: String,
     #[serde(default)]
     pub multimodal_model_provider: String,
+    #[serde(default = "default_image_model")]
+    pub image_model: String,
+    #[serde(default)]
+    pub image_model_provider: String,
+    /// Dedicated Images API providers. Separate from `custom_providers` so
+    /// chat hosts and Images hosts cannot share a picker or Base URL.
+    #[serde(default)]
+    pub image_providers: Vec<CustomProviderConfig>,
+    /// Custom style templates for Image mode (prompt + optional example image).
+    #[serde(default)]
+    pub image_style_templates: Vec<ImageStyleTemplate>,
     #[serde(default)]
     pub reasoning_effort: ReasoningEffort,
     #[serde(default)]
@@ -462,6 +491,10 @@ fn default_multimodal_model() -> String {
     "gpt-4o".to_string()
 }
 
+fn default_image_model() -> String {
+    "gpt-image-2".to_string()
+}
+
 fn default_zoom() -> u32 {
     100
 }
@@ -524,6 +557,10 @@ pub struct AppSettingsPatch {
     pub chat_model_provider: Option<String>,
     pub multimodal_model: Option<String>,
     pub multimodal_model_provider: Option<String>,
+    pub image_model: Option<String>,
+    pub image_model_provider: Option<String>,
+    pub image_providers: Option<Vec<CustomProviderConfig>>,
+    pub image_style_templates: Option<Vec<ImageStyleTemplate>>,
     pub reasoning_effort: Option<ReasoningEffort>,
     pub reasoning_language: Option<ReasoningLanguage>,
     pub pass_tool_reasoning: Option<bool>,
@@ -587,6 +624,10 @@ impl Default for AppSettings {
             chat_model_provider: String::new(),
             multimodal_model: default_multimodal_model(),
             multimodal_model_provider: String::new(),
+            image_model: default_image_model(),
+            image_model_provider: String::new(),
+            image_providers: Vec::new(),
+            image_style_templates: Vec::new(),
             reasoning_effort: ReasoningEffort::default(),
             reasoning_language: ReasoningLanguage::default(),
             pass_tool_reasoning: true,
@@ -708,6 +749,18 @@ impl AppSettings {
             multimodal_model_provider: patch
                 .multimodal_model_provider
                 .unwrap_or_else(|| self.multimodal_model_provider.clone()),
+            image_model: patch
+                .image_model
+                .unwrap_or_else(|| self.image_model.clone()),
+            image_model_provider: patch
+                .image_model_provider
+                .unwrap_or_else(|| self.image_model_provider.clone()),
+            image_providers: patch
+                .image_providers
+                .unwrap_or_else(|| self.image_providers.clone()),
+            image_style_templates: patch
+                .image_style_templates
+                .unwrap_or_else(|| self.image_style_templates.clone()),
             reasoning_effort: patch.reasoning_effort.unwrap_or(self.reasoning_effort),
             reasoning_language: patch.reasoning_language.unwrap_or(self.reasoning_language),
             pass_tool_reasoning: patch
@@ -826,6 +879,9 @@ mod tests {
         assert!(!settings.minimal_coding);
         assert!(settings.chat_model_provider.is_empty());
         assert!(settings.multimodal_model_provider.is_empty());
+        assert_eq!(settings.image_model, "gpt-image-2");
+        assert!(settings.image_model_provider.is_empty());
+        assert!(settings.image_providers.is_empty());
         assert!(!settings.hardware_acceleration_enabled);
         assert!(settings.onboarding_completed);
     }
@@ -887,11 +943,15 @@ mod tests {
         let patch = AppSettingsPatch {
             chat_model_provider: Some("provider-a".into()),
             multimodal_model_provider: Some("provider-b".into()),
+            image_model: Some("gpt-image-2".into()),
+            image_model_provider: Some("provider-c".into()),
             ..AppSettingsPatch::default()
         };
         let merged = settings.merge(patch);
         assert_eq!(merged.chat_model_provider, "provider-a");
         assert_eq!(merged.multimodal_model_provider, "provider-b");
+        assert_eq!(merged.image_model, "gpt-image-2");
+        assert_eq!(merged.image_model_provider, "provider-c");
     }
 
     #[test]

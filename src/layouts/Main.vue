@@ -12,6 +12,19 @@
   >
     <div class="glass-chrome" aria-hidden="true" />
     <AppConfirmDialog ref="confirmDialogRef" />
+    <EditWorkspaceDialog ref="editWorkspaceDialogRef" />
+    <Teleport to="body">
+      <div
+        v-if="sessionDragGhost"
+        class="session-drag-ghost"
+        :style="{
+          transform: `translate(${sessionDragGhost.x - 10}px, ${sessionDragGhost.y - 16}px)`,
+        }"
+      >
+        <MessageSquare :size="14" :stroke-width="1.75" />
+        <span>{{ sessionDragGhost.title }}</span>
+      </div>
+    </Teleport>
     <Transition name="workbench-ready">
       <WorkbenchLoading v-if="initializing" />
     </Transition>
@@ -188,7 +201,12 @@
             </button>
           </div>
 
-          <nav class="session-list peek-scrollbar" :aria-label="labels.conversations" @click.stop>
+          <nav
+            class="session-list peek-scrollbar"
+            :class="{ 'is-dragging': Boolean(draggedWorkspaceId || draggedSessionId) }"
+            :aria-label="labels.conversations"
+            @click.stop
+          >
             <section
               v-for="workspaceSection in workspaceNavigationSections"
               :key="workspaceSection.id"
@@ -237,10 +255,11 @@
                 >
                   <div
                     class="workspace-row"
+                    :class="{ 'session-drop-target': sessionDropWorkspaceId === workspace.id }"
                     role="button"
                     tabindex="0"
                     :aria-expanded="!collapsedWorkspaceIds.has(workspace.id)"
-                    :title="
+                    :aria-label="
                       collapsedWorkspaceIds.has(workspace.id)
                         ? navigationLabels.expandWorkspace
                         : navigationLabels.collapseWorkspace
@@ -249,12 +268,28 @@
                     @keydown.enter.self.prevent="handleWorkspaceClick(workspace)"
                     @keydown.space.self.prevent="handleWorkspaceClick(workspace)"
                     @pointerdown="startWorkspacePointerDrag($event, workspace)"
+                    @dragstart.prevent
                   >
                     <span class="workspace-collapse" aria-hidden="true" />
-                    <span class="workspace-group-header">
-                      <Folder v-if="collapsedWorkspaceIds.has(workspace.id)" :size="14" />
-                      <FolderOpen v-else :size="14" />
-                      <span>{{ workspace.name }}</span>
+                    <span class="workspace-path-tip">
+                      <TooltipProvider :delay-duration="280">
+                        <Tooltip :disabled="Boolean(draggedWorkspaceId || draggedSessionId)">
+                          <TooltipTrigger as-child>
+                            <span class="workspace-group-header">
+                              <Folder v-if="collapsedWorkspaceIds.has(workspace.id)" :size="14" />
+                              <FolderOpen v-else :size="14" />
+                              <span>{{ workspace.name }}</span>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="right"
+                            :side-offset="8"
+                            class="max-w-[320px] break-all font-mono text-[11px] leading-snug font-medium whitespace-normal"
+                          >
+                            {{ workspace.root }}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </span>
                     <div class="workspace-actions">
                       <button
@@ -285,9 +320,17 @@
                         }}
                       </span>
                     </button>
+                    <button type="button" @click.stop="editWorkspace(workspace)">
+                      <Pencil :size="13" />
+                      <span>{{ navigationLabels.editWorkspace }}</span>
+                    </button>
                     <button type="button" @click.stop="openWorkspaceFolder(workspace)">
                       <FolderOpen :size="13" />
                       <span>{{ navigationLabels.openFolder }}</span>
+                    </button>
+                    <button type="button" @click.stop="openWorkspaceInTerminal(workspace)">
+                      <Terminal :size="13" />
+                      <span>{{ navigationLabels.openInTerminal }}</span>
                     </button>
                     <button type="button" @click.stop="archiveWorkspace(workspace)">
                       <Archive :size="13" />
@@ -309,9 +352,11 @@
                     :attention-session-ids="attentionSessionIds"
                     :unread-session-ids="unreadSessionIdList"
                     :draft-session-ids="draftSessionIds"
+                    :dragged-session-id="draggedSessionId"
                     variant="workspace"
                     @select="handleSelectConversation"
                     @archive="archiveConversation"
+                    @session-pointer-down="startSessionPointerDrag"
                   />
                 </section>
               </div>
@@ -351,9 +396,11 @@
                 :attention-session-ids="attentionSessionIds"
                 :unread-session-ids="unreadSessionIdList"
                 :draft-session-ids="draftSessionIds"
+                :dragged-session-id="draggedSessionId"
                 variant="quick"
                 @select="handleSelectConversation"
                 @archive="archiveConversation"
+                @session-pointer-down="startSessionPointerDrag"
               />
             </section>
           </nav>
@@ -404,16 +451,21 @@
                 </p>
               </div>
             </Transition>
-            <MessageList
-              class="workbench-messages"
-              :messages="messages"
-              :session-id="activeSessionId"
-              :checkpoints="checkpoints"
-              @rewound="handleRewound"
-              @review-changes="openReview('diff')"
-              @inspect-subagent="openAgentReview"
-              @preview-image="previewImage"
-            />
+            <AppErrorBoundary compact class="workbench-messages">
+              <MessageList
+                class="workbench-messages"
+                :messages="messages"
+                :session-id="activeSessionId"
+                :checkpoints="checkpoints"
+                @rewound="handleRewound"
+                @branch="handleBranchMessage"
+                @review-changes="openReview('diff')"
+                @review-file="openReviewFile"
+                @inspect-subagent="openAgentReview"
+                @preview-image="previewImage"
+                @edit-from-image="handleEditFromImage"
+              />
+            </AppErrorBoundary>
 
             <div v-if="hasConversationMessages" class="composer-fade" aria-hidden="true">
               <div class="composer-fade-blur"></div>
@@ -541,6 +593,8 @@
                 embedded
                 :messages="messages"
                 :width="reviewWidth"
+                :focus-path="reviewFocusPath"
+                :focus-at="reviewFocusAt"
               />
               <SubagentSidebar
                 v-show="reviewView === 'agents'"
@@ -635,6 +689,7 @@ import {
   Folder,
   FolderOpen,
   Minus,
+  MessageSquare,
   PanelLeft,
   Pencil,
   PanelRight,
@@ -647,9 +702,11 @@ import {
   Settings,
   Smartphone,
   SquarePen,
+  Terminal,
   Trash2,
   X,
 } from "@lucide/vue";
+import AppErrorBoundary from "@/components/AppErrorBoundary.vue";
 import AgentDebugPanel from "@/components/chat/AgentDebugPanel.vue";
 import ChatInputBar from "@/components/chat/ChatInputBar.vue";
 import CodeDiffSidebar from "@/components/chat/CodeDiffSidebar.vue";
@@ -661,6 +718,8 @@ import WorkbenchSearchPalette from "@/components/workbench/WorkbenchSearchPalett
 import WorkbenchLoading from "@/components/workbench/WorkbenchLoading.vue";
 import WelcomeOnboarding from "@/components/onboarding/WelcomeOnboarding.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import EditWorkspaceDialog from "@/components/workspace/EditWorkspaceDialog.vue";
 import appIconAsset from "../../src-tauri/icons/Anya-transparent.svg";
 import {
   REVIEW_RESIZE_HANDLE_WIDTH,
@@ -706,8 +765,14 @@ const isDevBuild = import.meta.env.DEV;
 const appWindow = getCurrentWebviewWindow();
 const inputRef = ref<InstanceType<typeof ChatInputBar> | null>(null);
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
+const editWorkspaceDialogRef = ref<InstanceType<typeof EditWorkspaceDialog> | null>(null);
 const composerWrapRef = ref<HTMLElement | null>(null);
 const composerFootprint = ref(0);
+
+function handleEditFromImage(payload: { images: string[]; draftText?: string; region?: boolean }) {
+  void inputRef.value?.attachImageEditReference?.(payload);
+}
+
 /** How far the blur continues above the composer card. */
 const COMPOSER_FADE_OVERHANG = 28;
 /** Air between the last message and the top of the fade. */
@@ -871,7 +936,10 @@ const {
   selectedSubagentId,
   openedImageSources,
   selectedImageSource,
+  reviewFocusPath,
+  reviewFocusAt,
   openReview,
+  openReviewFile,
   toggleReviewSidebar,
   openAgentReview,
   closeSubagent,
@@ -895,7 +963,9 @@ const {
   createQuickConversation,
   refreshCheckpoints,
   selectConversation,
+  moveSessionToWorkspace,
   archiveConversation,
+  branchConversation,
   guideStaged,
   startStagedEdit,
   removeStaged,
@@ -941,11 +1011,6 @@ function handleShowContext(context: CapturedContext) {
   });
 }
 
-function handleSelectConversation(sessionId: string) {
-  extensionView.value = null;
-  return selectConversation(sessionId);
-}
-
 const {
   collapsedWorkspaceIds,
   collapsedNavigationSections,
@@ -953,30 +1018,48 @@ const {
   draggedWorkspaceId,
   dragOverWorkspaceId,
   workspaceDropPosition,
-  workspacePointerDrag,
+  draggedSessionId,
+  sessionDropWorkspaceId,
+  sessionDragGhost,
   workspaceNavigationSections,
   toggleNavigationSection,
   toggleWorkspaceMenu,
   handleWorkspaceClick,
   startWorkspacePointerDrag,
+  startSessionPointerDrag,
+  consumeSuppressedSessionClick,
   moveWorkspacePointerDrag,
   finishWorkspacePointerDrag,
   cancelWorkspacePointerDrag,
   toggleWorkspacePinned,
+  editWorkspace,
   addWorkspace,
   createWorkspaceConversation,
   openWorkspaceFolder,
+  openWorkspaceInTerminal,
   archiveWorkspace,
   removeWorkspace,
-  clearWorkspaceLongPress,
 } = useWorkbenchWorkspaces({
   workspaces,
   activeSessionWorkspaceId,
   navigationLabels,
+  labels,
   confirmDialogRef,
+  editWorkspaceDialogRef,
   refreshSessions,
   createConversation,
+  moveSessionToWorkspace,
 });
+
+async function handleSelectConversation(sessionId: string) {
+  if (consumeSuppressedSessionClick(sessionId)) return;
+  extensionView.value = null;
+  await selectConversation(sessionId);
+}
+
+function handleBranchMessage(messageId: string) {
+  void branchConversation(activeSessionId.value, messageId);
+}
 
 function handleCreateWorkspaceConversation(workspace: Workspace) {
   extensionView.value = null;
@@ -1032,8 +1115,6 @@ useWorkbenchLifecycle({
   sessionDisplayName,
   updateReviewWidth,
   handleWorkbenchHotkey,
-  workspacePointerDrag,
-  clearWorkspaceLongPress,
   moveWorkspacePointerDrag,
   finishWorkspacePointerDrag,
   cancelWorkspacePointerDrag,
@@ -1561,6 +1642,14 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.session-list.is-dragging,
+.session-list.is-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 .navigation-section {
   margin: 2px 0 8px;
@@ -1669,12 +1758,23 @@ button {
   border-radius: var(--peek-radius-sm);
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
   transition:
     background-color 120ms ease,
     box-shadow 120ms ease;
 }
 .workspace-row:hover {
   background: color-mix(in srgb, var(--peek-text) 6%, transparent);
+}
+.workspace-row.session-drop-target,
+.workspace-row.session-drop-target:hover {
+  background: color-mix(in srgb, var(--peek-accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--peek-accent);
+}
+.workspace-row.session-drop-target .workspace-actions {
+  opacity: 0;
+  pointer-events: none;
 }
 .workspace-group.dragging .workspace-row {
   cursor: grabbing;
@@ -1696,6 +1796,16 @@ button {
   background: transparent;
   color: var(--peek-faint);
   cursor: inherit;
+}
+.workspace-path-tip {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+}
+.workspace-path-tip :deep([data-slot="tooltip"]) {
+  min-width: 0;
+  flex: 1;
+  display: flex;
 }
 .workspace-group-header {
   min-width: 0;
@@ -1727,6 +1837,8 @@ button {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .workspace-actions {
   display: flex;
@@ -1743,7 +1855,7 @@ button {
   z-index: 20;
   top: 27px;
   right: 4px;
-  min-width: 150px;
+  min-width: 176px;
   padding: 4px;
   border-radius: var(--peek-radius-sm);
   background: var(--peek-list-bg);
@@ -2494,5 +2606,37 @@ button {
 .shortcut-help-enter-from,
 .shortcut-help-leave-to {
   opacity: 0;
+}
+.session-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 220px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
+  border-radius: 8px;
+  background: var(--peek-surface, #fff);
+  color: var(--peek-text);
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 16%, transparent);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.session-drag-ghost > svg {
+  flex: none;
+  color: var(--peek-muted);
+}
+.session-drag-ghost span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

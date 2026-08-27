@@ -29,9 +29,12 @@
         type="button"
         class="changes-summary-file"
         :title="change.path"
-        @click="$emit('review')"
+        @click="$emit('reviewFile', change.path)"
       >
-        <span class="file-path">{{ change.path }}</span>
+        <span class="file-path">
+          <span class="file-name">{{ fileName(change.path) }}</span>
+          <span v-if="fileDir(change.path)" class="file-dir">{{ fileDir(change.path) }}</span>
+        </span>
         <span class="file-stats">
           <span class="added">+{{ change.added }}</span>
           <span class="removed">-{{ change.removed }}</span>
@@ -67,6 +70,9 @@
 import { computed, ref, watch } from "vue";
 import { ChevronDown, FileDiff, Undo2 } from "@lucide/vue";
 import { extractCodeChanges } from "@/services/chat/codeChanges";
+import { fileBasename, fileParentDir } from "@/services/chat/toolDiff";
+import { textIncludesQuery } from "@/services/chat/conversationFind";
+import { useExpandForFind } from "@/composables/chat/useConversationFind";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import type { ChatMessage } from "@/types/chat";
@@ -88,6 +94,7 @@ const props = withDefaults(
 defineEmits<{
   undo: [];
   review: [];
+  reviewFile: [path: string];
 }>();
 
 const settingStore = useSettingStore();
@@ -115,6 +122,23 @@ watch(
     expanded.value = false;
   },
 );
+
+useExpandForFind(
+  (query) =>
+    changes.value.some(
+      (change) => textIncludesQuery(change.path, query) || textIncludesQuery(change.diff, query),
+    ),
+  () => {
+    expanded.value = true;
+  },
+);
+
+function fileName(path: string) {
+  return fileBasename(path);
+}
+function fileDir(path: string) {
+  return fileParentDir(path);
+}
 </script>
 
 <style scoped>
@@ -248,10 +272,27 @@ watch(
 .file-path {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   overflow: hidden;
+  font-size: 11px;
+}
+.file-name {
+  flex: none;
+  max-width: 58%;
+  overflow: hidden;
+  color: var(--peek-text);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+}
+.file-dir {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--peek-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
 }
 
 .file-stats {

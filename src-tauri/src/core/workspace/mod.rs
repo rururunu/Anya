@@ -467,6 +467,52 @@ impl WorkspaceManager {
         Ok(())
     }
 
+    pub async fn update(
+        &self,
+        id: &str,
+        name: String,
+        description: Option<String>,
+    ) -> Result<Workspace, String> {
+        let root = self
+            .sorted_workspaces()
+            .into_iter()
+            .find(|workspace| workspace.id == id)
+            .ok_or_else(|| "Workspace not found".to_string())?
+            .root;
+        let name = display_name(&name, &root);
+        let description = description.and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        });
+
+        sqlx::query("UPDATE workspace SET name = ?, description = ? WHERE id = ?")
+            .bind(&name)
+            .bind(&description)
+            .bind(id)
+            .execute(&self.db_pool)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        let mut workspaces = self
+            .workspaces
+            .write()
+            .map_err(|_| "Workspace lock is poisoned".to_string())?;
+        let workspace = workspaces
+            .iter_mut()
+            .find(|workspace| workspace.id == id)
+            .ok_or_else(|| "Workspace not found".to_string())?;
+        workspace.name = name;
+        workspace.description = description;
+        let updated = workspace.clone();
+        drop(workspaces);
+        if let Ok(mut current) = self.current.write() {
+            if current.as_ref().is_some_and(|workspace| workspace.id == id) {
+                *current = Some(updated.clone());
+            }
+        }
+        Ok(updated)
+    }
+
     pub async fn clear_current(&self) -> Result<(), String> {
         let mut transaction = self
             .db_pool
@@ -543,6 +589,15 @@ fn workspace_name(root: &Path) -> String {
         .filter(|value| !value.trim().is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| root.display().to_string())
+}
+
+fn display_name(stored: &str, root: &Path) -> String {
+    let trimmed = stored.trim();
+    if trimmed.is_empty() {
+        workspace_name(root)
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn normalize_ide_source(ide: &str) -> Option<String> {
@@ -666,7 +721,7 @@ async fn init_schema(pool: &SqlitePool) -> Result<(), String> {
 
 async fn load_state(pool: &SqlitePool) -> Result<(Vec<Workspace>, Option<Workspace>), String> {
     let rows = sqlx::query(
-        "SELECT id, root, source, created_at, last_used_at, pinned, archived, sort_order
+        "SELECT id, name, root, description, source, created_at, last_used_at, pinned, archived, sort_order
              FROM workspace
              ORDER BY pinned DESC, sort_order ASC, created_at DESC",
     )
@@ -695,6 +750,7 @@ async fn load_state(pool: &SqlitePool) -> Result<(Vec<Workspace>, Option<Workspa
 fn workspace_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Workspace, String> {
     let id = row.get::<String, _>("id");
     let root = PathBuf::from(row.get::<String, _>("root"));
+    let stored_name = row.get::<String, _>("name");
     let created_at = DateTime::parse_from_rfc3339(&row.get::<String, _>("created_at"))
         .map_err(|error| error.to_string())?
         .with_timezone(&Utc);
@@ -703,9 +759,14 @@ fn workspace_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Workspace, String>
         .with_timezone(&Utc);
     Ok(Workspace {
         id,
-        name: workspace_name(&root),
+        name: display_name(&stored_name, &root),
         root,
-        description: None,
+        description: row
+            .get::<Option<String>, _>("description")
+            .and_then(|value| {
+                let trimmed = value.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            }),
         source: row.get::<Option<String>, _>("source"),
         created_at,
         last_used_at,
@@ -815,8 +876,8 @@ mod tests {
         let (workspaces, current) = load_state(&pool).await.unwrap();
 
         assert_eq!(workspaces[0].id, root_string);
-        assert_eq!(workspaces[0].name, "legacy-project");
-        assert!(workspaces[0].description.is_none());
+        assert_eq!(workspaces[0].name, "Custom Name");
+        assert_eq!(workspaces[0].description.as_deref(), Some("Old note"));
         assert!(workspaces[0].source.is_none());
         assert_eq!(current.unwrap().id, workspaces[0].id);
     }
@@ -917,5 +978,38 @@ mod tests {
         let (persisted, _) = load_state(&manager.db_pool).await.unwrap();
         assert_eq!(persisted[0].id, second.id);
         assert!(persisted[0].pinned);
+    }
+
+    #[tokio::test]
+    async fn update_persists_custom_name_and_description() {
+        let manager = manager().await;
+        let workspace = manager.create(std::env::temp_dir()).await.unwrap();
+
+        let updated = manager
+            .update(
+                &workspace.id,
+                "  My Project  ".into(),
+                Some("  Notes for this repo  ".into()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.name, "My Project");
+        assert_eq!(updated.description.as_deref(), Some("Notes for this repo"));
+        assert_eq!(manager.current().unwrap().name, "My Project");
+
+        let (persisted, current) = load_state(&manager.db_pool).await.unwrap();
+        assert_eq!(persisted[0].name, "My Project");
+        assert_eq!(
+            persisted[0].description.as_deref(),
+            Some("Notes for this repo")
+        );
+        assert_eq!(current.unwrap().name, "My Project");
+
+        let cleared = manager
+            .update(&workspace.id, "   ".into(), Some("   ".into()))
+            .await
+            .unwrap();
+        assert_eq!(cleared.name, workspace_name(&workspace.root));
+        assert!(cleared.description.is_none());
     }
 }

@@ -336,6 +336,7 @@ impl StreamManager {
                         let pool = usage_pool.clone();
                         let run_id = turn_id.clone();
                         let session_id = usage_session_id.clone();
+                        let message_id = assistant_message_id.clone();
                         let model = usage_model.clone();
                         let persisted_model = model.clone();
                         let provider = usage_provider.clone();
@@ -348,6 +349,7 @@ impl StreamManager {
                                 &pool,
                                 &run_id,
                                 &session_id,
+                                Some(&message_id),
                                 &persisted_model,
                                 Some(&provider),
                                 &persisted_usage,
@@ -360,6 +362,7 @@ impl StreamManager {
                         });
                         event_bus.emit(BusEvent::TokenUsage {
                             session_id: Some(usage_session_id.clone()),
+                            message_id: Some(assistant_message_id.clone()),
                             model: model.clone(),
                             usage,
                         });

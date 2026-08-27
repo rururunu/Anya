@@ -1,9 +1,65 @@
 <template>
-  <div class="message-list-shell">
+  <div class="message-list-shell" :class="{ 'has-find': findOpen }">
+    <div
+      v-if="findOpen"
+      class="conversation-find-bar"
+      role="search"
+      :aria-label="tr(settingStore.language, 'findInConversation')"
+    >
+      <input
+        ref="findInputRef"
+        v-model="findQuery"
+        class="conversation-find-input"
+        type="text"
+        :placeholder="tr(settingStore.language, 'findPlaceholder')"
+        spellcheck="false"
+        autocomplete="off"
+        @keydown="onFindInputKeydown"
+      />
+      <span
+        class="conversation-find-count"
+        :class="{ empty: Boolean(findQuery.trim()) && findHits.length === 0 }"
+      >
+        {{ findCountLabel }}
+      </span>
+      <button
+        type="button"
+        class="conversation-find-btn"
+        :title="tr(settingStore.language, 'findPrevious')"
+        :aria-label="tr(settingStore.language, 'findPrevious')"
+        :disabled="findHits.length === 0"
+        @click="prevFind"
+      >
+        <ChevronUp :size="14" :stroke-width="2" />
+      </button>
+      <button
+        type="button"
+        class="conversation-find-btn"
+        :title="tr(settingStore.language, 'findNext')"
+        :aria-label="tr(settingStore.language, 'findNext')"
+        :disabled="findHits.length === 0"
+        @click="nextFind"
+      >
+        <ChevronDown :size="14" :stroke-width="2" />
+      </button>
+      <button
+        type="button"
+        class="conversation-find-btn"
+        :title="tr(settingStore.language, 'findClose')"
+        :aria-label="tr(settingStore.language, 'findClose')"
+        @click="closeFind"
+      >
+        <X :size="14" :stroke-width="2" />
+      </button>
+    </div>
+
     <nav
       v-if="userMessages.length"
+      ref="railRef"
       class="message-preview-rail"
+      tabindex="0"
       :aria-label="tr(settingStore.language, 'userMessageNav')"
+      @keydown="onRailKeydown"
     >
       <button
         v-for="(message, index) in userMessages"
@@ -12,6 +68,7 @@
         class="message-preview-mark"
         :class="{ active: message.id === activeUserMessageId }"
         :aria-label="tr(settingStore.language, 'jumpMessage', { count: index + 1 })"
+        :aria-current="message.id === activeUserMessageId ? 'true' : undefined"
         @click="scrollToMessage(message.id)"
       >
         <span class="mark-line" aria-hidden="true"></span>
@@ -46,6 +103,7 @@
         class="message-item"
         :class="item.kind"
         :data-message-id="item.message.id"
+        v-memo="messageMemoDeps(item)"
       >
         <div v-if="item.kind === 'user'" class="user-turn">
           <div
@@ -201,6 +259,7 @@
             :suppress-content="needsProviderSetup(item.message)"
             @inspect-subagent="emit('inspectSubagent', $event)"
             @preview-image="emit('previewImage', $event)"
+            @edit-from-image="emit('editFromImage', $event)"
           />
           <AskUserAnswerCard
             v-if="item.message.askUserAnswer?.length"
@@ -238,6 +297,7 @@
           <AssistantActivityIndicator
             v-if="activityLabel(item.message)"
             :label="activityLabel(item.message)!"
+            :icon="activityIcon(item.message)"
           />
           <CodeChangesSummary
             v-if="item.message.status === 'done'"
@@ -246,6 +306,7 @@
             :busy="rewindBusy"
             @undo="confirmAssistantRewind(item.message)"
             @review="$emit('reviewChanges')"
+            @review-file="$emit('reviewFile', $event)"
           />
           <SharedOfferCards :message="item.message" />
           <PlanApprovalCard
@@ -262,7 +323,9 @@
             v-if="
               item.message.content.trim() ||
               processingDuration(item.message) ||
-              turnTokenCount(item)
+              turnTokenCount(item) ||
+              turnCacheHit(item) != null ||
+              canBranchMessage(item.message)
             "
             class="message-actions assistant-message-actions"
           >
@@ -279,6 +342,17 @@
               :title="tokenEstimateTitle(turnTokenCount(item))"
             >
               ≈ {{ formatTokenCount(turnTokenCount(item), settingStore.language) }} tokens
+            </span>
+            <span
+              v-if="turnCacheHit(item) != null"
+              class="cache-hit"
+              :title="turnCacheHitTitle(item)"
+            >
+              {{
+                tr(settingStore.language, "tokens.cacheHit", {
+                  percent: turnCacheHit(item) ?? 0,
+                })
+              }}
             </span>
             <button
               v-if="item.message.content.trim()"
@@ -297,6 +371,16 @@
               />
               <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
             </button>
+            <button
+              v-if="canBranchMessage(item.message)"
+              type="button"
+              class="message-action-btn"
+              :aria-label="tr(settingStore.language, 'branchConversation')"
+              :title="tr(settingStore.language, 'branchConversation')"
+              @click.stop="branchFromMessage(item)"
+            >
+              <GitBranch :size="14" :stroke-width="2" aria-hidden="true" />
+            </button>
           </div>
         </div>
       </article>
@@ -307,8 +391,31 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { ArrowDown, Bot, Check, Copy, File, Folder, Undo2, Zap } from "@lucide/vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+  type Component,
+} from "vue";
+import {
+  ArrowDown,
+  Bot,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  File,
+  Folder,
+  GitBranch,
+  Paintbrush,
+  Undo2,
+  X,
+  Zap,
+} from "@lucide/vue";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
 import { normalizeMentionPath } from "@/services/chat/composerSegments";
 import { splitInlineTokenParts } from "@/services/chat/inlineTokenMarks";
@@ -341,8 +448,19 @@ import { tr } from "@/services/i18n";
 import { createLogger } from "@/services/logger";
 import { gsapScrollContainerTo } from "@/services/motion/gsapPresets";
 import { copyText } from "@/services/clipboard";
-import { estimateMessageTokens, formatTokenCount } from "@/services/chat/tokenEstimate";
+import {
+  estimateMessageTokens,
+  formatTokenCount,
+  promptCacheHitPercent,
+  promptTokenTotal,
+} from "@/services/chat/tokenEstimate";
 import { isConfigureProviderError } from "@/services/chat/ensureDefaultModel";
+import {
+  applyFindHits,
+  clearFindHits,
+  paintCurrentFindHit,
+} from "@/services/chat/conversationFind";
+import { provideConversationFind } from "@/composables/chat/useConversationFind";
 import { useAppStore } from "@/stores/app";
 import { storeToRefs } from "pinia";
 
@@ -368,9 +486,12 @@ const emptyThreadPrompt = computed(() =>
 );
 const emit = defineEmits<{
   rewound: [payload: { text: string }];
+  branch: [messageId: string];
   reviewChanges: [];
+  reviewFile: [path: string];
   inspectSubagent: [activityId: string];
   previewImage: [source: string];
+  editFromImage: [payload: import("@/services/chat/imageEditReference").ImageEditReferencePayload];
 }>();
 const settingStore = useSettingStore();
 const appStore = useAppStore();
@@ -836,12 +957,50 @@ const displayItems = computed((): DisplayItem[] => {
   return items;
 });
 
+/** Stable deps for v-memo — completed bubbles skip re-render when only siblings stream. */
+function messageMemoDeps(item: DisplayItem) {
+  const message = item.message;
+  const live = message.status === "pending" || message.status === "streaming";
+  const tools =
+    message.toolActivities
+      ?.map((activity) => `${activity.id}:${activity.status}:${activity.detail?.length ?? 0}`)
+      .join(",") ?? "";
+  const asks = message.askUserAnswer?.map((answer) => answer.selected.join(",")).join(";") ?? "";
+  return [
+    item.key,
+    item.kind,
+    message.status,
+    message.content.length,
+    message.reasoning?.length ?? 0,
+    message.activityStatus ?? "",
+    message.workTimeline?.length ?? 0,
+    tools,
+    asks,
+    item.kind === "assistant" ? item.injects.map((inject) => inject.id).join(",") : "",
+    copyStatus.value?.id === message.id ? copyStatus.value.state : "",
+    rewindBusy.value ? 1 : 0,
+    live ? durationClock.value : 0,
+    showPlanCardFor(message) ? (planCountdownInfo.value?.remaining ?? -1) : -1,
+    planBusy.value ? 1 : 0,
+    isSessionSending.value ? 1 : 0,
+    settingStore.showReasoning ? 1 : 0,
+    settingStore.agentWorkDisplay,
+    settingStore.language,
+  ];
+}
+
 const userMessages = computed(() =>
   displayItems.value
     .filter((item): item is Extract<DisplayItem, { kind: "user" }> => item.kind === "user")
     .map((item) => item.message),
 );
 const listRef = ref<HTMLElement | null>(null);
+const railRef = ref<HTMLElement | null>(null);
+const findOpen = ref(false);
+const findQuery = ref("");
+const findIndex = ref(0);
+const findHits = ref<HTMLElement[]>([]);
+const findInputRef = ref<HTMLInputElement | null>(null);
 const stickToBottom = ref(true);
 const activeUserMessageId = ref("");
 const rewindBusy = ref(false);
@@ -849,6 +1008,141 @@ const copyStatus = ref<{ id: string; state: "copied" | "failed" } | null>(null);
 const durationClock = ref(Date.now());
 let copyStatusTimer: number | undefined;
 let durationTimer: number | undefined;
+
+provideConversationFind({
+  active: findOpen,
+  query: findQuery,
+});
+
+const findCountLabel = computed(() => {
+  const query = findQuery.value.trim();
+  if (!query) return "";
+  if (findHits.value.length === 0) return tr(settingStore.language, "findNoResults");
+  return tr(settingStore.language, "findMatchCount", {
+    current: String(findIndex.value + 1),
+    total: String(findHits.value.length),
+  });
+});
+
+async function refreshFindHits(options: { scroll: boolean; resetIndex?: boolean }) {
+  await nextTick();
+  await nextTick();
+  const hits = applyFindHits(listRef.value, findOpen.value ? findQuery.value : "");
+  findHits.value = hits;
+  if (!hits.length) {
+    findIndex.value = 0;
+    return;
+  }
+  if (options.resetIndex || findIndex.value >= hits.length) findIndex.value = 0;
+  paintCurrentFindHit(hits, findIndex.value);
+  if (options.scroll) scrollFindHit(hits[findIndex.value]);
+}
+
+function scrollFindHit(mark: HTMLElement | undefined) {
+  const container = listRef.value;
+  if (!container || !mark) return;
+  stickToBottom.value = false;
+  const containerRect = container.getBoundingClientRect();
+  const markRect = mark.getBoundingClientRect();
+  const offset = markRect.top - containerRect.top - Math.max(56, container.clientHeight * 0.28);
+  container.scrollTo({ top: Math.max(0, container.scrollTop + offset), behavior: "smooth" });
+}
+
+function nextFind() {
+  if (!findHits.value.length) return;
+  findIndex.value = (findIndex.value + 1) % findHits.value.length;
+  paintCurrentFindHit(findHits.value, findIndex.value);
+  scrollFindHit(findHits.value[findIndex.value]);
+}
+
+function prevFind() {
+  if (!findHits.value.length) return;
+  findIndex.value = (findIndex.value - 1 + findHits.value.length) % findHits.value.length;
+  paintCurrentFindHit(findHits.value, findIndex.value);
+  scrollFindHit(findHits.value[findIndex.value]);
+}
+
+function openFind() {
+  findOpen.value = true;
+  void nextTick(() => {
+    findInputRef.value?.focus();
+    findInputRef.value?.select();
+    refreshFindHits({ scroll: Boolean(findQuery.value.trim()), resetIndex: false });
+  });
+}
+
+function closeFind() {
+  if (!findOpen.value) return;
+  findOpen.value = false;
+  clearFindHits(listRef.value);
+  findHits.value = [];
+  findIndex.value = 0;
+}
+
+function onFindInputKeydown(event: KeyboardEvent) {
+  if (event.isComposing) return;
+  if (event.key === "ArrowDown" || (event.key === "Enter" && !event.shiftKey)) {
+    event.preventDefault();
+    nextFind();
+    return;
+  }
+  if (event.key === "ArrowUp" || (event.key === "Enter" && event.shiftKey)) {
+    event.preventDefault();
+    prevFind();
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFind();
+  }
+}
+
+function onFindWindowKeydown(event: KeyboardEvent) {
+  const mod = event.ctrlKey || event.metaKey;
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  if (mod && !event.altKey && !event.shiftKey && key === "f") {
+    event.preventDefault();
+    openFind();
+    return;
+  }
+  if (!findOpen.value) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFind();
+    return;
+  }
+  if (event.key === "F3") {
+    event.preventDefault();
+    if (event.shiftKey) prevFind();
+    else nextFind();
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (event.target === findInputRef.value) return;
+    if (event.target instanceof HTMLElement) {
+      if (event.target.closest(".search-palette, textarea, [contenteditable='true']")) return;
+      if (event.target.tagName === "INPUT") return;
+    }
+    event.preventDefault();
+    if (event.key === "ArrowDown") nextFind();
+    else prevFind();
+  }
+}
+
+watch(findQuery, () => {
+  if (!findOpen.value) return;
+  void nextTick(() =>
+    refreshFindHits({ scroll: Boolean(findQuery.value.trim()), resetIndex: true }),
+  );
+});
+
+watch(
+  () => props.sessionId,
+  () => {
+    closeFind();
+    findQuery.value = "";
+  },
+);
 
 function normalizeRole(role: ChatMessage["role"] | string) {
   return String(role).toLowerCase();
@@ -921,6 +1215,17 @@ async function copyMessage(message: ChatMessage, kind: "user" | "assistant") {
   }, 1600);
 }
 
+function canBranchMessage(message: ChatMessage) {
+  if (!props.sessionId) return false;
+  return message.status !== "pending" && message.status !== "streaming";
+}
+
+function branchFromMessage(item: Extract<DisplayItem, { kind: "assistant" }>) {
+  if (!canBranchMessage(item.message)) return;
+  const lastInject = item.injects[item.injects.length - 1];
+  emit("branch", lastInject?.id || item.message.id);
+}
+
 /** Image analyses are persisted on the preceding user message; show them on the assistant turn. */
 function precedingUserMessage(assistant: ChatMessage): ChatMessage | undefined {
   const list = visibleMessages.value;
@@ -954,6 +1259,32 @@ function turnTokenCount(item: Extract<DisplayItem, { kind: "assistant" }>) {
 function tokenEstimateTitle(tokens: number) {
   return tr(settingStore.language, "tokens.estimated", {
     count: new Intl.NumberFormat(settingStore.language).format(tokens),
+  });
+}
+
+function turnCacheUsage(item: Extract<DisplayItem, { kind: "assistant" }>) {
+  const sessionId = item.message.sessionId || props.sessionId;
+  if (!sessionId) return undefined;
+  return chatStore.messageCacheUsage[sessionId]?.[item.message.id];
+}
+
+function turnCacheHit(item: Extract<DisplayItem, { kind: "assistant" }>) {
+  const usage = turnCacheUsage(item);
+  if (!usage) return null;
+  return promptCacheHitPercent(usage.inputTokens, usage.cacheReadTokens);
+}
+
+function turnCacheHitTitle(item: Extract<DisplayItem, { kind: "assistant" }>) {
+  const usage = turnCacheUsage(item);
+  const percent = turnCacheHit(item);
+  if (!usage || percent == null) return "";
+  return tr(settingStore.language, "tokens.turnCacheHitTitle", {
+    percent,
+    cached: formatTokenCount(usage.cacheReadTokens, settingStore.language),
+    prompt: formatTokenCount(
+      promptTokenTotal(usage.inputTokens, usage.cacheReadTokens),
+      settingStore.language,
+    ),
   });
 }
 
@@ -1107,11 +1438,25 @@ function activityLabel(message: ChatMessage) {
       return cmd ? `正在执行: ${cmd}` : "正在执行命令";
     }
 
+    if (running.kind === "image" || running.toolName === "generate_image") {
+      return tr(settingStore.language, "image.generating");
+    }
+
     if (running.kind === "read") return tr(settingStore.language, "reading");
     return tr(settingStore.language, "working");
   }
   if (message.content) return tr(settingStore.language, "responding");
   return tr(settingStore.language, "thinking");
+}
+
+function activityIcon(message: ChatMessage): Component | undefined {
+  const running = [...(message.toolActivities ?? [])]
+    .reverse()
+    .find((activity) => activity.status === "running");
+  if (running?.kind === "image" || running?.toolName === "generate_image") {
+    return Paintbrush;
+  }
+  return undefined;
 }
 function isNearBottom(element: HTMLElement) {
   const padBottom = Number.parseFloat(getComputedStyle(element).paddingBottom) || 0;
@@ -1124,21 +1469,58 @@ function isNearBottom(element: HTMLElement) {
 function handleScroll() {
   const element = listRef.value;
   if (!element) return;
-  stickToBottom.value = isNearBottom(element);
+  stickToBottom.value = isNearBottom(element) || isLastTurnOnScreen(element);
   updateActiveUserMessage();
 }
 function updateActiveUserMessage() {
   const element = listRef.value;
-  if (!element) return;
-  const top = element.getBoundingClientRect().top + 24;
-  let active = userMessages.value[0]?.id ?? "";
-  for (const message of userMessages.value) {
+  const users = userMessages.value;
+  if (!element || !users.length) {
+    activeUserMessageId.value = "";
+    return;
+  }
+  // Geometric bottom, pinned last-turn follow, and "last item still on screen"
+  // all mean the latest user tick — not a 40% spy-line that often still sits
+  // inside the previous turn while the last reply is visible.
+  if (stickToBottom.value || isNearBottom(element) || isLastTurnOnScreen(element)) {
+    activeUserMessageId.value = users[users.length - 1]?.id ?? "";
+    return;
+  }
+
+  const listRect = element.getBoundingClientRect();
+  const inset = 8;
+  let active = users[0]?.id ?? "";
+  for (let index = 0; index < users.length; index += 1) {
+    const message = users[index];
     const node = element.querySelector<HTMLElement>(
       `[data-message-id="${CSS.escape(message.id)}"]`,
     );
-    if (node && node.getBoundingClientRect().top <= top) active = message.id;
+    if (!node) continue;
+    const next = users[index + 1]
+      ? element.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(users[index + 1].id)}"]`)
+      : null;
+    const turnTop = node.getBoundingClientRect().top;
+    let turnBottom = listRect.bottom;
+    if (next) {
+      turnBottom = next.getBoundingClientRect().top;
+    } else {
+      const items = element.querySelectorAll<HTMLElement>(".message-item");
+      const lastItem = items[items.length - 1];
+      if (lastItem) turnBottom = lastItem.getBoundingClientRect().bottom;
+    }
+    const intersects = turnBottom > listRect.top + inset && turnTop < listRect.bottom - inset;
+    if (intersects) active = message.id;
   }
   activeUserMessageId.value = active;
+}
+
+function isLastTurnOnScreen(element: HTMLElement) {
+  const items = element.querySelectorAll<HTMLElement>(".message-item");
+  const lastItem = items[items.length - 1];
+  if (!lastItem) return false;
+  const listRect = element.getBoundingClientRect();
+  const lastRect = lastItem.getBoundingClientRect();
+  return lastRect.top < listRect.bottom && lastRect.bottom <= listRect.bottom + 48;
 }
 function scrollToMessage(messageId: string) {
   const container = listRef.value;
@@ -1151,6 +1533,39 @@ function scrollToMessage(messageId: string) {
   // Scroll the message list scroller only — not the overlay / window.
   // Offset accounts for the absolute thread header overlay.
   gsapScrollContainerTo(container, node, { offsetY: 42 });
+  railRef.value?.focus();
+}
+function jumpRail(delta: number) {
+  const users = userMessages.value;
+  if (!users.length) return;
+  const index = users.findIndex((message) => message.id === activeUserMessageId.value);
+  const from = index < 0 ? (delta > 0 ? -1 : users.length) : index;
+  const next = users[Math.min(users.length - 1, Math.max(0, from + delta))];
+  if (next) scrollToMessage(next.id);
+}
+function onRailKeydown(event: KeyboardEvent) {
+  if (findOpen.value) return;
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    jumpRail(-1);
+    return;
+  }
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    jumpRail(1);
+    return;
+  }
+  if (event.key === "Home") {
+    event.preventDefault();
+    const first = userMessages.value[0];
+    if (first) scrollToMessage(first.id);
+    return;
+  }
+  if (event.key === "End") {
+    event.preventDefault();
+    const last = userMessages.value[userMessages.value.length - 1];
+    if (last) scrollToMessage(last.id);
+  }
 }
 function scrollToLatest() {
   const element = listRef.value;
@@ -1228,15 +1643,30 @@ watch(
   },
 );
 watch(
-  () =>
-    props.messages
-      .map(
-        (item) =>
-          `${item.id}:${item.content.length}:${item.reasoning?.length ?? 0}:${item.askUserAnswer?.map((a) => a.selected.join(",")).join(";") ?? ""}:${item.toolActivities?.map((activity) => `${activity.id}:${activity.status}:${activity.detail?.length ?? 0}`).join(",") ?? ""}:${item.status}:${item.activityStatus ?? ""}`,
-      )
-      .join("|"),
+  () => {
+    const messages = props.messages;
+    const last = messages[messages.length - 1];
+    if (!last) return "0";
+    const tools =
+      last.toolActivities
+        ?.map((activity) => `${activity.id}:${activity.status}:${activity.detail?.length ?? 0}`)
+        .join(",") ?? "";
+    const asks = last.askUserAnswer?.map((answer) => answer.selected.join(",")).join(";") ?? "";
+    return `${messages.length}|${last.id}:${last.content.length}:${last.reasoning?.length ?? 0}:${tools}:${asks}:${last.status}:${last.activityStatus ?? ""}`;
+  },
   () => void scrollToBottomIfNeeded(),
   { immediate: true },
+);
+
+watch(
+  () => {
+    const last = props.messages[props.messages.length - 1];
+    return `${props.messages.length}:${last?.id ?? ""}:${last?.content.length ?? 0}:${last?.status ?? ""}`;
+  },
+  () => {
+    if (!findOpen.value || !findQuery.value.trim()) return;
+    void nextTick(() => refreshFindHits({ scroll: false }));
+  },
 );
 
 let resizeObserver: ResizeObserver | null = null;
@@ -1251,21 +1681,104 @@ onMounted(() => {
     void scrollToBottomIfNeeded();
   });
   resizeObserver.observe(element);
+  globalThis.addEventListener("keydown", onFindWindowKeydown);
 });
 onUnmounted(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
   if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
   if (durationTimer) window.clearInterval(durationTimer);
+  globalThis.removeEventListener("keydown", onFindWindowKeydown);
+  clearFindHits(listRef.value);
 });
+
+defineExpose({ openFind, closeFind });
 </script>
 
 <style scoped>
 .message-list-shell {
   position: relative;
   display: flex;
+  flex-direction: column;
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  width: 100%;
+}
+.message-list-shell.has-find .message-list {
+  scroll-padding-top: 52px;
+}
+.conversation-find-bar {
+  position: absolute;
+  z-index: 8;
+  top: 8px;
+  right: 36px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: min(360px, calc(100% - 48px));
+  padding: 4px 4px 4px 8px;
+  border: 1px solid var(--peek-border, rgba(0, 0, 0, 0.12));
+  border-radius: 8px;
+  background: var(--peek-surface, #fff);
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 14%, transparent);
+}
+.conversation-find-input {
+  min-width: 0;
+  flex: 1;
+  height: 26px;
+  padding: 0 6px 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--peek-text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.conversation-find-count {
+  flex: none;
+  min-width: 3.5em;
+  padding: 0 6px;
+  color: var(--peek-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.conversation-find-count.empty {
+  color: var(--peek-danger, #f14c4c);
+}
+.conversation-find-btn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--peek-muted);
+  cursor: pointer;
+}
+.conversation-find-btn:hover:not(:disabled) {
+  color: var(--peek-text);
+  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
+}
+.conversation-find-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+:deep(mark.conversation-find-hit) {
+  padding: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, #eab308 58%, transparent);
+  color: inherit;
+  box-decoration-break: clone;
+}
+:deep(mark.conversation-find-hit.is-current) {
+  background: color-mix(in srgb, #f59e0b 82%, transparent);
+  outline: 1px solid color-mix(in srgb, #d97706 65%, transparent);
 }
 .message-list {
   flex: 1;
@@ -1300,8 +1813,13 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 2px;
   width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
+  outline: none;
+  pointer-events: none;
 }
 .message-preview-rail::-webkit-scrollbar {
   display: none;
@@ -1345,6 +1863,7 @@ onUnmounted(() => {
   border: 0;
   background: transparent;
   cursor: pointer;
+  pointer-events: auto;
 }
 .mark-line {
   position: absolute;
@@ -1515,7 +2034,8 @@ onUnmounted(() => {
   justify-content: flex-start;
 }
 .processing-duration,
-.token-usage {
+.token-usage,
+.cache-hit {
   margin-right: 4px;
   color: var(--peek-muted);
   font-size: 11px;

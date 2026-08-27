@@ -30,6 +30,7 @@ impl EventBus for TauriEventBus {
             }
             BusEvent::TokenUsage {
                 session_id: Some(session_id),
+                message_id,
                 model,
                 usage,
             } => {
@@ -37,6 +38,7 @@ impl EventBus for TauriEventBus {
                     "chat-token-usage",
                     ChatTokenUsageEvent {
                         session_id,
+                        message_id,
                         model,
                         usage,
                     },

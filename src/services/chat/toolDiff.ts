@@ -117,3 +117,9 @@ export function fileBasename(path: string | undefined | null): string {
   const normalized = (path ?? "").replace(/\\/g, "/");
   return normalized.split("/").pop() || path || "file";
 }
+
+export function fileParentDir(path: string | undefined | null): string {
+  const normalized = (path ?? "").replace(/\\/g, "/");
+  const separator = normalized.lastIndexOf("/");
+  return separator > 0 ? normalized.slice(0, separator) : "";
+}

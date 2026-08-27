@@ -41,7 +41,7 @@
 import { computed } from "vue";
 import { File, Globe } from "@lucide/vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { revealInExplorer } from "@/services/ipc";
+import { openInDefaultApp, revealInExplorer } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import type { ChatMessage, SharedFileOffer, SharedUrlOffer } from "@/types/chat";
@@ -91,9 +91,13 @@ async function openFile(file: SharedFileOffer) {
   const path = file.absolutePath || file.path;
   if (!path) return;
   try {
-    await revealInExplorer(path);
+    await openInDefaultApp(path);
   } catch {
-    /* ignore */
+    try {
+      await revealInExplorer(path);
+    } catch {
+      /* ignore */
+    }
   }
 }
 

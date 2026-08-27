@@ -1,6 +1,6 @@
 [package]
 name = "peek"
-version = "0.2.12"
+version = "0.2.13"
 description = "Hand your work & questions to Anya anytime."
 authors = ["you"]
 edition = "2021"
@@ -39,7 +39,7 @@ thiserror = "2"
 json5 = "0.4"
 notify-rust = "4.18"
 async-trait = "0.1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "native-tls", "blocking", "system-proxy", "socks"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "native-tls", "blocking", "system-proxy", "socks", "multipart"] }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 tokio = { version = "1", features = ["sync", "time", "process", "rt-multi-thread", "macros", "net", "io-util"] }
 tokio-tungstenite = { version = "0.26", default-features = false, features = ["handshake", "connect"] }

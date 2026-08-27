@@ -24,6 +24,7 @@ pub enum BusEvent {
     },
     TokenUsage {
         session_id: Option<String>,
+        message_id: Option<String>,
         model: String,
         usage: crate::core::token::TokenUsage,
     },

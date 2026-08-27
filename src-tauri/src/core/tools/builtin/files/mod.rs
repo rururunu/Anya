@@ -8,7 +8,6 @@ pub use read::*;
 pub use write::*;
 
 use std::fs;
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -113,14 +112,6 @@ pub(super) fn guard_minimal_edit(
         }
     }
     Ok(())
-}
-
-pub(super) fn should_skip(path: &Path) -> bool {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    matches!(
-        name,
-        ".git" | "node_modules" | "target" | "dist" | ".next" | "__pycache__" | ".venv" | "venv"
-    )
 }
 
 pub(super) fn run_command_cancellable(

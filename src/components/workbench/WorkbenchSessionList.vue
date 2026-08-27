@@ -4,13 +4,18 @@
       v-for="session in sessions"
       :key="session.sessionId"
       class="session-row"
-      :class="{ active: session.sessionId === activeSessionId }"
+      :class="{
+        active: session.sessionId === activeSessionId,
+        dragging: session.sessionId === draggedSessionId,
+      }"
       role="button"
       tabindex="0"
-      :title="sessionHoverText(session)"
-      @click="emit('select', session.sessionId)"
-      @keydown.enter.self="emit('select', session.sessionId)"
-      @keydown.space.self.prevent="emit('select', session.sessionId)"
+      :title="draggedSessionId ? undefined : sessionHoverText(session)"
+      @pointerdown="onRowPointerDown($event, session)"
+      @click="onSelect(session.sessionId)"
+      @keydown.enter.self="onSelect(session.sessionId)"
+      @keydown.space.self.prevent="onSelect(session.sessionId)"
+      @dragstart.prevent
     >
       <strong>{{ displayPreview(session) }}</strong>
       <span
@@ -34,8 +39,9 @@
       </span>
       <button
         type="button"
-        class="archive-session"
+        class="session-action"
         :title="archiveLabel"
+        @pointerdown.stop
         @click.stop="emit('archive', session.sessionId)"
       >
         <Archive :size="13" />
@@ -61,11 +67,22 @@ const props = defineProps<{
   unreadSessionIds: string[];
   draftSessionIds?: string[];
   variant?: "workspace" | "quick";
+  draggedSessionId?: string;
 }>();
 const emit = defineEmits<{
   select: [sessionId: string];
   archive: [sessionId: string];
+  sessionPointerDown: [event: PointerEvent, session: ChatSessionSummary];
 }>();
+
+function onRowPointerDown(event: PointerEvent, session: ChatSessionSummary) {
+  emit("sessionPointerDown", event, session);
+}
+
+function onSelect(sessionId: string) {
+  if (props.draggedSessionId) return;
+  emit("select", sessionId);
+}
 
 function displayPreview(session: ChatSessionSummary) {
   return formatSessionPreview(session.preview || "") || props.untitledLabel;
@@ -114,9 +131,13 @@ function sessionStatusLabel(sessionId: string) {
 <style scoped>
 .workbench-session-list.is-workspace {
   padding: 2px 0 2px 22px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .workbench-session-list.is-quick {
   padding: 3px 0 0;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .session-row {
   position: relative;
@@ -129,6 +150,9 @@ function sessionStatusLabel(sessionId: string) {
   background: transparent;
   color: var(--peek-text);
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
   text-align: left;
 }
 .session-row:hover {
@@ -136,6 +160,10 @@ function sessionStatusLabel(sessionId: string) {
 }
 .session-row.active {
   background: var(--peek-row-active);
+}
+.session-row.dragging {
+  cursor: grabbing;
+  opacity: 0.4;
 }
 .is-quick .session-row {
   padding-left: 9px;
@@ -149,6 +177,9 @@ function sessionStatusLabel(sessionId: string) {
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
 }
 .session-status {
   flex: none;
@@ -174,7 +205,7 @@ function sessionStatusLabel(sessionId: string) {
   border-radius: 50%;
   background: var(--peek-accent);
 }
-.archive-session {
+.session-action {
   flex: none;
   width: var(--peek-control-icon, 28px);
   height: var(--peek-control-icon, 28px);
@@ -188,11 +219,11 @@ function sessionStatusLabel(sessionId: string) {
   cursor: pointer;
   opacity: 0;
 }
-.session-row:hover .archive-session,
-.session-row:focus-within .archive-session {
+.session-row:hover .session-action,
+.session-row:focus-within .session-action {
   opacity: 1;
 }
-.archive-session:hover {
+.session-action:hover {
   color: var(--peek-text);
   background: color-mix(in srgb, var(--peek-text) 8%, transparent);
 }

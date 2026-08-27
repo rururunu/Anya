@@ -1,6 +1,7 @@
 <template>
   <section class="settings-page">
     <AppConfirmDialog ref="confirmDialogRef" />
+    <EditWorkspaceDialog ref="editDialogRef" />
     <SettingsPageHeader :title="copy.title">
       <template #actions>
         <Button size="sm" class="h-8 gap-1.5" :disabled="saving" @click="addWorkspace">
@@ -43,6 +44,17 @@
           variant="ghost"
           size="icon"
           class="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+          :title="copy.editWorkspace"
+          :aria-label="copy.editWorkspace"
+          @click="edit(workspace)"
+        >
+          <Pencil class="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          class="size-8 shrink-0 text-muted-foreground hover:text-foreground"
           :title="copy.archiveWorkspace"
           :aria-label="copy.archiveWorkspace"
           @click="archive(workspace)"
@@ -68,10 +80,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Archive, Check, Folder, FolderOpen, Plus, Trash2 } from "@lucide/vue";
+import { Archive, Check, Folder, FolderOpen, Pencil, Plus, Trash2 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import EditWorkspaceDialog from "@/components/workspace/EditWorkspaceDialog.vue";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
 import {
@@ -92,6 +105,7 @@ const current = ref<Workspace | null>(null);
 const saving = ref(false);
 const error = ref("");
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
+const editDialogRef = ref<InstanceType<typeof EditWorkspaceDialog> | null>(null);
 let unlisten: UnlistenFn | null = null;
 
 const copy = computed(() => {
@@ -101,6 +115,7 @@ const copy = computed(() => {
     newWorkspace: tr(language, "workspace.newWorkspace"),
     empty: tr(language, "workspace.empty"),
     current: tr(language, "workspace.current"),
+    editWorkspace: tr(language, "workspace.editWorkspace"),
     archiveWorkspace: tr(language, "workspace.archiveWorkspace"),
     deleteWorkspace: tr(language, "workspace.deleteWorkspace"),
     cancel: tr(language, "workspace.cancel"),
@@ -134,6 +149,11 @@ async function select(workspace: Workspace) {
   if (workspace.id !== current.value?.id) {
     current.value = await switchWorkspace(workspace.id);
   }
+}
+
+async function edit(workspace: Workspace) {
+  const saved = await editDialogRef.value?.edit(workspace);
+  if (saved) await load();
 }
 
 async function archive(workspace: Workspace) {

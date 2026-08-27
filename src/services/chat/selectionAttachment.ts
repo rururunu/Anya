@@ -1,10 +1,16 @@
 import type { AttachedFileDisplay } from "@/services/chat/attachFiles";
 import { extractAttachedFiles } from "@/services/chat/attachFiles";
+import { EDIT_REGION_IMAGE_ALT } from "@/services/chat/imageEditReference";
 
 const SELECTION_OPEN = /\n\n<peek-selection lines="(\d+)">\n/;
 const SELECTION_CLOSE = "\n</peek-selection>";
 const ANALYSIS_TAG_RE =
   /<peek-image-analysis\s+model="([^"]*)">\s*([\s\S]*?)\s*<\/peek-image-analysis>/g;
+/** Display paint preview and/or edits reference images in user messages. */
+const IMAGE_MARKDOWN_RE = new RegExp(
+  `!\\[(image|${EDIT_REGION_IMAGE_ALT})\\]\\(([^)\\s]+)\\)`,
+  "g",
+);
 
 export interface ImageAnalysis {
   model: string;
@@ -58,19 +64,23 @@ export function parseSelectionAttachment(content: string | undefined | null): Se
     });
   }
 
-  const images: string[] = [];
-  // Accept data URLs and plain paths/URLs inside ![image](...).
-  const imageRegex = /!\[image\]\(([^)\s]+)\)/g;
-
+  const regionImages: string[] = [];
+  const plainImages: string[] = [];
+  const imageRegex = new RegExp(IMAGE_MARKDOWN_RE.source, "g");
   let m;
   while ((m = imageRegex.exec(cleanContent)) !== null) {
-    const raw = (m[1] || "").trim();
-    if (raw) images.push(raw);
+    const alt = (m[1] || "").trim();
+    const raw = (m[2] || "").trim();
+    if (!raw) continue;
+    if (alt === EDIT_REGION_IMAGE_ALT) regionImages.push(raw);
+    else plainImages.push(raw);
   }
+  // Prefer the painted preview when present so the message list shows the region.
+  const images = regionImages.length > 0 ? regionImages : plainImages;
 
   let messageText = cleanContent
     .replace(new RegExp(ANALYSIS_TAG_RE.source, "g"), "")
-    .replace(imageRegex, "")
+    .replace(new RegExp(IMAGE_MARKDOWN_RE.source, "g"), "")
     .trim();
 
   const extracted = extractAttachedFiles(messageText);

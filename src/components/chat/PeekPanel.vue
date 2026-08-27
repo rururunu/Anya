@@ -102,16 +102,21 @@
         </div>
 
         <div class="thread-content">
-          <MessageList
-            :messages="messages"
-            :session-id="activeSessionId"
-            :workspace-name="workspaceDisplayName"
-            :checkpoints="checkpoints"
-            @rewound="handleRewound"
-            @review-changes="openDiffSidebar"
-            @inspect-subagent="openSubagentSidebar"
-            @preview-image="handlePreviewImage"
-          />
+          <AppErrorBoundary compact>
+            <MessageList
+              :messages="messages"
+              :session-id="activeSessionId"
+              :workspace-name="workspaceDisplayName"
+              :checkpoints="checkpoints"
+              @rewound="handleRewound"
+              @branch="handleBranchMessage"
+              @review-changes="openDiffSidebar"
+              @review-file="openDiffSidebarFile"
+              @inspect-subagent="openSubagentSidebar"
+              @preview-image="handlePreviewImage"
+              @edit-from-image="handleEditFromImage"
+            />
+          </AppErrorBoundary>
           <Transition name="workspace-sidebar" @after-leave="emitComposerLayout">
             <div
               v-show="sidebarOpen"
@@ -197,6 +202,8 @@
                     v-show="sidebarTab === 'diff'"
                     :messages="messages"
                     :width="diffSidebarWidth"
+                    :focus-path="diffFocusPath"
+                    :focus-at="diffFocusAt"
                     embedded
                   />
                   <SubagentSidebar
@@ -287,6 +294,7 @@ import {
   PinOff,
   X,
 } from "@lucide/vue";
+import AppErrorBoundary from "@/components/AppErrorBoundary.vue";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
 import ChatInputBar, {
@@ -318,6 +326,7 @@ import {
   setWindowSessionView,
   setOverlayPopupOpen,
   openImagePreview,
+  branchChatSession,
 } from "@/services/ipc";
 import { useChatStore } from "@/stores/chat";
 import { useSettingStore } from "@/stores/setting";
@@ -405,6 +414,8 @@ const openedImageSources = ref<string[]>([]);
 const selectedImageSource = ref("");
 const openedSubagentIds = ref<string[]>([]);
 const selectedSubagentId = ref("");
+const diffFocusPath = ref("");
+const diffFocusAt = ref(0);
 type SidebarTab = "diff" | "subagents" | "runtime" | "image";
 const sidebarTab = ref<SidebarTab>("diff");
 const sidebarOpen = computed(
@@ -574,6 +585,12 @@ function openDiffSidebar() {
   selectSidebarTab("diff");
 }
 
+function openDiffSidebarFile(path: string) {
+  diffFocusPath.value = path;
+  diffFocusAt.value += 1;
+  selectSidebarTab("diff");
+}
+
 function handlePreviewImage(source: string) {
   if (props.mode === "chat") {
     if (!openedImageSources.value.includes(source)) {
@@ -586,6 +603,10 @@ function handlePreviewImage(source: string) {
   void openImagePreview(source).catch((error) => {
     console.error("openImagePreview failed:", error);
   });
+}
+
+function handleEditFromImage(payload: { images: string[]; draftText?: string; region?: boolean }) {
+  void inputRef.value?.attachImageEditReference?.(payload);
 }
 
 function closeImageTab(source: string) {
@@ -1151,6 +1172,37 @@ async function handleRewound(payload: { text: string }) {
   }
 }
 
+async function handleBranchMessage(messageId: string) {
+  const sessionId = activeSessionId.value;
+  if (!sessionId || !messageId) return;
+  try {
+    const summary = await branchChatSession(sessionId, messageId);
+    const sourceCompose = chatStore.sessionCompose[sessionId];
+    if (sourceCompose) {
+      chatStore.setCompose(summary.sessionId, {
+        chatModel: sourceCompose.chatModel,
+        chatModelProvider: sourceCompose.chatModelProvider,
+        chatMode: sourceCompose.chatMode === "plan" ? "agent" : sourceCompose.chatMode,
+        toolApprovalMode: sourceCompose.toolApprovalMode,
+        imageGen: sourceCompose.imageGen,
+      });
+    } else {
+      chatStore.ensureCompose(summary.sessionId);
+    }
+    chatStore.setComposeDraft(summary.sessionId, "", {
+      workspaceId: summary.workspaceId ?? null,
+    });
+    await chatStore.loadHistory(summary.sessionId);
+    chatStore.setOverlayDraftSession(summary.sessionId);
+    emit("enterChat", summary.sessionId);
+    await refreshCheckpoints();
+    await nextTick();
+    void inputRef.value?.focusInput();
+  } catch (error) {
+    console.error("branch_chat_session failed:", error);
+  }
+}
+
 function closeAskUser() {
   askUserSession.value = null;
   void setOverlayPopupOpen(getCurrentWebviewWindow().label, false);
@@ -1426,6 +1478,10 @@ onUnmounted(() => {
 }
 
 .thread-content :deep(.message-list-shell) {
+  flex: 1;
+  min-width: 540px;
+}
+.thread-content :deep(.error-boundary-root.failed) {
   flex: 1;
   min-width: 540px;
 }

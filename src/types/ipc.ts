@@ -41,7 +41,9 @@ export const IPC_COMMANDS = {
   getPlanMode: "get_plan_mode",
   listCheckpoints: "list_checkpoints",
   rewindSession: "rewind_session",
+  branchChatSession: "branch_chat_session",
   revealInExplorer: "reveal_in_explorer",
+  openInDefaultApp: "open_in_default_app",
 } as const;
 
 export const IPC_EVENTS = {

@@ -13,6 +13,15 @@
         <button type="button" class="bar-btn" :title="resetLabel" @click="resetZoom">
           <RotateCcw :size="15" />
         </button>
+        <button
+          type="button"
+          class="bar-btn"
+          :title="saveAsLabel"
+          :disabled="saving"
+          @click="saveAs"
+        >
+          <Download :size="15" />
+        </button>
         <button type="button" class="bar-btn close" :title="closeLabel" @click="closeWindow">
           <X :size="16" />
         </button>
@@ -45,16 +54,19 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { ZoomIn, ZoomOut, RotateCcw, X } from "@lucide/vue";
+import { Download, ZoomIn, ZoomOut, RotateCcw, X } from "@lucide/vue";
+import { resolveChatImageSrc } from "@/services/chat/localImageSrc";
+import { saveChatImage } from "@/services/chat/saveChatImage";
 import { getPreviewImage, setOverlayPopupOpen } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 
 const settingStore = useSettingStore();
-const imageSrc = ref("");
+const rawSource = ref("");
+const imageSrc = computed(() => resolveChatImageSrc(rawSource.value));
+const saving = ref(false);
 const scale = ref(1);
 const offsetX = ref(0);
 const offsetY = ref(0);
@@ -68,26 +80,25 @@ const zoomInLabel = computed(() => tr(settingStore.language, "image.zoomIn"));
 const zoomOutLabel = computed(() => tr(settingStore.language, "image.zoomOut"));
 const resetLabel = computed(() => tr(settingStore.language, "image.reset"));
 const closeLabel = computed(() => tr(settingStore.language, "image.close"));
+const saveAsLabel = computed(() => tr(settingStore.language, "image.saveAs"));
 const emptyLabel = computed(() => tr(settingStore.language, "image.empty"));
-
-function resolvePreviewSrc(raw: string) {
-  const value = raw.trim();
-  if (!value) return "";
-  if (value.startsWith("data:")) return value;
-  if (value.startsWith("path:")) return convertFileSrc(value.slice(5));
-  if (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("/") || value.startsWith("\\\\")) {
-    return convertFileSrc(value);
-  }
-  return value;
-}
 
 async function loadPreviewImage() {
   try {
-    const data = await getPreviewImage();
-    imageSrc.value = resolvePreviewSrc(data);
+    rawSource.value = await getPreviewImage();
     resetZoom();
   } catch (err) {
     console.error("Failed to load preview image:", err);
+  }
+}
+
+async function saveAs() {
+  if (!rawSource.value || saving.value) return;
+  saving.value = true;
+  try {
+    await saveChatImage(rawSource.value);
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -233,6 +244,11 @@ onUnmounted(() => {
 .bar-btn:hover {
   background: color-mix(in srgb, var(--peek-accent) 14%, transparent);
   color: var(--peek-text);
+}
+
+.bar-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 
 .bar-btn.close:hover {

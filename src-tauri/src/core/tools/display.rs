@@ -116,11 +116,13 @@ fn should_hide_result_detail(tool_name: &str, result: &str) -> bool {
             | "delete_text_range"
             | "delete_go_symbol"
             | "edit_notebook_cell"
+            | "generate_image"
     ) && (matches!(
         result.trim(),
         "written" | "replaced" | "moved" | "deleted" | "updated"
     ) || result.trim().starts_with("replaced (")
-        || result.trim().starts_with("applied "))
+        || result.trim().starts_with("applied ")
+        || result.contains("![") && result.contains("path:"))
 }
 
 fn activity_kind(tool_name: &str) -> String {
@@ -166,6 +168,7 @@ fn activity_kind(tool_name: &str) -> String {
         | "ppt_replace_selection"
         | "ppt_insert_text"
         | "ppt_save_presentation" => "edit".into(),
+        "generate_image" => "image".into(),
         _ => "other".into(),
     }
 }
@@ -298,6 +301,14 @@ fn build_title(tool_name: &str, args: &Value) -> String {
         "ask_user" => "Ask user".into(),
         "share_to_companion" => "Share file".into(),
         "share_preview_url" => "Share preview URL".into(),
+        "generate_image" => {
+            let prompt = truncate(args["prompt"].as_str().unwrap_or("").trim(), 80);
+            if prompt.is_empty() {
+                "Generate image".into()
+            } else {
+                format!("Generate {prompt}")
+            }
+        }
         "update_tasks" | "todo_write" => "Update tasks".into(),
         "complete_plan_step" => "Complete plan step".into(),
 
@@ -521,12 +532,33 @@ fn display_path(path: &str) -> String {
 }
 
 fn line_range(args: &Value) -> Option<String> {
-    let has_offset = args.get("offset").is_some();
+    if let Some(around) = args
+        .get("around_line")
+        .and_then(Value::as_u64)
+        .filter(|n| *n > 0)
+    {
+        let context = args
+            .get("context")
+            .and_then(Value::as_u64)
+            .unwrap_or(40)
+            .clamp(1, 80);
+        let start = around.saturating_sub(context).max(1);
+        let end = around.saturating_add(context);
+        return Some(format!("L{start}-{end}"));
+    }
+    let start = args
+        .get("start_line")
+        .and_then(Value::as_u64)
+        .or_else(|| args.get("offset").and_then(Value::as_u64));
+    let end_line = args.get("end_line").and_then(Value::as_u64);
     let has_limit = args.get("limit").is_some();
-    if !has_offset && !has_limit {
+    if start.is_none() && end_line.is_none() && !has_limit {
         return None;
     }
-    let offset = args["offset"].as_u64().unwrap_or(1).max(1);
+    let offset = start.unwrap_or(1).max(1);
+    if let Some(end) = end_line {
+        return Some(format!("L{offset}-{}", end.max(offset)));
+    }
     let limit = args["limit"].as_u64().unwrap_or(200).max(1);
     let end = offset.saturating_add(limit).saturating_sub(1);
     Some(format!("L{offset}-{end}"))
@@ -622,6 +654,13 @@ mod tests {
     }
 
     #[test]
+    fn read_file_title_uses_around_line() {
+        let args = json!({ "path": "src/main.rs", "around_line": 80, "context": 10 });
+        let view = build_activity_view("read_file", &args, Some("  70|ok\n"));
+        assert_eq!(view.title, "Read src/main.rs L70-90");
+    }
+
+    #[test]
     fn read_file_title_without_range() {
         let args = json!({ "path": "src/main.rs" });
         let view = build_activity_view("read_file", &args, Some("   1|line\n"));
@@ -670,6 +709,33 @@ mod tests {
         assert_eq!(search.title, "Search build_title");
         let find = build_activity_view("find_files", &json!({ "pattern": "**/*.rs" }), None);
         assert_eq!(find.title, "Find **/*.rs");
+    }
+
+    #[test]
+    fn generate_image_title_uses_prompt_and_image_kind() {
+        let args = json!({ "prompt": "a cat sitting on a roof at dusk" });
+        let view = build_activity_view(
+            "generate_image",
+            &args,
+            Some("Generated 1 image with gpt-image-2 (1024x1024, auto).\n![a cat](path:C:/tmp/cat.png)"),
+        );
+        assert_eq!(view.title, "Generate a cat sitting on a roof at dusk");
+        assert_eq!(view.kind, "image");
+        assert!(view.detail.is_none());
+    }
+
+    #[test]
+    fn generate_image_error_keeps_tool_result_as_detail() {
+        let view = build_activity_view(
+            "generate_image",
+            &json!({ "prompt": "a cat" }),
+            Some("tool error: Image API returned 401 from https://api.example/v1/images/generations"),
+        );
+        assert_eq!(view.kind, "image");
+        assert_eq!(
+            view.detail.as_deref(),
+            Some("tool error: Image API returned 401 from https://api.example/v1/images/generations")
+        );
     }
 
     #[test]

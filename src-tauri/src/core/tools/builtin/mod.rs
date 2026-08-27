@@ -2,6 +2,7 @@
 
 mod chat_history;
 mod files;
+mod image_gen;
 mod memory_tools;
 mod misc;
 mod shell;
@@ -18,6 +19,7 @@ use crate::core::tools::shell_jobs::ShellJobStore;
 
 use chat_history::*;
 use files::*;
+use image_gen::*;
 use memory_tools::*;
 use misc::*;
 use shell::*;
@@ -98,6 +100,7 @@ pub fn register_all(
     registry.register(Arc::new(RebuildCodebaseIndexTool));
     registry.register(Arc::new(ShareToCompanionTool));
     registry.register(Arc::new(SharePreviewUrlTool));
+    registry.register(Arc::new(GenerateImageTool));
     registry.register(Arc::new(ListFailureCandidatesTool {
         conversation: Arc::clone(&conversation),
     }));

@@ -7,6 +7,7 @@ import {
   deleteWorkspace,
   listWorkspaces,
   openWorkspaceFolder as openWorkspaceFolderCommand,
+  openWorkspaceInTerminal as openWorkspaceInTerminalCommand,
   reorderWorkspaces,
   selectWorkspaceFolder,
   setWorkspacePinned,
@@ -14,30 +15,39 @@ import {
   switchWorkspace,
   type Workspace,
 } from "@/commands/workspace";
-import type { WorkspaceDropPosition, WorkspacePointerDrag } from "./types";
+import { formatSessionPreview } from "@/services/chat/sessionPreview";
+import type { ChatSessionSummary } from "@/types/chat";
+import type { WorkspaceDropPosition, SessionPointerDrag, WorkspacePointerDrag } from "./types";
 import type { WorkbenchLabels } from "./useWorkbenchLabels";
 
 export interface UseWorkbenchWorkspacesOptions {
   workspaces: Ref<Workspace[]>;
   activeSessionWorkspaceId: Ref<string | null>;
   navigationLabels: WorkbenchLabels["navigationLabels"];
+  labels: WorkbenchLabels["labels"];
   confirmDialogRef: Ref<InstanceType<typeof AppConfirmDialog> | null>;
+  editWorkspaceDialogRef: Ref<{ edit: (workspace: Workspace) => Promise<boolean> } | null>;
   refreshSessions: () => Promise<void>;
   createConversation: (workspaceId: string | null) => void;
+  moveSessionToWorkspace: (sessionId: string, workspaceId: string) => Promise<void>;
 }
 
 /**
  * Workspace list UI: pinned/regular navigation sections, collapsed state,
- * the per-row action menu, and pointer-based drag-to-reorder.
+ * the per-row action menu, pointer drag to reorder workspaces, and pointer
+ * drag to move conversations between workspaces.
  */
 export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
   const {
     workspaces,
     activeSessionWorkspaceId,
     navigationLabels,
+    labels,
     confirmDialogRef,
+    editWorkspaceDialogRef,
     refreshSessions,
     createConversation,
+    moveSessionToWorkspace,
   } = options;
 
   const collapsedWorkspaceIds = ref(new Set<string>());
@@ -47,7 +57,16 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
   const dragOverWorkspaceId = ref("");
   const workspaceDropPosition = ref<WorkspaceDropPosition | null>(null);
   const workspacePointerDrag = ref<WorkspacePointerDrag | null>(null);
+  const sessionPointerDrag = ref<SessionPointerDrag | null>(null);
+  const draggedSessionId = ref("");
+  const sessionDropWorkspaceId = ref("");
   const suppressedWorkspaceClickId = ref("");
+  const suppressedSessionClickId = ref("");
+  const sessionDragGhost = computed(() => {
+    const drag = sessionPointerDrag.value;
+    if (!drag?.dragging) return null;
+    return { x: drag.x, y: drag.y, title: drag.preview };
+  });
 
   const pinnedWorkspaces = computed(() => workspaces.value.filter((workspace) => workspace.pinned));
   const regularWorkspaces = computed(() =>
@@ -86,11 +105,6 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     toggleWorkspaceGroup(workspace.id);
   }
 
-  function clearWorkspaceLongPress(drag: WorkspacePointerDrag) {
-    if (drag.longPressTimer) globalThis.clearTimeout(drag.longPressTimer);
-    drag.longPressTimer = null;
-  }
-
   function suppressWorkspaceClick(workspaceId: string) {
     suppressedWorkspaceClickId.value = workspaceId;
     globalThis.setTimeout(() => {
@@ -98,45 +112,142 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     }, 300);
   }
 
+  function suppressSessionClick(sessionId: string) {
+    suppressedSessionClickId.value = sessionId;
+    globalThis.setTimeout(() => {
+      if (suppressedSessionClickId.value === sessionId) suppressedSessionClickId.value = "";
+    }, 300);
+  }
+
+  function consumeSuppressedSessionClick(sessionId: string) {
+    if (suppressedSessionClickId.value !== sessionId) return false;
+    suppressedSessionClickId.value = "";
+    return true;
+  }
+
+  function expandWorkspaceGroup(id: string) {
+    if (!collapsedWorkspaceIds.value.has(id)) return;
+    const next = new Set(collapsedWorkspaceIds.value);
+    next.delete(id);
+    collapsedWorkspaceIds.value = next;
+  }
+
   function startWorkspacePointerDrag(event: PointerEvent, workspace: Workspace) {
     if (event.button !== 0 || !(event.target instanceof Element)) return;
     if (event.target.closest(".workspace-actions, .workspace-menu")) return;
+    if (sessionPointerDrag.value) return;
 
-    if (event.currentTarget instanceof HTMLElement) {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
-    const drag: WorkspacePointerDrag = {
+    const row =
+      event.currentTarget instanceof HTMLElement
+        ? event.currentTarget
+        : event.target.closest<HTMLElement>(".workspace-row");
+    row?.setPointerCapture(event.pointerId);
+    workspacePointerDrag.value = {
       pointerId: event.pointerId,
       sourceId: workspace.id,
       startX: event.clientX,
       startY: event.clientY,
       dragging: false,
-      cancelled: false,
-      longPressTimer: null,
     };
-    drag.longPressTimer = globalThis.setTimeout(() => {
-      const current = workspacePointerDrag.value;
-      if (!current || current.pointerId !== drag.pointerId || current.sourceId !== drag.sourceId)
-        return;
-      current.dragging = true;
-      draggedWorkspaceId.value = current.sourceId;
+  }
+
+  function startSessionPointerDrag(event: PointerEvent, session: ChatSessionSummary) {
+    if (event.button !== 0 || !(event.target instanceof Element)) return;
+    if (event.target.closest(".session-action")) return;
+    if (workspacePointerDrag.value?.dragging) return;
+
+    const row =
+      event.currentTarget instanceof HTMLElement
+        ? event.currentTarget
+        : event.target.closest<HTMLElement>(".session-row");
+    row?.setPointerCapture(event.pointerId);
+    workspacePointerDrag.value = null;
+    sessionPointerDrag.value = {
+      pointerId: event.pointerId,
+      sessionId: session.sessionId,
+      sourceWorkspaceId: session.workspaceId ?? null,
+      preview: formatSessionPreview(session.preview || "") || labels.value.untitled,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      dragging: false,
+    };
+  }
+
+  function moveSessionPointerDrag(event: PointerEvent) {
+    const drag = sessionPointerDrag.value;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.dragging) {
+      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+      if (distance < 6) return;
+      drag.dragging = true;
+      draggedSessionId.value = drag.sessionId;
       workspaceMenuId.value = "";
       document.getSelection()?.removeAllRanges();
-    }, 260);
-    workspacePointerDrag.value = drag;
+    }
+
+    event.preventDefault();
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    const targetId =
+      document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>("[data-workspace-id]")?.dataset.workspaceId ?? "";
+    sessionDropWorkspaceId.value = targetId && targetId !== drag.sourceWorkspaceId ? targetId : "";
+  }
+
+  async function finishSessionPointerDrag(event: PointerEvent) {
+    const drag = sessionPointerDrag.value;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const targetId = sessionDropWorkspaceId.value;
+    const didDrag = drag.dragging;
+    sessionPointerDrag.value = null;
+    draggedSessionId.value = "";
+    sessionDropWorkspaceId.value = "";
+    if (!didDrag) return;
+
+    event.preventDefault();
+    suppressSessionClick(drag.sessionId);
+    if (!targetId) return;
+    const target = workspaces.value.find((workspace) => workspace.id === targetId);
+    if (!target) return;
+    const confirmed = await confirmDialogRef.value?.ask({
+      title: navigationLabels.value.moveConversationTitle,
+      description: navigationLabels.value.moveConversationDescription,
+      detailLabel: target.name,
+      confirmLabel: navigationLabels.value.continue,
+      cancelLabel: navigationLabels.value.cancel,
+      tone: "default",
+    });
+    if (!confirmed) return;
+    expandWorkspaceGroup(targetId);
+    await moveSessionToWorkspace(drag.sessionId, targetId);
+  }
+
+  function cancelSessionPointerDrag(event: PointerEvent) {
+    const drag = sessionPointerDrag.value;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    sessionPointerDrag.value = null;
+    draggedSessionId.value = "";
+    sessionDropWorkspaceId.value = "";
   }
 
   function moveWorkspacePointerDrag(event: PointerEvent) {
+    if (sessionPointerDrag.value) {
+      moveSessionPointerDrag(event);
+      return;
+    }
     const drag = workspacePointerDrag.value;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    if (drag.cancelled) return;
 
     if (!drag.dragging) {
       const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
       if (distance < 6) return;
-      clearWorkspaceLongPress(drag);
-      drag.cancelled = true;
-      return;
+      drag.dragging = true;
+      draggedWorkspaceId.value = drag.sourceId;
+      workspaceMenuId.value = "";
+      document.getSelection()?.removeAllRanges();
     }
 
     event.preventDefault();
@@ -160,20 +271,20 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
   }
 
   function finishWorkspacePointerDrag(event: PointerEvent) {
+    if (sessionPointerDrag.value) {
+      void finishSessionPointerDrag(event);
+      return;
+    }
     const drag = workspacePointerDrag.value;
     if (!drag || drag.pointerId !== event.pointerId) return;
 
     const targetId = dragOverWorkspaceId.value;
     const dropPosition = workspaceDropPosition.value;
-    clearWorkspaceLongPress(drag);
     workspacePointerDrag.value = null;
     draggedWorkspaceId.value = "";
     dragOverWorkspaceId.value = "";
     workspaceDropPosition.value = null;
-    if (!drag.dragging) {
-      if (drag.cancelled) suppressWorkspaceClick(drag.sourceId);
-      return;
-    }
+    if (!drag.dragging) return;
 
     event.preventDefault();
     suppressWorkspaceClick(drag.sourceId);
@@ -181,9 +292,12 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
   }
 
   function cancelWorkspacePointerDrag(event: PointerEvent) {
+    if (sessionPointerDrag.value) {
+      cancelSessionPointerDrag(event);
+      return;
+    }
     const drag = workspacePointerDrag.value;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    clearWorkspaceLongPress(drag);
     workspacePointerDrag.value = null;
     draggedWorkspaceId.value = "";
     dragOverWorkspaceId.value = "";
@@ -225,6 +339,14 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     }
   }
 
+  async function editWorkspace(workspace: Workspace) {
+    workspaceMenuId.value = "";
+    const saved = await editWorkspaceDialogRef.value?.edit(workspace);
+    if (saved) {
+      workspaces.value = await listWorkspaces();
+    }
+  }
+
   async function addWorkspace() {
     const root = await selectWorkspaceFolder();
     if (!root) return;
@@ -244,6 +366,15 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
       await openWorkspaceFolderCommand(workspace.id);
     } catch (error) {
       console.error("open workspace folder failed:", error);
+    }
+  }
+
+  async function openWorkspaceInTerminal(workspace: Workspace) {
+    workspaceMenuId.value = "";
+    try {
+      await openWorkspaceInTerminalCommand(workspace.id);
+    } catch (error) {
+      console.error("open workspace in terminal failed:", error);
     }
   }
 
@@ -283,6 +414,9 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     dragOverWorkspaceId,
     workspaceDropPosition,
     workspacePointerDrag,
+    draggedSessionId,
+    sessionDropWorkspaceId,
+    sessionDragGhost,
     pinnedWorkspaces,
     regularWorkspaces,
     workspaceNavigationSections,
@@ -291,15 +425,18 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     toggleWorkspaceMenu,
     handleWorkspaceClick,
     startWorkspacePointerDrag,
+    startSessionPointerDrag,
+    consumeSuppressedSessionClick,
     moveWorkspacePointerDrag,
     finishWorkspacePointerDrag,
     cancelWorkspacePointerDrag,
     toggleWorkspacePinned,
+    editWorkspace,
     addWorkspace,
     createWorkspaceConversation,
     openWorkspaceFolder,
+    openWorkspaceInTerminal,
     archiveWorkspace,
     removeWorkspace,
-    clearWorkspaceLongPress,
   };
 }

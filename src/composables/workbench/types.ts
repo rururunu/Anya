@@ -13,13 +13,31 @@ export type PendingInteraction =
   | { kind: "path_permission"; value: PathPermissionSession }
   | { kind: "tool_approval"; value: ToolApprovalSession };
 
-/** Tracks a pointer-based long-press drag used to reorder workspaces. */
+/** Tracks a pointer-based drag used to reorder workspaces. */
 export type WorkspacePointerDrag = {
   pointerId: number;
   sourceId: string;
   startX: number;
   startY: number;
   dragging: boolean;
-  cancelled: boolean;
-  longPressTimer: ReturnType<typeof setTimeout> | null;
+};
+
+/** Tracks a pointer-based drag used to move a conversation between workspaces. */
+export type SessionPointerDrag = {
+  pointerId: number;
+  sessionId: string;
+  sourceWorkspaceId: string | null;
+  preview: string;
+  startX: number;
+  startY: number;
+  x: number;
+  y: number;
+  dragging: boolean;
+};
+
+/** Floating preview that follows the pointer while a conversation is dragged. */
+export type SessionDragGhost = {
+  x: number;
+  y: number;
+  title: string;
 };

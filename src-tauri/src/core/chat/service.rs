@@ -7,7 +7,9 @@ use crate::core::chat::compact;
 use crate::core::chat::conversation_manager::{create_message, ConversationManager};
 use crate::core::chat::error::ChatError;
 use crate::core::chat::preferences::SendPreferences;
-use crate::core::chat::prompt::{PromptBuildInput, PromptBuilder, PromptPreferences};
+use crate::core::chat::prompt::{
+    ImageModePolicy, PromptBuildInput, PromptBuilder, PromptPreferences,
+};
 use crate::core::chat::session_origin::{shared_session_origin_store, RequestOrigin};
 use crate::core::context::ContextResolver;
 use crate::core::event::{BusEvent, EventBus, PlanModeSource};
@@ -406,7 +408,7 @@ impl ChatService {
             }
         } else {
             match chat_mode {
-                ChatMode::Ask => {
+                ChatMode::Ask | ChatMode::Image => {
                     if plan_was_active {
                         plan_store.set_active(&session_id, false);
                         self.emit_plan_mode_changed(&session_id, false, PlanModeSource::Manual);
@@ -441,6 +443,27 @@ impl ChatService {
         }
         let plan_mode = plan_store.is_active(&session_id);
 
+        let image_mode_options = if chat_mode == ChatMode::Image {
+            let incoming = overrides.image_gen.clone().unwrap_or_default();
+            Some(crate::core::tools::image_mode::ImageModeOptions {
+                size: crate::core::ai::image_gen::normalize_size(
+                    incoming.size.as_deref().unwrap_or("1024x1024"),
+                ),
+                quality: crate::core::ai::image_gen::normalize_quality(
+                    incoming.quality.as_deref().unwrap_or("auto"),
+                ),
+                n: crate::core::ai::image_gen::normalize_count(u64::from(incoming.n.unwrap_or(1))),
+                style_prompt: incoming.style_prompt.unwrap_or_default(),
+                reference_images: crate::core::ai::image_gen::merge_reference_sources(
+                    &user_message.content,
+                    incoming.example_image.as_deref(),
+                ),
+            })
+        } else {
+            None
+        };
+        crate::core::tools::image_mode::set_image_mode(&session_id, image_mode_options.clone());
+
         let prompt_preferences = PromptPreferences {
             app_language: preferences.app_language,
             reasoning_language: preferences.reasoning_language,
@@ -448,6 +471,7 @@ impl ChatService {
             minimal_coding,
             plan_mode,
             companion_origin: shared_session_origin_store().is_companion(&session_id),
+            image_mode: image_mode_options.as_ref().map(ImageModePolicy::from),
         };
         let request = PromptBuilder::build(PromptBuildInput {
             request_id: &assistant_message.id,
@@ -476,11 +500,10 @@ impl ChatService {
                 .map(|workspace| std::path::Path::new(&workspace.root)),
         );
 
-        let tools = if chat_mode == ChatMode::Ask {
-            Arc::new(self.tools.ask_mode())
-        } else {
-            // Agent and Plan share the full registry; PlanModeStore gates writers.
-            Arc::clone(&self.tools)
+        let tools = match chat_mode {
+            ChatMode::Ask => Arc::new(self.tools.ask_mode()),
+            ChatMode::Image => Arc::new(self.tools.image_mode()),
+            ChatMode::Agent | ChatMode::Plan => Arc::clone(&self.tools),
         };
 
         // Per-conversation approval mode: register (or clear) the override for
@@ -650,6 +673,15 @@ impl ChatService {
         self.conversation.set_session_archived(session_id, archived);
     }
 
+    pub fn branch_session(
+        &self,
+        session_id: &str,
+        until_message_id: Option<&str>,
+    ) -> Result<crate::models::chat::ChatSessionSummary, String> {
+        self.conversation
+            .branch_session(session_id, until_message_id)
+    }
+
     pub fn context_usage(
         &self,
         app: &tauri::AppHandle,
@@ -658,7 +690,6 @@ impl ChatService {
         context: Option<crate::core::runtime::RequestContext>,
         model_id: Option<String>,
     ) -> Result<crate::models::chat::ContextUsageResponse, ChatError> {
-        use crate::core::chat::compact::measure_context_usage;
         use crate::core::chat::model_context::effective_context_window;
         use crate::services::settings_store::get_settings;
 
@@ -685,20 +716,146 @@ impl ChatService {
             .map(str::trim)
             .filter(|model| !model.is_empty())
             .map(str::to_string)
-            .or_else(|| settings.map(|settings| settings.chat_model))
+            .or_else(|| {
+                settings
+                    .as_ref()
+                    .map(|settings| settings.chat_model.clone())
+            })
             .unwrap_or_default();
         let context_window = effective_context_window(large_context, &model);
-        let measure =
-            measure_context_usage(&history, &ctx, draft_message.as_deref(), context_window);
+        let extras = self.context_usage_extras(
+            session_id.as_deref(),
+            &history,
+            &ctx,
+            draft_message.as_deref(),
+            &settings,
+        );
+        let measure = compact::measure_context_usage_with(
+            &history,
+            &ctx,
+            draft_message.as_deref(),
+            context_window,
+            extras,
+        );
 
         Ok(crate::models::chat::ContextUsageResponse {
             usage_ratio: measure.usage_ratio,
             estimated_tokens: measure.estimated_tokens,
             context_window_tokens: context_window,
             system_prompt_tokens: measure.system_prompt_tokens,
+            environment_tokens: measure.environment_tokens,
             tools_tokens: measure.tools_tokens,
+            rules_tokens: measure.rules_tokens,
+            memories_tokens: measure.memories_tokens,
+            skills_tokens: measure.skills_tokens,
+            mcp_tokens: measure.mcp_tokens,
+            subagent_tokens: measure.subagent_tokens,
+            summarized_tokens: measure.summarized_tokens,
             message_tokens: measure.message_tokens,
         })
+    }
+
+    fn context_usage_extras(
+        &self,
+        session_id: Option<&str>,
+        history: &[ChatMessage],
+        ctx: &crate::core::runtime::RequestContext,
+        draft_message: Option<&str>,
+        settings: &Option<crate::models::settings::AppSettings>,
+    ) -> compact::ContextUsageExtras {
+        use crate::core::chat::limits::{MEMORIES_MAX_CHARS, RULES_MAX_CHARS};
+        use crate::core::chat::prompts::{
+            COMPANION_ORIGIN_PROMPT, IMAGE_MODE_PROMPT, MINIMAL_CODING_PROMPT,
+            MULTI_MODEL_COLLABORATION_PROMPT, PLAN_MODE_PROMPT,
+        };
+        use crate::core::rules::RuleEngine;
+        use crate::core::tools::plan_mode::shared_plan_mode_store;
+
+        let workspace_root = ctx
+            .workspace
+            .as_ref()
+            .map(|workspace| std::path::PathBuf::from(&workspace.root));
+        let last_user = history
+            .iter()
+            .rev()
+            .find(|message| message.role == Role::User)
+            .map(|message| message.content.as_str())
+            .unwrap_or("");
+        let recall_text = draft_message
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .unwrap_or(last_user);
+        let is_new_session = history
+            .iter()
+            .filter(|message| matches!(message.role, Role::User))
+            .count()
+            <= 1;
+        let task_rules =
+            RuleEngine::prepare_task(recall_text, workspace_root.as_deref(), is_new_session);
+
+        let session_id = session_id.unwrap_or("");
+        let plan_mode = !session_id.is_empty() && shared_plan_mode_store().is_active(session_id);
+        let companion_origin =
+            !session_id.is_empty() && shared_session_origin_store().is_companion(session_id);
+        let collaboration_models = settings
+            .as_ref()
+            .map(|settings| settings.collaboration_models.as_slice())
+            .unwrap_or(&[]);
+        let minimal_coding = settings
+            .as_ref()
+            .map(|settings| settings.minimal_coding)
+            .unwrap_or(false);
+
+        let mut policy_suffix_tokens = 0;
+        if companion_origin {
+            policy_suffix_tokens += compact::estimate_tokens(COMPANION_ORIGIN_PROMPT);
+        }
+        if !collaboration_models.is_empty() {
+            let list =
+                crate::core::ai::model_ref::format_collaboration_prompt_ids(collaboration_models);
+            let content = MULTI_MODEL_COLLABORATION_PROMPT.replace("{{MODELS}}", &list);
+            policy_suffix_tokens += compact::estimate_tokens(&content);
+        }
+        if minimal_coding {
+            policy_suffix_tokens += compact::estimate_tokens(MINIMAL_CODING_PROMPT);
+        }
+        if plan_mode {
+            policy_suffix_tokens += compact::estimate_tokens(PLAN_MODE_PROMPT);
+        }
+        if crate::core::tools::image_mode::is_image_mode(session_id) {
+            policy_suffix_tokens += compact::estimate_tokens(IMAGE_MODE_PROMPT);
+        }
+
+        let (tool_definition_tokens, mut skills_tokens, mut mcp_tokens, subagent_tokens) =
+            estimate_tool_schema_groups(self.tools.registry().as_ref());
+        let preferred = compact::estimate_prompt_block(
+            task_rules.preferred_resources.as_deref(),
+            RULES_MAX_CHARS,
+        );
+        if preferred > 0 {
+            let block = task_rules.preferred_resources.as_deref().unwrap_or("");
+            if block.contains("skill:") {
+                skills_tokens += preferred;
+            } else {
+                mcp_tokens += preferred;
+            }
+        }
+
+        compact::ContextUsageExtras {
+            rules_tokens: compact::estimate_prompt_block(
+                task_rules.project_rules.as_deref(),
+                RULES_MAX_CHARS,
+            ),
+            memories_tokens: compact::estimate_prompt_block(
+                task_rules.recalled_memories.as_deref(),
+                MEMORIES_MAX_CHARS,
+            ),
+            skills_tokens,
+            mcp_tokens,
+            subagent_tokens,
+            tool_definition_tokens,
+            policy_suffix_tokens,
+        }
     }
 
     pub fn environment_context(&self) -> crate::core::runtime::RequestContext {
@@ -757,4 +914,32 @@ impl ChatService {
             source,
         });
     }
+}
+
+fn estimate_tool_schema_groups(
+    registry: &crate::core::tools::ToolRegistry,
+) -> (usize, usize, usize, usize) {
+    let mut definitions = 0;
+    let mut skills = 0;
+    let mut mcp = 0;
+    let mut subagents = 0;
+    for name in registry.names() {
+        let Some(tool) = registry.get(&name) else {
+            continue;
+        };
+        if !tool.available() {
+            continue;
+        }
+        let tokens = compact::estimate_tokens(&tool.schema().to_string());
+        if name.starts_with("mcp__") {
+            mcp += tokens;
+        } else if crate::core::tools::agent::is_subagent_tool(&name) {
+            subagents += tokens;
+        } else if crate::core::tools::skills::is_skill_tool(&name) {
+            skills += tokens;
+        } else {
+            definitions += tokens;
+        }
+    }
+    (definitions, skills, mcp, subagents)
 }

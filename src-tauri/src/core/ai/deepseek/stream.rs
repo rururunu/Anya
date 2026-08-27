@@ -552,8 +552,13 @@ async fn read_responses_sse_stream(
                 }
             }
 
-            let tick =
-                apply_responses_event(&parsed, &mut content, &mut reasoning, &mut tool_calls, &mut outcome);
+            let tick = apply_responses_event(
+                &parsed,
+                &mut content,
+                &mut reasoning,
+                &mut tool_calls,
+                &mut outcome,
+            );
             if let Some(message) = tick.error {
                 return Err(ProviderError::message(message));
             }
@@ -579,9 +584,7 @@ async fn read_responses_sse_stream(
                     .await;
             }
             if !tick.reasoning_delta.is_empty() {
-                let _ = tx
-                    .send(StreamEvent::Reasoning(tick.reasoning_delta))
-                    .await;
+                let _ = tx.send(StreamEvent::Reasoning(tick.reasoning_delta)).await;
             }
             if !tick.content_delta.is_empty() {
                 let _ = tx.send(StreamEvent::Delta(tick.content_delta)).await;
@@ -712,9 +715,7 @@ async fn read_anthropic_sse_stream(
                     .await;
             }
             if !tick.reasoning_delta.is_empty() {
-                let _ = tx
-                    .send(StreamEvent::Reasoning(tick.reasoning_delta))
-                    .await;
+                let _ = tx.send(StreamEvent::Reasoning(tick.reasoning_delta)).await;
             }
             if !tick.content_delta.is_empty() {
                 let _ = tx.send(StreamEvent::Delta(tick.content_delta)).await;
@@ -973,7 +974,11 @@ fn apply_responses_event(
             let index = json_index(event, "output_index");
             if let Some(delta) = event.get("delta").and_then(Value::as_str) {
                 if !delta.is_empty() {
-                    tool_calls.entry(index).or_default().arguments.push_str(delta);
+                    tool_calls
+                        .entry(index)
+                        .or_default()
+                        .arguments
+                        .push_str(delta);
                     outcome.emitted = true;
                 }
             }
@@ -1051,10 +1056,7 @@ fn apply_responses_output_item(
             {
                 entry.id = id.to_string();
             }
-            if let Some(name) = item
-                .get("name")
-                .and_then(Value::as_str)
-            {
+            if let Some(name) = item.get("name").and_then(Value::as_str) {
                 entry.set_name(name);
             }
             if let Some(args) = item.get("arguments").and_then(Value::as_str) {
@@ -1391,7 +1393,14 @@ mod responses_event_tests {
     use super::*;
     use serde_json::json;
 
-    fn apply(event: Value) -> (String, String, StreamReadOutcome, HashMap<usize, ToolCallBuilder>) {
+    fn apply(
+        event: Value,
+    ) -> (
+        String,
+        String,
+        StreamReadOutcome,
+        HashMap<usize, ToolCallBuilder>,
+    ) {
         let mut content = String::new();
         let mut reasoning = String::new();
         let mut tool_calls = HashMap::new();

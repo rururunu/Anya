@@ -96,6 +96,24 @@
               <span class="added">+{{ activeChange.added }}</span>
               <span class="removed">-{{ activeChange.removed }}</span>
             </span>
+            <button
+              type="button"
+              class="icon-button"
+              :aria-label="tr(settingStore.language, 'diff.openFile')"
+              :title="tr(settingStore.language, 'diff.openFile')"
+              @click="openActiveFile"
+            >
+              <ExternalLink :size="14" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="icon-button"
+              :aria-label="tr(settingStore.language, 'diff.showInFolder')"
+              :title="tr(settingStore.language, 'diff.showInFolder')"
+              @click="revealActiveFile"
+            >
+              <FolderOpen :size="14" aria-hidden="true" />
+            </button>
           </div>
           <div class="diff-view-actions">
             <div
@@ -172,12 +190,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { Check, Columns2, Copy, FileDiff, Rows3, TextWrap, X } from "@lucide/vue";
+import { computed, nextTick, ref, watch } from "vue";
+import {
+  Check,
+  Columns2,
+  Copy,
+  ExternalLink,
+  FileDiff,
+  FolderOpen,
+  Rows3,
+  TextWrap,
+  X,
+} from "@lucide/vue";
 import CodeDiffEditor from "@/components/chat/CodeDiffEditor.vue";
 import { copyText } from "@/services/clipboard";
 import { extractCodeChanges } from "@/services/chat/codeChanges";
 import { codeLanguageForPath, type CodeLanguageInfo } from "@/services/chat/codeLanguage";
+import { fileBasename, fileParentDir } from "@/services/chat/toolDiff";
+import { openInDefaultApp, revealInExplorer } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import type { ChatMessage } from "@/types/chat";
@@ -185,7 +215,13 @@ import type { ChatMessage } from "@/types/chat";
 type DiffViewMode = "unified" | "split";
 type ChangeEntry = ReturnType<typeof extractCodeChanges>[number] & { language: CodeLanguageInfo };
 
-const props = defineProps<{ messages: ChatMessage[]; width: number; embedded?: boolean }>();
+const props = defineProps<{
+  messages: ChatMessage[];
+  width: number;
+  embedded?: boolean;
+  focusPath?: string;
+  focusAt?: number;
+}>();
 const settingStore = useSettingStore();
 const activeId = ref("");
 const closedIds = ref<Set<string>>(new Set());
@@ -245,6 +281,44 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => [props.focusPath, props.focusAt] as const,
+  ([path]) => {
+    if (!path) return;
+    focusChange(path);
+  },
+  { immediate: true },
+);
+
+watch(activeId, () => {
+  void nextTick(() => {
+    const tabs = changeFilesRef.value;
+    const active = tabs?.querySelector<HTMLElement>(".change-file-shell.active");
+    active?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  });
+});
+
+function normalizeChangePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function focusChange(path: string) {
+  const needle = normalizeChangePath(path);
+  const match =
+    allChanges.value.find((change) => normalizeChangePath(change.path) === needle) ??
+    allChanges.value.find((change) => {
+      const current = normalizeChangePath(change.path);
+      return current.endsWith(`/${needle}`) || needle.endsWith(`/${current}`);
+    });
+  if (!match) return;
+  if (closedIds.value.has(match.id)) {
+    const next = new Set(closedIds.value);
+    next.delete(match.id);
+    closedIds.value = next;
+  }
+  activeId.value = match.id;
+}
+
 function closeChange(id: string) {
   const next = new Set(closedIds.value);
   next.add(id);
@@ -269,12 +343,28 @@ function toggleLineWrap() {
   localStorage.setItem("anya.diffWrapLines", String(wrapLines.value));
 }
 function fileName(path: string) {
-  return path.replace(/\\/g, "/").split("/").pop() || path;
+  return fileBasename(path);
 }
 function parentPath(path: string) {
-  const normalized = path.replace(/\\/g, "/");
-  const separator = normalized.lastIndexOf("/");
-  return separator > 0 ? normalized.slice(0, separator) : normalized;
+  return fileParentDir(path);
+}
+async function openActiveFile() {
+  const path = activeChange.value?.path;
+  if (!path) return;
+  try {
+    await openInDefaultApp(path);
+  } catch {
+    /* ignore */
+  }
+}
+async function revealActiveFile() {
+  const path = activeChange.value?.path;
+  if (!path) return;
+  try {
+    await revealInExplorer(path);
+  } catch {
+    /* ignore */
+  }
 }
 async function copyActiveDiff() {
   const change = activeChange.value;

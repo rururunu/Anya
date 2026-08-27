@@ -21,7 +21,7 @@ import { useUpdaterStore } from "@/stores/updater";
 import type { Workspace } from "@/commands/workspace";
 import { DEFAULT_SETTINGS_CATEGORY, type CategoryId } from "@/types/setting";
 import type { ChatSessionSummary } from "@/types/chat";
-import type { PendingInteraction, WorkspacePointerDrag } from "./types";
+import type { PendingInteraction } from "./types";
 
 export interface UseWorkbenchLifecycleOptions {
   appWindow: WebviewWindow;
@@ -61,8 +61,6 @@ export interface UseWorkbenchLifecycleOptions {
   sessionDisplayName: (sessionId: string) => string;
   updateReviewWidth: () => void;
   handleWorkbenchHotkey: (event: KeyboardEvent) => void;
-  workspacePointerDrag: Ref<WorkspacePointerDrag | null>;
-  clearWorkspaceLongPress: (drag: WorkspacePointerDrag) => void;
   moveWorkspacePointerDrag: (event: PointerEvent) => void;
   finishWorkspacePointerDrag: (event: PointerEvent) => void;
   cancelWorkspacePointerDrag: (event: PointerEvent) => void;
@@ -101,8 +99,6 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     sessionDisplayName,
     updateReviewWidth,
     handleWorkbenchHotkey,
-    workspacePointerDrag,
-    clearWorkspaceLongPress,
     moveWorkspacePointerDrag,
     finishWorkspacePointerDrag,
     cancelWorkspacePointerDrag,
@@ -290,7 +286,6 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
 
   onUnmounted(() => {
     useUpdaterStore().stopPolling();
-    if (workspacePointerDrag.value) clearWorkspaceLongPress(workspacePointerDrag.value);
     for (const unlisten of unlisteners) unlisten();
     globalThis.removeEventListener("resize", updateReviewWidth);
     globalThis.removeEventListener("keydown", handleWorkbenchHotkey);

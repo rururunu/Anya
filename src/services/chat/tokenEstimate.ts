@@ -60,3 +60,23 @@ export function promptCacheHitPercent(inputTokens: number, cacheReadTokens: numb
   if (prompt <= 0) return null;
   return Math.round((cached / prompt) * 100);
 }
+
+export function promptTokenTotal(inputTokens: number, cacheReadTokens: number): number {
+  return (
+    Math.max(0, Number.isFinite(inputTokens) ? inputTokens : 0) +
+    Math.max(0, Number.isFinite(cacheReadTokens) ? cacheReadTokens : 0)
+  );
+}
+
+export function accumulateCacheUsage<
+  T extends { inputTokens: number; cacheReadTokens: number; model?: string },
+>(current: T | undefined, delta: T): T {
+  return {
+    ...current,
+    ...delta,
+    inputTokens: Math.max(0, current?.inputTokens ?? 0) + Math.max(0, delta.inputTokens),
+    cacheReadTokens:
+      Math.max(0, current?.cacheReadTokens ?? 0) + Math.max(0, delta.cacheReadTokens),
+    model: delta.model ?? current?.model,
+  };
+}

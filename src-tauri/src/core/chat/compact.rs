@@ -232,13 +232,39 @@ pub async fn prepare_history_for_prompt(
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ContextUsageExtras {
+    pub rules_tokens: usize,
+    pub memories_tokens: usize,
+    pub skills_tokens: usize,
+    pub mcp_tokens: usize,
+    pub subagent_tokens: usize,
+    pub tool_definition_tokens: usize,
+    pub policy_suffix_tokens: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ContextUsageMeasure {
     pub estimated_tokens: usize,
     pub usage_ratio: f32,
     pub system_prompt_tokens: usize,
+    pub environment_tokens: usize,
     pub tools_tokens: usize,
+    pub rules_tokens: usize,
+    pub memories_tokens: usize,
+    pub skills_tokens: usize,
+    pub mcp_tokens: usize,
+    pub subagent_tokens: usize,
+    pub summarized_tokens: usize,
     pub message_tokens: usize,
+}
+
+/// Estimate a capped system-prompt block the same way prompt assembly truncates it.
+pub fn estimate_prompt_block(text: Option<&str>, max_chars: usize) -> usize {
+    let Some(content) = text.map(str::trim).filter(|content| !content.is_empty()) else {
+        return 0;
+    };
+    estimate_tokens(&truncate_chars(content, max_chars))
 }
 
 /// True when this row is an auto-compact summary (prompt slicing only; not shown in the thread).
@@ -262,16 +288,38 @@ pub fn measure_context_usage(
     draft_message: Option<&str>,
     context_window: usize,
 ) -> ContextUsageMeasure {
+    measure_context_usage_with(
+        history,
+        context,
+        draft_message,
+        context_window,
+        ContextUsageExtras::default(),
+    )
+}
+
+pub fn measure_context_usage_with(
+    history: &[ChatMessage],
+    context: &RequestContext,
+    draft_message: Option<&str>,
+    context_window: usize,
+    extras: ContextUsageExtras,
+) -> ContextUsageMeasure {
     let history = history_from_last_summary(history);
-    let system_prompt_tokens = estimate_tokens(SYSTEM_PROMPT);
-    let tools_tokens = estimate_context_tokens(context);
+    let system_prompt_tokens = estimate_tokens(SYSTEM_PROMPT) + extras.policy_suffix_tokens;
+    let environment_tokens = estimate_context_tokens(context);
+    let mut summarized_tokens = 0;
     let mut message_tokens = 0;
 
     for message in history {
         if !message_has_estimable_tokens(message) {
             continue;
         }
-        message_tokens += estimate_message_tokens(message);
+        let tokens = estimate_message_tokens(message);
+        if is_compaction_summary(message) {
+            summarized_tokens += tokens;
+        } else {
+            message_tokens += tokens;
+        }
     }
 
     if let Some(draft) = draft_message.map(str::trim).filter(|text| !text.is_empty()) {
@@ -285,13 +333,29 @@ pub fn measure_context_usage(
         }
     }
 
-    let estimated = system_prompt_tokens + tools_tokens + message_tokens;
+    let estimated = system_prompt_tokens
+        + environment_tokens
+        + extras.tool_definition_tokens
+        + extras.rules_tokens
+        + extras.memories_tokens
+        + extras.skills_tokens
+        + extras.mcp_tokens
+        + extras.subagent_tokens
+        + summarized_tokens
+        + message_tokens;
     let usage_ratio = estimated as f32 / context_window.max(1) as f32;
     ContextUsageMeasure {
         estimated_tokens: estimated,
         usage_ratio,
         system_prompt_tokens,
-        tools_tokens,
+        environment_tokens,
+        tools_tokens: extras.tool_definition_tokens,
+        rules_tokens: extras.rules_tokens,
+        memories_tokens: extras.memories_tokens,
+        skills_tokens: extras.skills_tokens,
+        mcp_tokens: extras.mcp_tokens,
+        subagent_tokens: extras.subagent_tokens,
+        summarized_tokens,
         message_tokens,
     }
 }
@@ -924,5 +988,38 @@ mod tests {
             raw_all += estimate_message_tokens(message);
         }
         assert!(with_fold.estimated_tokens < raw_all);
+        assert!(with_fold.summarized_tokens > 0);
+        assert!(with_fold.message_tokens > 0);
+        assert_eq!(
+            with_fold.summarized_tokens + with_fold.message_tokens,
+            without_old.summarized_tokens + without_old.message_tokens
+        );
+    }
+
+    #[test]
+    fn usage_meter_includes_prompt_extras() {
+        let history = vec![user_msg("u1", "hello")];
+        let base = measure_context_usage(&history, &RequestContext::default(), None, 64_000);
+        let extras = ContextUsageExtras {
+            rules_tokens: 40,
+            memories_tokens: 12,
+            skills_tokens: 8,
+            mcp_tokens: 6,
+            subagent_tokens: 4,
+            tool_definition_tokens: 100,
+            policy_suffix_tokens: 20,
+        };
+        let with_extras =
+            measure_context_usage_with(&history, &RequestContext::default(), None, 64_000, extras);
+        assert_eq!(
+            with_extras.estimated_tokens,
+            base.estimated_tokens + 40 + 12 + 8 + 6 + 4 + 100 + 20
+        );
+        assert_eq!(with_extras.tools_tokens, 100);
+        assert_eq!(with_extras.rules_tokens, 40);
+        assert_eq!(
+            with_extras.system_prompt_tokens,
+            base.system_prompt_tokens + 20
+        );
     }
 }

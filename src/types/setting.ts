@@ -100,11 +100,11 @@ export interface SemanticSearchConfig {
 
 export type ToolApprovalMode = "ask" | "auto" | "alwaysAllow";
 
-/** Chat interaction mode: Agent can mutate; Ask exposes read-only tools only. */
-export type ChatMode = "agent" | "ask" | "plan";
+/** Chat interaction mode: Agent can mutate; Ask is read-only; Plan drafts first; Image always generates. */
+export type ChatMode = "agent" | "ask" | "plan" | "image";
 
 export function normalizeChatMode(value: unknown): ChatMode {
-  if (value === "ask" || value === "plan" || value === "agent") {
+  if (value === "ask" || value === "plan" || value === "agent" || value === "image") {
     return value;
   }
   return "agent";
@@ -114,6 +114,7 @@ export function normalizeChatMode(value: unknown): ChatMode {
 export type CategoryId =
   | "appearance"
   | "ai"
+  | "image"
   | "memory"
   | "search"
   | "agent"
@@ -187,6 +188,15 @@ export interface CustomProviderConfig {
   modelProtocols?: Record<string, ModelWireProtocol>;
 }
 
+/** User-defined image style template (Settings → Image). */
+export interface ImageStyleTemplate {
+  id: string;
+  name: string;
+  prompt: string;
+  /** Optional data URL used as an image-to-image reference. */
+  exampleImage?: string;
+}
+
 export interface GeminiOAuthSettings {
   clientId: string;
   clientSecret: string;
@@ -248,6 +258,10 @@ export interface AppSettings {
   chatModelProvider: string;
   multimodalModel: string;
   multimodalModelProvider: string;
+  imageModel: string;
+  imageModelProvider: string;
+  imageProviders: CustomProviderConfig[];
+  imageStyleTemplates: ImageStyleTemplate[];
   multimodalSplitAnalysis: boolean;
   /** Use 1M-token context window for compaction / turn budgets. */
   largeContextEnabled: boolean;
@@ -319,6 +333,10 @@ export interface AppSettingsPatch {
   chatModelProvider?: string;
   multimodalModel?: string;
   multimodalModelProvider?: string;
+  imageModel?: string;
+  imageModelProvider?: string;
+  imageProviders?: CustomProviderConfig[];
+  imageStyleTemplates?: ImageStyleTemplate[];
   multimodalSplitAnalysis?: boolean;
   largeContextEnabled?: boolean;
   reasoningEffort?: ReasoningEffort;

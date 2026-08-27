@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.12                                            |
+| **Version** | v0.2.13                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -28,7 +28,7 @@ to locate code paths and reason about change impact.
 - Process / window topology
 - Layered module boundaries and allowed dependencies
 - Primary chat request path (UI → domain → provider → tools → UI events)
-- Agent turn orchestration and policy hooks (Ask / Agent / Plan gate)
+- Agent turn orchestration and policy hooks (Ask / Agent / Plan / Image gates)
 - Persistence (SQLite, journal, work timeline)
 - Frontend stream projection and session model
 - Extension points (providers, tools, skills, MCP, RAG embeddings)
@@ -141,6 +141,8 @@ UI → composables → stores → services → services/ipc → Tauri
 ```
 
 `stores` and `services` must not import `components` / `layouts` / `pages`.
+Chat image helpers (`saveChatImage`, `localImageSrc`, `imageGenMode`, …) live under
+`services/chat/` for that reason — UI cards only consume them.
 
 ### 3.3 Backend dependency rule
 
@@ -298,28 +300,32 @@ sequenceDiagram
 
 ### 5.1 Rust domain (`src-tauri/src/core`)
 
-| Module              | Path                                       | Role                                                                                           |
-| ------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| Chat service        | `core/chat/service.rs`                     | Entry: persist messages, resolve context/model, start or soft-inject                           |
-| Stream manager      | `core/chat/stream.rs`                      | Background task, cancel, stream aggregation, UI events, timeline text                          |
-| Agent runner        | `core/chat/agent.rs`                       | **Primary** model↔tools loop                                                                   |
-| Agent loop policies | `core/chat/agent_loop/`                    | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure                 |
-| Conversation store  | `core/chat/conversation_manager.rs`        | In-memory sessions + async SQLite; work timeline                                               |
-| DB / journal        | `core/chat/db.rs`, `core/chat/journal.rs`  | Schema, save/load, crash recovery                                                              |
-| Prompts             | `core/chat/prompts/`, `prompts/*.md`       | System / tools / policies / skills markdown                                                    |
-| Agent runtime       | `core/agent/runtime/`                      | Run state machine, cancel, soft-inject queue, debug                                            |
-| AI providers        | `core/ai/`                                 | Provider registry, model capabilities, protocol fallback, DeepSeek, Gemini, multimodal helpers |
-| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs` | Optional retrieve-then-rerank; API or local ONNX                                               |
-| Tools               | `core/tools/`                              | Registry, approval, plan gate, files, shell, skills, agent tools                               |
-| Workspace index     | `core/tools/workspace_index.rs`            | Chunked keyword index under `.anya/index` (incremental JSONL)                                  |
-| Plan mode           | `core/tools/plan_mode.rs`                  | Session write gate; Agent auto-enter heuristic for complex tasks                               |
-| Context             | `core/context/`                            | IDE, selection, clipboard, environment, Office hints                                           |
-| Checkpoint          | `core/checkpoint/`                         | Undo / review of applied file changes                                                          |
-| Token               | `core/token/`                              | Accounting (incl. cache-read / reasoning tokens), usage persistence                            |
-| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                                     |
-| Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                               |
-| Event bus           | `core/event/`                              | Domain events                                                                                  |
-| Remote gateway      | `core/remote/`                             | WS `/remote/v1`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`                    |
+| Module              | Path                                       | Role                                                                                          |
+| ------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Chat service        | `core/chat/service.rs`                     | Entry: persist messages, resolve context/model, start or soft-inject                          |
+| Stream manager      | `core/chat/stream.rs`                      | Background task, cancel, stream aggregation, UI events, timeline text                         |
+| Agent runner        | `core/chat/agent.rs`                       | **Primary** model↔tools loop                                                                  |
+| Agent loop policies | `core/chat/agent_loop/`                    | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure                |
+| Conversation store  | `core/chat/conversation_manager/`          | Façade + `messages` / `activity` / `session` / `branch` / `helpers`; SQLite + work timeline   |
+| DB / journal        | `core/chat/db.rs`, `core/chat/journal.rs`  | Schema, save/load, crash recovery                                                             |
+| Prompts (markdown)  | `core/chat/prompts/`, `prompts/*.md`       | System / tools / policies / skills markdown (`include_str!`)                                  |
+| Prompt builder      | `core/chat/prompt/`                        | Slot assembly (`PromptBuilder` + `slots`) for KV-cache-stable prefixes                        |
+| Agent runtime       | `core/agent/runtime/`                      | Run state machine, cancel, soft-inject queue, debug                                           |
+| AI providers        | `core/ai/`                                 | Chat provider registry, DeepSeek/Gemini, multimodal; **Images API** is separate (`image_gen`) |
+| Images API          | `core/ai/image_gen.rs`                     | `POST /v1/images/generations` / `edits` via Settings → Image (`image_providers`)              |
+| Image markdown      | `core/ai/image_markdown.rs`                | Extract / strip `![edit-region]` refs shared by chat, vision, and Images                      |
+| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs` | Optional retrieve-then-rerank; API or local ONNX                                              |
+| Tools               | `core/tools/`                              | Registry, approval, plan/image mode gates, files, shell, skills, agent tools                  |
+| Workspace index     | `core/tools/workspace_index.rs`            | Chunked keyword index under `.anya/index` (incremental JSONL); skips `.anya` via `fs_skip`    |
+| Plan mode           | `core/tools/plan_mode.rs`                  | Session write gate; Agent auto-enter heuristic for complex tasks                              |
+| Image mode          | `core/tools/image_mode.rs`                 | Per-session toolbar options for `generate_image`; tool whitelist + challenge                  |
+| Context             | `core/context/`                            | IDE, selection, clipboard, environment, Office hints                                          |
+| Checkpoint          | `core/checkpoint/`                         | Undo / review of applied file changes                                                         |
+| Token               | `core/token/`                              | Accounting (incl. cache-read / reasoning tokens), usage persistence                           |
+| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                                    |
+| Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                              |
+| Event bus           | `core/event/`                              | Domain events                                                                                 |
+| Remote gateway      | `core/remote/`                             | WS `/remote/v1`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`                   |
 
 ### 5.2 Naming: three “runtime” modules
 
@@ -331,14 +337,17 @@ sequenceDiagram
 
 ### 5.3 Frontend (`src/`)
 
-| Area                        | Path                                                           | Role                                                        |
-| --------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
-| Overlay / Workbench layouts | `layouts/Overlay.vue`, `layouts/Main.vue`                      | Window shells; workbench embeds SettingsPage                |
-| Chat UI                     | `components/chat/*`                                            | Message list, timeline, tool cards, plan approval, composer |
-| Stores                      | `stores/chat.ts`, `setting.ts`, `chatModel.ts`                 | Session messages, plan gate, tasks, settings, models        |
-| IPC                         | `services/ipc/`                                                | Typed invoke + event subscription                           |
-| Stream batching             | `services/chat/rafBatch.ts`, `composables/chat/wireChatIpc.ts` | RAF coalesce; chat IPC wiring extracted from `main.ts`      |
-| Settings pages              | `pages/Settings/`                                              | Provider / agent / MCP / skills / **RAG Search**            |
+| Area                        | Path                                                              | Role                                                                                     |
+| --------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Overlay / Workbench layouts | `layouts/Overlay.vue`, `layouts/Main.vue`                         | Window shells; workbench embeds SettingsPage                                             |
+| Chat UI                     | `components/chat/*`                                               | Message list, timeline, tool cards, plan approval, composer (`ChatInputBar` + `input/*`) |
+| Chat composables            | `composables/chat/`                                               | `wireChatIpc`, context usage, attachments, ask-user flow, generated-image paint          |
+| Chat store                  | `stores/chat.ts` (+ `chatCompose` / `chatHistory` / `chatStream`) | Pinia façade; compose cache / history merge / stream helpers in sibling modules          |
+| Other stores                | `stores/setting.ts`, `chatModel.ts`                               | Settings, model catalog                                                                  |
+| Chat services               | `services/chat/`                                                  | Image gen mode, local image src, save image, composer segments, token estimate           |
+| IPC                         | `services/ipc/`                                                   | Typed invoke + event subscription                                                        |
+| Stream batching             | `services/chat/rafBatch.ts`, `composables/chat/wireChatIpc.ts`    | RAF coalesce; chat IPC wiring extracted from `main.ts`                                   |
+| Settings pages              | `pages/Settings/`                                                 | Provider / agent / MCP / skills / **RAG Search** / **Image** providers                   |
 
 ---
 
@@ -454,16 +463,17 @@ stateDiagram-v2
 | `soft_inject`      | Merge queued user follow-ups at a safe boundary                                                       |
 | `failure`          | Consecutive / identical tool-error circuit breaker                                                    |
 
-### Ask / Agent / Plan
+### Ask / Agent / Plan / Image
 
-Enforced at **tool schema exposure**, **approval policy**, and the **plan gate** —
-not by a separate runner.
+Enforced at **tool schema exposure**, **approval policy**, the **plan gate**, and
+**image-mode** session options — not by a separate runner.
 
-| Mode      | Behavior                                                                         |
-| --------- | -------------------------------------------------------------------------------- |
-| **Ask**   | Withholds write / shell / git                                                    |
-| **Agent** | Enables writes under approval; complex requests may **auto-enter** the plan gate |
-| **Plan**  | User-selected or Agent auto-entered; write tools blocked until the user approves |
+| Mode      | Behavior                                                                                             |
+| --------- | ---------------------------------------------------------------------------------------------------- |
+| **Ask**   | Withholds write / shell / git                                                                        |
+| **Agent** | Enables writes under approval; complex requests may **auto-enter** the plan gate                     |
+| **Plan**  | User-selected or Agent auto-entered; write tools blocked until the user approves                     |
+| **Image** | Only `generate_image` is exposed; toolbar size/quality/style pinned; challenge requires a real image |
 
 ### Plan gate
 
@@ -498,6 +508,40 @@ flowchart TB
 
 The approval card is **not** an input-bar banner (avoids pushing the composer);
 steps sit alongside the code-changes summary.
+
+### Image mode
+
+Image mode is a dedicated `chat_mode` (composer chip), not a chat-provider model
+switch. Credentials and base URL come from **Settings → Image** (`image_providers`);
+chat `custom_providers` are never used for `generate_image`.
+
+```mermaid
+flowchart LR
+  UI[ImageGenToolbar] --> Compose[sessionCompose.imageGen]
+  Compose --> Send[ChatService::send]
+  Send --> Store[image_mode session options]
+  Send --> Prompt[image-mode.md + ImageModePolicy]
+  Send --> Tools[tools.image_mode whitelist]
+  Tools --> Gen[generate_image]
+  Gen --> API[Images API generations or edits]
+  API --> MD[markdown + anya-images JSON fence]
+  MD --> Card[GeneratedImageCard]
+```
+
+| Piece             | Location                                                                  |
+| ----------------- | ------------------------------------------------------------------------- |
+| Toolbar / payload | `services/chat/imageGenMode.ts` (UI `resolution` ≠ Images API `quality`)  |
+| Session options   | `core/tools/image_mode.rs`                                                |
+| Prompt            | `prompts/image-mode.md` + `prompt/slots`                                  |
+| Tool              | `core/tools/builtin/image_gen.rs`                                         |
+| HTTP adapter      | `core/ai/image_gen.rs` (blocking + `run_isolated`)                        |
+| Markdown helpers  | `core/ai/image_markdown.rs`                                               |
+| Challenge         | `agent_loop/challenge.rs` `require_image`                                 |
+| Result parsing    | `services/chat/localImageSrc.ts` (`anya-images` fence, markdown fallback) |
+| Preview / save    | `services/chat/saveChatImage.ts`, `GeneratedImageCard.vue`                |
+
+Defense in depth: `ChatService` selects `tools.image_mode()`, and
+`ToolManager::schemas_for_request` re-checks `is_image_mode(session_id)`.
 
 ### AgentRunner vs AgentRuntime
 
@@ -589,7 +633,7 @@ Resolution precedence lives in `prompts/context.md` and `core/context` providers
 ```mermaid
 flowchart TB
   Model[Model tool_calls] --> Reg[ToolRegistry]
-  Reg --> Mode{Ask / Agent / plan gate / read_only?}
+  Reg --> Mode{Ask / Agent / plan gate / image mode / read_only?}
   Mode -->|blocked| Deny[Schema omitted or denied]
   Mode -->|allowed| Appr[Approval policy]
   Appr -->|ask user| UI[ask_user / permission UI]
@@ -753,12 +797,16 @@ Companion must not grow a second Agent runtime.
 | Chat IPC                         | `commands/chat.rs`                                                               |
 | Send + context / plan gate       | `core/chat/service.rs`, `core/tools/plan_mode.rs`                                |
 | Stream lifecycle + timeline text | `core/chat/stream.rs`                                                            |
-| Work timeline persistence        | `core/chat/conversation_manager.rs`, `core/chat/db.rs`                           |
+| Work timeline persistence        | `core/chat/conversation_manager/`, `core/chat/db.rs`                             |
 | Agent loop                       | `core/chat/agent.rs`, `core/chat/agent_loop/`                                    |
 | Run shell                        | `core/agent/runtime/`                                                            |
+| Image mode / Images API          | `core/tools/image_mode.rs`, `core/ai/image_gen.rs`, `prompts/image-mode.md`      |
 | Frontend IPC + stream batch      | `src/services/ipc/`, `src/composables/chat/wireChatIpc.ts`, `src/stores/chat.ts` |
+| Chat store helpers               | `src/stores/chatCompose.ts`, `chatHistory.ts`, `chatStream.ts`                   |
+| Composer extraction              | `src/composables/chat/use{ContextUsage,ComposerAttachments,AskUserFlow}.ts`      |
 | Timeline UI                      | `src/components/chat/AgentWorkDetails.vue`                                       |
 | Plan approval card               | `src/components/chat/PlanApprovalCard.vue`, `MessageList.vue`                    |
+| Generated image UI               | `src/components/chat/GeneratedImageCard.vue`, `ImagePreviewSidebar.vue`          |
 | Embedded settings / RAG          | `pages/Settings/`, `components/settings/RagSettings.vue`                         |
 | Workbench glass                  | `services/workbench_glass.rs`, `overlay/appearance.ts`                           |
 | Remote gateway / pairing         | `core/remote/gateway.rs`, `pairing.rs`, `tunnel.rs`                              |

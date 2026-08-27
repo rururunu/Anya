@@ -28,6 +28,29 @@ pub struct PromptPreferences {
     pub plan_mode: bool,
     /// True when this turn was sent from the paired phone (Companion app).
     pub companion_origin: bool,
+    /// Inject image-mode instructions and pin generate_image arguments.
+    pub image_mode: Option<ImageModePolicy>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ImageModePolicy {
+    pub size: String,
+    pub quality: String,
+    pub n: u8,
+    pub style_prompt: String,
+    pub has_reference: bool,
+}
+
+impl From<&crate::core::tools::image_mode::ImageModeOptions> for ImageModePolicy {
+    fn from(options: &crate::core::tools::image_mode::ImageModeOptions) -> Self {
+        Self {
+            size: options.size.clone(),
+            quality: options.quality.clone(),
+            n: options.n,
+            style_prompt: options.style_prompt.clone(),
+            has_reference: !options.reference_images.is_empty(),
+        }
+    }
 }
 
 pub struct PromptBuildInput<'a> {
@@ -105,6 +128,7 @@ impl PromptBuilder {
             preferences.minimal_coding,
             preferences.plan_mode,
             preferences.companion_origin,
+            preferences.image_mode.as_ref(),
         );
 
         // [5..] History（排除 pending 的空 assistant）

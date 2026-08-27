@@ -38,6 +38,8 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
   const selectedSubagentId = ref("");
   const openedImageSources = ref<string[]>([]);
   const selectedImageSource = ref("");
+  const reviewFocusPath = ref("");
+  const reviewFocusAt = ref(0);
 
   const {
     reviewWidth,
@@ -80,6 +82,12 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     reviewView.value = view;
     reviewOpen.value = true;
     updateReviewWidth();
+  }
+
+  function openReviewFile(path: string) {
+    reviewFocusPath.value = path;
+    reviewFocusAt.value += 1;
+    openReview("diff");
   }
 
   function toggleReviewSidebar() {
@@ -156,7 +164,10 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     selectedSubagentId,
     openedImageSources,
     selectedImageSource,
+    reviewFocusPath,
+    reviewFocusAt,
     openReview,
+    openReviewFile,
     toggleReviewSidebar,
     openAgentReview,
     closeSubagent,

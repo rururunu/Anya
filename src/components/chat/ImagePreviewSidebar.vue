@@ -49,6 +49,9 @@
         <button type="button" :title="resetLabel" @click="resetView">
           <Scan :size="14" />
         </button>
+        <button type="button" :title="saveAsLabel" :disabled="saving" @click="saveAs">
+          <Download :size="14" />
+        </button>
         <button type="button" :title="copyLabel" @click="copySource">
           <Check v-if="copied" :size="14" />
           <Copy v-else :size="14" />
@@ -84,9 +87,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { Check, Copy, Image as ImageIcon, Scan, X, ZoomIn, ZoomOut } from "@lucide/vue";
+import { Check, Copy, Download, Image as ImageIcon, Scan, X, ZoomIn, ZoomOut } from "@lucide/vue";
 import { copyText } from "@/services/clipboard";
+import { resolveChatImageSrc, unwrapLocalImagePath } from "@/services/chat/localImageSrc";
+import { saveChatImage } from "@/services/chat/saveChatImage";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
 
@@ -110,6 +114,7 @@ const dragging = ref(false);
 const dragStartX = ref(0);
 const dragStartY = ref(0);
 const copied = ref(false);
+const saving = ref(false);
 let activePointerId: number | null = null;
 let copyTimer: number | undefined;
 let stageResizeObserver: ResizeObserver | undefined;
@@ -117,7 +122,7 @@ let stageResizeObserver: ResizeObserver | undefined;
 const activeSource = computed(() =>
   props.sources.includes(props.selectedSource) ? props.selectedSource : (props.sources[0] ?? ""),
 );
-const resolvedSource = computed(() => resolveSource(activeSource.value));
+const resolvedSource = computed(() => resolveChatImageSrc(activeSource.value));
 const displayName = computed(() => sourceName(activeSource.value));
 const previewLabel = computed(() => tr(settingStore.language, "image.preview"));
 const closeTabLabel = computed(() => tr(settingStore.language, "image.close"));
@@ -127,23 +132,14 @@ const resetLabel = computed(() => tr(settingStore.language, "image.fit"));
 const copyLabel = computed(() =>
   tr(settingStore.language, copied.value ? "image.copied" : "image.copySource"),
 );
+const saveAsLabel = computed(() => tr(settingStore.language, "image.saveAs"));
 const emptyLabel = computed(() => tr(settingStore.language, "image.empty"));
-
-function resolveSource(source: string) {
-  const value = source.trim();
-  if (!value || value.startsWith("data:")) return value;
-  if (value.startsWith("path:")) return convertFileSrc(value.slice(5));
-  if (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("/") || value.startsWith("\\\\")) {
-    return convertFileSrc(value);
-  }
-  return value;
-}
 
 function sourceName(source: string) {
   const value = source.trim();
   if (!value) return previewLabel.value;
   if (value.startsWith("data:")) return tr(settingStore.language, "image.pasted");
-  const clean = value.startsWith("path:") ? value.slice(5) : value;
+  const clean = unwrapLocalImagePath(value);
   return clean.split(/[\\/]/).filter(Boolean).pop() || clean;
 }
 
@@ -240,6 +236,16 @@ function scrollTabs(event: WheelEvent) {
   if (!tabs || tabs.scrollWidth <= tabs.clientWidth) return;
   event.preventDefault();
   tabs.scrollLeft += Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+}
+
+async function saveAs() {
+  if (!activeSource.value || saving.value) return;
+  saving.value = true;
+  try {
+    await saveChatImage(activeSource.value);
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function copySource() {
@@ -375,6 +381,10 @@ onUnmounted(() => {
 .image-actions button:hover {
   background: color-mix(in srgb, var(--peek-text) 7%, transparent);
   color: var(--peek-text);
+}
+.image-actions button:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 .zoom-value {
   width: 40px;

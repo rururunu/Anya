@@ -48,6 +48,8 @@ import { ChevronRight, FilePenLine, FilePlus2, FileX2 } from "@lucide/vue";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
 import type { DiffHunk, DiffLineKind } from "@/services/chat/toolDiff";
 import { fileBasename } from "@/services/chat/toolDiff";
+import { textIncludesQuery } from "@/services/chat/conversationFind";
+import { useExpandForFind } from "@/composables/chat/useConversationFind";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
 
@@ -84,6 +86,15 @@ watch(
     else if (props.startCollapsed && prev === "running" && next !== "running") {
       expanded.value = false;
     }
+  },
+);
+
+useExpandForFind(
+  (query) =>
+    textIncludesQuery(props.path, query) ||
+    props.hunk.lines.some((line) => textIncludesQuery(line.text, query)),
+  () => {
+    expanded.value = true;
   },
 );
 

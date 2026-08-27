@@ -72,7 +72,7 @@ export function remoteRevokeDevice(deviceId: string): Promise<GatewayStatus> {
 }
 
 export interface RemoteSessionCompose {
-  chatMode: "ask" | "agent" | "plan";
+  chatMode: "ask" | "agent" | "plan" | "image";
   toolApprovalMode: "ask" | "auto" | "alwaysAllow";
   chatModel: string;
   chatModelProvider: string;

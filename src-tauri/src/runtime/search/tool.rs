@@ -33,7 +33,14 @@ fn first_string(args: &Value, keys: &[&str]) -> Option<String> {
 pub(crate) fn search_query_from_args(args: &Value) -> String {
     first_string(
         args,
-        &["query", "q", "search", "search_query", "keyword", "keywords"],
+        &[
+            "query",
+            "q",
+            "search",
+            "search_query",
+            "keyword",
+            "keywords",
+        ],
     )
     .unwrap_or_default()
 }

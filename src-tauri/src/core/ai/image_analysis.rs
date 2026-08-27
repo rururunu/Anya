@@ -166,9 +166,10 @@ pub enum ImageContentSegment {
 
 /// Split user content into alternating text and `![image](payload)` segments.
 pub fn split_image_content(content: &str) -> Vec<ImageContentSegment> {
+    let content = crate::core::ai::image_gen::strip_edit_region_images(content);
     let mut segments = Vec::new();
     if !content.contains("![image](") {
-        let cleaned = strip_image_analysis_tags(content);
+        let cleaned = strip_image_analysis_tags(&content);
         if !cleaned.trim().is_empty() {
             segments.push(ImageContentSegment::Text(cleaned));
         }
@@ -176,7 +177,7 @@ pub fn split_image_content(content: &str) -> Vec<ImageContentSegment> {
     }
 
     let mut last = 0usize;
-    for caps in image_regex().captures_iter(content) {
+    for caps in image_regex().captures_iter(&content) {
         let full = caps.get(0).expect("full match");
         let before = strip_image_analysis_tags(&content[last..full.start()]);
         if !before.trim().is_empty() {

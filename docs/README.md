@@ -12,7 +12,7 @@ These pages are the maintainer map — start at the root README for the product 
 
 | Document                                                       | Audience         | When to open it                                                                                                                    |
 | -------------------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [Architecture overview](./architecture-overview.md)            | Contributors     | Layers, process topology, Ask/Agent/Plan, Companion gateway + file HTTP, RAG, timeline, persistence                                |
+| [Architecture overview](./architecture-overview.md)            | Contributors     | Layers, process topology, Ask/Agent/Plan/Image, Companion gateway + file HTTP, RAG, timeline, persistence, module map              |
 | [Releases & remote updates](./release.md)                      | Release managers | Signing, `latest.json`, GitHub Releases, CI                                                                                        |
 | [Companion (Android)](https://github.com/rururunu/AnyaAndroid) | Users / mobile   | Phone remote: pair, chat, approvals, files. [Architecture](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.md) |
 | Screenshots (`image/`)                                         | Users / README   | Assets linked from the root README                                                                                                 |

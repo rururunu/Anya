@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.12-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.13-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -40,7 +40,7 @@
 | ------------- | ---------------------------------------------------------------------------------------------- |
 | **悬浮窗**    | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                                          |
 | **工作台**    | 完整桌面界面：置顶会话、项目工作区、归档 / 恢复、变更审查与内嵌设置。                          |
-| **Agent**     | Ask / Agent / Plan；工具、Skills、MCP、Office；复杂任务可自动进入带写操作门禁的计划。          |
+| **Agent**     | Ask / Agent / Plan / Image；工具、Skills、MCP、Office；复杂任务可自动进入带写操作门禁的计划。  |
 | **Companion** | [安卓远程](https://github.com/rururunu/AnyaAndroid) — 扫码后即可在手机上对话、审批、收发文件。 |
 | **RAG**       | 可选语义工作区检索（API 或本地嵌入）。启用前不下载模型、不发请求。                             |
 | **本地优先**  | 密钥、历史与设置默认保存在本机。                                                               |
@@ -130,13 +130,13 @@ Agent 修改文件后，Anya 会给出按文件汇总，并提供 Diff 视图。
 
 ### 设置
 
-在工作台内嵌设置页配置模型、服务商、Agent 行为、RAG 检索与扩展（没有独立设置窗口）。可选毛玻璃顶栏与侧栏。
+在工作台内嵌设置页配置模型、服务商、Agent 行为、生图、RAG 检索与扩展（没有独立设置窗口）。可选毛玻璃顶栏与侧栏。
 
 <p align="center">
   <img src="./docs/image/workspace-settings.png" alt="Anya 设置" width="900" />
 </p>
 
-常用项包括：服务商与模型协议、禁用模型、按模型族配置思考力度、视觉 / 多模态回退、语言、工具审批模式、Agent 展示密度、上下文窗口预算，以及 **RAG 检索**（API 或本地嵌入；默认关闭）。
+常用项包括：服务商与模型协议、禁用模型、按模型族配置思考力度、视觉 / 多模态回退、语言、工具审批模式、Agent 展示密度、上下文窗口预算、**生图**提供商与模型，以及 **RAG 检索**（API 或本地嵌入；默认关闭）。
 
 思考控制会跟随当前模型声明的能力。DeepSeek 提供 disabled / low / high / max；GPT、Grok、Claude、Qwen、Kimi 等兼容模型使用服务端支持的档位。发送请求前会自动限制不支持的值。
 
@@ -144,15 +144,16 @@ Agent 修改文件后，Anya 会给出按文件汇总，并提供 Diff 视图。
 
 ## 能力
 
-### Ask / Agent / Plan
+### Ask / Agent / Plan / Image
 
 | 模式      | 意图                       | 典型工具 / 约束                                                    |
 | --------- | -------------------------- | ------------------------------------------------------------------ |
 | **Ask**   | 只读调研                   | 读文件、搜索、LSP 等只读工具                                       |
 | **Agent** | 默认；在可控前提下改动环境 | 文件、PowerShell、Git、Skills、MCP、子 Agent；复杂任务可自动进计划 |
 | **Plan**  | 先定步骤再执行             | 写工具锁定；`update_tasks` + 消息末尾批准卡                        |
+| **Image** | 每轮真正出图               | 仅 `generate_image`；走设置 → 生图提供商（不用聊天提供商）         |
 
-Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（手动或自动）经计划门禁拦截写操作，直到用户在回答末尾批准。三种模式共用同一套 `AgentRunner`——约束落在工具暴露、审批与计划门禁，而不是第二套编排器。
+Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（手动或自动）经计划门禁拦截写操作，直到用户在回答末尾批准；Image 模式钉死 Images API 工具与提示词，确保每轮产出真实图片。四种模式共用同一套 `AgentRunner`——约束落在工具暴露、审批与 plan/image 门禁，而不是第二套编排器。
 
 ### 时间线
 
@@ -270,7 +271,7 @@ invoke("chat")
   → ConversationManager 持久化消息（含 work_timeline）
 ```
 
-`AgentRunner` 负责 model↔tools 主循环；`AgentRuntime` 负责 run 生命周期（取消、soft-inject、debug）。Ask / Agent / Plan 共用该循环；Plan 经 `plan_mode` 门禁拦截写操作，直到回答末尾批准。不要在 `AgentRunner` 之外平行再造一套对话循环。
+`AgentRunner` 负责 model↔tools 主循环；`AgentRuntime` 负责 run 生命周期（取消、soft-inject、debug）。Ask / Agent / Plan / Image 共用该循环；Plan 经 `plan_mode` 门禁拦截写操作，直到回答末尾批准；Image 模式经 `image_mode` 仅暴露 `generate_image`。不要在 `AgentRunner` 之外平行再造一套对话循环。
 
 完整视图：[技术架构总览](./docs/architecture-overview.zh-CN.md)
 
@@ -291,7 +292,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.12_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.13_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 

@@ -29,20 +29,9 @@ export interface ExportImageOptions {
   backgroundColor?: string;
 }
 
-/** True when running inside the Tauri webview (dev and prod alike). */
-export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
+import { dataUrlToBytes, isTauri } from "@/services/platform";
 
-/** Decodes a `data:image/png;base64,...` URL into raw PNG bytes. */
-export function dataUrlToBytes(dataUrl: string): Uint8Array {
-  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
+export { dataUrlToBytes, isTauri };
 /** Strips characters that are illegal in filenames on Windows/macOS/Linux
  *  and caps the length, so a model-supplied title can be used as-is. */
 export function safeFilename(name: string): string {

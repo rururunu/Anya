@@ -34,7 +34,9 @@ fn collaboration_models_are_injected_only_when_configured() {
     assert!(collaboration.is_some_and(|message| {
         message.content.contains("- `deepseek-v4-pro`")
             && message.content.contains("- `deepseek-v4-flash`")
-            && !message.content.contains("- `[\"deepseek\",\"deepseek-v4-pro\"]`")
+            && !message
+                .content
+                .contains("- `[\"deepseek\",\"deepseek-v4-pro\"]`")
             && message.content.contains("Routing policy")
             && message.content.contains("exact selected model ID")
             && message.content.contains("Never omit `model`")
@@ -60,6 +62,45 @@ fn collaboration_models_are_injected_only_when_configured() {
         .messages
         .iter()
         .any(|message| message.id.starts_with("collaboration-models-")));
+}
+
+#[test]
+fn image_mode_policy_is_injected_with_toolbar_values() {
+    let context = RequestContext::default();
+    let preferences = PromptPreferences {
+        image_mode: Some(ImageModePolicy {
+            size: "1024x1536".into(),
+            quality: "high".into(),
+            n: 2,
+            style_prompt: "anime illustration".into(),
+            has_reference: true,
+        }),
+        ..PromptPreferences::default()
+    };
+    let request = PromptBuilder::build(PromptBuildInput {
+        request_id: "request",
+        session_id: "session",
+        history: &[],
+        context: &context,
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: None,
+        provider: None,
+        preferences: &preferences,
+    });
+    let block = request
+        .messages
+        .iter()
+        .find(|message| message.id.starts_with("image-mode-"))
+        .expect("image-mode system block");
+    assert!(block.content.contains("generate_image"));
+    assert!(block.content.contains("1024x1536"));
+    assert!(block.content.contains("high"));
+    assert!(block.content.contains("2"));
+    assert!(block.content.contains("anime illustration"));
+    assert!(block.content.contains("Mandatory visual style"));
+    assert!(block.content.contains("image-to-image"));
+    assert!(block.content.contains("does not exist"));
 }
 
 #[test]

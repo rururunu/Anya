@@ -191,10 +191,7 @@ mod tests {
             r#"["deepseek","deepseek-v4-flash"]"#.into(),
         ];
         let listed = format_collaboration_prompt_ids(&allowed);
-        assert_eq!(
-            listed,
-            "- `deepseek-v4-pro`\n- `deepseek-v4-flash`"
-        );
+        assert_eq!(listed, "- `deepseek-v4-pro`\n- `deepseek-v4-flash`");
         assert!(!listed.contains('['));
     }
 }

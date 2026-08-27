@@ -82,17 +82,31 @@ pub async fn chat_history(
         .chat()
         .history(&session_id)
         .map_err(|error| error.to_string())?;
-    let last_cache_usage = crate::core::chat::db::load_last_session_cache_usage(
+    let last_cache_usage = crate::core::chat::db::load_session_cache_usage(
         &state.core.chat().conversation().db_pool(),
         &session_id,
     )
     .await
     .unwrap_or(None);
+    let message_cache_usages = crate::core::chat::db::load_message_cache_usages(
+        &state.core.chat().conversation().db_pool(),
+        &session_id,
+    )
+    .await
+    .unwrap_or_default();
+    let message_completed_at = crate::core::chat::db::load_message_completed_at(
+        &state.core.chat().conversation().db_pool(),
+        &session_id,
+    )
+    .await
+    .unwrap_or_default();
 
     Ok(ChatHistoryResponse {
         session_id,
         messages,
         last_cache_usage,
+        message_cache_usages,
+        message_completed_at,
     })
 }
 
@@ -125,7 +139,10 @@ pub async fn set_chat_session_archived(
         .chat()
         .conversation()
         .workspace_for_session(&session_id);
-    state.core.chat().set_session_archived(&session_id, archived);
+    state
+        .core
+        .chat()
+        .set_session_archived(&session_id, archived);
     if !archived {
         if let Some(workspace_id) = workspace_id {
             if state
@@ -143,6 +160,35 @@ pub async fn set_chat_session_archived(
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn set_chat_session_workspace(
+    state: State<'_, AppState>,
+    session_id: String,
+    workspace_id: String,
+) -> Result<(), String> {
+    if session_id.trim().is_empty() {
+        return Err("Session id is required".into());
+    }
+    if workspace_id.trim().is_empty() {
+        return Err("Workspace id is required".into());
+    }
+    let exists = state
+        .core
+        .workspaces()
+        .list()
+        .iter()
+        .any(|workspace| workspace.id == workspace_id);
+    if !exists {
+        return Err("Workspace not found".into());
+    }
+    state
+        .core
+        .chat()
+        .conversation()
+        .rebind_workspace(&session_id, &workspace_id)
+        .await
 }
 
 #[tauri::command]
@@ -176,7 +222,8 @@ pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, Stri
             continue;
         }
 
-        let is_disabled = |id: &str| crate::core::ai::registry::provider_model_is_disabled(custom, id);
+        let is_disabled =
+            |id: &str| crate::core::ai::registry::provider_model_is_disabled(custom, id);
 
         let mut remote_ok = false;
         if !key.is_empty() {
@@ -273,6 +320,22 @@ pub fn delete_chat_session(
     crate::core::remote::cleanup_session_uploads(&app, &session_id, workspace_root.as_deref());
     state.core.chat().conversation().delete_session(&session_id);
     Ok(())
+}
+
+#[tauri::command]
+pub fn branch_chat_session(
+    state: State<'_, AppState>,
+    session_id: String,
+    message_id: Option<String>,
+) -> Result<crate::models::chat::ChatSessionSummary, String> {
+    if session_id.trim().is_empty() {
+        return Err("Session id is required".into());
+    }
+    let until = message_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    state.core.chat().branch_session(&session_id, until)
 }
 
 #[tauri::command]

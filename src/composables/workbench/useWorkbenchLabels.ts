@@ -84,18 +84,24 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
           addWorkspace: "\u6dfb\u52a0\u5de5\u4f5c\u533a",
           pinWorkspace: "\u7f6e\u9876\u5de5\u4f5c\u533a",
           unpinWorkspace: "\u53d6\u6d88\u7f6e\u9876",
+          editWorkspace: "\u7f16\u8f91\u5de5\u4f5c\u533a",
           newWorkspaceChat: "\u5728\u5de5\u4f5c\u533a\u65b0\u5efa\u4f1a\u8bdd",
           expandWorkspace: "\u5c55\u5f00\u5de5\u4f5c\u533a",
           collapseWorkspace: "\u6298\u53e0\u5de5\u4f5c\u533a",
           newQuickAsk: "\u65b0\u5efa\u968f\u95ee\u4f1a\u8bdd",
           more: "\u66f4\u591a\u9009\u9879",
-          openFolder: "\u6253\u5f00\u6587\u4ef6\u5939",
+          openFolder: "\u5728\u8d44\u6e90\u7ba1\u7406\u5668\u4e2d\u6253\u5f00",
+          openInTerminal: "\u5728\u7ec8\u7aef\u4e2d\u6253\u5f00",
           archiveWorkspace: "\u5f52\u6863\u5de5\u4f5c\u533a",
           deleteWorkspace: "\u5220\u9664\u5de5\u4f5c\u533a",
           deleteWorkspaceConfirm:
             "\u5220\u9664\u8fd9\u4e2a\u5de5\u4f5c\u533a\uff1f\u5bf9\u8bdd\u4e0d\u4f1a\u88ab\u5220\u9664\u3002",
           cancel: "\u53d6\u6d88",
+          continue: "\u7ee7\u7eed",
           confirmDelete: "\u5220\u9664",
+          moveConversationTitle: "\u5c06\u5bf9\u8bdd\u79fb\u5230\u5de5\u4f5c\u533a\uff1f",
+          moveConversationDescription:
+            "\u6b64\u5bf9\u8bdd\u5c06\u83b7\u5f97\u8be5\u5de5\u4f5c\u533a\u7684\u8bbf\u95ee\u6743\u9650\uff1a",
         }
       : {
           pinned: "Pinned",
@@ -108,17 +114,22 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
           addWorkspace: "Add workspace",
           pinWorkspace: "Pin workspace",
           unpinWorkspace: "Unpin workspace",
+          editWorkspace: "Edit workspace",
           newWorkspaceChat: "New chat in workspace",
           expandWorkspace: "Expand workspace",
           collapseWorkspace: "Collapse workspace",
           newQuickAsk: "New quick ask",
           more: "More options",
-          openFolder: "Open folder",
+          openFolder: "Open in File Explorer",
+          openInTerminal: "Open in terminal",
           archiveWorkspace: "Archive workspace",
           deleteWorkspace: "Delete workspace",
           deleteWorkspaceConfirm: "Delete this workspace? Conversations will be kept.",
           cancel: "Cancel",
+          continue: "Continue",
           confirmDelete: "Delete",
+          moveConversationTitle: "Move conversation to this workspace?",
+          moveConversationDescription: "This conversation will get access to this workspace:",
         },
   );
 
@@ -152,7 +163,8 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
     const mod = shortcutMod.value;
     return isChinese.value
       ? [
-          { keys: `${mod} + F`, label: "打开搜索" },
+          { keys: `${mod} + F`, label: "在对话中查找" },
+          { keys: `${mod} + Shift + F`, label: "打开搜索" },
           { keys: `${mod} + K`, label: "打开搜索" },
           { keys: `${mod} + N`, label: "新建对话" },
           { keys: `${mod} + B`, label: "显示/隐藏左侧栏" },
@@ -162,7 +174,8 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
           { keys: `${mod} + /`, label: "显示此帮助" },
         ]
       : [
-          { keys: `${mod} + F`, label: "Open search" },
+          { keys: `${mod} + F`, label: "Find in conversation" },
+          { keys: `${mod} + Shift + F`, label: "Open search" },
           { keys: `${mod} + K`, label: "Open search" },
           { keys: `${mod} + N`, label: "New chat" },
           { keys: `${mod} + B`, label: "Toggle left sidebar" },

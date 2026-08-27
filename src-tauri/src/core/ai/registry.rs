@@ -48,7 +48,7 @@ fn provider_is_configured(provider: &CustomProviderConfig) -> bool {
         && (url.starts_with("http://") || url.starts_with("https://"))
 }
 
-fn custom_provider_for_selection<'a>(
+pub(crate) fn custom_provider_for_selection<'a>(
     settings: &'a AppSettings,
     model: &str,
     provider_hint: &str,
@@ -157,9 +157,7 @@ pub(crate) fn remember_model_protocol(
     if provider.model_protocols.get(model) == Some(&protocol) {
         return;
     }
-    provider
-        .model_protocols
-        .insert(model.to_string(), protocol);
+    provider.model_protocols.insert(model.to_string(), protocol);
     let _ = settings_store::set_settings(app, settings);
 }
 
@@ -443,9 +441,6 @@ mod tests {
             super::cached_model_protocol(&settings, "console-go", "deepseek-v4-pro"),
             None
         );
-        assert_eq!(
-            super::cached_model_protocol(&settings, "", "unknown"),
-            None
-        );
+        assert_eq!(super::cached_model_protocol(&settings, "", "unknown"), None);
     }
 }

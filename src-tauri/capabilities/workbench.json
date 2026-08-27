@@ -20,7 +20,9 @@
     "dialog:default",
     "opener:default",
     "opener:allow-open-path",
+    "fs:allow-read-file",
     "fs:allow-write-file",
+    "fs:allow-copy-file",
     {
       "identifier": "fs:scope",
       "allow": [{ "path": "**" }]

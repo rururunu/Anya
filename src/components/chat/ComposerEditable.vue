@@ -67,6 +67,8 @@ const emit = defineEmits<{
 const rootRef = ref<HTMLDivElement | null>(null);
 const isComposing = ref(false);
 const isEmpty = computed(() => !(props.modelValue ?? "").length);
+/** Last text emitted from DOM — avoids prop-watch re-serializing on every key. */
+let lastEmittedText = props.modelValue ?? "";
 
 const resolveMeta: ResolveComposerTokenMeta = (part) => resolveTokenMeta(part);
 
@@ -118,6 +120,7 @@ function emitTextFromDom() {
   if (!root || isComposing.value) return;
   // Serialize only — do not re-parse typed `@query` into marks (picker inserts marks).
   const text = serializeComposerEditable(root);
+  lastEmittedText = text;
   if (text !== props.modelValue) {
     emit("update:modelValue", text);
   }
@@ -162,6 +165,7 @@ function onPaste(event: ClipboardEvent) {
   const next = `${current.slice(0, start)}${normalized}${current.slice(end)}`;
   const caret = start + normalized.length;
   syncFromProp(next, { start: caret, end: caret });
+  lastEmittedText = next;
   emit("update:modelValue", next);
   emit("caretChange", caret);
   emit("input");
@@ -212,6 +216,7 @@ function setSelection(start: number, end: number = start) {
 function setText(text: string, caret?: number) {
   const pos = caret ?? text.length;
   syncFromProp(text, { start: pos, end: pos });
+  lastEmittedText = text;
   if (text !== props.modelValue) emit("update:modelValue", text);
   emit("caretChange", pos);
   emit("input");
@@ -239,26 +244,33 @@ watch(
     if (isComposing.value) return;
     const root = rootRef.value;
     if (!root) return;
-    if (serializeComposerEditable(root) === value) return;
+    // Typing path: we just emitted this exact string — don't walk the DOM again.
+    if (value === lastEmittedText) return;
+    if (serializeComposerEditable(root) === value) {
+      lastEmittedText = value;
+      return;
+    }
     const caret = getComposerSelectionOffsets(root);
     syncFromProp(value, caret);
+    lastEmittedText = value;
     emit("input");
   },
 );
 
 watch(
-  () => [props.mcpServers, props.skills, props.fileCatalog] as const,
+  () => [props.mcpServers?.length ?? 0, props.skills?.length ?? 0, props.fileCatalog?.length ?? 0],
   () => {
     if (isComposing.value) return;
     const root = rootRef.value;
     if (!root) return;
     const caret = getComposerSelectionOffsets(root);
     syncFromProp(props.modelValue, caret);
+    lastEmittedText = props.modelValue ?? "";
   },
-  { deep: true },
 );
 
 onMounted(() => {
+  lastEmittedText = props.modelValue ?? "";
   syncFromProp(props.modelValue);
 });
 

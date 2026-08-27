@@ -188,9 +188,9 @@ fn to_responses_user_content(content: &str) -> Value {
                             let url = part
                                 .get("image_url")
                                 .and_then(|image| {
-                                    image.as_str().or_else(|| {
-                                        image.get("url").and_then(Value::as_str)
-                                    })
+                                    image
+                                        .as_str()
+                                        .or_else(|| image.get("url").and_then(Value::as_str))
                                 })
                                 .unwrap_or("");
                             json!({ "type": "input_image", "image_url": url })
@@ -315,6 +315,7 @@ pub(super) fn messages_have_tool_call_reasoning(
 }
 
 fn parse_multimodal_content(content: &str) -> Value {
+    let content = crate::core::ai::image_gen::strip_edit_region_images(content);
     if !content.contains("![image](") {
         return json!(content);
     }
@@ -327,7 +328,7 @@ fn parse_multimodal_content(content: &str) -> Value {
     let mut parts = Vec::new();
     let mut last_index = 0;
 
-    for cap in re.captures_iter(content) {
+    for cap in re.captures_iter(&content) {
         if let Some(mat) = cap.get(0) {
             let before = &content[last_index..mat.start()];
             if !before.trim().is_empty() {

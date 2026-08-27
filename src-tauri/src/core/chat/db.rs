@@ -51,7 +51,8 @@ pub async fn init_db(db_path: &Path) -> Result<SqlitePool, String> {
             name TEXT,
             status TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
-            estimated_tokens INTEGER
+            estimated_tokens INTEGER,
+            completed_at INTEGER
         );",
     )
     .execute(&pool)
@@ -85,6 +86,15 @@ pub async fn init_db(db_path: &Path) -> Result<SqlitePool, String> {
         .any(|row| row.get::<String, _>("name") == "work_timeline")
     {
         sqlx::query("ALTER TABLE chat_messages ADD COLUMN work_timeline TEXT")
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if !message_columns
+        .iter()
+        .any(|row| row.get::<String, _>("name") == "completed_at")
+    {
+        sqlx::query("ALTER TABLE chat_messages ADD COLUMN completed_at INTEGER")
             .execute(&pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -136,20 +146,22 @@ pub async fn init_db(db_path: &Path) -> Result<SqlitePool, String> {
             accuracy TEXT NOT NULL,
             source TEXT,
             recorded_at INTEGER NOT NULL,
-            cache_read_tokens INTEGER
+            cache_read_tokens INTEGER,
+            message_id TEXT
         )",
     )
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
+    ensure_token_usage_columns(&pool).await?;
     for statement in [
         "CREATE INDEX IF NOT EXISTS idx_token_usage_recorded_at ON token_usage_records(recorded_at)",
         "CREATE INDEX IF NOT EXISTS idx_token_usage_model ON token_usage_records(model)",
         "CREATE INDEX IF NOT EXISTS idx_token_usage_session ON token_usage_records(session_id, recorded_at)",
+        "CREATE INDEX IF NOT EXISTS idx_token_usage_message ON token_usage_records(session_id, message_id)",
     ] {
         sqlx::query(statement).execute(&pool).await.map_err(|e| e.to_string())?;
     }
-    ensure_token_usage_columns(&pool).await?;
 
     Ok(pool)
 }
@@ -165,6 +177,12 @@ async fn ensure_token_usage_columns(pool: &SqlitePool) -> Result<(), String> {
         .collect::<HashSet<_>>();
     if !names.contains("cache_read_tokens") {
         sqlx::query("ALTER TABLE token_usage_records ADD COLUMN cache_read_tokens INTEGER")
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if !names.contains("message_id") {
+        sqlx::query("ALTER TABLE token_usage_records ADD COLUMN message_id TEXT")
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -297,6 +315,32 @@ pub async fn bind_session_workspace(
     Ok(())
 }
 
+pub async fn set_session_workspace(
+    pool: &SqlitePool,
+    session_id: &str,
+    workspace_id: &str,
+) -> Result<(), String> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    sqlx::query(
+        "INSERT INTO chat_sessions
+         (session_id, workspace_id, created_at, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+             workspace_id = excluded.workspace_id,
+             updated_at = excluded.updated_at",
+    )
+    .bind(session_id)
+    .bind(workspace_id)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub async fn load_session_titles(pool: &SqlitePool) -> Result<HashMap<String, String>, String> {
     let rows = sqlx::query(
         "SELECT session_id, title FROM chat_sessions
@@ -374,6 +418,16 @@ mod session_workspace_tests {
     }
 
     #[tokio::test]
+    async fn set_session_workspace_overwrites_existing_binding() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        init_chat_session_schema(&pool).await.unwrap();
+        bind_session_workspace(&pool, "s1", "ws-a").await.unwrap();
+        set_session_workspace(&pool, "s1", "ws-b").await.unwrap();
+        let workspaces = load_session_workspaces(&pool).await.unwrap();
+        assert_eq!(workspaces["s1"], "ws-b");
+    }
+
+    #[tokio::test]
     async fn bind_fills_workspace_when_session_row_already_exists() {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         init_chat_session_schema(&pool).await.unwrap();
@@ -448,11 +502,32 @@ pub async fn save_message(pool: &SqlitePool, msg: &ChatMessage) -> Result<(), St
                 as i64,
         )
     };
+    let completed_at = if matches!(
+        msg.status,
+        MessageStatus::Done | MessageStatus::Error | MessageStatus::Cancelled
+    ) {
+        let existing = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT completed_at FROM chat_messages WHERE id = ?",
+        )
+        .bind(&msg.id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .flatten();
+        Some(existing.unwrap_or_else(|| {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|value| value.as_millis() as i64)
+                .unwrap_or(timestamp_val)
+        }))
+    } else {
+        None
+    };
 
     sqlx::query(
         "INSERT OR REPLACE INTO chat_messages (
-            id, session_id, role, content, reasoning, tool_activities, tool_calls, tool_call_id, name, status, timestamp, estimated_tokens, work_timeline
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
+            id, session_id, role, content, reasoning, tool_activities, tool_calls, tool_call_id, name, status, timestamp, estimated_tokens, work_timeline, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
     )
     .bind(&msg.id)
     .bind(&msg.session_id)
@@ -467,6 +542,7 @@ pub async fn save_message(pool: &SqlitePool, msg: &ChatMessage) -> Result<(), St
     .bind(timestamp_val)
     .bind(estimated_tokens)
     .bind(work_timeline_json)
+    .bind(completed_at)
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -827,7 +903,7 @@ mod message_persistence_tests {
                 content TEXT NOT NULL, reasoning TEXT, tool_activities TEXT,
                 tool_calls TEXT, tool_call_id TEXT, name TEXT,
                 status TEXT NOT NULL, timestamp INTEGER NOT NULL,
-                estimated_tokens INTEGER, work_timeline TEXT
+                estimated_tokens INTEGER, work_timeline TEXT, completed_at INTEGER
             )",
         )
         .execute(&pool)
@@ -886,7 +962,7 @@ mod message_persistence_tests {
                 content TEXT NOT NULL, reasoning TEXT, tool_activities TEXT,
                 tool_calls TEXT, tool_call_id TEXT, name TEXT,
                 status TEXT NOT NULL, timestamp INTEGER NOT NULL,
-                estimated_tokens INTEGER, work_timeline TEXT
+                estimated_tokens INTEGER, work_timeline TEXT, completed_at INTEGER
             )",
         )
         .execute(&pool)
@@ -921,7 +997,7 @@ mod message_persistence_tests {
                 content TEXT NOT NULL, reasoning TEXT, tool_activities TEXT,
                 tool_calls TEXT, tool_call_id TEXT, name TEXT,
                 status TEXT NOT NULL, timestamp INTEGER NOT NULL,
-                estimated_tokens INTEGER, work_timeline TEXT
+                estimated_tokens INTEGER, work_timeline TEXT, completed_at INTEGER
             )",
         )
         .execute(&pool)
@@ -1021,6 +1097,7 @@ mod token_usage_persistence_tests {
             &pool,
             "run-1",
             "session-1",
+            None,
             "deepseek-v4-pro",
             Some("deepseek"),
             &TokenUsage::exact(120, 30, "deepseek-v4"),
@@ -1045,13 +1122,15 @@ mod token_usage_persistence_tests {
     }
 
     #[tokio::test]
-    async fn loads_last_session_cache_usage() {
-        let path = std::env::temp_dir().join(format!("anya-token-cache-{}.db", uuid::Uuid::new_v4()));
+    async fn loads_session_cache_usage_totals() {
+        let path =
+            std::env::temp_dir().join(format!("anya-token-cache-{}.db", uuid::Uuid::new_v4()));
         let pool = init_db(&path).await.unwrap();
         record_token_usage(
             &pool,
             "run-1",
             "session-1",
+            Some("msg-1"),
             "deepseek-v4-pro",
             Some("deepseek"),
             &TokenUsage::exact_with_breakdown(20, 10, "deepseek-v4", Some(80), None),
@@ -1063,6 +1142,7 @@ mod token_usage_persistence_tests {
             &pool,
             "run-2",
             "session-1",
+            Some("msg-2"),
             "deepseek-v4-pro",
             Some("deepseek"),
             &TokenUsage::exact_with_breakdown(10, 8, "deepseek-v4", Some(90), None),
@@ -1070,21 +1150,99 @@ mod token_usage_persistence_tests {
         )
         .await
         .unwrap();
+        record_token_usage(
+            &pool,
+            "run-2b",
+            "session-1",
+            Some("msg-2"),
+            "deepseek-v4-pro",
+            Some("deepseek"),
+            &TokenUsage::exact_with_breakdown(5, 4, "deepseek-v4", Some(10), None),
+            2_500,
+        )
+        .await
+        .unwrap();
 
-        let last = load_last_session_cache_usage(&pool, "session-1")
+        let session = load_session_cache_usage(&pool, "session-1")
             .await
             .unwrap()
             .expect("cache usage");
-        assert_eq!(last.input_tokens, 10);
-        assert_eq!(last.cache_read_tokens, 90);
-        assert_eq!(last.model.as_deref(), Some("deepseek-v4-pro"));
-        assert!(load_last_session_cache_usage(&pool, "missing")
+        assert_eq!(session.input_tokens, 35);
+        assert_eq!(session.cache_read_tokens, 180);
+        assert_eq!(session.model.as_deref(), Some("deepseek-v4-pro"));
+        assert!(load_session_cache_usage(&pool, "missing")
             .await
             .unwrap()
             .is_none());
 
+        let mut messages = load_message_cache_usages(&pool, "session-1").await.unwrap();
+        messages.sort_by(|left, right| left.message_id.cmp(&right.message_id));
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].message_id, "msg-1");
+        assert_eq!(messages[0].input_tokens, 20);
+        assert_eq!(messages[0].cache_read_tokens, 80);
+        assert_eq!(messages[1].message_id, "msg-2");
+        assert_eq!(messages[1].input_tokens, 15);
+        assert_eq!(messages[1].cache_read_tokens, 100);
+
         pool.close().await;
         let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn migrates_legacy_token_usage_table_without_message_id() {
+        let path =
+            std::env::temp_dir().join(format!("anya-token-legacy-{}.db", uuid::Uuid::new_v4()));
+        {
+            let options = SqliteConnectOptions::new()
+                .filename(&path)
+                .create_if_missing(true);
+            let pool = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(options)
+                .await
+                .unwrap();
+            sqlx::query(
+                "CREATE TABLE token_usage_records (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    provider TEXT,
+                    input_tokens INTEGER NOT NULL,
+                    output_tokens INTEGER NOT NULL,
+                    system_tokens INTEGER NOT NULL,
+                    context_tokens INTEGER NOT NULL,
+                    tool_call_tokens INTEGER NOT NULL,
+                    tool_result_tokens INTEGER NOT NULL,
+                    memory_tokens INTEGER NOT NULL,
+                    total_tokens INTEGER NOT NULL,
+                    accuracy TEXT NOT NULL,
+                    source TEXT,
+                    recorded_at INTEGER NOT NULL,
+                    cache_read_tokens INTEGER
+                )",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            pool.close().await;
+        }
+
+        let pool = init_db(&path)
+            .await
+            .expect("legacy token_usage_records should gain message_id before indexes");
+        let columns = sqlx::query("PRAGMA table_info(token_usage_records)")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(columns
+            .iter()
+            .any(|row| row.get::<String, _>("name") == "message_id"));
+        pool.close().await;
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
     }
 }
 
@@ -1092,6 +1250,7 @@ pub async fn record_token_usage(
     pool: &SqlitePool,
     run_id: &str,
     session_id: &str,
+    message_id: Option<&str>,
     model: &str,
     provider: Option<&str>,
     usage: &TokenUsage,
@@ -1099,14 +1258,15 @@ pub async fn record_token_usage(
 ) -> Result<(), String> {
     sqlx::query(
         "INSERT INTO token_usage_records (
-            id, run_id, session_id, model, provider, input_tokens, output_tokens,
+            id, run_id, session_id, message_id, model, provider, input_tokens, output_tokens,
             system_tokens, context_tokens, tool_call_tokens, tool_result_tokens,
             memory_tokens, total_tokens, accuracy, source, recorded_at, cache_read_tokens
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(uuid::Uuid::new_v4().to_string())
     .bind(run_id)
     .bind(session_id)
+    .bind(message_id)
     .bind(model)
     .bind(provider)
     .bind(usage.input_tokens as i64)
@@ -1150,31 +1310,97 @@ pub async fn load_token_usage_records(
     .map_err(|e| e.to_string())
 }
 
-pub async fn load_last_session_cache_usage(
+pub async fn load_session_cache_usage(
     pool: &SqlitePool,
     session_id: &str,
 ) -> Result<Option<crate::models::chat::SessionCacheUsage>, String> {
     let row = sqlx::query(
-        "SELECT input_tokens, cache_read_tokens, model
+        "SELECT
+            COALESCE(SUM(input_tokens), 0) AS input_tokens,
+            COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+            (
+                SELECT model FROM token_usage_records
+                WHERE session_id = ? AND cache_read_tokens IS NOT NULL
+                ORDER BY recorded_at DESC LIMIT 1
+            ) AS model
          FROM token_usage_records
-         WHERE session_id = ? AND cache_read_tokens IS NOT NULL
-         ORDER BY recorded_at DESC
-         LIMIT 1",
+         WHERE session_id = ? AND cache_read_tokens IS NOT NULL",
     )
+    .bind(session_id)
     .bind(session_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| e.to_string())?;
 
     Ok(row.and_then(|row| {
-        let cache_read = row.try_get::<i64, _>("cache_read_tokens").ok()?;
-        if cache_read < 0 {
+        let input = row.get::<i64, _>("input_tokens").max(0) as usize;
+        let cache_read = row.get::<i64, _>("cache_read_tokens").max(0) as usize;
+        if input == 0 && cache_read == 0 {
             return None;
         }
         Some(crate::models::chat::SessionCacheUsage {
-            input_tokens: row.get::<i64, _>("input_tokens").max(0) as usize,
-            cache_read_tokens: cache_read as usize,
+            input_tokens: input,
+            cache_read_tokens: cache_read,
             model: row.try_get::<String, _>("model").ok(),
         })
     }))
+}
+
+pub async fn load_message_cache_usages(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<Vec<crate::models::chat::MessageCacheUsage>, String> {
+    let rows = sqlx::query(
+        "SELECT message_id,
+                COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens
+         FROM token_usage_records
+         WHERE session_id = ? AND message_id IS NOT NULL AND cache_read_tokens IS NOT NULL
+         GROUP BY message_id",
+    )
+    .bind(session_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let message_id = row.try_get::<String, _>("message_id").ok()?;
+            if message_id.is_empty() {
+                return None;
+            }
+            Some(crate::models::chat::MessageCacheUsage {
+                message_id,
+                input_tokens: row.get::<i64, _>("input_tokens").max(0) as usize,
+                cache_read_tokens: row.get::<i64, _>("cache_read_tokens").max(0) as usize,
+            })
+        })
+        .collect())
+}
+
+pub async fn load_message_completed_at(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<HashMap<String, u64>, String> {
+    let rows = sqlx::query(
+        "SELECT id, completed_at FROM chat_messages
+         WHERE session_id = ? AND completed_at IS NOT NULL",
+    )
+    .bind(session_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let id = row.try_get::<String, _>("id").ok()?;
+            let completed_at = row.try_get::<i64, _>("completed_at").ok()?;
+            if completed_at <= 0 {
+                return None;
+            }
+            Some((id, completed_at as u64))
+        })
+        .collect())
 }

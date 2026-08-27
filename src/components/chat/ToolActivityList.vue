@@ -11,6 +11,13 @@
         :start-collapsed="cardsCollapsed"
       />
 
+      <GeneratedImageCard
+        v-else-if="item.activity.kind === 'image' && item.activity.status !== 'running'"
+        :activity="item.activity"
+        @preview-image="emit('previewImage', $event)"
+        @edit-from-image="emit('editFromImage', $event)"
+      />
+
       <TaskListCard v-else-if="item.tasks.length" embedded :tasks="item.tasks" />
 
       <div v-else-if="item.hunks.length" class="file-diff-stack">
@@ -39,7 +46,11 @@
       >
         <div class="tool-activity-header">
           <div v-if="!canExpandItem(item.activity)" class="tool-activity-main tool-activity-static">
-            <span class="tool-activity-icon" aria-hidden="true">
+            <span
+              class="tool-activity-icon"
+              :class="{ drawing: isDrawing(item.activity) }"
+              aria-hidden="true"
+            >
               <component :is="icon(item.activity)" :size="12" />
             </span>
             <span class="tool-activity-title">{{ activityTitle(item.activity) }}</span>
@@ -47,16 +58,7 @@
               {{ tr(settingStore.language, "fuzzyMatch") }}
             </span>
             <span v-if="item.activity.status === 'running'" class="tool-activity-status">
-              {{
-                tr(
-                  settingStore.language,
-                  item.activity.toolName === "ask_user"
-                    ? "waitingAnswer"
-                    : item.activity.preview
-                      ? "waitingApproval"
-                      : "running",
-                )
-              }}
+              {{ runningStatusLabel(item.activity) }}
             </span>
             <span v-else-if="item.activity.status === 'error'" class="tool-activity-status error">
               {{ tr(settingStore.language, "failed") }}
@@ -74,7 +76,11 @@
               :class="{ open: isExpanded(item.activity) }"
               :size="12"
             />
-            <span class="tool-activity-icon" aria-hidden="true">
+            <span
+              class="tool-activity-icon"
+              :class="{ drawing: isDrawing(item.activity) }"
+              aria-hidden="true"
+            >
               <component :is="icon(item.activity)" :size="12" />
             </span>
             <span class="tool-activity-title">{{ activityTitle(item.activity) }}</span>
@@ -82,16 +88,7 @@
               {{ tr(settingStore.language, "fuzzyMatch") }}
             </span>
             <span v-if="item.activity.status === 'running'" class="tool-activity-status">
-              {{
-                tr(
-                  settingStore.language,
-                  item.activity.toolName === "ask_user"
-                    ? "waitingAnswer"
-                    : item.activity.preview
-                      ? "waitingApproval"
-                      : "running",
-                )
-              }}
+              {{ runningStatusLabel(item.activity) }}
             </span>
             <span v-else-if="item.activity.status === 'error'" class="tool-activity-status error">
               {{ tr(settingStore.language, "failed") }}
@@ -115,7 +112,10 @@
 
         <div v-if="shouldShowErrorBody(item.activity)" class="tool-activity-body">
           <div class="tool-activity-detail">
-            <Markdown :content="errorBody(item.activity)" />
+            <Markdown
+              :content="errorBody(item.activity)"
+              @preview-image="emit('previewImage', $event)"
+            />
           </div>
         </div>
 
@@ -152,10 +152,16 @@
           class="tool-activity-body"
         >
           <div v-if="item.activity.detail" class="tool-activity-detail">
-            <Markdown :content="item.activity.detail" />
+            <Markdown
+              :content="item.activity.detail"
+              @preview-image="emit('previewImage', $event)"
+            />
           </div>
           <div v-else-if="shouldShowResult(item.activity)" class="tool-activity-detail">
-            <Markdown :content="formatResult(item.activity.result!)" />
+            <Markdown
+              :content="formatResult(item.activity.result!)"
+              @preview-image="emit('previewImage', $event)"
+            />
           </div>
 
           <ToolActivityList
@@ -167,6 +173,8 @@
             :show-subagent-details="showSubagentDetails"
             nested
             @inspect-subagent="emit('inspectSubagent', $event)"
+            @preview-image="emit('previewImage', $event)"
+            @edit-from-image="emit('editFromImage', $event)"
           />
         </div>
       </section>
@@ -175,7 +183,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from "vue";
+import { computed, inject, ref, watch, type Component } from "vue";
 import {
   ChevronRight,
   FilePenLine,
@@ -185,6 +193,7 @@ import {
   MoveRight,
   Terminal,
   LoaderCircle,
+  Paintbrush,
   PanelRightOpen,
   Wrench,
   Workflow,
@@ -192,6 +201,7 @@ import {
 import Markdown from "@/components/chat/Markdown.vue";
 import SubagentIcon from "@/components/chat/SubagentIcon.vue";
 import ShellTerminalCard from "@/components/chat/ShellTerminalCard.vue";
+import GeneratedImageCard from "@/components/chat/GeneratedImageCard.vue";
 import FileDiffCard from "@/components/chat/FileDiffCard.vue";
 import TaskListCard from "@/components/chat/TaskListCard.vue";
 import type { TaskItem, ToolActivity } from "@/types/chat";
@@ -203,6 +213,8 @@ import {
   shouldShowActivityResult,
 } from "@/services/chat/toolActivityDisplay";
 import { hunkFromPlainEdit, parseUnifiedDiffHunks, type DiffHunk } from "@/services/chat/toolDiff";
+import { activityMatchesQuery } from "@/services/chat/conversationFind";
+import { conversationFindKey } from "@/composables/chat/useConversationFind";
 
 const props = withDefaults(
   defineProps<{
@@ -225,7 +237,11 @@ const props = withDefaults(
     cardsCollapsed: false,
   },
 );
-const emit = defineEmits<{ inspectSubagent: [activityId: string] }>();
+const emit = defineEmits<{
+  inspectSubagent: [activityId: string];
+  previewImage: [source: string];
+  editFromImage: [payload: import("@/services/chat/imageEditReference").ImageEditReferencePayload];
+}>();
 const settingStore = useSettingStore();
 const inspectLabel = computed(() => tr(settingStore.language, "subagent.view"));
 const expandedIds = ref(new Set<string>());
@@ -321,10 +337,31 @@ function collectHunks(activity: ToolActivity): DiffHunk[] {
   return [];
 }
 
+function isImageGenActivity(activity: ToolActivity) {
+  return activity.kind === "image" || activity.toolName === "generate_image";
+}
+
+function isDrawing(activity: ToolActivity) {
+  return isImageGenActivity(activity) && activity.status === "running";
+}
+
 function activityTitle(activity: ToolActivity) {
+  if (isImageGenActivity(activity) && activity.status === "running") {
+    return tr(settingStore.language, "image.generating");
+  }
   return (
     activity.title?.trim() || activity.toolName?.trim() || tr(settingStore.language, "unknownTool")
   );
+}
+
+function runningStatusLabel(activity: ToolActivity) {
+  if (activity.toolName === "ask_user") {
+    return tr(settingStore.language, "waitingAnswer");
+  }
+  if (activity.preview) {
+    return tr(settingStore.language, "waitingApproval");
+  }
+  return tr(settingStore.language, "running");
 }
 
 function shouldShowResult(activity: ToolActivity) {
@@ -371,6 +408,8 @@ function icon(activity: ToolActivity): Component {
       return FileX2;
     case "move":
       return MoveRight;
+    case "image":
+      return Paintbrush;
     case "read":
       return FolderSearch;
     default:
@@ -455,6 +494,23 @@ function setExpanded(activityId: string, expanded: boolean) {
   else next.delete(activityId);
   expandedIds.value = next;
 }
+
+const conversationFind = inject(conversationFindKey, null);
+watch(
+  () => [conversationFind?.active.value, conversationFind?.query.value] as const,
+  ([active, query]) => {
+    if (!active || !query?.trim()) return;
+    const next = new Set(expandedIds.value);
+    let changed = false;
+    for (const activity of props.activities) {
+      if (!activityMatchesQuery(activity, query) || next.has(activity.id)) continue;
+      next.add(activity.id);
+      changed = true;
+    }
+    if (changed) expandedIds.value = next;
+  },
+  { immediate: true },
+);
 
 function toggleActivity(activity: ToolActivity) {
   if (!canExpandItem(activity)) return;
@@ -644,6 +700,20 @@ watch(
   border-radius: 4px;
   background: color-mix(in srgb, var(--peek-accent) 10%, transparent);
   color: var(--peek-accent);
+}
+.tool-activity-icon.drawing :deep(svg) {
+  animation: tool-draw 1.6s ease-in-out infinite;
+}
+@keyframes tool-draw {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: rotate(-12deg);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(8deg);
+  }
 }
 .tool-activity-title {
   flex: 1;

@@ -241,7 +241,15 @@ export interface ChatSendRequest {
   /** Per-conversation overrides; absent values fall back to global settings. */
   modelId?: string;
   modelProvider?: string;
-  chatMode?: "ask" | "agent" | "plan";
+  chatMode?: "ask" | "agent" | "plan" | "image";
+  /** Toolbar choices for Image mode; ignored in other modes. */
+  imageGen?: {
+    size?: string;
+    quality?: string;
+    n?: number;
+    stylePrompt?: string;
+    exampleImage?: string;
+  };
   toolApprovalMode?: "ask" | "auto" | "alwaysAllow";
   /** Skip complexity auto-plan (used after Approve & execute). */
   skipAutoPlan?: boolean;
@@ -348,6 +356,7 @@ export interface ChatFinishedEvent {
 
 export interface ChatTokenUsageEvent {
   sessionId: string;
+  messageId?: string;
   model: string;
   usage: TokenUsage;
 }
@@ -356,6 +365,12 @@ export interface SessionCacheUsage {
   inputTokens: number;
   cacheReadTokens: number;
   model?: string;
+}
+
+export interface MessageCacheUsage {
+  messageId: string;
+  inputTokens: number;
+  cacheReadTokens: number;
 }
 
 export interface ChatSessionTitleUpdatedEvent {
@@ -383,6 +398,16 @@ export interface ContextUsageSnapshot {
   usageRatio: number;
   estimatedTokens: number;
   contextWindowTokens: number;
+  systemPromptTokens?: number;
+  environmentTokens?: number;
+  toolsTokens?: number;
+  rulesTokens?: number;
+  memoriesTokens?: number;
+  skillsTokens?: number;
+  mcpTokens?: number;
+  subagentTokens?: number;
+  summarizedTokens?: number;
+  messageTokens?: number;
 }
 
 export interface ContextUsageRequest {
@@ -398,7 +423,14 @@ export interface ContextUsageResponse {
   estimatedTokens: number;
   contextWindowTokens: number;
   systemPromptTokens?: number;
+  environmentTokens?: number;
   toolsTokens?: number;
+  rulesTokens?: number;
+  memoriesTokens?: number;
+  skillsTokens?: number;
+  mcpTokens?: number;
+  subagentTokens?: number;
+  summarizedTokens?: number;
   messageTokens?: number;
 }
 
@@ -410,6 +442,8 @@ export interface ChatHistoryResponse {
   sessionId: string;
   messages: ChatMessage[];
   lastCacheUsage?: SessionCacheUsage;
+  messageCacheUsages?: MessageCacheUsage[];
+  messageCompletedAt?: Record<string, number>;
 }
 
 export interface ChatSessionSummary {

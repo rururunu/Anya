@@ -46,6 +46,8 @@ import type { ToolActivity } from "@/types/chat";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
 import { parseAnsi, type AnsiSpan } from "@/services/chat/ansi";
+import { activityMatchesQuery } from "@/services/chat/conversationFind";
+import { useExpandForFind } from "@/composables/chat/useConversationFind";
 
 const props = withDefaults(
   defineProps<{
@@ -72,6 +74,13 @@ watch(
     else if (props.startCollapsed && prev === "running") {
       expanded.value = false;
     }
+  },
+);
+
+useExpandForFind(
+  (query) => activityMatchesQuery(props.activity, query),
+  () => {
+    expanded.value = true;
   },
 );
 

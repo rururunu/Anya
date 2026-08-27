@@ -124,8 +124,10 @@ fn list_has_effort_param(params: &[String]) -> bool {
 /// Read advertised reasoning/thinking support from a `/models` object.
 /// Returns `None` when the listing did not say anything usable.
 fn extract_reasoning_info(map: &serde_json::Map<String, Value>) -> Option<ModelReasoningInfo> {
-    let supported_parameters =
-        json_string_list(map.get("supported_parameters").or(map.get("supportedParameters")));
+    let supported_parameters = json_string_list(
+        map.get("supported_parameters")
+            .or(map.get("supportedParameters")),
+    );
     let parameter_lists = [
         supported_parameters.clone(),
         json_string_list(map.get("supported_sampling_parameters")),
@@ -133,8 +135,12 @@ fn extract_reasoning_info(map: &serde_json::Map<String, Value>) -> Option<ModelR
         json_string_list(map.get("capabilities")),
         json_string_list(map.get("supported_features")),
     ];
-    let params_support = parameter_lists.iter().any(|list| list_has_reasoning_param(list));
-    let params_effort = parameter_lists.iter().any(|list| list_has_effort_param(list));
+    let params_support = parameter_lists
+        .iter()
+        .any(|list| list_has_reasoning_param(list));
+    let params_effort = parameter_lists
+        .iter()
+        .any(|list| list_has_effort_param(list));
 
     let explicit = json_bool(map.get("supports_reasoning"))
         .or_else(|| json_bool(map.get("support_reasoning")))
@@ -295,6 +301,16 @@ pub(crate) fn normalize_chat_completions_url(base_url: &str) -> String {
     format!("{}/chat/completions", openai_versioned_root(base_url))
 }
 
+/// OpenAI Images API (`POST /v1/images/generations`), used by gpt-image-2.
+pub(crate) fn normalize_images_generations_url(base_url: &str) -> String {
+    let root = openai_versioned_root(base_url);
+    if root.ends_with("/images/generations") {
+        root
+    } else {
+        format!("{root}/images/generations")
+    }
+}
+
 /// xAI Chat Completions does not return reasoning text. Grok thinking is only
 /// available on the Responses API (`/v1/responses`).
 pub(crate) fn normalize_responses_url(base_url: &str) -> String {
@@ -331,6 +347,9 @@ fn openai_versioned_root(base_url: &str) -> String {
         base = stripped.trim_end_matches('/').to_string();
     }
     if let Some(stripped) = base.strip_suffix("/models") {
+        base = stripped.trim_end_matches('/').to_string();
+    }
+    if let Some(stripped) = base.strip_suffix("/images/generations") {
         base = stripped.trim_end_matches('/').to_string();
     }
     if !has_versioned_api_path(&base) {
@@ -399,7 +418,10 @@ mod reasoning_listing_tests {
 
     #[test]
     fn explicit_supports_reasoning_flag() {
-        let map = json!({ "supports_reasoning": true }).as_object().cloned().unwrap();
+        let map = json!({ "supports_reasoning": true })
+            .as_object()
+            .cloned()
+            .unwrap();
         let info = extract_reasoning_info(&map).expect("reasoning info");
         assert!(info.supported);
         assert_eq!(info.can_disable, None);
@@ -426,6 +448,9 @@ mod reasoning_listing_tests {
         });
         let items = extract_model_items(&payload).expect("items");
         assert_eq!(items[0].id, "claude-sonnet-4");
-        assert_eq!(items[0].reasoning.as_ref().map(|info| info.supported), Some(true));
+        assert_eq!(
+            items[0].reasoning.as_ref().map(|info| info.supported),
+            Some(true)
+        );
     }
 }
