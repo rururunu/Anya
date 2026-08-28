@@ -35,13 +35,45 @@ pub(super) struct MultimodalEndpoint {
     pub(super) protocol: ProviderApiProtocol,
 }
 
+fn resolve_deepseek_multimodal_endpoint(
+    settings: &AppSettings,
+    mm_model: &str,
+) -> Option<MultimodalEndpoint> {
+    if !crate::core::ai::registry::looks_like_deepseek_model(mm_model) {
+        return None;
+    }
+    let api_key = settings.deepseek_api_key.trim();
+    if api_key.is_empty() {
+        return None;
+    }
+    let base_url = "https://api.deepseek.com";
+    Some(MultimodalEndpoint {
+        api_key: api_key.to_string(),
+        url: super::normalize_chat_completions_url(base_url),
+        base_url: base_url.to_string(),
+        protocol: ProviderApiProtocol::ChatCompletions,
+    })
+}
+
 pub(super) fn resolve_multimodal_endpoint(
     settings: &AppSettings,
     mm_model: &str,
     provider_hint: &str,
 ) -> Result<MultimodalEndpoint, ProviderError> {
+    let hint = provider_hint.trim();
+    if hint.is_empty() || hint == "deepseek" {
+        if let Some(endpoint) = resolve_deepseek_multimodal_endpoint(settings, mm_model) {
+            return Ok(endpoint);
+        }
+        if hint == "deepseek" {
+            return Err(ProviderError::message(
+                "DeepSeek API Key is not configured. Please enter it in Settings.",
+            ));
+        }
+    }
+
     for custom in &settings.custom_providers {
-        if !provider_hint.is_empty() && custom.id != provider_hint {
+        if !hint.is_empty() && custom.id != hint {
             continue;
         }
         let custom_ids: Vec<&str> = custom
@@ -50,7 +82,7 @@ pub(super) fn resolve_multimodal_endpoint(
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .collect();
-        let hint_matches = !provider_hint.is_empty() && custom.id == provider_hint;
+        let hint_matches = !hint.is_empty() && custom.id == hint;
         let configured = !custom.api_key.trim().is_empty() && !custom.base_url.trim().is_empty();
         if !hint_matches && !custom_ids.contains(&mm_model) {
             continue;

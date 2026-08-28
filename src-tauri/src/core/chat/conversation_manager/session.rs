@@ -202,6 +202,43 @@ impl ConversationManager {
         });
     }
 
+    pub fn set_sessions_archived_for_workspace(&self, workspace_id: &str, archived: bool) {
+        let session_ids: Vec<String> = if archived {
+            self.list_sessions()
+        } else {
+            self.list_archived_sessions()
+        }
+        .into_iter()
+        .filter(|session| session.workspace_id.as_deref() == Some(workspace_id))
+        .map(|session| session.session_id)
+        .collect();
+        if session_ids.is_empty() {
+            return;
+        }
+
+        if let Ok(mut set) = self.session_archived.lock() {
+            for session_id in &session_ids {
+                if archived {
+                    set.insert(session_id.clone());
+                } else {
+                    set.remove(session_id);
+                }
+            }
+        }
+
+        let pool = self.db_pool.clone();
+        let workspace_id = workspace_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) =
+                super::super::db::set_sessions_archived_batch(&pool, &session_ids, archived).await
+            {
+                eprintln!(
+                    "Failed to persist workspace archive state for {workspace_id}: {error}"
+                );
+            }
+        });
+    }
+
     pub fn delete_session(&self, session_id: &str) {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.remove(session_id);

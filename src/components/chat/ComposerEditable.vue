@@ -66,7 +66,11 @@ const emit = defineEmits<{
 
 const rootRef = ref<HTMLDivElement | null>(null);
 const isComposing = ref(false);
+const domHasContent = ref(false);
 const isEmpty = computed(() => !(props.modelValue ?? "").length);
+const showPlaceholder = computed(
+  () => (props.empty || isEmpty.value) && !isComposing.value && !domHasContent.value,
+);
 /** Last text emitted from DOM — avoids prop-watch re-serializing on every key. */
 let lastEmittedText = props.modelValue ?? "";
 
@@ -115,6 +119,15 @@ function syncFromProp(text: string, caret?: { start: number; end: number }) {
   if (caret) setComposerSelectionOffsets(root, caret.start, caret.end);
 }
 
+function refreshDomHasContent() {
+  const root = rootRef.value;
+  if (!root) {
+    domHasContent.value = false;
+    return;
+  }
+  domHasContent.value = serializeComposerEditable(root).trim().length > 0;
+}
+
 function emitTextFromDom() {
   const root = rootRef.value;
   if (!root || isComposing.value) return;
@@ -131,16 +144,19 @@ function emitTextFromDom() {
 
 function onCompositionStart() {
   isComposing.value = true;
+  domHasContent.value = true;
 }
 
 function onCompositionEnd() {
   isComposing.value = false;
   void nextTick(() => {
+    refreshDomHasContent();
     emitTextFromDom();
   });
 }
 
 function onInput() {
+  refreshDomHasContent();
   if (isComposing.value) return;
   emitTextFromDom();
 }
@@ -166,6 +182,7 @@ function onPaste(event: ClipboardEvent) {
   const caret = start + normalized.length;
   syncFromProp(next, { start: caret, end: caret });
   lastEmittedText = next;
+  domHasContent.value = next.trim().length > 0;
   emit("update:modelValue", next);
   emit("caretChange", caret);
   emit("input");
@@ -217,6 +234,7 @@ function setText(text: string, caret?: number) {
   const pos = caret ?? text.length;
   syncFromProp(text, { start: pos, end: pos });
   lastEmittedText = text;
+  domHasContent.value = text.trim().length > 0;
   if (text !== props.modelValue) emit("update:modelValue", text);
   emit("caretChange", pos);
   emit("input");
@@ -253,6 +271,7 @@ watch(
     const caret = getComposerSelectionOffsets(root);
     syncFromProp(value, caret);
     lastEmittedText = value;
+    refreshDomHasContent();
     emit("input");
   },
 );
@@ -272,6 +291,7 @@ watch(
 onMounted(() => {
   lastEmittedText = props.modelValue ?? "";
   syncFromProp(props.modelValue);
+  refreshDomHasContent();
 });
 
 onBeforeUnmount(() => {
@@ -309,7 +329,7 @@ defineExpose({
     class="composer-editable chat-input composer-textarea peek-scrollbar"
     :class="{
       'is-multiline': multiline,
-      'is-empty': empty || isEmpty,
+      'is-empty': showPlaceholder,
       'is-composing': isComposing,
     }"
     data-tauri-drag-region="false"

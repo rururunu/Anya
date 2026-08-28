@@ -673,6 +673,11 @@ impl ChatService {
         self.conversation.set_session_archived(session_id, archived);
     }
 
+    pub fn set_sessions_archived_for_workspace(&self, workspace_id: &str, archived: bool) {
+        self.conversation
+            .set_sessions_archived_for_workspace(workspace_id, archived);
+    }
+
     pub fn branch_session(
         &self,
         session_id: &str,

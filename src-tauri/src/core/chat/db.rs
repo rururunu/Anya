@@ -276,6 +276,42 @@ pub async fn set_session_archived(
     Ok(())
 }
 
+pub async fn set_sessions_archived_batch(
+    pool: &SqlitePool,
+    session_ids: &[String],
+    archived: bool,
+) -> Result<(), String> {
+    if session_ids.is_empty() {
+        return Ok(());
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    for session_id in session_ids {
+        sqlx::query(
+            "INSERT INTO chat_sessions (session_id, archived, created_at, updated_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(session_id) DO UPDATE SET
+                 archived = excluded.archived,
+                 updated_at = excluded.updated_at",
+        )
+        .bind(session_id)
+        .bind(archived)
+        .bind(now)
+        .bind(now)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| error.to_string())?;
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub async fn load_session_workspaces(pool: &SqlitePool) -> Result<HashMap<String, String>, String> {
     let rows = sqlx::query(
         "SELECT session_id, workspace_id FROM chat_sessions WHERE workspace_id IS NOT NULL",

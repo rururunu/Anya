@@ -22,6 +22,7 @@ import type { WorkbenchLabels } from "./useWorkbenchLabels";
 
 export interface UseWorkbenchWorkspacesOptions {
   workspaces: Ref<Workspace[]>;
+  sessions: Ref<ChatSessionSummary[]>;
   activeSessionWorkspaceId: Ref<string | null>;
   navigationLabels: WorkbenchLabels["navigationLabels"];
   labels: WorkbenchLabels["labels"];
@@ -40,6 +41,7 @@ export interface UseWorkbenchWorkspacesOptions {
 export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
   const {
     workspaces,
+    sessions,
     activeSessionWorkspaceId,
     navigationLabels,
     labels,
@@ -380,13 +382,24 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
 
   async function archiveWorkspace(workspace: Workspace) {
     workspaceMenuId.value = "";
-    await setWorkspaceArchived(workspace.id, true);
-    if (activeSessionWorkspaceId.value === workspace.id) {
-      await clearCurrentWorkspace();
+    const wasActiveWorkspace = activeSessionWorkspaceId.value === workspace.id;
+    workspaces.value = workspaces.value.filter((item) => item.id !== workspace.id);
+    sessions.value = sessions.value.filter((session) => session.workspaceId !== workspace.id);
+
+    if (wasActiveWorkspace) {
       activeSessionWorkspaceId.value = null;
+      void clearCurrentWorkspace();
       createConversation(null);
     }
-    await refreshSessions();
+
+    try {
+      await setWorkspaceArchived(workspace.id, true);
+    } catch (error) {
+      console.error("archive workspace failed:", error);
+      void refreshSessions();
+      return;
+    }
+    void refreshSessions();
   }
 
   async function removeWorkspace(workspace: Workspace) {

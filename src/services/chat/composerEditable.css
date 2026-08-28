@@ -42,6 +42,10 @@
   user-select: none;
 }
 
+.composer-editable.is-composing::before {
+  content: none;
+}
+
 .composer-editable:not(.is-empty)::before {
   content: none;
 }

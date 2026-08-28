@@ -16,7 +16,7 @@ import { useChatStore } from "@/stores/chat";
 import {
   clearCurrentWorkspace,
   listWorkspaces,
-  switchWorkspace,
+  trySwitchWorkspace,
   type Workspace,
 } from "@/commands/workspace";
 import type { CheckpointInfo, ChatMessage, ChatSessionSummary } from "@/types/chat";
@@ -235,9 +235,21 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     // Same workspace: skip the round-trip (and workspaces-changed fan-out).
     if (workspaceId !== previousWorkspaceId) {
       if (workspaceId) {
-        await switchWorkspace(workspaceId);
+        const switched = await trySwitchWorkspace(workspaceId);
+        if (!switched) {
+          activeSessionWorkspaceId.value = null;
+          chatStore.setComposeDraft(sessionId, compose.draft ?? "", { workspaceId: null });
+          console.warn(
+            "selectConversation: workspace no longer available, continuing without workspace",
+            { sessionId, workspaceId },
+          );
+        }
       } else {
-        await clearCurrentWorkspace();
+        try {
+          await clearCurrentWorkspace();
+        } catch (error) {
+          console.warn("selectConversation: clearCurrentWorkspace failed:", error);
+        }
       }
     }
 
@@ -295,20 +307,38 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     await refreshSessions();
     if (activeSessionId.value === sessionId) {
       activeSessionWorkspaceId.value = workspaceId;
-      await switchWorkspace(workspaceId);
+      const switched = await trySwitchWorkspace(workspaceId);
+      if (!switched) {
+        activeSessionWorkspaceId.value = null;
+      }
     }
   }
 
   async function archiveConversation(sessionId: string) {
     const known = sessions.value.some((session) => session.sessionId === sessionId);
-    if (known) {
-      try {
-        await setChatSessionArchived(sessionId, true);
-      } catch (error) {
-        console.warn("set_chat_session_archived skipped:", error);
-      }
+    const wasActive = activeSessionId.value === sessionId;
+    const nextSessionId = wasActive
+      ? sessionsWithLiveTokens.value.find((session) => session.sessionId !== sessionId)?.sessionId
+      : undefined;
+
+    pendingStagedEdit.value = null;
+    chatStore.removeCompose(sessionId);
+    delete chatStore.sessions[sessionId];
+    clearSessionUnread(sessionId);
+    removePendingInteraction(sessionId);
+    sessions.value = sessions.value.filter((session) => session.sessionId !== sessionId);
+
+    if (wasActive) {
+      if (nextSessionId) void selectConversation(nextSessionId);
+      else void createQuickConversation();
     }
-    await leaveConversation(sessionId);
+
+    if (known) {
+      void setChatSessionArchived(sessionId, true).catch((error) => {
+        console.warn("set_chat_session_archived skipped:", error);
+      });
+    }
+    void refreshSessions();
   }
 
   async function branchConversation(sessionId: string, messageId?: string) {

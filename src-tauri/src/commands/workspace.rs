@@ -352,19 +352,10 @@ pub async fn set_workspace_archived(
 ) -> Result<(), String> {
     let manager = state.core.workspaces();
     manager.set_archived(&id, archived).await?;
-    let sessions = if archived {
-        state.core.chat().list_sessions()
-    } else {
-        state.core.chat().list_archived_sessions()
-    };
-    for session in sessions {
-        if session.workspace_id.as_deref() == Some(id.as_str()) {
-            state
-                .core
-                .chat()
-                .set_session_archived(&session.session_id, archived);
-        }
-    }
+    state
+        .core
+        .chat()
+        .set_sessions_archived_for_workspace(&id, archived);
     app.emit("workspaces-changed", manager.current())
         .map_err(|error| error.to_string())?;
     Ok(())

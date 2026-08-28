@@ -138,7 +138,7 @@ MSI 可能已构建成功，但 **updater 签名**（`.msi.sig` / `latest.json`�
 
 ```powershell
 $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$env:USERPROFILE\.tauri\anya.key" -Raw
-pnpm tauri signer sign -f "src-tauri\target\release\bundle\msi\Anya_0.2.13_x64.msi"
+pnpm tauri signer sign -f "src-tauri\target\release\bundle\msi\Anya_0.2.14_x64.msi"
 ```
 
 若本地也报同样错误，说明 Secret 内容不对，需重新生成并更新 Secret / `pubkey`（更新公钥后旧客户端需重装一次才能再收自动更新）。

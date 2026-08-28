@@ -1041,6 +1041,7 @@ const {
   removeWorkspace,
 } = useWorkbenchWorkspaces({
   workspaces,
+  sessions,
   activeSessionWorkspaceId,
   navigationLabels,
   labels,

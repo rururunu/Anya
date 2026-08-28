@@ -1140,6 +1140,20 @@ mod tests {
     }
 
     #[test]
+    fn resolve_multimodal_endpoint_uses_deepseek_builtin() {
+        let mut settings = crate::models::settings::AppSettings::default();
+        settings.deepseek_api_key = "sk-test".into();
+        let endpoint = resolve_multimodal_endpoint(
+            &settings,
+            "deepseek-v4-flash-vision-exp",
+            "deepseek",
+        )
+        .unwrap();
+        assert_eq!(endpoint.api_key, "sk-test");
+        assert!(endpoint.url.contains("deepseek.com"));
+    }
+
+    #[test]
     fn resolve_multimodal_endpoint_requires_custom_provider() {
         let settings = crate::models::settings::AppSettings::default();
         let err = resolve_multimodal_endpoint(&settings, "gpt-4o", "").unwrap_err();

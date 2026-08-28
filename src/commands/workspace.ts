@@ -52,6 +52,26 @@ export function switchWorkspace(id: string): Promise<Workspace> {
   return invoke("switch_workspace", { id });
 }
 
+export function isWorkspaceNotFoundError(error: unknown): boolean {
+  return String(error).toLowerCase().includes("workspace not found");
+}
+
+/** Switch workspace; returns false when the id is missing instead of throwing. */
+export async function trySwitchWorkspace(id: string): Promise<boolean> {
+  try {
+    await switchWorkspace(id);
+    return true;
+  } catch (error) {
+    if (!isWorkspaceNotFoundError(error)) throw error;
+    try {
+      await clearCurrentWorkspace();
+    } catch {
+      // Best-effort: drop a stale current-workspace pointer.
+    }
+    return false;
+  }
+}
+
 export function clearCurrentWorkspace(): Promise<void> {
   return invoke("clear_current_workspace");
 }
