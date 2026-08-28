@@ -127,4 +127,20 @@ git push origin v0.2.12
 **Q：`signature` 填什么？**  
 填 `.msi.sig` 文件的**全文**（一行 base64 文本），不是文件路径也不是下载链接。
 
+**Q：CI 报 `Missing comment in secret key` / `failed to decode secret key`？**  
+MSI 可能已构建成功，但 **updater 签名**（`.msi.sig` / `latest.json`）失败。常见原因：
+
+1. **`TAURI_SIGNING_PRIVATE_KEY` 未配置或内容不完整** — 必须粘贴**整个私钥文件**（以 `untrusted comment: minisign secret key` 开头），不能只贴中间一行 base64，也不能贴 `.pub` 公钥。
+2. **私钥与 `tauri.conf.json` 里的 `pubkey` 不匹配** — 必须用生成该公钥时对应的 `.key` 文件；丢失私钥后无法给已安装用户发更新。
+3. **密码不一致** — 若生成时设置了密码，GitHub 里 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 必须一致；用 `--ci` 生成的无密码密钥则**不要**设密码 Secret（或留空）。
+
+本地验证（PowerShell）：
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$env:USERPROFILE\.tauri\anya.key" -Raw
+pnpm tauri signer sign -f "src-tauri\target\release\bundle\msi\Anya_0.2.13_x64.msi"
+```
+
+若本地也报同样错误，说明 Secret 内容不对，需重新生成并更新 Secret / `pubkey`（更新公钥后旧客户端需重装一次才能再收自动更新）。
+
 **相关文档：** [技术架构](./architecture-overview.zh-CN.md) · [文档索引](./README.zh-CN.md)

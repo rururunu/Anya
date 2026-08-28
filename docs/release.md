@@ -31,7 +31,9 @@ pnpm tauri signer generate -w "$env:USERPROFILE\.tauri\anya.key" --ci
 - **Private key**: `%USERPROFILE%\.tauri\anya.key` (never commit)
 - **Public key**: `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`
 
-GitHub Actions secrets: `TAURI_SIGNING_PRIVATE_KEY`, optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, optional `ANYA_UPDATER_PUBKEY`.
+GitHub Actions secrets: `TAURI_SIGNING_PRIVATE_KEY` (full `.key` file contents, including `untrusted comment:` line), optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, optional `ANYA_UPDATER_PUBKEY`.
+
+If CI fails with **`Missing comment in secret key`**, the private-key secret is empty, truncated, or not a minisign private key — see [release.zh-CN.md](./release.zh-CN.md) FAQ.
 
 ---
 
