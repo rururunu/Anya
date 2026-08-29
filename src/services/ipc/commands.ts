@@ -233,6 +233,21 @@ export function branchChatSession(sessionId: string, messageId?: string) {
   });
 }
 
+export function setChatSessionTitle(sessionId: string, title: string) {
+  return ipcInvoke<string>(IPC_COMMANDS.setChatSessionTitle, {
+    sessionId,
+    session_id: sessionId,
+    title,
+  });
+}
+
+export function regenerateChatSessionTitle(sessionId: string) {
+  return ipcInvoke<string>(IPC_COMMANDS.regenerateChatSessionTitle, {
+    sessionId,
+    session_id: sessionId,
+  });
+}
+
 export function setChatSessionArchived(sessionId: string, archived: boolean) {
   return ipcInvoke<void>("set_chat_session_archived", { sessionId, archived });
 }

@@ -490,6 +490,9 @@ pub async fn open_image_preview(app: AppHandle, path_or_base64: String) -> Resul
     let window = window_builder
         .build()
         .map_err(|e| format!("Failed to build window: {e}"))?;
+    if let Ok(settings) = crate::services::settings_store::get_settings(&app) {
+        crate::services::webview_theme::apply_webview_theme(&app, &settings);
+    }
     let _ = window.show();
     let _ = window.set_focus();
     Ok(())

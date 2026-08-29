@@ -37,15 +37,10 @@
       </label>
       <label class="toggle-row">
         <span>{{ copy.enabled }}</span>
-        <button
-          type="button"
-          class="setting-toggle"
-          :class="{ active: editor.enabled }"
-          :aria-pressed="editor.enabled"
-          @click="setField('enabled', !editor.enabled)"
-        >
-          <span class="setting-toggle-knob" />
-        </button>
+        <SettingsToggle
+          :model-value="editor.enabled"
+          @update:model-value="setField('enabled', $event)"
+        />
       </label>
     </div>
     <div class="editor-actions">
@@ -63,6 +58,7 @@
 import { computed } from "vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import SettingsToggle from "@/components/settings/SettingsToggle.vue";
 
 type EditorState = {
   mode: "create" | "edit";
@@ -177,36 +173,5 @@ const envText = field("envText");
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.setting-toggle {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted-foreground) 28%, transparent);
-  cursor: pointer;
-  padding: 0;
-  flex: none;
-}
-
-.setting-toggle.active {
-  background: color-mix(in srgb, var(--primary) 75%, transparent);
-}
-
-.setting-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: white;
-  transition: transform 140ms ease;
-}
-
-.setting-toggle.active .setting-toggle-knob {
-  transform: translateX(16px);
 }
 </style>

@@ -19,6 +19,7 @@ export default [
       "eval/**",
       "scripts/**",
       "public/**",
+      ".anya/**",
       "*.msi",
       "coverage/**",
     ],
@@ -162,6 +163,12 @@ export default [
     files: ["src/services/logger.ts"],
     rules: {
       "no-console": "off",
+    },
+  },
+  {
+    files: ["src/components/**/*.{ts,vue}", "src/stores/**/*.{ts,vue}"],
+    rules: {
+      "max-lines": ["warn", { max: 800, skipBlankLines: true, skipComments: true }],
     },
   },
   prettier,

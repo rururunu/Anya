@@ -134,8 +134,8 @@ defineExpose({ ask });
   padding: 16px;
   border: 1px solid var(--peek-border, rgba(255, 255, 255, 0.14));
   border-radius: var(--peek-radius-lg, 12px);
-  background: var(--peek-dialog-bg, var(--peek-surface, #252526));
-  color: var(--peek-text, #f3f4f6);
+  background: var(--peek-dialog-bg, var(--peek-surface, #ffffff));
+  color: var(--peek-text, #242424);
   box-shadow: var(--peek-elev-md);
   transform: translate(-50%, -50%);
   outline: none;
@@ -160,8 +160,8 @@ defineExpose({ ask });
 }
 
 .confirm-dialog .confirm-icon.danger {
-  background: color-mix(in srgb, var(--peek-danger, #f14c4c) 14%, transparent);
-  color: var(--peek-danger, #f14c4c);
+  background: color-mix(in srgb, var(--peek-danger, #c42b1c) 14%, transparent);
+  color: var(--peek-danger, #c42b1c);
 }
 
 .confirm-dialog .confirm-copy {
@@ -171,7 +171,7 @@ defineExpose({ ask });
 
 .confirm-dialog .confirm-title {
   margin: 0;
-  color: var(--peek-text, #f3f4f6);
+  color: var(--peek-text, #242424);
   font-size: var(--peek-font-lg, 14px);
   font-weight: 650;
   line-height: 1.35;
@@ -179,7 +179,7 @@ defineExpose({ ask });
 
 .confirm-dialog .confirm-description {
   margin: 6px 0 0;
-  color: var(--peek-muted, #b7bcc5);
+  color: var(--peek-muted, #5a5a5a);
   font-size: var(--peek-font-sm, 12px);
   line-height: 1.55;
   white-space: pre-line;
@@ -206,8 +206,8 @@ defineExpose({ ask });
 
 .confirm-dialog .confirm-button.ghost {
   border-color: var(--peek-border, rgba(255, 255, 255, 0.14));
-  background: color-mix(in srgb, var(--peek-text, #f3f4f6) 4%, transparent);
-  color: var(--peek-text, #f3f4f6);
+  background: color-mix(in srgb, var(--peek-text, #242424) 4%, transparent);
+  color: var(--peek-text, #242424);
 }
 
 .confirm-dialog .confirm-button.ghost:hover {
@@ -224,19 +224,13 @@ defineExpose({ ask });
 }
 
 .confirm-dialog .confirm-button.danger {
-  border-color: color-mix(in srgb, var(--peek-danger, #f14c4c) 35%, transparent);
-  background: color-mix(in srgb, var(--peek-danger, #f14c4c) 18%, transparent);
-  color: color-mix(in srgb, var(--peek-danger, #f14c4c) 88%, var(--peek-text, #f3f4f6));
+  border-color: color-mix(in srgb, var(--peek-danger, #c42b1c) 35%, transparent);
+  background: color-mix(in srgb, var(--peek-danger, #c42b1c) 18%, transparent);
+  color: color-mix(in srgb, var(--peek-danger, #c42b1c) 88%, var(--peek-text, #242424));
 }
 
 .confirm-dialog .confirm-button.danger:hover {
-  background: color-mix(in srgb, var(--peek-danger, #f14c4c) 28%, transparent);
-}
-
-[data-theme="light"] .confirm-dialog {
-  background: var(--peek-surface, #ffffff);
-  color: var(--peek-text, #242424);
-  box-shadow: var(--peek-elev-md);
+  background: color-mix(in srgb, var(--peek-danger, #c42b1c) 28%, transparent);
 }
 
 .confirm-dialog.is-detail {

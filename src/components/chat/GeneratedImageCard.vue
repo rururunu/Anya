@@ -398,6 +398,7 @@ async function saveAs(source: string) {
   max-height: 280px;
   object-fit: contain;
   border-radius: 8px;
+  color-scheme: only light;
 }
 .generated-image-select-stage {
   position: relative;
@@ -415,6 +416,7 @@ async function saveAs(source: string) {
   max-height: min(72vh, 520px);
   object-fit: contain;
   border-radius: 10px;
+  color-scheme: only light;
   outline: 2px solid color-mix(in srgb, var(--peek-accent) 55%, transparent);
   outline-offset: 1px;
 }

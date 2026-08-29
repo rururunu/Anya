@@ -1,8 +1,8 @@
 <template>
-  <section class="about-page">
+  <section class="settings-page about-page">
     <header class="about-hero">
       <div class="about-logo" aria-hidden="true">
-        <img :src="appIconUrl" alt="" draggable="false" />
+        <AnyaLogo />
       </div>
       <h1>{{ name }}</h1>
       <p class="about-tagline">{{ copy.description }}</p>
@@ -103,13 +103,12 @@ import { ArrowUpCircle, CheckCircle2, RefreshCw, ShieldCheck } from "@lucide/vue
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
-import appIconAsset from "../../../src-tauri/icons/Anya-transparent.svg";
+import AnyaLogo from "@/components/icons/AnyaLogo.vue";
 
 const settingStore = useSettingStore();
 const updaterStore = useUpdaterStore();
 const props = defineProps<{ name: string; version: string; identifier: string }>();
 const versionForCopy = computed(() => props.version || "-");
-const appIconUrl = appIconAsset;
 const copied = ref(false);
 let copiedTimer: number | undefined;
 
@@ -213,7 +212,8 @@ async function copyIdentifier() {
   box-sizing: border-box;
   width: min(100%, 520px);
   margin: 0 auto;
-  padding: 36px 24px 48px;
+  padding-top: var(--peek-space-5, 20px);
+  padding-bottom: var(--peek-space-6, 24px);
   color: var(--peek-text);
 }
 
@@ -231,17 +231,8 @@ async function copyIdentifier() {
   margin-bottom: 20px;
 }
 
-.about-logo img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+.about-logo :deep(.anya-logo) {
   opacity: 0.96;
-}
-
-:global(.workbench[data-theme="dark"]) .about-logo img,
-:global([data-theme="dark"]) .about-logo img {
-  filter: invert(1);
 }
 
 .about-hero h1 {
@@ -275,9 +266,9 @@ async function copyIdentifier() {
   gap: 10px;
   margin: 0 0 4px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 85%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--peek-text) 2.5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
+  border-radius: var(--peek-radius-lg, 12px);
+  background: var(--peek-list-bg);
 }
 
 .about-update.is-available {

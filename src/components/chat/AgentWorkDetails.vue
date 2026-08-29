@@ -94,8 +94,10 @@ import type { ChatMessage, ToolActivity } from "@/types/chat";
 import type { AgentWorkDisplay, AppLanguage } from "@/types/setting";
 import { SUBAGENT_TOOLS } from "@/services/chat/subagentTools";
 import {
+  countReasoningSegments,
   isProcessSegmentCollapsible,
   summarizeProcessActivities,
+  summarizeWorkFoldMeta,
 } from "@/services/chat/toolActivityDisplay";
 import { activityMatchesQuery, textIncludesQuery } from "@/services/chat/conversationFind";
 import { conversationFindKey } from "@/composables/chat/useConversationFind";
@@ -456,16 +458,6 @@ const preambleSegments = computed(() =>
 );
 const replySegments = computed(() => segments.value.filter((segment) => isReplySegment(segment)));
 
-const foldReasoningText = computed(() => {
-  const fromSegments = preambleSegments.value
-    .filter((segment): segment is Extract<TimelineSegment, { type: "reasoning" }> => {
-      return segment.type === "reasoning";
-    })
-    .map((segment) => segment.content)
-    .join("");
-  return pickFullText(props.message.reasoning?.trim() ?? "", fromSegments);
-});
-
 const foldLabel = computed(() => {
   const language = props.language ?? "zh-CN";
   return tr(language, "worked");
@@ -473,20 +465,11 @@ const foldLabel = computed(() => {
 
 const foldMeta = computed(() => {
   const language = props.language ?? "zh-CN";
-  const chars = foldReasoningText.value.length;
-  if (chars > 0) {
-    return tr(language, "chars", { count: chars.toLocaleString() });
-  }
-  const toolCount = preambleSegments.value.reduce((count, segment) => {
-    if (segment.type === "process" || segment.type === "inline") {
-      return count + segment.activities.length;
-    }
-    return count;
-  }, 0);
-  if (toolCount > 0) {
-    return tr(language, "toolCount", { count: String(toolCount) });
-  }
-  return "";
+  return summarizeWorkFoldMeta(
+    visibleActivities.value,
+    countReasoningSegments(props.message.workTimeline, props.message.reasoning),
+    language,
+  );
 });
 
 const lastSegmentId = computed(() => segments.value[segments.value.length - 1]?.id);
@@ -611,9 +594,9 @@ watch(
 .agent-work {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   width: 100%;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   box-sizing: border-box;
 }
 
@@ -634,12 +617,15 @@ watch(
 .agent-work-fold-summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-height: 28px;
+  margin: 2px 0;
   cursor: pointer;
-  padding: 3px 2px;
+  padding: 4px 10px;
+  border-radius: 6px;
   font-family: var(--peek-font-sans);
-  font-size: 11px;
-  font-weight: 550;
+  font-size: var(--peek-font-sm, 12px);
+  font-weight: 400;
   color: var(--peek-muted);
   list-style: none;
   user-select: none;
@@ -653,8 +639,8 @@ watch(
   top: 0;
   z-index: 3;
   background: var(--peek-bg);
-  margin: 0 -2px;
-  padding: 3px 2px;
+  margin: 0;
+  padding: 6px 10px;
   border-radius: 6px;
 }
 
@@ -674,16 +660,18 @@ watch(
 
 .agent-work-fold-meta {
   margin-left: auto;
-  font-weight: 500;
+  padding-left: 8px;
+  font-weight: 400;
   font-size: 11px;
   color: var(--peek-faint);
+  white-space: nowrap;
 }
 
 .agent-work-fold-body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 2px 0 4px;
+  padding: 4px 10px 6px;
 }
 
 .agent-work.has-running-subagent .agent-work-fold-summary {

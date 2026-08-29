@@ -1,7 +1,7 @@
 <template>
   <AppConfirmDialog ref="confirmDialogRef" />
   <section class="settings-page is-wide archive-page">
-    <SettingsPageHeader :title="copy.title">
+    <SettingsPageHeader :title="copy.title" :description="copy.description">
       <template #actions>
         <Button
           variant="ghost"
@@ -14,7 +14,7 @@
             type="checkbox"
             :checked="isAllSelected"
             :indeterminate="isPartiallySelected"
-            class="archive-check archive-check-sm pointer-events-none"
+            class="settings-checkbox settings-checkbox-sm pointer-events-none"
           />
           <span>{{ copy.selectAll }}</span>
         </Button>
@@ -40,7 +40,6 @@
         </Button>
       </template>
     </SettingsPageHeader>
-    <p class="archive-lead">{{ copy.description }}</p>
     <SettingsSearchField
       v-model="query"
       class="archive-search"
@@ -48,26 +47,26 @@
       :submit-label="copy.searchSubmit"
       :clear-label="copy.searchClear"
     />
-    <p v-if="pageError" class="archive-error">{{ pageError }}</p>
+    <SettingsFormError :message="pageError" />
 
-    <h3 class="archive-section-title">{{ copy.conversations }}</h3>
-    <div class="archive-card">
-      <p v-if="sessions.length === 0" class="archive-empty">{{ copy.emptyConversations }}</p>
-      <p v-else-if="filteredSessions.length === 0" class="archive-empty">
+    <h3 class="settings-section-label">{{ copy.conversations }}</h3>
+    <div class="settings-card">
+      <p v-if="sessions.length === 0" class="settings-empty">{{ copy.emptyConversations }}</p>
+      <p v-else-if="filteredSessions.length === 0" class="settings-empty">
         {{ copy.noMatchingConversations }}
       </p>
       <article
         v-for="session in filteredSessions"
         :key="session.sessionId"
-        class="archive-row"
-        :class="{ selected: selectedSessionIds.includes(session.sessionId) }"
+        class="settings-list-row is-selectable archive-item-row"
+        :class="{ 'is-selected': selectedSessionIds.includes(session.sessionId) }"
         @click="toggleSession(session.sessionId)"
       >
         <input
           v-model="selectedSessionIds"
           type="checkbox"
           :value="session.sessionId"
-          class="archive-check"
+          class="settings-checkbox"
           @click.stop
         />
         <div class="archive-copy">
@@ -97,24 +96,24 @@
       </article>
     </div>
 
-    <h3 class="archive-section-title">{{ copy.workspaces }}</h3>
-    <div class="archive-card">
-      <p v-if="workspaces.length === 0" class="archive-empty">{{ copy.emptyWorkspaces }}</p>
-      <p v-else-if="filteredWorkspaces.length === 0" class="archive-empty">
+    <h3 class="settings-section-label">{{ copy.workspaces }}</h3>
+    <div class="settings-card">
+      <p v-if="workspaces.length === 0" class="settings-empty">{{ copy.emptyWorkspaces }}</p>
+      <p v-else-if="filteredWorkspaces.length === 0" class="settings-empty">
         {{ copy.noMatchingWorkspaces }}
       </p>
       <article
         v-for="workspace in filteredWorkspaces"
         :key="workspace.id"
-        class="archive-row"
-        :class="{ selected: selectedWorkspaceIds.includes(workspace.id) }"
+        class="settings-list-row is-selectable archive-item-row"
+        :class="{ 'is-selected': selectedWorkspaceIds.includes(workspace.id) }"
         @click="toggleWorkspace(workspace.id)"
       >
         <input
           v-model="selectedWorkspaceIds"
           type="checkbox"
           :value="workspace.id"
-          class="archive-check"
+          class="settings-checkbox"
           @click.stop
         />
         <div class="archive-copy">
@@ -153,6 +152,7 @@ import { ArchiveRestore, Trash2 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import SettingsFormError from "@/components/settings/SettingsFormError.vue";
 import SettingsSearchField from "@/components/settings/SettingsSearchField.vue";
 import {
   deleteWorkspace,
@@ -421,61 +421,18 @@ onUnmounted(() => unlisten?.());
 </script>
 
 <style scoped>
-.archive-lead {
-  margin: 0 0 12px;
-  color: var(--peek-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
 .archive-search {
   margin: 0 0 16px;
 }
-.archive-error {
-  margin: 0 0 12px;
-  padding: 9px 10px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--destructive) 8%, transparent);
-  color: var(--destructive);
-  font-size: 11px;
+.settings-section-label {
+  margin-bottom: 8px;
 }
-.archive-section-title {
-  margin: 0 0 8px;
-  color: var(--peek-muted);
-  font-size: 11px;
-  font-weight: 600;
+.settings-card {
+  margin-bottom: 20px;
 }
-.archive-card {
-  overflow: hidden;
-  margin: 0 0 20px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 10px;
-}
-.archive-empty {
-  min-height: 88px;
-  display: grid;
-  place-items: center;
-  margin: 0;
-  color: var(--peek-muted);
-  font-size: 12px;
-}
-.archive-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.archive-item-row {
   min-height: 54px;
   padding: 8px 10px 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 72%, transparent);
-  cursor: pointer;
-}
-.archive-row:last-child {
-  border-bottom: 0;
-}
-.archive-row:hover,
-.archive-row.selected {
-  background: color-mix(in srgb, var(--peek-text) 3%, transparent);
-}
-.archive-row.selected {
-  background: color-mix(in srgb, var(--primary) 7%, transparent);
 }
 .archive-copy {
   min-width: 0;
@@ -503,51 +460,5 @@ onUnmounted(() => unlisten?.());
   flex: none;
   align-items: center;
   gap: 2px;
-}
-.archive-check {
-  appearance: none;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--background);
-  cursor: pointer;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-}
-.archive-check:checked,
-.archive-check:indeterminate {
-  background: var(--primary);
-  border-color: var(--primary);
-}
-.archive-check:checked::after {
-  content: "";
-  width: 8px;
-  height: 4px;
-  border-left: 2px solid var(--primary-foreground);
-  border-bottom: 2px solid var(--primary-foreground);
-  transform: translateY(-1px) rotate(-45deg);
-}
-.archive-check:indeterminate::after {
-  content: "";
-  width: 8px;
-  height: 2px;
-  background: var(--primary-foreground);
-  border-radius: 1px;
-}
-.archive-check-sm {
-  width: 14px;
-  height: 14px;
-}
-.archive-check-sm:checked::after {
-  width: 6px;
-  height: 3px;
 }
 </style>

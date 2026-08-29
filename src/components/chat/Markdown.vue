@@ -20,15 +20,26 @@ import {
 } from "@lucide/vue";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
-import markedKatex from "marked-katex-extension";
 import { marked } from "marked";
-import { computed, h, onMounted, onUnmounted, onUpdated, ref, render, type Component } from "vue";
-import "katex/dist/katex.min.css";
+import {
+  computed,
+  h,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  onUpdated,
+  ref,
+  render,
+  watch,
+  type Component,
+} from "vue";
 import { copyText } from "@/services/clipboard";
 import { parseChartSpec } from "@/services/chat/chartSpec";
 import { normalizeMarkdownInput } from "@/services/chat/markdownNormalize";
+import { buildMermaidPlaceholder, shouldRenderMermaidBlock } from "@/services/chat/mermaidDiagram";
 import { resolveChatImageSrc } from "@/services/chat/localImageSrc";
 import { disposeChartBlocks, hydrateChartBlocks } from "./chartHydration";
+import { disposeMermaidBlocks, hydrateMermaidBlocks } from "./mermaidHydration";
 
 const props = defineProps<{
   content: string;
@@ -40,13 +51,6 @@ const rootRef = ref<HTMLElement | null>(null);
 
 const renderer = new marked.Renderer();
 
-marked.use(
-  markedKatex({
-    nonStandard: true,
-    throwOnError: false,
-  }),
-);
-
 renderer.code = ({ text, lang }) => {
   const requestedLanguage = (lang ?? "").trim().split(/\s+/)[0]?.toLowerCase() || "";
 
@@ -55,6 +59,10 @@ renderer.code = ({ text, lang }) => {
     if (spec) {
       return `<div class="chart-block" data-chart-spec="${escapeHtmlAttribute(JSON.stringify(spec))}"></div>\n`;
     }
+  }
+
+  if (shouldRenderMermaidBlock(requestedLanguage, text ?? "")) {
+    return buildMermaidPlaceholder(text ?? "");
   }
 
   const language = /^[a-z0-9_+-]+$/.test(requestedLanguage)
@@ -69,8 +77,9 @@ renderer.code = ({ text, lang }) => {
       : hljs.highlightAuto(source).value;
   const languageClass = language ? ` language-${language}` : "";
   const languageLabel = displayLanguage(language);
+  const blockClass = language ? "code-block" : "code-block code-block--plain";
 
-  return `<div class="code-block"><div class="code-block-toolbar"><span class="code-language"><span class="code-language-icon" data-code-language-icon="${language}"></span><span>${languageLabel}</span></span><button type="button" class="code-copy-button" data-code-copy aria-label="Copy code" title="Copy code"></button></div><pre><code class="hljs${languageClass}">${highlighted}</code></pre></div>\n`;
+  return `<div class="${blockClass}"><div class="code-block-toolbar"><span class="code-language"><span class="code-language-icon" data-code-language-icon="${language}"></span><span class="code-language-label">${languageLabel}</span></span><button type="button" class="code-copy-button" data-code-copy aria-label="Copy code" title="Copy code"></button></div><div class="code-block-body"><pre><code class="hljs${languageClass}">${highlighted}</code></pre></div></div>\n`;
 };
 
 renderer.image = ({ href, title, text }) => {
@@ -136,7 +145,7 @@ function displayLanguage(language: string) {
     py: "Python",
     rs: "Rust",
   };
-  return labels[language] || language || "Code";
+  return labels[language] || language || "Text";
 }
 
 function escapeHtmlAttribute(value: string) {
@@ -169,7 +178,10 @@ function hydrateCodeBlockIcons() {
 function hydrateAll() {
   hydrateCodeBlockIcons();
   const root = rootRef.value;
-  if (root) hydrateChartBlocks(root);
+  if (root) {
+    hydrateChartBlocks(root);
+    hydrateMermaidBlocks(root);
+  }
 }
 
 function unmountPortalHosts(root: HTMLElement) {
@@ -179,6 +191,7 @@ function unmountPortalHosts(root: HTMLElement) {
       render(null, el);
     });
   disposeChartBlocks(root);
+  disposeMermaidBlocks(root);
 }
 
 onMounted(hydrateAll);
@@ -196,12 +209,12 @@ marked.setOptions({
 
 const html = computed(() => {
   try {
-    const raw = marked.parse(normalizeMarkdownInput(normalizeLegacyMath(props.content || "")), {
+    const raw = marked.parse(normalizeMarkdownInput(props.content || ""), {
       async: false,
     }) as string;
     return DOMPurify.sanitize(raw, {
       ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|file|sms):|[^&#]*?:|data:image\/)/i,
-      ADD_ATTR: ["data-image-source"],
+      ADD_ATTR: ["data-image-source", "data-mermaid-source", "data-mermaid-block", "hidden"],
       // Tables are part of the default allowlist, but some DOM environments
       // (e.g. certain test harnesses or webviews) resolve tag checks
       // differently. Declare the full table family explicitly so markdown
@@ -225,6 +238,10 @@ const html = computed(() => {
       `<pre class="markdown-fallback">${escapeHtmlAttribute(props.content || "")}</pre>`,
     );
   }
+});
+
+watch(html, () => {
+  void nextTick(hydrateAll);
 });
 
 async function onMarkdownClick(event: MouseEvent) {
@@ -292,44 +309,6 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   }, 1600);
   button.dataset.copyResetTimer = String(timer);
 }
-
-function normalizeLegacyMath(content: string) {
-  return content
-    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
-    .map((part, index) => {
-      if (index % 2 === 1) {
-        return part;
-      }
-
-      const escapedBlocks = part.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, formula: string) =>
-        isLikelyTex(formula) ? asDisplayMath(formula) : match,
-      );
-      const withBlocks = escapedBlocks.replace(
-        /^\s*\[\s*\r?\n([\s\S]*?)\r?\n\s*\]\s*$/gm,
-        (match, formula: string) => (isLikelyTex(formula) ? asDisplayMath(formula) : match),
-      );
-
-      return withBlocks
-        .replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, (_match, formula: string) => `$${formula.trim()}$`)
-        .replace(/\(\s*([^()\r\n]+?)\s*\)/g, (match, formula: string) =>
-          isLikelyTex(formula) ? `$${formula.trim()}$` : match,
-        );
-    })
-    .join("");
-}
-
-function asDisplayMath(value: string) {
-  let formula = value.trim();
-  if (/\\begin\{aligned\}/.test(formula)) {
-    formula = formula.replace(/(?<!\\)\\\s*$/gm, "\\\\");
-  }
-  return `\n$$\n${formula}\n$$\n`;
-}
-
-function isLikelyTex(value: string) {
-  const text = value.trim();
-  return /\\[a-zA-Z]+|[_^=]/.test(text) || /^[a-zA-Z](?:_\{[^}]+\})?$/.test(text);
-}
 </script>
 
 <style scoped>
@@ -385,23 +364,25 @@ function isLikelyTex(value: string) {
   font-size: 1em;
 }
 
-.markdown-body :deep(pre) {
-  margin: 0.65em 0;
-  padding: 10px 12px;
-  border: 1px solid var(--peek-code-border, var(--peek-border));
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--peek-input-bg) 82%, transparent);
+.markdown-body :deep(pre:not(.code-block pre)) {
+  margin: 0.75em 0;
+  padding: 12px 14px;
+  border: 1px solid var(--peek-code-border);
+  border-radius: 10px;
+  background: var(--peek-code-body-bg);
+  box-shadow: var(--peek-code-shadow);
   overflow-x: hidden;
-  line-height: 1.55;
+  line-height: 1.6;
   tab-size: 2;
 }
 
 .markdown-body :deep(.code-block) {
-  margin: 0.65em 0;
+  margin: 0.75em 0;
   overflow: hidden;
-  border: 1px solid var(--peek-code-border, var(--peek-border));
-  border-radius: 6px;
-  background: var(--peek-code-bg, color-mix(in srgb, var(--peek-input-bg) 82%, transparent));
+  border: 1px solid var(--peek-code-border);
+  border-radius: 10px;
+  background: var(--peek-code-bg);
+  box-shadow: var(--peek-code-shadow);
 }
 
 .markdown-body :deep(.code-block-toolbar) {
@@ -411,44 +392,69 @@ function isLikelyTex(value: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   width: 100%;
-  height: 32px;
-  min-height: 32px;
-  max-height: 32px;
-  padding: 0 7px 0 11px;
+  min-height: 30px;
+  padding: 5px 8px 5px 10px;
   overflow: hidden;
   line-height: 1;
-  border-bottom: 1px solid var(--peek-code-border, var(--peek-border));
-  background: var(--peek-code-toolbar-bg, color-mix(in srgb, var(--peek-text) 5%, transparent));
+  border-bottom: 1px solid var(--peek-code-border);
+  background: var(--peek-code-toolbar-bg);
 }
 
 .markdown-body :deep(.code-language) {
   box-sizing: border-box;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 31px;
-  color: var(--peek-code-muted, var(--peek-muted));
+  color: var(--peek-code-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.markdown-body :deep(.code-language-label) {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--peek-code-border) 88%, transparent);
+  background: color-mix(in srgb, var(--peek-code-body-bg) 72%, var(--peek-code-bg));
+  color: var(--peek-code-muted);
   font-family: var(--font-mono);
   font-size: 10px;
-  line-height: 1;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.markdown-body :deep(.code-block--plain .code-language-label) {
+  border-color: color-mix(in srgb, var(--peek-info) 22%, var(--peek-code-border));
+  background: color-mix(in srgb, var(--peek-info) 8%, var(--peek-code-bg));
+  color: color-mix(in srgb, var(--peek-info) 72%, var(--peek-code-muted));
 }
 
 .markdown-body :deep(.code-language-icon) {
   flex: none;
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  opacity: 0.88;
 }
 
 .markdown-body :deep(.code-language-icon svg) {
   display: block;
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   flex: none;
   color: var(--peek-syntax-type, color-mix(in srgb, var(--peek-accent) 78%, var(--peek-muted)));
 }
@@ -460,15 +466,25 @@ function isLikelyTex(value: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  border: 1px solid
-    var(--peek-code-border, color-mix(in srgb, var(--peek-text) 14%, var(--peek-border)));
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--peek-code-fg, var(--peek-text)) 8%, transparent);
-  color: var(--peek-code-icon, var(--peek-code-fg, var(--peek-text)));
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--peek-code-icon);
   cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast, 120ms) ease,
+    background-color var(--motion-fast, 120ms) ease,
+    color var(--motion-fast, 120ms) ease;
+}
+
+.markdown-body :deep(.code-block:hover .code-copy-button),
+.markdown-body :deep(.code-block:focus-within .code-copy-button),
+.markdown-body :deep(.code-copy-button:focus-visible) {
+  opacity: 1;
 }
 
 .markdown-body :deep(.code-copy-button svg) {
@@ -479,22 +495,28 @@ function isLikelyTex(value: string) {
 }
 
 .markdown-body :deep(.code-copy-button:hover) {
-  border-color: var(--peek-code-border, var(--peek-border));
-  background: var(--peek-code-hover-bg, color-mix(in srgb, var(--peek-text) 8%, transparent));
-  color: var(--peek-code-fg, var(--peek-text));
+  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
+  color: var(--peek-code-fg);
 }
 
 .markdown-body :deep(.code-copy-button:focus-visible) {
+  opacity: 1;
   outline: 2px solid color-mix(in srgb, var(--peek-accent) 55%, transparent);
   outline-offset: 1px;
 }
 
 .markdown-body :deep(.code-copy-button.copied) {
-  color: #36a269;
+  opacity: 1;
+  color: var(--peek-success, #36a269);
 }
 
 .markdown-body :deep(.code-copy-button.copy-failed) {
-  color: #d35f5f;
+  opacity: 1;
+  color: var(--peek-danger, #d35f5f);
+}
+
+.markdown-body :deep(.code-block-body) {
+  background: var(--peek-code-body-bg);
 }
 
 .markdown-body :deep(.code-block pre) {
@@ -502,14 +524,22 @@ function isLikelyTex(value: string) {
   border: 0;
   border-radius: 0;
   background: transparent;
+  padding: 12px 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
+.markdown-body :deep(.code-block--plain pre code) {
+  color: color-mix(in srgb, var(--peek-code-fg) 88%, var(--peek-code-muted));
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
 .markdown-body :deep(code) {
   font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 1.6;
 }
 
 .markdown-body :deep(pre code) {
@@ -530,9 +560,12 @@ function isLikelyTex(value: string) {
 }
 
 .markdown-body :deep(:not(pre) > code) {
-  padding: 1px 4px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--peek-text) 10%, transparent);
+  padding: 0.12em 0.38em;
+  border: 1px solid color-mix(in srgb, var(--peek-code-border) 80%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--peek-code-body-bg) 76%, var(--peek-surface));
+  color: var(--peek-code-fg);
+  font-size: 0.92em;
 }
 
 .markdown-body :deep(ul),
@@ -587,21 +620,8 @@ function isLikelyTex(value: string) {
   overflow-x: auto;
 }
 
-.markdown-body :deep(.katex-display) {
-  max-width: 100%;
-  margin: 0.8em 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0.15em 0;
-}
-
-.markdown-body :deep(.katex-display > .katex) {
-  min-width: max-content;
-  text-align: center;
-}
-
-.markdown-body :deep(.katex) {
-  font-size: 1.05em;
+.markdown-body :deep(.mermaid-block) {
+  margin: 0.75em 0;
 }
 
 .markdown-body :deep(th),
@@ -618,84 +638,5 @@ function isLikelyTex(value: string) {
 
 .markdown-body :deep(img) {
   cursor: zoom-in;
-}
-
-.markdown-body :deep(.hljs-comment),
-.markdown-body :deep(.hljs-quote) {
-  color: #7f8c98;
-  font-style: italic;
-}
-.markdown-body :deep(.hljs-keyword),
-.markdown-body :deep(.hljs-selector-tag),
-.markdown-body :deep(.hljs-literal),
-.markdown-body :deep(.hljs-type) {
-  color: #c792ea;
-}
-.markdown-body :deep(.hljs-string),
-.markdown-body :deep(.hljs-regexp),
-.markdown-body :deep(.hljs-addition),
-.markdown-body :deep(.hljs-attribute) {
-  color: #addb67;
-}
-.markdown-body :deep(.hljs-number),
-.markdown-body :deep(.hljs-symbol),
-.markdown-body :deep(.hljs-bullet) {
-  color: #f78c6c;
-}
-.markdown-body :deep(.hljs-title),
-.markdown-body :deep(.hljs-section),
-.markdown-body :deep(.hljs-function .hljs-title) {
-  color: #82aaff;
-}
-.markdown-body :deep(.hljs-variable),
-.markdown-body :deep(.hljs-template-variable),
-.markdown-body :deep(.hljs-params) {
-  color: #f07178;
-}
-.markdown-body :deep(.hljs-built_in),
-.markdown-body :deep(.hljs-meta),
-.markdown-body :deep(.hljs-link) {
-  color: #ffcb6b;
-}
-.markdown-body :deep(.hljs-deletion) {
-  color: #ff5370;
-}
-.markdown-body :deep(pre code.language-diff .hljs-addition) {
-  display: inline-block;
-  min-width: 100%;
-  background: color-mix(in srgb, #22c55e 18%, transparent);
-}
-.markdown-body :deep(pre code.language-diff .hljs-deletion) {
-  display: inline-block;
-  min-width: 100%;
-  background: color-mix(in srgb, var(--destructive) 18%, transparent);
-}
-
-:global([data-theme="light"] .markdown-body .hljs-comment),
-:global([data-theme="light"] .markdown-body .hljs-quote) {
-  color: #66736f;
-}
-:global([data-theme="light"] .markdown-body .hljs-keyword),
-:global([data-theme="light"] .markdown-body .hljs-type) {
-  color: #7652a6;
-}
-:global([data-theme="light"] .markdown-body .hljs-string),
-:global([data-theme="light"] .markdown-body .hljs-addition) {
-  color: #267045;
-}
-:global([data-theme="light"] .markdown-body .hljs-number),
-:global([data-theme="light"] .markdown-body .hljs-variable) {
-  color: #a0492d;
-}
-:global([data-theme="light"] .markdown-body .hljs-title),
-:global([data-theme="light"] .markdown-body .hljs-section) {
-  color: #28699c;
-}
-:global([data-theme="light"] .markdown-body .hljs-built_in),
-:global([data-theme="light"] .markdown-body .hljs-meta) {
-  color: #8a661f;
-}
-:global([data-theme="light"] .markdown-body .hljs-deletion) {
-  color: #b84f48;
 }
 </style>

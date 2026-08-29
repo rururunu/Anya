@@ -8,7 +8,7 @@
 @import "tw-animate-css";
 @import "shadcn-vue/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is([data-theme="dark"] *));
 
 html,
 body,
@@ -54,13 +54,6 @@ html.peek-window.frosted-glass .composer-dock.glass {
 
 html.chrome-frosted-glass {
   color-scheme: normal !important;
-  --workbench-glass-fill: rgb(232 232 232 / 0.9);
-  --workbench-glass-fill-covering: rgb(243 243 243 / 0.98);
-}
-
-html.chrome-frosted-glass[data-theme="dark"] {
-  --workbench-glass-fill: rgb(18 18 20 / 0.92);
-  --workbench-glass-fill-covering: rgb(22 22 24 / 0.98);
 }
 
 html.chrome-frosted-glass,
@@ -72,16 +65,16 @@ html.chrome-frosted-glass #app > * {
   background-color: rgba(0, 0, 0, 0) !important;
 }
 
-html.chrome-frosted-glass[data-theme="light"] body,
-html.chrome-frosted-glass[data-theme="light"] .workbench,
-html.chrome-frosted-glass[data-theme="light"] .settings-workbench {
-  color-scheme: light;
-}
-
-html.chrome-frosted-glass[data-theme="dark"] body,
-html.chrome-frosted-glass[data-theme="dark"] .workbench,
-html.chrome-frosted-glass[data-theme="dark"] .settings-workbench {
-  color-scheme: dark;
+html.chrome-frosted-glass body,
+html.chrome-frosted-glass .workbench,
+html.chrome-frosted-glass .settings-workbench,
+.workspace-menu-floating,
+.session-menu-flyout,
+.app-tooltip-bubble,
+.confirm-dialog,
+[data-slot="select-content"],
+[data-slot="tooltip-content"] {
+  color-scheme: only light;
 }
 
 @theme inline {
@@ -126,19 +119,11 @@ html.chrome-frosted-glass[data-theme="dark"] .settings-workbench {
 
 :root {
   --radius: 0.625rem;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-}
-
-.dark {
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --chart-1: var(--peek-chart-1);
+  --chart-2: var(--peek-chart-2);
+  --chart-3: var(--peek-chart-3);
+  --chart-4: var(--peek-chart-4);
+  --chart-5: var(--peek-chart-5);
 }
 
 @layer base {
@@ -150,6 +135,9 @@ html.chrome-frosted-glass[data-theme="dark"] .settings-workbench {
     @apply bg-background text-foreground;
     @apply font-sans;
     font-family: var(--peek-font-sans);
+    font-size: var(--peek-font-md, 14px);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
   html.peek-window .overlay-shell,
   html.peek-window .peek-panel,
@@ -301,6 +289,10 @@ html.peek-window .chat-input-shell {
   background: transparent;
   color: var(--peek-muted);
   cursor: pointer;
+  transition:
+    background-color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    transform var(--motion-instant, 80ms) var(--motion-ease-out, ease);
 }
 
 .peek-icon-btn:hover,
@@ -309,8 +301,18 @@ html.peek-window .chat-input-shell {
   background: var(--peek-hover-bg);
 }
 
+.peek-icon-btn:active:not(:disabled) {
+  background: var(--peek-press-bg);
+  transform: scale(0.96);
+}
+
 .peek-icon-btn.active {
   color: var(--peek-accent);
+}
+
+.peek-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--peek-focus-ring);
 }
 
 .peek-icon-btn:disabled,
@@ -329,16 +331,29 @@ html.peek-window .chat-input-shell {
   background: transparent;
   color: var(--peek-text);
   cursor: pointer;
+  transition:
+    background-color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    color var(--motion-fast, 110ms) var(--motion-ease-out, ease);
 }
 
 .peek-row:hover {
   background: var(--peek-row-hover);
 }
 
+.peek-row:active {
+  background: var(--peek-press-bg);
+}
+
 .peek-row.active,
 .peek-row[aria-current="true"],
 .peek-row[data-active="true"] {
   background: var(--peek-row-active);
+  font-weight: 550;
+}
+
+.peek-row:focus-visible {
+  outline: none;
+  box-shadow: var(--peek-focus-ring);
 }
 
 .peek-pane {

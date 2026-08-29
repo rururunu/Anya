@@ -2,13 +2,11 @@ import { describe, expect, it } from "vitest";
 import { JSDOM } from "jsdom";
 import createDOMPurify from "dompurify";
 import { marked } from "marked";
-import markedKatex from "marked-katex-extension";
 
 import { normalizeMarkdownInput } from "@/services/chat/markdownNormalize";
 
 function renderLinkHtml(content: string): string {
   const renderer = new marked.Renderer();
-  marked.use(markedKatex({ nonStandard: true, throwOnError: false }));
   marked.setOptions({ breaks: true, gfm: true, renderer });
   const raw = marked.parse(normalizeMarkdownInput(content), { async: false }) as string;
   const dom = new JSDOM("<!doctype html><html><body></body></html>");

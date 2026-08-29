@@ -1,11 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { marked } from "marked";
-import markedKatex from "marked-katex-extension";
 
 describe("marked 18 table parsing edge cases", () => {
   const renderer = new marked.Renderer();
-  marked.use(markedKatex({ nonStandard: true, throwOnError: false }));
   marked.setOptions({ breaks: true, gfm: true, renderer });
 
   it("table directly after paragraph without blank line", () => {

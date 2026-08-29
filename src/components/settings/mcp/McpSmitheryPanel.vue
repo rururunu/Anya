@@ -7,13 +7,15 @@
       :submit-label="labels.search"
       @submit="$emit('search')"
     />
-    <p v-if="error" class="form-error">{{ error }}</p>
+    <SettingsFormError :message="error" />
 
     <div class="catalog-section">
-      <p v-if="!loading && servers.length === 0 && loaded" class="empty">
+      <p v-if="!loading && servers.length === 0 && loaded" class="settings-empty">
         {{ labels.smitheryEmpty }}
       </p>
-      <p v-else-if="loading && servers.length === 0" class="empty">{{ labels.searching }}</p>
+      <p v-else-if="loading && servers.length === 0" class="settings-empty">
+        {{ labels.searching }}
+      </p>
       <div class="server-list">
         <CatalogItemCard
           v-for="server in servers"
@@ -60,6 +62,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import SettingsSearchField from "@/components/settings/SettingsSearchField.vue";
+import SettingsFormError from "@/components/settings/SettingsFormError.vue";
 import InfiniteScrollSentinel from "@/components/settings/InfiniteScrollSentinel.vue";
 import CatalogItemCard from "@/components/settings/CatalogItemCard.vue";
 import CatalogRoundAction from "@/components/settings/CatalogRoundAction.vue";
@@ -139,18 +142,6 @@ function metaLine(server: SmitheryMcpServerSummary) {
   min-width: 0;
 }
 
-.empty {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.form-error {
-  margin: 0;
-  color: #ef4444;
-  font-size: 12px;
-  line-height: 1.5;
-}
 .catalog-section {
   display: flex;
   flex-direction: column;

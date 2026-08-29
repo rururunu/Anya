@@ -63,7 +63,13 @@ impl ConversationManager {
                 for message in &to_save {
                     super::super::db::save_message(&pool, message).await?;
                 }
-                super::super::db::save_session_title(&pool, &sid, &title_save).await?;
+                super::super::db::save_session_title(
+                    &pool,
+                    &sid,
+                    &title_save,
+                    super::super::session_title::SessionTitleSource::Auto,
+                )
+                .await?;
                 if let Some(workspace_id) = ws.as_deref() {
                     super::super::db::bind_session_workspace(&pool, &sid, workspace_id).await?;
                 }
@@ -79,6 +85,12 @@ impl ConversationManager {
         }
         if let Ok(mut titles) = self.session_titles.lock() {
             titles.insert(new_id.clone(), title.clone());
+        }
+        if let Ok(mut sources) = self.session_title_sources.lock() {
+            sources.insert(
+                new_id.clone(),
+                super::super::session_title::SessionTitleSource::Auto,
+            );
         }
         if let Some(workspace_id) = workspace_id.as_ref() {
             if let Ok(mut workspaces) = self.session_workspaces.lock() {
@@ -160,6 +172,14 @@ pub(super) fn branch_title_stem(title: &str) -> &str {
         if let Some(inner) = rest.strip_suffix(')') {
             if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_digit()) {
                 return trimmed[..pos].trim_end();
+            }
+        }
+    }
+    if let Some((byte_idx, open)) = trimmed.char_indices().rfind(|(_, ch)| *ch == '（') {
+        let rest = &trimmed[byte_idx + open.len_utf8()..];
+        if let Some(inner) = rest.strip_suffix('）') {
+            if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_digit()) {
+                return trimmed[..byte_idx].trim_end();
             }
         }
     }

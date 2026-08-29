@@ -2,15 +2,15 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::models::settings::{AppSettings, ColorScheme};
+use crate::models::settings::AppSettings;
 
 /// Packed 0x00RRGGBB accent color (sRGB).
-static ACCENT_RGB: AtomicU32 = AtomicU32::new(0x00_3B_8E_EA);
+static ACCENT_RGB: AtomicU32 = AtomicU32::new(0x00_11_11_11);
 /// Bumped whenever accent changes so badges can repaint.
 static ACCENT_GENERATION: AtomicU32 = AtomicU32::new(1);
 
-const DARK_ACCENT: u32 = 0x00_3B_8E_EA; // #3b8eea — themes.css dark
-const LIGHT_ACCENT: u32 = 0x00_00_67_C0; // #0067c0 — themes.css light
+const DARK_ACCENT: u32 = 0x00_F5_F5_F5; // #f5f5f5 — themes.css --peek-accent
+const LIGHT_ACCENT: u32 = 0x00_11_11_11; // #111111 — themes.css --peek-accent
 
 pub fn accent_generation() -> u32 {
     ACCENT_GENERATION.load(Ordering::Relaxed)
@@ -35,8 +35,9 @@ pub fn configure_from_settings(settings: &AppSettings) {
 }
 
 fn resolve_accent(settings: &AppSettings) -> u32 {
-    match settings.color_scheme {
-        ColorScheme::Dark => DARK_ACCENT,
-        ColorScheme::Light => LIGHT_ACCENT,
+    if settings.color_scheme.is_dark() {
+        DARK_ACCENT
+    } else {
+        LIGHT_ACCENT
     }
 }

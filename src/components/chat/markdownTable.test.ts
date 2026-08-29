@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { JSDOM } from "jsdom";
 import createDOMPurify from "dompurify";
 import { marked } from "marked";
-import markedKatex from "marked-katex-extension";
+import { buildMermaidPlaceholder, shouldRenderMermaidBlock } from "@/services/chat/mermaidDiagram";
 
 const TABLE_MD = [
   "| 版本 | 发布时间 | 类型 | 核心变化 |",
@@ -16,17 +16,21 @@ const TABLE_MD = [
   "",
 ].join("\n");
 
-/** Mirrors Markdown.vue's exact pipeline (katex extension + custom renderer
- * + DOMPurify sanitize) so this test verifies what the chat panel renders. */
+/** Mirrors Markdown.vue's exact pipeline (custom renderer + DOMPurify sanitize). */
 function renderMarkdown(content: string, DOMPurify: ReturnType<typeof createDOMPurify>): string {
   const renderer = new marked.Renderer();
-  renderer.code = ({ text, lang }) =>
-    `<div class="code-block"><pre><code class="lang-${lang ?? ""}">${text}</code></pre></div>`;
-  marked.use(markedKatex({ nonStandard: true, throwOnError: false }));
+  renderer.code = ({ text, lang }) => {
+    const language = (lang ?? "").trim().split(/\s+/)[0]?.toLowerCase() || "";
+    if (shouldRenderMermaidBlock(language, text ?? "")) {
+      return buildMermaidPlaceholder(text ?? "");
+    }
+    return `<div class="code-block"><pre><code class="lang-${lang ?? ""}">${text}</code></pre></div>`;
+  };
   marked.setOptions({ breaks: true, gfm: true, renderer });
   const raw = marked.parse(content, { async: false }) as string;
   return DOMPurify.sanitize(raw, {
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|file|sms):|[^&#]*?:|data:image\/)/i,
+    ADD_ATTR: ["data-mermaid-block", "hidden"],
     ADD_TAGS: ["table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col"],
   });
 }
@@ -65,5 +69,14 @@ describe("markdown table rendering (jsdom = browser behavior)", () => {
     const cells = Array.from(table!.querySelectorAll("td")).map((td) => td.textContent);
     expect(cells[0]).toContain("Java 8");
     expect(cells.at(-1)).toContain("分代 ZGC");
+  });
+
+  it("mermaid fences become hydration placeholders", () => {
+    const md = ["```mermaid", "flowchart LR", "  A --> B", "```", ""].join("\n");
+    const clean = renderMarkdown(md, DOMPurify);
+    expect(clean).toContain('class="mermaid-block"');
+    expect(clean).toContain('<pre class="mermaid-source" hidden');
+    expect(clean).toContain("flowchart LR");
+    expect(clean).not.toContain("<pre>");
   });
 });

@@ -36,7 +36,7 @@
 
 - 各 Provider 的 HTTP 协议细节
 - 单个工具的参数契约
-- UI 视觉设计细节
+- Token 色值 / 视觉打磨（主题**应用路径**在范围内）
 
 ---
 
@@ -183,6 +183,19 @@ flowchart TB
 
 托盘 **设置** 会显示工作台并发出 `open-workbench-settings`。可选 **毛玻璃顶栏与侧栏**（`services/workbench_glass.rs`）走 DWM backdrop；对话区保持不透明。最大化 / 全屏时关闭原生模糊。
 
+### 外观（浅色 / 深色）
+
+设置只提供 **浅色** 与 **深色**。外观由 `html[data-theme="light"|"dark"]` 加上
+`src/services/theme/themes.css` 的 CSS 变量决定。文档的 `color-scheme` 保持
+**`only light`**，避免 WebView2 反转图片和原生绘制；深色只来自 token。
+`ThemeService.applyThemeAppearance` 是唯一应用入口（不再使用 `.dark` class）。
+毛玻璃时 html 用 `color-scheme: normal` 让桌面透过，body 仍为 `only light`。
+旧调色板 id 在 `normalizeThemeId` 中映射到 light/dark。
+
+工作台窗口圆角为 `--peek-window-radius`（16px）。Windows 上 `workbench_glass.rs`
+设置 `DWMWCP_DONOTROUND`，并用 `SetWindowRgn` 把 HWND 裁成同一半径（最大化时清除）。
+Logo（`components/icons/AnyaLogo.vue`）用 SVG 作 CSS mask，填充 `--peek-text`。
+
 会话标识（`session_id`）由 Rust 会话存储拥有。Overlay 与 Workbench 可同时附着到**同一**会话。Companion 经网关附着并投影同一存储——它不拥有第二套 Agent。
 
 ### 4.1 Remote Gateway 与 Companion
@@ -287,32 +300,36 @@ sequenceDiagram
 
 ### 5.1 Rust 领域（`src-tauri/src/core`）
 
-| 模块               | 路径                                       | 职责                                                                                        |
-| ------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Chat service       | `core/chat/service.rs`                     | 入口：落库、解析上下文/模型、启动或 soft-inject                                             |
-| Stream manager     | `core/chat/stream.rs`                      | 后台任务、取消、流式聚合、UI 事件、时间线文本                                               |
-| Agent runner       | `core/chat/agent.rs`                       | **主** model↔tools 循环                                                                     |
-| Agent loop 策略    | `core/chat/agent_loop/`                    | stream_turn、tools、challenge、compact、post_edit_verify、soft_inject、failure              |
-| 会话存储           | `core/chat/conversation_manager/`          | façade + `messages` / `activity` / `session` / `branch` / `helpers`；SQLite + work timeline |
-| DB / journal       | `core/chat/db.rs`、`core/chat/journal.rs`  | Schema、存取、崩溃恢复                                                                      |
-| 提示词（markdown） | `core/chat/prompts/`、`prompts/*.md`       | system / tools / policies / skills（`include_str!`）                                        |
-| Prompt 组装        | `core/chat/prompt/`                        | 固定槽位组装（`PromptBuilder` + `slots`），保护 KV-cache 前缀                               |
-| Agent runtime      | `core/agent/runtime/`                      | Run 状态机、取消、soft-inject、debug                                                        |
-| AI providers       | `core/ai/`                                 | 聊天 Provider 注册表、DeepSeek/Gemini、多模态；**Images API** 独立（`image_gen`）           |
-| Images API         | `core/ai/image_gen.rs`                     | `POST /v1/images/generations` / `edits`，走设置 → 生图（`image_providers`）                 |
-| Image markdown     | `core/ai/image_markdown.rs`                | 抽取 / 剥离 `![edit-region]`，供聊天、vision、Images 共用                                   |
-| 嵌入 / RAG         | `core/ai/embed.rs`、`commands/semantic.rs` | 可选 retrieve-then-rerank；API 或本地 ONNX                                                  |
-| Tools              | `core/tools/`                              | 注册表、审批、plan/image mode 门禁、文件、shell、skills、子 Agent                           |
-| 工作区索引         | `core/tools/workspace_index.rs`            | 分块关键词索引，落在 `.anya/index`（增量 JSONL）；经 `fs_skip` 跳过 `.anya`                 |
-| Plan mode          | `core/tools/plan_mode.rs`                  | 会话级写操作门禁；Agent 复杂任务自动进入启发式                                              |
-| Image mode         | `core/tools/image_mode.rs`                 | 会话级生图工具栏参数；工具白名单 + challenge                                                |
-| Context            | `core/context/`                            | IDE、选区、剪贴板、环境、Office 提示                                                        |
-| Checkpoint         | `core/checkpoint/`                         | 已应用文件变更的撤销 / 审查                                                                 |
-| Token              | `core/token/`                              | 用量记账（含缓存命中 / reasoning token）与持久化                                            |
-| MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/office`      | 外部协议适配                                                                                |
-| 协议类型           | `core/runtime/`                            | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`                                            |
-| Event bus          | `core/event/`                              | 领域事件                                                                                    |
-| Remote gateway     | `core/remote/`                             | WS `/remote/v1`、配对、隧道、上传、**下载 `/f/`**、预览 `/p/`                               |
+| 模块               | 路径                                       | 职责                                                                                           |
+| ------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Chat service       | `core/chat/service/`                       | 入口：落库、解析上下文/模型、启动或 soft-inject（`mod.rs` façade）                             |
+| Stream manager     | `core/chat/stream/`                        | 后台任务、取消、流式聚合、UI 事件、时间线文本                                                  |
+| Agent runner       | `core/chat/agent.rs`                       | **主** model↔tools 循环                                                                        |
+| Agent loop 策略    | `core/chat/agent_loop/`                    | stream_turn、tools、challenge、compact、post_edit_verify、soft_inject、failure                 |
+| 会话存储           | `core/chat/conversation_manager/`          | façade + `messages` / `activity` / `session` / `branch` / `helpers`；SQLite + work timeline    |
+| DB / journal       | `core/chat/db/`、`core/chat/journal.rs`    | Schema、存取、崩溃恢复（`db/{schema,messages,sessions,tool_activity}`）                        |
+| 提示词（markdown） | `core/chat/prompts/`、`prompts/*.md`       | system / tools / policies / skills（`include_str!`）                                           |
+| Prompt 组装        | `core/chat/prompt/`                        | 固定槽位组装（`PromptBuilder` + `slots`），保护 KV-cache 前缀                                  |
+| Agent runtime      | `core/agent/runtime/`                      | Run 状态机、取消、soft-inject、debug                                                           |
+| AI providers       | `core/ai/`                                 | 聊天 Provider 注册表、DeepSeek/Gemini、多模态；**Images API** 独立（`image_gen`）              |
+| DeepSeek / OpenAI  | `core/ai/deepseek/`                        | `provider`、`messages/`、`stream/`、`anthropic`、`models`、`multimodal`                        |
+| Shell jobs         | `core/tools/shell_jobs/`                   | 前台/后台 shell 进程生命周期与输出                                                             |
+| 工作区注册表       | `core/workspace/`                          | SQLite 工作区列表（`manager/`、`db`、`helpers`）                                               |
+| MCP 客户端         | `core/mcp/`                                | stdio JSON-RPC（`manager`、`process`、`runtime`、`command`、`remote_auth`）                    |
+| Images API         | `core/ai/image_gen.rs`                     | `POST /v1/images/generations` / `edits`，走设置 → 生图（`image_providers`）                    |
+| Image markdown     | `core/ai/image_markdown.rs`                | 抽取 / 剥离 `![edit-region]`，供聊天、vision、Images 共用                                      |
+| 嵌入 / RAG         | `core/ai/embed.rs`、`commands/semantic.rs` | 可选 retrieve-then-rerank；API 或本地 ONNX                                                     |
+| Tools              | `core/tools/`                              | 注册表、审批、plan/image mode 门禁、文件、shell、skills、子 Agent                              |
+| 工作区索引         | `core/tools/workspace_index.rs`            | 分块关键词索引，落在 `.anya/index`（增量 JSONL）；经 `fs_skip` 跳过 `.anya`                    |
+| Plan mode          | `core/tools/plan_mode.rs`                  | 会话级写操作门禁；Agent 复杂任务自动进入启发式                                                 |
+| Image mode         | `core/tools/image_mode.rs`                 | 会话级生图工具栏参数；工具白名单 + challenge                                                   |
+| Context            | `core/context/`                            | IDE、选区、剪贴板、环境、Office 提示                                                           |
+| Checkpoint         | `core/checkpoint/`                         | 已应用文件变更的撤销 / 审查                                                                    |
+| Token              | `core/token/`                              | 用量记账（含缓存命中 / reasoning token）与持久化                                               |
+| MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/office`      | 外部协议适配                                                                                   |
+| 协议类型           | `core/runtime/`                            | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`                                               |
+| Event bus          | `core/event/`                              | 领域事件                                                                                       |
+| Remote gateway     | `core/remote/`                             | WS `/remote/v1`；`gateway/`、`state/`、`bridge/`、配对、隧道、上传、**下载 `/f/`**、预览 `/p/` |
 
 ### 5.2 命名：三处 “runtime”
 
@@ -324,17 +341,19 @@ sequenceDiagram
 
 ### 5.3 前端（`src/`）
 
-| 区域                | 路径                                                               | 职责                                                                         |
-| ------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| Overlay / Workbench | `layouts/Overlay.vue`、`layouts/Main.vue`                          | 窗口壳；工作台内嵌 SettingsPage                                              |
-| 聊天 UI             | `components/chat/*`                                                | 消息列表、时间线、工具卡片、计划批准卡、输入栏（`ChatInputBar` + `input/*`） |
-| 聊天 composables    | `composables/chat/`                                                | `wireChatIpc`、上下文用量、附件、Ask User、生图画笔                          |
-| Chat store          | `stores/chat.ts`（+ `chatCompose` / `chatHistory` / `chatStream`） | Pinia façade；compose 缓存 / history 合并 / 流式 helper 在旁路模块           |
-| 其他 stores         | `stores/setting.ts`、`chatModel.ts`                                | 设置、模型目录                                                               |
-| 聊天 services       | `services/chat/`                                                   | 生图模式、本地图路径、保存图片、composer 分段、token 估算                    |
-| IPC                 | `services/ipc/`                                                    | 类型化 invoke 与事件订阅                                                     |
-| 流式批处理          | `services/chat/rafBatch.ts`、`composables/chat/wireChatIpc.ts`     | delta RAF 合并；聊天 IPC 从 `main.ts` 抽出                                   |
-| 设置页              | `pages/Settings/`                                                  | 服务商 / Agent / MCP / skills / **RAG 检索** / **生图** 提供商               |
+| 区域                  | 路径                                                           | 职责                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Overlay / Workbench   | `layouts/Overlay.vue`、`layouts/Main.vue`                      | 窗口壳；工作台内嵌 SettingsPage；导航在 `composables/workbench/`                                                                     |
+| 聊天 UI               | `components/chat/*`                                            | 消息列表、时间线、工具卡片、计划批准卡、输入栏（`ChatInputBar` + `input/*`）                                                         |
+| 聊天 composables      | `composables/chat/`                                            | `wireChatIpc`、`useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`、`useMessage{Scroll,PreviewRail}`、Ask User、附件 |
+| Chat store            | `stores/chat.ts`、`stores/chatSessions.ts`                     | Pinia façade；会话列表/归档/标题在 `chatSessions`；compose/stream helper 在旁路模块                                                  |
+| Workbench composables | `composables/workbench/`                                       | `useWorkbenchNavigation`、`useNavigationSidebar`、会话/工作区/审查生命周期                                                           |
+| 其他 stores           | `stores/setting.ts`、`chatModel.ts`                            | 设置、模型目录                                                                                                                       |
+| 主题                  | `services/theme/`                                              | 目录（浅色/深色）、`ThemeService` 应用路径、`themes.css` token                                                                       |
+| 聊天 services         | `services/chat/`                                               | 生图模式、本地图路径、保存图片、composer 分段、token 估算                                                                            |
+| IPC                   | `services/ipc/`                                                | 类型化 invoke 与事件订阅                                                                                                             |
+| 流式批处理            | `services/chat/rafBatch.ts`、`composables/chat/wireChatIpc.ts` | delta RAF 合并；聊天 IPC 从 `main.ts` 抽出                                                                                           |
+| 设置页                | `pages/Settings/`                                              | 服务商 / Agent / MCP / skills / **RAG 检索** / **生图** 提供商                                                                       |
 
 ---
 
@@ -746,26 +765,29 @@ Companion 不得再长出第二套 Agent 运行时。
 
 ## 16. 相关源码入口
 
-| 关注点                      | 从此处开始                                                                       |
-| --------------------------- | -------------------------------------------------------------------------------- |
-| 应用启动 / 托盘 / 热键      | `src-tauri/src/lib.rs`                                                           |
-| 聊天 IPC                    | `commands/chat.rs`                                                               |
-| 发送与上下文组装 / 计划门禁 | `core/chat/service.rs`、`core/tools/plan_mode.rs`                                |
-| 流式生命周期 + 时间线文本   | `core/chat/stream.rs`                                                            |
-| 时间线持久化                | `core/chat/conversation_manager/`、`core/chat/db.rs`                             |
-| Agent 循环                  | `core/chat/agent.rs`、`core/chat/agent_loop/`                                    |
-| Run 壳                      | `core/agent/runtime/`                                                            |
-| Image 模式 / Images API     | `core/tools/image_mode.rs`、`core/ai/image_gen.rs`、`prompts/image-mode.md`      |
-| 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/composables/chat/wireChatIpc.ts`、`src/stores/chat.ts` |
-| Chat store 旁路模块         | `src/stores/chatCompose.ts`、`chatHistory.ts`、`chatStream.ts`                   |
-| 输入栏抽取                  | `src/composables/chat/use{ContextUsage,ComposerAttachments,AskUserFlow}.ts`      |
-| 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                       |
-| 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                    |
-| 生图 UI                     | `src/components/chat/GeneratedImageCard.vue`、`ImagePreviewSidebar.vue`          |
-| 内嵌设置 / RAG              | `pages/Settings/`、`components/settings/RagSettings.vue`                         |
-| 工作台毛玻璃                | `services/workbench_glass.rs`、`overlay/appearance.ts`                           |
-| Remote gateway / 配对       | `core/remote/gateway.rs`、`pairing.rs`、`tunnel.rs`                              |
-| 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                        |
-| Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                           |
-| 工作区索引 / RAG            | `core/tools/workspace_index.rs`、`core/ai/embed.rs`                              |
-| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                           |
+| 关注点                      | 从此处开始                                                                                |
+| --------------------------- | ----------------------------------------------------------------------------------------- |
+| 应用启动 / 托盘 / 热键      | `src-tauri/src/lib.rs`                                                                    |
+| 聊天 IPC                    | `commands/chat.rs`                                                                        |
+| 发送与上下文组装 / 计划门禁 | `core/chat/service/`、`core/tools/plan_mode.rs`                                           |
+| 流式生命周期 + 时间线文本   | `core/chat/stream/`                                                                       |
+| 时间线持久化                | `core/chat/conversation_manager/`、`core/chat/db/`                                        |
+| Agent 循环                  | `core/chat/agent.rs`、`core/chat/agent_loop/`                                             |
+| Run 壳                      | `core/agent/runtime/`                                                                     |
+| Image 模式 / Images API     | `core/tools/image_mode.rs`、`core/ai/image_gen.rs`、`prompts/image-mode.md`               |
+| 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/composables/chat/wireChatIpc.ts`、`src/stores/chat.ts`          |
+| Chat store 旁路模块         | `src/stores/chatSessions.ts`、`chatCompose.ts`、`chatHistory.ts`、`chatStream.ts`         |
+| 输入栏抽取                  | `src/composables/chat/useComposer*.ts`、`useMessageScroll.ts`、`useMessagePreviewRail.ts` |
+| Remote gateway / 配对       | `core/remote/gateway/`、`pairing.rs`、`tunnel.rs`                                         |
+| Shell jobs / 工作区 / MCP   | `core/tools/shell_jobs/`、`core/workspace/`、`core/mcp/`                                  |
+| DeepSeek stream             | `core/ai/deepseek/stream/`                                                                |
+| 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                                |
+| 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                             |
+| 生图 UI                     | `src/components/chat/GeneratedImageCard.vue`、`ImagePreviewSidebar.vue`                   |
+| 内嵌设置 / RAG              | `pages/Settings/`、`components/settings/RagSettings.vue`                                  |
+| 主题应用路径                | `src/services/theme/`、`stores/setting.ts` `applyTheme`                                   |
+| 工作台毛玻璃 / 窗口圆角     | `services/workbench_glass.rs`、`overlay/appearance.ts`                                    |
+| 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                                 |
+| Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                                    |
+| 工作区索引 / RAG            | `core/tools/workspace_index.rs`、`core/ai/embed.rs`                                       |
+| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                    |

@@ -1,0 +1,694 @@
+﻿cargo :    Compiling peek v0.2.14 (C:\My\code\AltAltAi\src-tauri)
+所在位置 C:\Users\GuoLv\AppData\Local\Temp\ps-script-0a20535a-9829-44a8-b8b4-afee0958da2a.ps1:115 字符: 35
++ cd c:/My/code/AltAltAi/src-tauri; cargo test 2>&1 | Out-File -FilePat ...
++                                   ~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling pe...ltAi\src-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unused import: `map_read_error`
+ --> src\core\ai\deepseek\stream\runner.rs:8:48
+  |
+8 | use super::errors::{is_retryable_stream_error, map_read_error};
+  |                                                ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `StreamReadOutcome`
+  --> src\core\ai\deepseek\stream\runner.rs:10:29
+   |
+10 | use super::types::{SseKind, StreamReadOutcome, MAX_STREAM_ATTEMPTS, RETRY_BACKOFF, USER_STREAM_INTERRUPTED};
+   |                             ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::core::runtime::ToolCallPayload`
+ --> src\core\ai\deepseek\stream\types.rs:1:5
+  |
+1 | use crate::core::runtime::ToolCallPayload;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::Value`
+ --> src\core\ai\deepseek\stream\types.rs:3:5
+  |
+3 | use serde_json::Value;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> src\core\ai\deepseek\stream\types.rs:4:5
+  |
+4 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `StreamReadOutcome` and `USER_STREAM_INTERRUPTED`
+  --> src\core\ai\deepseek\stream\mod.rs:11:24
+   |
+11 | pub(crate) use types::{StreamReadOutcome, USER_STREAM_INTERRUPTED};
+   |                        ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `user_facing_stream_error`
+  --> src\core\ai\deepseek\stream\mod.rs:13:44
+   |
+13 | pub(crate) use errors::{emit_stream_error, user_facing_stream_error};
+   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Path`
+ --> src\core\mcp\command.rs:7:17
+  |
+7 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+
+warning: unused import: `Command`
+ --> src\core\mcp\process.rs:6:39
+  |
+6 | use std::process::{Child, ChildStdin, Command, Stdio};
+  |                                       ^^^^^^^
+
+warning: unused import: `McpManager`
+  --> src\core\mcp\mod.rs:13:39
+   |
+13 | pub use manager::{shared_mcp_manager, McpManager};
+   |                                       ^^^^^^^^^^
+
+warning: unused imports: `find_node_exe`, `find_npm_js_cli`, and `find_uvx_exe`
+  --> src\core\mcp\mod.rs:14:19
+   |
+14 | pub use runtime::{find_node_exe, find_npm_js_cli, find_uvx_exe, runtime_support, McpRuntimeSupport};
+   |                   ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `Manager`
+ --> src\core\remote\gateway\server.rs:4:33
+  |
+4 | use tauri::{AppHandle, Emitter, Manager};
+  |                                 ^^^^^^^
+
+warning: unused import: `prepare_command`
+  --> src\core\tools\shell_jobs\foreground.rs:11:32
+   |
+11 | use crate::runtime::terminal::{prepare_command, prepare_powershell};
+   |                                ^^^^^^^^^^^^^^^
+
+warning: unused import: `Child`
+  --> src\core\tools\shell_jobs\foreground.rs:14:20
+   |
+14 | use std::process::{Child, Command, Stdio};
+   |                    ^^^^^
+
+warning: unused import: `std::process::Child`
+ --> src\core\tools\shell_jobs\output.rs:7:5
+  |
+7 | use std::process::Child;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `append_raw_bounded`
+ --> src\core\tools\shell_jobs\types.rs:3:21
+  |
+3 |     append_bounded, append_raw_bounded, format_job_status, format_job_status_with_output,
+  |                     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `prepare_command`
+  --> src\core\tools\shell_jobs\types.rs:10:32
+   |
+10 | use crate::runtime::terminal::{prepare_command, prepare_powershell};
+   |                                ^^^^^^^^^^^^^^^
+
+warning: unused import: `Duration`
+  --> src\core\tools\shell_jobs\types.rs:18:17
+   |
+18 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^
+
+warning: unused import: `ShellJob`
+  --> src\core\tools\shell_jobs\mod.rs:12:17
+   |
+12 | pub use types::{ShellJob, ShellJobStore};
+   |                 ^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> src\core\workspace\helpers.rs:1:23
+  |
+1 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused import: `Path`
+ --> src\core\workspace\manager.rs:4:17
+  |
+4 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+
+warning: unused import: `WorkspaceId`
+ --> src\core\workspace\mod.rs:8:28
+  |
+8 | pub use types::{Workspace, WorkspaceId, WorkspaceManager};
+  |                            ^^^^^^^^^^^
+
+warning: unused import: `find_uvx_exe`
+  --> src\core\mcp\mod.rs:14:51
+   |
+14 | pub use runtime::{find_node_exe, find_npm_js_cli, find_uvx_exe, runtime_support, McpRuntimeSupport};
+   |                                                   ^^^^^^^^^^^^
+
+warning: unused import: `std::io::Read`
+  --> src\core\tools\shell_jobs\types.rs:14:5
+   |
+14 | use std::io::Read;
+   |     ^^^^^^^^^^^^^
+
+warning: `peek` (lib test) generated 21 warnings (20 duplicates) (run `cargo fix --lib -p peek --tests` to apply 1 sugg
+estion)
+warning: `peek` (lib) generated 23 warnings (run `cargo fix --lib -p peek` to apply 22 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.19s
+     Running unittests src\lib.rs (C:\Users\GuoLv\AppData\Local\Temp\cursor-sandbox-cache\7533f3371d634f6b8a1723d0b4aa4
+988\cargo-target\debug\deps\peek_lib-ac39197671a3d7c4.exe)
+
+running 497 tests
+test commands::chat::environment_context_tests::environment_context_ipc_is_allowed_by_chat_permission ... ok
+test commands::workspace::tests::strips_windows_verbatim_drive_prefix ... ok
+test commands::chat::environment_context_tests::command_and_chat_service_use_equivalent_workspace_resolution ... ok
+test commands::workspace::tests::converts_forward_slashes_on_windows ... ok
+test commands::workspace::tests::strips_windows_verbatim_unc_prefix ... ok
+test commands::harness::tests::conversation_only_checkpoint_does_not_require_workspace ... ok
+test core::agent::debug::tests::subagent_event_serializes_with_parent_run_identity ... ok
+test commands::harness::tests::file_checkpoint_still_requires_workspace ... ok
+test core::agent::debug::tests::boxed_context_snapshot_preserves_frontend_payload ... ok
+test core::agent::debug::tests::office_runtime_event_serializes_for_frontend_transport ... ok
+test commands::diff::tests::parses_legacy_unified_diff ... ok
+test commands::diff::tests::aligns_replacements_with_similar ... ok
+test core::agent::debug::tests::debug_event_serializes_for_frontend_transport ... ok
+test commands::diff::tests::keeps_empty_counterpart_for_insertions ... ok
+test commands::diff::tests::falls_back_to_unified_diff_when_preview_text_is_empty ... ok
+test core::agent::planner::llm::tests::plan_is_serializable ... ok
+test core::agent::runtime::agent_runtime::tests::agent_run_accumulates_model_usage_deltas ... ok
+test core::agent::runtime::state::tests::supports_the_v1_state_flow ... ok
+test core::agent::runtime::agent_runtime::tests::event_bridge_projects_subagent_lifecycle_without_mutating_parent_plan ... ok
+test core::agent::runtime::agent_runtime::tests::run_records_context_plan_and_state_events ... ok
+test core::agent::runtime::agent_runtime::tests::failed_tool_moves_run_to_failed ... ok
+test core::agent::runtime::agent_runtime::tests::event_bridge_records_tool_and_completion_events ... ok
+test core::agent::runtime::agent_runtime::tests::debug_projection_carries_context_tools_and_ordered_states ... ok
+test core::agent::runtime::state::tests::terminal_states_cannot_restart ... ok
+test core::agent::tools::tool::tests::parses_shell_streams_and_exit_code ... ok
+test core::agent::tools::registry::tests::v1_registry_contains_only_shell_file_and_git ... ok
+test core::agent::tools::registry::tests::registers_and_queries_a_tool ... ok
+test core::ai::deepseek::anthropic::tests::format_rejection_covers_anthropic_and_openai ... ok
+test core::ai::deepseek::anthropic::tests::minimax_on_aggregator_prefers_anthropic ... ok
+test core::ai::deepseek::anthropic::tests::anthropic_body_lifts_system_and_tools ... ok
+test core::ai::deepseek::anthropic::tests::resolve_protocol_cache_then_heuristic_then_default ... ok
+test core::ai::deepseek::anthropic::tests::url_for_wire_protocol_uses_provider_base ... ok
+test core::ai::deepseek::models::reasoning_listing_tests::extract_items_keeps_reasoning ... ok
+test core::ai::deepseek::models::reasoning_listing_tests::bare_openai_object_stays_unknown ... ok
+test core::ai::deepseek::models::reasoning_listing_tests::openrouter_supported_parameters_without_reasoning_is_negative ... ok
+test core::ai::deepseek::models::reasoning_listing_tests::explicit_supports_reasoning_flag ... ok
+test core::ai::deepseek::anthropic::tests::anthropic_body_converts_tool_roundtrip ... ok
+test core::ai::deepseek::anthropic::tests::remaining_protocols_skip_the_failed_one ... ok
+test core::ai::deepseek::models::reasoning_listing_tests::openrouter_supported_parameters_marks_reasoning ... ok
+test core::ai::deepseek::stream::responses_event_tests::completed_marks_stream_done ... ok
+test core::ai::deepseek::stream::responses_event_tests::reasoning_summary_delta_is_collected ... ok
+test core::ai::deepseek::stream::responses_event_tests::responses_usage_reads_deepseek_cache_hit_field ... ok
+test core::ai::deepseek::stream::responses_event_tests::output_text_delta_is_collected ... ok
+test core::ai::deepseek::stream::responses_event_tests::cache_read_prefers_first_party_hit_tokens ... ok
+test core::ai::deepseek::stream::responses_event_tests::reasoning_item_done_is_collected ... ok
+test core::ai::deepseek::stream::responses_event_tests::function_call_item_is_collected ... ok
+test core::ai::deepseek::stream::retry_tests::retries_transient_deepseek_http_errors_but_not_client_errors ... ok
+test core::ai::deepseek::stream::types::tool_call_builder_tests::empty_name_delta_does_not_wipe_existing_name ... ok
+test core::ai::deepseek::stream::types::tool_call_builder_tests::growing_name_prefix_is_kept ... ok
+test core::ai::deepseek::stream::responses_event_tests::reasoning_summary_part_added_is_collected ... ok
+test core::ai::deepseek::stream::utf8_stream_tests::sse_buffer_survives_split_multibyte_utf8 ... ok
+test core::ai::deepseek::tests::antigravity_describe_model_only_when_multimodal_is_gemini ... ok
+test core::ai::deepseek::tests::build_api_body_includes_tools_when_present ... ok
+test core::ai::deepseek::tests::build_api_body_high_effort_includes_thinking ... ok
+test core::ai::deepseek::tests::build_api_body_drops_orphan_tool_messages ... ok
+test core::ai::deepseek::tests::build_api_body_drops_stored_reasoning_from_messages ... ok
+test core::ai::deepseek::tests::build_api_body_drops_tool_without_preceding_tool_calls ... ok
+test core::ai::deepseek::tests::build_api_body_omits_null_optional_fields ... ok
+test core::ai::deepseek::tests::build_api_body_sends_openai_none_effort ... ok
+test core::ai::deepseek::tests::build_api_body_sends_deepseek_low_effort ... ok
+test core::ai::deepseek::tests::build_api_body_sends_qwen38_official_levels ... ok
+test core::ai::deepseek::tests::build_api_body_sends_reasoning_effort_for_kimi_style_models ... ok
+test core::ai::deepseek::tests::build_api_body_skips_deepseek_thinking_for_custom_models ... ok
+test core::ai::deepseek::tests::build_api_body_disabled_effort_omits_reasoning_effort ... ok
+test core::ai::deepseek::tests::normalize_anthropic_messages_url_from_chat_completions ... ok
+test core::ai::deepseek::tests::normalize_chat_completions_url_avoids_duplication ... ok
+test core::ai::deepseek::tests::build_responses_body_sends_grok_medium ... ok
+test core::ai::deepseek::tests::build_responses_body_uses_input_and_xai_reasoning ... ok
+test core::ai::deepseek::tests::deepseek_scopes_content_and_tool_placeholder ... ok
+test core::ai::deepseek::tests::message_to_api_json_serializes_tool_result ... ok
+test core::ai::deepseek::tests::multimodal_http_error_message_explains_502 ... ok
+test core::ai::deepseek::tests::build_responses_body_maps_disabled_effort_to_high ... ok
+test core::ai::deepseek::tests::build_responses_body_maps_max_effort_to_xhigh ... ok
+test core::ai::deepseek::tests::normalize_chat_completions_url_injects_v1_for_bare_host ... ok
+test core::ai::deepseek::tests::normalize_images_generations_url_from_chat_base ... ok
+test core::ai::deepseek::tests::normalize_responses_url_from_chat_completions ... ok
+test core::ai::deepseek::tests::provider_error_detects_context_window_exceeded ... ok
+test core::ai::deepseek::tests::resolve_multimodal_endpoint_requires_custom_provider ... ok
+test core::ai::deepseek::tests::resolve_multimodal_endpoint_disambiguates_duplicate_model_ids ... ok
+test core::ai::deepseek::tests::resolve_multimodal_endpoint_uses_custom_provider ... ok
+test core::ai::deepseek::tests::resolve_multimodal_endpoint_uses_deepseek_builtin ... ok
+test core::ai::deepseek::tests::should_not_retry_stream_after_body_decode_failure ... ok
+test core::ai::deepseek::tests::stream_outcome_complete_when_done_or_finish_reason ... ok
+test core::ai::deepseek::tests::tool_continuation_keeps_thinking ... ok
+test core::ai::image_analysis::tests::decode_image_inline_payload_parses_data_url ... ok
+test core::ai::deepseek::tests::tool_continuation_can_skip_thinking_when_setting_off ... ok
+test core::ai::deepseek::tests::tool_call_turn_includes_reasoning_when_enabled ... ok
+test core::ai::image_analysis::tests::failed_analysis_is_not_usable ... ok
+test core::ai::image_gen::tests::edits_url_replaces_generations_suffix ... ok
+test core::ai::image_gen::tests::parse_b64_json_payload ... ok
+test core::ai::image_gen::tests::collect_keeps_successful_images_when_some_requests_fail ... ok
+test core::ai::image_gen::tests::http_error_includes_post_url_and_images_host_hint ... ok
+test core::ai::image_gen::tests::images_body_always_requests_a_single_image ... ok
+test core::ai::image_gen::tests::images_body_matches_official_gpt_image ... ok
+test core::ai::image_gen::tests::quality_and_size_fall_back_to_safe_defaults ... ok
+test core::ai::deepseek::tests::user_facing_stream_error_maps_network_failures ... ok
+test core::ai::image_gen::tests::resolve_uses_image_providers_not_chat_providers ... ok
+test core::ai::image_markdown::tests::extract_skips_edit_region_display_previews ... ok
+test core::ai::image_gen::tests::resolve_matches_model_on_image_provider_list ... ok
+test core::ai::image_gen::tests::resolve_ignores_chat_custom_providers ... ok
+test core::ai::image_markdown::tests::extract_markdown_image_refs_skips_http_urls ... ok
+test core::ai::model_ref::tests::prompt_lists_api_ids_not_json_pairs ... ok
+test core::ai::image_markdown::tests::merge_keeps_attachments_ahead_of_example ... ok
+test core::ai::model_ref::tests::reads_model_arg_as_string_or_pair_array ... ok
+test core::ai::model_ref::tests::bare_id_matches_encoded_allow_list ... ok
+test core::ai::model_ref::tests::parses_frontend_pair_and_bare_id ... ok
+test core::ai::multimodal::tests::detects_openai_style_vision_rejection ... ok
+test core::ai::multimodal::tests::ignores_auth_and_rate_limit_errors ... ok
+test core::ai::multimodal::tests::ignores_missing_model_errors ... ok
+test core::ai::multimodal::tests::gemini_and_gpt4o_have_native_vision ... ok
+test core::ai::multimodal_response::tests::empty_body_is_actionable ... ok
+test core::ai::multimodal_response::tests::parses_bom_prefixed_json ... ok
+test core::ai::multimodal_response::tests::parses_data_text_string ... ok
+test core::ai::image_analysis::tests::missing_tag_returns_none ... ok
+test core::ai::multimodal_response::tests::parses_openai_string_content ... ok
+test core::ai::multimodal_response::tests::parses_sse_stream ... ok
+test core::ai::multimodal_response::tests::parses_responses_api_output_text ... ok
+test core::ai::multimodal_response::tests::parses_gemini_candidate_parts ... ok
+test core::ai::multimodal_response::tests::parses_plain_text_body ... ok
+test core::ai::image_analysis::tests::remove_failed_analysis_allows_reinsert ... ok
+test core::ai::multimodal_response::tests::parses_json_wrapped_in_noise ... ok
+test core::ai::image_analysis::tests::usable_analysis_after_image_skips_failures ... ok
+test core::ai::image_analysis::tests::detects_existing_tag_after_image ... ok
+test core::ai::multimodal_response::tests::parses_stringified_data_payload ... ok
+test core::ai::multimodal_response::tests::surfaces_html_response_clearly ... ok
+test core::ai::multimodal_response::tests::parses_openai_part_array_content ... ok
+test core::ai::multimodal_response::tests::surfaces_empty_content_finish_reason ... ok
+test core::ai::multimodal_response::tests::ignores_null_error_field ... ok
+test core::ai::multimodal_response::tests::surfaces_provider_error_object ... ok
+test core::ai::multimodal_response::tests::surfaces_refusal ... ok
+test core::ai::multimodal_response::tests::truncate_body_is_utf8_safe ... ok
+test core::ai::image_markdown::tests::strip_edit_region_keeps_edits_reference ... ok
+test core::ai::registry::tests::disabled_model_is_flagged_and_survives_comma_or_newline_lists ... ok
+test core::ai::registry::tests::empty_provider_hint_keeps_legacy_first_model_match ... ok
+test core::ai::registry::tests::cached_model_protocol_reads_learned_map ... ok
+test core::ai::registry::tests::mimo_does_not_fall_through_to_deepseek_without_a_custom_provider ... ok
+test core::ai::registry::tests::provider_hint_disambiguates_duplicate_chat_model_ids ... ok
+test core::ai::registry::tests::dedicated_minimax_openai_endpoint_is_still_served ... ok
+test core::ai::registry::tests::minimax_on_custom_aggregator_is_served ... ok
+test core::chat::agent_loop::challenge::tests::detects_background_vite_as_local_server ... ok
+test core::ai::deepseek::tests::multimodal_transport_error_message_explains_send_failure ... ok
+test core::chat::agent_loop::challenge::tests::extracts_goal_paths_from_user_text ... ok
+test core::chat::agent_loop::challenge::tests::image_mode_rejects_caption_without_generate_image ... ok
+test core::chat::agent_loop::challenge::tests::stall_challenge_fires_after_repeated_success ... ok
+test core::chat::agent_loop::failure::tests::consecutive_failures_challenge_then_stop ... ok
+test core::chat::agent_loop::failure::tests::identical_error_stop_names_blank_tool ... ok
+test core::chat::agent_loop::failure::tests::identical_error_challenges_before_stop ... ok
+test core::chat::agent_loop::failure::tests::mixed_success_in_a_batch_resets_consecutive_regardless_of_order ... ok
+test core::chat::agent_loop::failure::tests::parallel_failures_in_one_batch_count_as_one ... ok
+test core::chat::agent_loop::failure::tests::plan_gate_does_not_invite_a_different_shell_command ... ok
+test core::chat::agent_loop::failure::tests::plan_gate_stops_on_first_blocked_writer ... ok
+test core::chat::agent_loop::mid_turn_compact::tests::does_not_refold_already_summarized_prior ... ok
+test core::chat::agent_loop::post_edit_verify::tests::verify_feedback_is_system_user_text_not_tool_role ... ok
+test core::chat::agent_loop::types::tests::estimate_ignores_tool_schemas ... ok
+test core::ai::image_analysis::tests::insert_then_replace_for_api ... ok
+test core::chat::agent_loop::mid_turn_compact::tests::skips_retry_on_unchanged_snapshot ... ok
+test core::ai::image_analysis::tests::split_image_content_skips_analysis_tags ... ok
+test core::chat::compact::tests::estimate_tokens_is_nonzero_for_text ... ok
+test core::chat::compact::tests::compacts_short_thread_when_tokens_exceed_window ... ok
+test core::chat::compact::tests::folds_tool_results_after_current_user ... ok
+test core::chat::compact::tests::compacts_when_usage_exceeds_threshold ... ok
+test core::chat::compact::tests::resume_history_keeps_approval_as_final_user_turn ... ok
+test core::chat::compact::tests::stays_quiet_below_compact_threshold ... ok
+test core::chat::compact::tests::falls_back_to_mechanical_when_llm_fails ... ok
+test core::chat::compact::tests::trim_only_removes_empty_assistant_tail ... ok
+test core::chat::compact::tests::usage_meter_includes_prompt_extras ... ok
+test core::chat::compact::tests::usage_meter_starts_from_last_summary ... ok
+test core::chat::compact::tests::llm_summary_preferred_when_available ... ok
+test core::agent::tools::registry::tests::executes_a_registered_tool ... ok
+test core::chat::conversation_manager::branch_tests::branch_title_strips_numeric_suffix ... ok
+test core::chat::conversation_manager::branch_tests::next_branch_title_skips_taken ... ok
+test core::chat::agent_loop_tests::finishes_without_tools ... ok
+test core::chat::agent_loop_tests::challenges_then_continues_after_consecutive_failures ... ok
+test core::chat::agent_loop_tests::completion_claim_after_mutation_and_verification_is_kept ... FAILED
+test core::chat::agent_loop_tests::cancellation_during_tool_stops_before_next_provider_turn ... ok
+test core::chat::agent_loop_tests::stops_after_consecutive_failures ... ok
+test core::chat::agent_loop_tests::question_only_request_with_completion_answer_has_no_caveat ... ok
+test core::chat::agent_loop_tests::stops_after_repeated_identical_tool_error ... ok
+test core::chat::agent_loop_tests::completion_claim_without_mutation_is_rejected ... ok
+test core::chat::db::messages::message_persistence_tests::backfills_missing_token_estimate ... ok
+test core::chat::db::messages::message_persistence_tests::round_trips_tool_activities ... ok
+test core::chat::conversation_manager::branch_tests::branch_session_rejects_empty_history ... ok
+test core::chat::db::messages::message_persistence_tests::truncates_oversized_tool_results_on_save ... ok
+test core::chat::agent_loop_tests::task_update_does_not_verify_completion ... ok
+test core::chat::conversation_manager::branch_tests::branch_session_stops_at_message ... ok
+test core::chat::conversation_manager::work_timeline_tests::interleaves_reasoning_tool_and_content_in_call_order ... ok
+test core::chat::db::sessions::session_workspace_tests::bind_fills_workspace_when_session_row_already_exists ... ok
+test core::chat::agent_loop_tests::completion_claim_after_mutation_without_verification_is_rejected ... FAILED
+test core::chat::db::sessions::session_workspace_tests::migrates_legacy_workspace_path_and_preserves_first_binding ... ok
+test core::chat::db::sessions::session_workspace_tests::migrates_title_column_and_persists_titles ... ok
+test core::chat::db::sessions::session_workspace_tests::set_session_workspace_overwrites_existing_binding ... ok
+test core::chat::journal::tests::journal_schema_and_delta_rebuild ... ok
+test core::chat::agent_loop_tests::truncates_tool_output_for_model ... ok
+test core::chat::limits::tests::message_estimate_includes_content_reasoning_and_overhead ... ok
+test core::chat::limits::tests::tool_output_keeps_head_and_tail ... ok
+test core::chat::model_context::tests::large_context_allows_deepseek_v4_1m ... ok
+test core::chat::model_context::tests::large_context_allows_gemini_1m ... ok
+test core::chat::model_context::tests::large_context_off_stays_at_64k ... ok
+test core::chat::conversation_manager::lazy_load_tests::startup_does_not_load_all_sessions_until_opened ... ok
+test core::chat::model_context::tests::large_context_respects_deepseek_v3_cap ... ok
+test core::chat::model_context::tests::unknown_model_does_not_inherit_1m ... ok
+test core::chat::prompt::tests::auto_reasoning_skips_english_only_prompt ... ok
+test core::chat::prompt::tests::auto_response_follows_chinese_message_even_when_ui_is_english ... ok
+test core::chat::prompt::tests::auto_response_follows_english_message_even_when_ui_is_chinese ... ok
+test core::chat::agent_loop_tests::soft_inject_applies_at_tool_boundary ... ok
+test core::chat::prompt::tests::collaboration_models_are_injected_only_when_configured ... ok
+test core::chat::prompt::tests::clipboard_context_is_hard_capped ... ok
+test core::chat::prompt::tests::image_mode_policy_is_injected_with_toolbar_values ... FAILED
+test core::chat::prompt::tests::injects_environment_context_into_agent_prompt ... ok
+test core::chat::prompt::tests::injects_ide_context_into_agent_prompt ... ok
+test core::chat::prompt::tests::injects_reasoning_language_for_chinese_user_text ... ok
+test core::chat::prompt::tests::minimal_coding_is_injected_only_when_enabled ... ok
+test core::chat::prompt::tests::office_context_is_injected_into_prompt ... ok
+test core::chat::prompt::tests::project_rules_are_injected_as_system_context ... ok
+test core::chat::prompt::tests::optional_policies_never_shift_stable_prefix_slots ... ok
+test core::chat::prompt::tests::prompt_keeps_empty_assistant_tool_calls_and_tool_results ... ok
+test core::chat::prompt::tests::recalled_memories_are_injected_as_untrusted_system_context ... ok
+test core::chat::prompt::tests::workspace_context_identifies_the_exact_active_directory ... ok
+test core::chat::journal::tests::recovery_compaction_keeps_only_latest_active_snapshot ... ok
+test core::chat::prompt::tests::workspace_context_precedes_history_and_current_user ... ok
+test core::chat::prompts::tests::compact_summary_has_required_headings ... ok
+test core::chat::prompts::tests::image_mode_prompt_requires_generate_image ... ok
+test core::chat::prompts::tests::editing_prompt_defers_routing_to_tool_descriptions ... ok
+test core::chat::prompts::tests::minimal_coding_prompt_has_the_decision_ladder ... ok
+test core::chat::prompts::tests::memory_prompt_defines_a_safe_lifecycle ... ok
+test core::chat::prompts::tests::multi_model_template_has_a_model_placeholder_and_routing_policy ... ok
+test core::chat::prompts::tests::plan_mode_prompt_requires_stop_before_writes ... ok
+test core::chat::prompts::tests::stable_prompt_documents_key_decisions_with_examples ... ok
+test core::chat::prompts::tests::chart_prompt_defines_the_fenced_spec_protocol ... ok
+test core::chat::prompts::tests::stable_prompt_stays_structured_and_bounded ... ok
+test core::chat::selection::tests::hides_attached_file_payload_from_titles ... ok
+test core::chat::selection::tests::hides_selection_attachment_from_rule_and_memory_text ... ok
+test core::chat::prompts::tests::stable_prompt_stays_isolated_from_skill_specifics ... ok
+test core::chat::selection::tests::preserves_regular_user_text ... ok
+test core::chat::prompts::tests::system_prompt_includes_anya_identity_and_tools ... ok
+test core::chat::session_title::tests::extract_title_subject_skips_methodology_clause ... ok
+test core::chat::session_title::tests::fallback_cjk_soft_break_avoids_mid_word_cut ... ok
+test core::chat::session_title::tests::fallback_limits_words_and_bytes ... ok
+test core::chat::session_title::tests::fallback_prefers_deliverable_over_method_clause ... ok
+test core::chat::session_title::tests::finalize_generated_title_falls_back_to_user_text ... ok
+test core::chat::session_title::tests::finalize_rejects_methodology_llm_title ... ok
+test core::chat::session_title::tests::normalize_strips_controls_and_collapses_whitespace ... ok
+test core::chat::session_title::tests::pick_generated_title_prefers_content_then_reasoning ... ok
+test core::chat::session_title::tests::source_round_trip ... ok
+test core::chat::stream::tests::epoch_mismatch_is_inactive ... ok
+test core::chat::telemetry::tests::classifies_common_errors ... ok
+test core::chat::trajectory::tests::fingerprints_strip_volatile_ids ... ok
+test core::checkpoint::tests::legacy_preview_path_remains_supported ... ok
+test core::context::image_capture::tests::detects_image_paths_by_extension ... ok
+test core::context::models::window_info::tests::detects_common_terminals ... ok
+test core::context::manager::context_manager::tests::provider_panic_degrades_to_empty ... ok
+test core::context::provider::active_file_provider::tests::absolute_path_can_be_inferred_from_window_title ... ok
+test core::context::provider::active_file_provider::tests::absolute_selected_file_has_priority_over_window_title ... ok
+test core::context::provider::clipboard_provider::tests::accepts_captured_text_when_it_differs_from_backup ... ok
+test core::context::provider::clipboard_provider::tests::accepts_captured_text_when_sequence_changes ... ok
+test core::context::provider::clipboard_provider::tests::rejects_unchanged_clipboard_without_sequence_change ... ok
+test core::context::provider::clipboard_provider::tests::skips_slow_ui_automation_for_monaco_editors ... ok
+test core::context::provider::environment_provider::tests::shell_result_round_trips_through_optional_provider ... ok
+test core::chat::conversation_manager::branch_tests::branch_session_clones_history_and_workspace ... ok
+test core::context::providers::local_api::tests::ask_image_payload_accepts_data_url_field ... ok
+test core::context::providers::local_api::tests::protocol_payload_deserializes_to_ide_context ... ok
+test core::context::resolver::tests::active_file_workspace_wins_over_current_workspace ... ok
+test core::context::resolver::tests::active_project_title_wins_over_current_workspace ... ok
+test core::context::resolver::tests::current_workspace_is_used_when_active_file_is_unavailable ... ok
+test core::context::resolver::tests::ide_context_overrides_window_context ... ok
+test core::context::resolver::tests::missing_ide_context_preserves_environment_resolution ... ok
+test core::context::resolver::tests::stale_ide_context_is_ignored_when_ide_is_not_foreground ... ok
+test core::context::store::capture_timing_tests::capture_and_query_share_the_same_context_store_instance ... ok
+test core::chat::agent_loop_tests::continues_when_token_budget_exceeded_without_hard_stop ... ok
+test core::chat::agent_loop_tests::runs_read_only_tools_in_parallel ... ok
+test core::chat::conversation_manager::work_timeline_tests::merges_consecutive_deltas_of_the_same_kind ... ok
+test core::context::strategy::resolver::tests::explorer_uses_explorer_strategy ... ok
+test core::context::store::capture_timing_tests::workbench_context_does_not_wait_for_overlay_capture ... ok
+test core::context::strategy::resolver::tests::vscode_uses_clipboard_strategy ... ok
+test core::checkpoint::tests::begin_turn_persists_conversation_checkpoint_immediately ... ok
+test core::mcp::remote_auth::tests::extracts_deployment_url ... ok
+test core::mcp::remote_auth::tests::pins_floating_and_latest_package_args ... ok
+test core::mcp::remote_auth::tests::migrates_legacy_sm_prefixed_install_ids ... ok
+test core::office::com::tests::com_session_initializes_without_panic ... ok
+test core::chat::journal::tests::worker_keeps_independent_snapshots_and_discards_session ... ok
+test core::chat::agent_loop_tests::stops_at_max_steps ... ok
+test core::chat::conversation_manager::rewind_tests::truncate_is_persisted_before_returning ... ok
+test core::mcp::tests::finds_node_and_npx_cli ... ok
+test core::office::context::tests::excel_hint_mentions_excel_tools ... ok
+test core::office::context::tests::format_block_includes_tool_hint ... ok
+test core::office::context::tests::merge_into_request_context ... ok
+test core::office::context::tests::merge_does_not_override_existing_selection ... ok
+test core::context::store::capture_timing_tests::context_query_waits_until_capture_is_complete ... ok
+test core::context::store::capture_timing_tests::overlay_context_waits_only_while_capture_is_in_flight ... ok
+test core::office::debug::tests::context_record_round_trips ... ok
+test core::office::debug::tests::sanitize_summary_hides_content ... ok
+test core::checkpoint::tests::snapshots_and_restores_every_affected_path ... ok
+test core::office::com::tests::word_active_object_fails_gracefully_when_not_running ... ok
+test core::remote::preview::tests::accepts_loopback_urls ... ok
+test core::remote::preview::tests::matches_preview_prefix ... ok
+test core::remote::preview::tests::rejects_non_loopback ... ok
+test core::remote::upload::tests::sanitizes_path_separators_and_dots ... ok
+test core::rules::tests::allows_normal_tool_calls ... ok
+test core::rules::tests::denies_destructive_shell_commands ... ok
+test core::rules::tests::formats_preferred_skill_and_mcp_tokens ... ok
+test core::office::worker::tests::worker_starts_and_processes_jobs ... ok
+test core::rules::tests::ignores_messages_without_hash_resources ... ok
+test core::office::excel::tests::excel_operations_fail_gracefully_when_not_running ... ok
+test core::office::powerpoint::tests::powerpoint_operations_fail_gracefully_when_not_running ... ok
+test core::rules::tests::recalls_for_new_tasks_and_cross_chat_cues ... ok
+test core::office::word::tests::word_operations_fail_gracefully_when_not_running ... ok
+test core::office::context::tests::collect_returns_none_without_office ... ok
+test core::rules::tests::skips_recall_for_low_information_and_regular_followups ... ok
+test core::runtime::request::tests::workspace_makes_selected_files_relative_and_hides_external_roots ... ok
+test core::token::accounting::tests::agent_request_categories_accumulate_without_double_counting_total ... ok
+test core::token::gemini::tests::cache_key_is_model_aware_and_stable ... ok
+test core::token::gemini::tests::parses_official_gemini_count_tokens_response ... ok
+test core::token::registry::tests::longest_prefix_wins ... ok
+test core::token::registry::tests::registry_uses_exact_prefix_provider_then_fallback ... ok
+test core::token::registry::tests::registry_routes_the_full_deepseek_v4_family_to_v4_tokenizer ... ok
+test core::token::tokenizer::tests::estimated_tokenizer_is_marked_estimated ... ok
+test core::tools::agent::tests::transient_gateway_errors_are_detected_for_whole_child_retry ... ok
+test core::tools::agent::tests::unsupported_model_errors_are_detected_for_parent_fallback ... ok
+test core::tools::apply_patch::parser::tests::accepts_bare_unified_diff_without_envelope ... ok
+test core::tools::apply_patch::parser::tests::accepts_missing_stars_on_update_file ... ok
+test core::tools::apply_patch::parser::tests::accepts_unified_diff_headers ... ok
+test core::tools::apply_patch::parser::tests::parses_add_update_delete ... ok
+test core::tools::apply_patch::seek_sequence::tests::finds_exact_and_trimmed ... ok
+test core::tools::apply_patch::seek_sequence::tests::rejects_ambiguous_sequences ... ok
+test core::chat::agent_loop_tests::completion_claim_without_mutation_forces_actual_work ... ok
+test core::rules::tests::prefers_agent_md_over_agents_md ... ok
+test core::rules::tests::loads_agents_file_and_safe_references ... ok
+test core::chat::conversation_manager::work_timeline_tests::truncate_work_timeline_drops_retried_tool_activities ... ok
+test core::chat::conversation_manager::work_timeline_tests::tool_activity_updates_do_not_duplicate_timeline_entries ... ok
+test core::chat::conversation_manager::work_timeline_tests::truncate_work_timeline_keeps_stable_prefix ... ok
+test core::tools::apply_patch::tests::multi_file_failure_rolls_back_already_written_files ... ok
+test core::chat::db::messages::token_usage_persistence_tests::loads_session_cache_usage_totals ... ok
+test core::chat::db::messages::token_usage_persistence_tests::migrates_legacy_token_usage_table_without_message_id ... ok
+test core::tools::builtin::files::edit_tests::full_file_edit_is_rejected_by_the_guard ... ok
+test core::tools::builtin::files::edit_tests::majority_edit_is_rejected_by_the_guard ... ok
+test core::tools::builtin::files::edit_tests::minimal_and_medium_edits_pass_the_guard ... ok
+test core::tools::builtin::files::edit_tests::replace_many_is_all_or_nothing_in_memory ... ok
+test core::tools::builtin::files::edit_tests::replace_many_requires_at_least_one_edit ... ok
+test core::tools::builtin::files::edit_tests::replace_single_preview_uses_complete_file_contents ... ok
+test core::tools::builtin::files::edit_tests::small_files_are_not_guarded ... ok
+test core::tools::builtin::files::office::tests::does_not_treat_ppr_as_paragraph ... ok
+test core::context::provider::environment_provider::tests::git_provider_ignores_non_repository ... ok
+test core::tools::builtin::files::office::tests::extracts_docx_from_zip ... ok
+test core::tools::builtin::files::office::tests::extracts_paragraphs_and_table_cells ... ok
+test core::tools::builtin::files::read::tests::glob_matches_star_is_not_recursive_but_globstar_is ... ok
+test core::tools::builtin::files::read::tests::parse_line_window_prefers_around_line ... ok
+test core::chat::db::messages::message_persistence_tests::loads_messages_for_one_session_only ... ok
+test core::chat::eval_harness::tests::empty_completion_is_rejected_when_challenges_on ... ok
+test core::office::tools::tests::word_tool_fails_gracefully_when_word_not_running ... ok
+test core::tools::apply_patch::tests::add_file_refuses_to_overwrite_existing_content ... ok
+test core::chat::db::messages::token_usage_persistence_tests::stores_and_filters_usage_records ... ok
+test core::tools::display::tests::empty_tool_name_uses_unknown_title_and_keeps_error ... ok
+test core::tools::display::tests::generate_image_error_keeps_tool_result_as_detail ... ok
+test core::tools::display::tests::generate_image_title_uses_prompt_and_image_kind ... ok
+test core::tools::display::tests::read_file_hides_content ... ok
+test core::tools::display::tests::read_file_shows_error ... ok
+test core::tools::display::tests::read_file_title_is_verb_path_range ... ok
+test core::tools::display::tests::read_file_title_uses_around_line ... ok
+test core::tools::display::tests::read_file_title_without_range ... ok
+test core::tools::display::tests::replace_in_file_shows_diff ... ok
+test core::tools::display::tests::run_shell_prefers_description_title ... ok
+test core::tools::display::tests::run_shell_shows_command_and_output ... ok
+test core::tools::display::tests::search_and_find_titles_are_compact ... ok
+test core::tools::display::tests::update_tasks_shows_checklist ... ok
+test core::tools::error::tests::cancellation_is_distinct_from_user_denial ... ok
+test core::tools::error::tests::user_denial_is_a_terminal_tool_error ... ok
+test core::tools::agent::tests::requested_model_without_app_falls_back_to_parent_provider ... ok
+test core::tools::agent::tests::missing_provider_still_errors ... ok
+test core::tools::apply_patch::tests::preview_includes_every_file_in_a_multi_file_patch ... ok
+test core::tools::fs_skip::tests::skip_list_covers_build_and_deps ... ok
+test core::tools::fuzzy::tests::exact_match_preferred ... ok
+test core::tools::fuzzy::tests::exact_replacement_preserves_crlf_for_inserted_lines ... ok
+test core::tools::fuzzy::tests::fuzzy_rejects_ambiguous ... ok
+test core::tools::fuzzy::tests::fuzzy_trailing_whitespace ... ok
+test core::tools::image_mode::tests::stores_and_clears_per_session ... ok
+test core::tools::memory::tests::parses_mem0_search_response ... ok
+test core::tools::memory::tests::recovers_a_poisoned_memory_lock ... ok
+test core::tools::memory::tests::rules_accept_durable_preferences ... ok
+test core::tools::memory::tests::rules_delegate_ambiguous_statements_to_mem0_inference ... ok
+test core::tools::memory::tests::rules_reject_secrets_and_transient_text ... ok
+test core::tools::path::tests::rejects_parent_escape ... ok
+test core::tools::path_permission::tests::permission_decisions_are_explicit ... ok
+test core::tools::path_permission::tests::write_grant_uses_parent_directory ... ok
+test core::tools::plan_mode::tests::ask_mode_never_auto_plans ... ok
+test core::tools::plan_mode::tests::blocking_a_writer_marks_awaiting_approval ... ok
+test core::tools::plan_mode::tests::deactivating_plan_mode_clears_awaiting ... ok
+test core::tools::plan_mode::tests::force_phrase_wins_even_if_short ... ok
+test core::tools::plan_mode::tests::multi_step_chinese_request_auto_plans ... ok
+test core::tools::plan_mode::tests::numbered_list_auto_plans ... ok
+test core::tools::plan_mode::tests::plan_mode_alone_does_not_await_approval ... ok
+test core::tools::plan_mode::tests::readonly_tools_do_not_mark_awaiting ... ok
+test core::tools::plan_mode::tests::short_trivial_requests_skip_plan ... ok
+test core::tools::plan_mode::tests::skip_phrase_wins ... ok
+test core::tools::preview::tests::unified_diff_counts_only_changed_lines ... ok
+test core::tools::registry::tests::empty_tool_name_error_lists_schema_names ... ok
+test core::tools::registry::tests::filter_for_ask_mode_keeps_interaction_tools ... ok
+test core::tools::registry::tests::filter_for_image_mode_keeps_only_generate_image ... ok
+test core::tools::registry::tests::subagent_registry_excludes_all_delegation_tools ... ok
+test core::tools::registry::tests::unknown_tool_error_lists_schema_names ... ok
+test core::tools::sandbox::restricted_process::tests::wraps_command_with_workspace_assertions ... ok
+test core::tools::sandbox::tests::blocks_encodedcommand_payload ... FAILED
+test core::tools::sandbox::tests::denies_destructive_shell_commands ... ok
+test core::tools::apply_patch::tests::rejects_absolute_paths ... ok
+test core::tools::sandbox::tests::rejects_write_redirects_outside_workspace ... ok
+test core::tools::shell_jobs::tests::a_command_making_progress_is_left_alone ... ok
+test core::tools::shell_jobs::tests::a_stall_asks_the_model_before_giving_up ... ok
+test core::tools::apply_patch::tests::rejects_ambiguous_patch_context ... ok
+test core::tools::path_permission::tests::pending_items_surface_path_requests ... ok
+test core::tools::apply_patch::tests::rejects_multiple_operations_for_the_same_file ... ok
+test core::tools::shell_jobs::tests::finite_commands_are_not_allowed_in_background ... ok
+test core::tools::file_io::tests::atomically_replaces_existing_file ... ok
+test core::tools::sandbox::tests::job_object_assignment_is_best_effort ... ok
+test core::tools::apply_patch::tests::update_preserves_missing_trailing_newline ... ok
+test core::tools::apply_patch::tests::update_preserves_crlf_and_trailing_newline ... ok
+test core::tools::shell_jobs::tests::periodic_checks_respect_the_grace_period_and_backoff ... ok
+test core::tools::shell_jobs::tests::silence_alone_never_stops_a_command ... ok
+test core::tools::apply_patch::tests::parses_and_applies_add_update_delete ... ok
+test core::tools::builtin::files::read::tests::read_file_around_line_skips_file_head ... ok
+test core::tools::shell_jobs::tests::the_ceiling_wins_over_everything_else ... ok
+test core::tools::shell_judge::tests::tail_chars_keeps_the_end ... ok
+test core::tools::shell_judge::tests::verdict_parsing_is_strict ... ok
+test core::tools::builtin::files::read::tests::recursive_list_skips_target_dir ... ok
+test core::tools::context::tests::child_subagent_shares_cancellation_token ... ok
+test core::tools::context::tests::child_subagent_snapshots_files_in_parent_checkpoint ... ok
+test core::workspace::tests::adds_source_column_to_existing_workspace_database ... ok
+test core::tools::path::tests::outside_workspace_writes_denied_by_default ... ok
+test core::tools::workspace_index::tests::indexes_and_finds_symbols_and_content ... ok
+test core::workspace::tests::create_switch_and_delete_keep_current_state_consistent ... ok
+test core::tools::workspace_index::tests::refresh_picks_up_changes_without_full_rebuild ... ok
+test core::workspace::tests::migrates_legacy_uuid_ids_to_root_paths ... ok
+test models::chat::tests::chat_started_event_serializes_resume_plan_camel_case ... ok
+test models::chat::tests::from_request_maps_resume_plan_and_skip_auto_plan ... ok
+test models::chat::tests::send_request_defaults_resume_plan_to_false ... ok
+test models::settings::tests::app_default_color_scheme_is_light ... ok
+test models::settings::tests::custom_provider_model_protocols_round_trip_and_default_empty ... ok
+test core::workspace::tests::remembers_ide_workspace_source_without_switching_current_workspace ... ok
+test models::settings::tests::hardware_acceleration_defaults_off_and_can_be_enabled ... ok
+test models::settings::tests::legacy_light_palette_migrates_without_custom_accent ... ok
+test models::settings::tests::legacy_settings_default_to_showing_reasoning ... ok
+test models::settings::tests::legacy_system_theme_migrates_to_dark ... ok
+test models::settings::tests::model_provider_patch_is_optional_and_mergeable ... ok
+test models::settings::tests::show_reasoning_patch_is_optional_and_mergeable ... ok
+test runtime::browser::jina::tests::rejects_local_targets ... ok
+test runtime::encoding::tests::decode_process_bytes_accepts_gbk ... ok
+test runtime::encoding::tests::decode_process_bytes_prefers_utf8 ... ok
+test runtime::encoding::tests::utf8_streaming_handles_byte_at_a_time ... ok
+test runtime::encoding::tests::utf8_streaming_keeps_split_cjk_intact ... ok
+test core::workspace::tests::update_persists_custom_name_and_description ... ok
+test runtime::search::tool::tests::max_results_accepts_num_alias ... ok
+test runtime::search::tool::tests::search_query_accepts_common_aliases ... ok
+test runtime::isolated::tests::run_isolated_or_converts_worker_panic ... ok
+test runtime::tool::manager::tests::explicit_questions_are_question_only ... ok
+test runtime::tool::manager::tests::short_imperative_is_not_question_only ... ok
+test core::workspace::tests::workspace_order_changes_only_through_manual_controls ... ok
+test services::gemini_oauth::catalog::tests::prettify_common_gemini_ids ... ok
+test services::gemini_oauth::catalog::tests::group_thinking_tiers_by_family ... ok
+test services::gemini_oauth::catalog::tests::resolve_broken_high_pro_route ... ok
+test services::gemini_oauth::credentials::tests::local_build_credentials_are_embedded_when_present ... ok
+test services::gemini_oauth::credentials::tests::parses_flat_local_credentials ... ok
+test services::gemini_oauth::credentials::tests::parses_google_installed_credentials ... ok
+test services::gemini_oauth::credentials::tests::rejects_incomplete_credentials ... ok
+test services::hotkey::tests::detector_triggers_on_matching_release ... ok
+test services::hotkey::tests::detector_ignores_wrong_modifiers ... ok
+test services::hotkey::tests::double_alt_cancels_chord_like_alt_tab ... ok
+test services::hotkey::tests::double_alt_ignores_bounce_gap ... ok
+test services::hotkey::tests::double_alt_ignores_long_hold ... ok
+test services::hotkey::tests::double_alt_ignores_slow_second_tap ... ok
+test services::hotkey::tests::double_alt_requires_two_quick_short_taps ... ok
+test services::hotkey::tests::normalizes_primary_double_tap_modifier ... ok
+test services::hotkey::tests::parses_default_chord ... ok
+test services::hotkey::tests::primary_hotkey_detection ... ok
+test services::hotkey::tests::rejects_modifier_only ... ok
+test services::hotkey::tests::double_alt_cancels_when_other_key_between_taps ... ok
+test services::settings_store::tests::frosted_glass_keeps_webview_gpu_enabled ... ok
+test services::settings_store::tests::legacy_json_without_restricted_shell_stays_off_with_notice ... ok
+test services::settings_store::tests::normalizes_runtime_only_settings_before_storage ... ok
+test services::window::tests::empty_context_uses_centered_positioning ... ok
+test services::window::tests::text_or_files_use_selection_positioning ... ok
+test services::pin_badge::button::tests::original_star_remains_centered_and_high_contrast ... ok
+test services::pin_badge::button::tests::rendered_badge_has_clean_antialiased_transparency ... ok
+test core::tools::builtin::files::read::tests::find_files_skips_target_and_star_is_not_recursive ... ok
+test core::mcp::tests::builds_npx_through_node_cli ... ok
+test runtime::tool::manager::tests::dynamic_tools_appear_in_manager_schemas ... ok
+test core::tools::skills::docx_assets::tests::vendor_marker_exists_when_synced ... ok
+test core::tools::builtin::files::read::tests::recursive_list_caps_depth_and_count ... ok
+test core::tools::shell_jobs::tests::background_job_is_registered_before_waiter_runs ... ok
+test core::tools::shell_jobs::tests::foreground_command_stops_when_cancelled ... ok
+test core::token::accounting::tests::accounting_emits_usage_before_finish ... ok
+test core::token::tokenizer::tests::deepseek_official_tokenizer_encodes_known_text_consistently ... ok
+test core::token::tokenizer::tests::deepseek_v4_official_tokenizer_is_exact ... ok
+test core::tools::shell_jobs::tests::background_output_is_readable_before_process_exits ... ok
+test core::tools::shell_jobs::tests::foreground_keeps_waiting_while_judged_running ... ok
+test core::tools::shell_jobs::tests::stuck_commands_are_reclaimed_before_the_ceiling ... ok
+test core::tools::shell_jobs::tests::foreground_returns_when_descendant_holds_pipe ... ok
+test core::tools::shell_jobs::tests::background_job_finishes_when_descendant_holds_pipe ... ok
+test core::tools::shell_jobs::tests::silent_but_busy_commands_are_not_killed ... ok
+test core::tools::shell_jobs::tests::foreground_recovers_when_lingering_process_is_judged_finished ... ok
+
+failures:
+
+---- core::chat::agent_loop_tests::completion_claim_after_mutation_and_verification_is_kept stdout ----
+
+thread 'core::chat::agent_loop_tests::completion_claim_after_mutation_and_verification_is_kept' (52168) panicked at src\core\chat\agent_loop_tests.rs:613:13:
+assertion `left == right` failed
+  left: "done"
+ right: "宸插畬鎴愪慨鏀?
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- core::chat::agent_loop_tests::completion_claim_after_mutation_without_verification_is_rejected stdout ----
+
+thread 'core::chat::agent_loop_tests::completion_claim_after_mutation_without_verification_is_rejected' (43524) panicked at src\core\chat\agent_loop_tests.rs:673:13:
+rejection missing: done
+
+---- core::chat::prompt::tests::image_mode_policy_is_injected_with_toolbar_values stdout ----
+
+thread 'core::chat::prompt::tests::image_mode_policy_is_injected_with_toolbar_values' (57172) panicked at src\core\chat\prompt\tests.rs:103:5:
+assertion failed: block.content.contains("does not exist")
+
+---- core::tools::sandbox::tests::blocks_encodedcommand_payload stdout ----
+
+thread 'core::tools::sandbox::tests::blocks_encodedcommand_payload' (11952) panicked at src\core\tools\sandbox.rs:417:9:
+assertion failed: reject_dangerous_shell(&cmd).is_err()
+
+
+failures:
+    core::chat::agent_loop_tests::completion_claim_after_mutation_and_verification_is_kept
+    core::chat::agent_loop_tests::completion_claim_after_mutation_without_verification_is_rejected
+    core::chat::prompt::tests::image_mode_policy_is_injected_with_toolbar_values
+    core::tools::sandbox::tests::blocks_encodedcommand_payload
+
+test result: FAILED. 493 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.92s
+
+error: test failed, to rerun pass `--lib`

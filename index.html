@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="light" style="color-scheme: light">
+<html lang="zh-CN" data-theme="light" style="color-scheme: only light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
@@ -24,7 +24,10 @@
             root.style.background = "transparent";
           }
 
-          var raw = localStorage.getItem("anya.colorScheme");
+          var raw =
+            localStorage.getItem("anya-color-scheme") ||
+            localStorage.getItem("anya.colorScheme") ||
+            "";
           var dark =
             raw === "dark" ||
             raw === "system" ||
@@ -40,10 +43,9 @@
             raw === "ember" ||
             raw === "teal" ||
             raw === "ghost-pastel";
-          var light = !dark;
-          root.dataset.theme = light ? "light" : "dark";
-          root.classList.toggle("dark", !light);
-          root.style.colorScheme = light ? "light" : "dark";
+          root.dataset.theme = dark ? "dark" : "light";
+          root.classList.remove("dark");
+          root.style.colorScheme = "only light";
         } catch (e) {}
       })();
     </script>
@@ -55,13 +57,13 @@
         height: 100%;
         overflow: hidden;
         background: #f8f8f8;
-        color-scheme: light;
+        color-scheme: only light;
       }
 
       html[data-theme="dark"],
       html[data-theme="dark"] body {
-        background: #1f1f1f;
-        color-scheme: dark;
+        background: #141414;
+        color-scheme: only light;
       }
 
       /* Alt+Alt / peek: transparent shell, no workbench boot animation. */
@@ -95,9 +97,9 @@
 
       html[data-theme="dark"] #boot-splash {
         background:
-          radial-gradient(120% 80% at 50% -10%, #2a2a2a 0%, transparent 55%),
-          linear-gradient(180deg, #1f1f1f 0%, #181818 100%);
-        color: #f3f4f6;
+          radial-gradient(120% 80% at 50% -10%, #1c1c1c 0%, transparent 55%),
+          linear-gradient(180deg, #141414 0%, #101010 100%);
+        color: #e8e8e8;
       }
 
       #boot-splash[hidden] {
@@ -117,13 +119,14 @@
         z-index: 1;
         width: 168px;
         height: 168px;
-        object-fit: contain;
-        filter: none;
+        background-color: #242424;
+        -webkit-mask: url("/anya-logo.svg") center / contain no-repeat;
+        mask: url("/anya-logo.svg") center / contain no-repeat;
         animation: boot-breathe 2.2s ease-in-out infinite;
       }
 
       html[data-theme="dark"] #boot-splash .boot-logo {
-        filter: invert(1);
+        background-color: #e8e8e8;
       }
 
       #boot-splash .boot-label {
@@ -135,7 +138,7 @@
       }
 
       html[data-theme="dark"] #boot-splash .boot-label {
-        color: rgba(243, 244, 246, 0.62);
+        color: rgba(232, 232, 232, 0.62);
       }
 
       #boot-splash .boot-progress {
@@ -147,7 +150,7 @@
       }
 
       html[data-theme="dark"] #boot-splash .boot-progress {
-        background: rgba(243, 244, 246, 0.12);
+        background: rgba(232, 232, 232, 0.12);
       }
 
       #boot-splash .boot-progress > i {
@@ -160,7 +163,7 @@
       }
 
       html[data-theme="dark"] #boot-splash .boot-progress > i {
-        background: #f3f4f6;
+        background: #e8e8e8;
       }
 
       @keyframes boot-breathe {
@@ -201,7 +204,7 @@
   <body>
     <div id="boot-splash" aria-live="polite" aria-busy="true">
       <div class="boot-logo-wrap" aria-hidden="true">
-        <img class="boot-logo" src="/anya-logo.svg" alt="" />
+        <span class="boot-logo"></span>
       </div>
       <p class="boot-label">请稍等，正在为您准备……</p>
       <span class="boot-progress" aria-hidden="true"><i></i></span>

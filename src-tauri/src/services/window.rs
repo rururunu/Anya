@@ -252,6 +252,9 @@ fn create_new_overlay(app: &AppHandle, context: &RequestContext) {
         .build()
     {
         Ok(window) => {
+            if let Ok(settings) = crate::services::settings_store::get_settings(app) {
+                crate::services::webview_theme::apply_webview_theme(app, &settings);
+            }
             let _ = window.center();
             tracing::debug!(label = %label, source = "toggle_overlay", "overlay interactive ready");
             show_and_focus_overlay(&window);
@@ -480,6 +483,9 @@ fn place_and_show_overlay_at_mouse(
             .build()
         {
             Ok(window) => {
+                if let Ok(settings) = crate::services::settings_store::get_settings(app) {
+                    crate::services::webview_theme::apply_webview_theme(app, &settings);
+                }
                 let (x, y) =
                     calc_position_near_mouse(&window, mouse_x, mouse_y, WIN_W, WIN_H, OFFSET);
                 let _ = window.set_position(tauri::PhysicalPosition::new(x, y));

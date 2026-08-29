@@ -184,6 +184,7 @@ pub fn run() {
             }
             start_hotkey_listener(app.handle().clone());
             show_workbench_window(app.handle());
+            crate::services::webview_theme::apply_webview_theme(app.handle(), &settings);
             crate::core::remote::restore_gateway_if_enabled(app.handle());
             Ok(())
         })
@@ -310,6 +311,8 @@ pub fn run() {
             chat::get_environment_context,
             chat::delete_chat_session,
             chat::branch_chat_session,
+            chat::set_chat_session_title,
+            chat::regenerate_chat_session_title,
             chat::set_chat_session_archived,
             chat::set_chat_session_workspace,
             chat::clear_all_chat_sessions,

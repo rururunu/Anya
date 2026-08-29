@@ -18,7 +18,7 @@
       class="onboarding-logo"
       :class="{ 'is-revealing': revealing, 'is-large': step === 1 && !revealing }"
     >
-      <img :src="appIconAsset" alt="Anya" draggable="false" />
+      <AnyaLogo alt="Anya" />
     </div>
 
     <div v-show="!revealing" class="onboarding-stage">
@@ -272,12 +272,12 @@ import { gsap, safeGsap } from "@/services/motion/gsapSafe";
 
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
 import GeminiIcon from "@/components/icons/GeminiIcon.vue";
+import AnyaLogo from "@/components/icons/AnyaLogo.vue";
 import { tr } from "@/services/i18n";
 import { geminiOauthCancelLogin, geminiOauthLogin, geminiOauthLogout } from "@/services/ipc";
 import { gsapOnboardingReveal } from "@/services/motion/gsapPresets";
 import { useChatModelStore } from "@/stores/chatModel";
 import { useSettingStore } from "@/stores/setting";
-import appIconAsset from "../../../src-tauri/icons/Anya-transparent.svg";
 
 const emit = defineEmits<{
   completed: [];
@@ -569,11 +569,9 @@ async function completeOnboarding() {
   margin-top: 0;
 }
 
-.onboarding-logo img {
-  display: block;
+.onboarding-logo :deep(.anya-logo) {
   width: 100%;
   height: 100%;
-  object-fit: contain;
 }
 
 .onboarding-logo.is-revealing {

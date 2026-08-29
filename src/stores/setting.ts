@@ -5,17 +5,16 @@ import { DEFAULT_CHAT_MODEL } from "@/constants/chat";
 import { getAppSettings, setAppSettings } from "@/services/ipc";
 import { applyOpacity, applyChromeFrostedGlass } from "@/services/overlay/appearance";
 import {
-  normalizeColorScheme,
   normalizeChatMode,
   normalizeReasoningEffort,
   type AppLanguage,
   type AppSettings,
   type AppSettingsPatch,
   type ColorScheme,
-  COLOR_SCHEME_CACHE_KEY,
   defaultGeminiOAuthSettings,
-  readCachedColorScheme,
 } from "@/types/setting";
+import { normalizeColorScheme, readCachedColorScheme } from "@/services/theme/catalog";
+import { applyThemeAppearance } from "@/services/theme";
 
 const LEGACY_STORAGE_KEY = "peek.settings";
 let settingsUpdateSequence = 0;
@@ -79,50 +78,12 @@ const defaultSettings: AppSettings = {
   onboardingCompleted: false,
 };
 
-function applyColorSchemeToDocument(colorScheme: ColorScheme, glass: boolean) {
-  const root = document.documentElement;
-  const body = document.body;
-  if (glass) {
-    // Chromium paints an opaque canvas for `color-scheme` on <html>, which
-    // hides DWM Acrylic behind the WebView. Keep the scheme on <body> instead.
-    root.style.colorScheme = "normal";
-    root.style.background = "transparent";
-    if (body) {
-      body.style.colorScheme = colorScheme;
-      body.style.background = "transparent";
-    }
-    return;
-  }
-  root.style.colorScheme = colorScheme;
-  root.style.removeProperty("background");
-  if (body) {
-    body.style.removeProperty("color-scheme");
-    body.style.removeProperty("background");
-  }
-}
-
+/** Apply light/dark via ThemeService (`html[data-theme]`). */
 export function applyTheme(settings: Pick<AppSettings, "colorScheme" | "language">) {
-  const colorScheme = normalizeColorScheme(settings.colorScheme);
-  try {
-    localStorage.setItem(COLOR_SCHEME_CACHE_KEY, colorScheme);
-  } catch {
-    // ignore quota / private mode
-  }
-  const root = document.documentElement;
-  const nextDark = colorScheme === "dark";
-  const glass = root.classList.contains("chrome-frosted-glass");
-  const sameTheme =
-    root.dataset.theme === colorScheme &&
-    root.classList.contains("dark") === nextDark &&
-    root.lang === settings.language &&
-    (glass ? root.style.colorScheme === "normal" : root.style.colorScheme === colorScheme);
-  if (sameTheme) {
-    return;
-  }
-  root.lang = settings.language;
-  root.dataset.theme = colorScheme;
-  root.classList.toggle("dark", nextDark);
-  applyColorSchemeToDocument(colorScheme, glass);
+  applyThemeAppearance({
+    colorScheme: settings.colorScheme,
+    language: settings.language,
+  });
 }
 
 /** Theme to paint before settings finish loading (matches boot splash). */

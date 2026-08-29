@@ -1,7 +1,7 @@
 <template>
   <div class="workbench-loading" role="status" :aria-label="label">
     <div class="loading-brand" aria-hidden="true">
-      <img class="loading-logo" :src="appIconAsset" alt="" draggable="false" />
+      <AnyaLogo class="loading-logo" />
     </div>
     <p class="loading-label">{{ label }}</p>
     <span class="loading-progress" aria-hidden="true"><i /></span>
@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useSettingStore } from "@/stores/setting";
-import appIconAsset from "../../../src-tauri/icons/Anya-transparent.svg";
+import AnyaLogo from "@/components/icons/AnyaLogo.vue";
 
 const settingStore = useSettingStore();
 
@@ -35,11 +35,11 @@ const label = computed(() =>
   background:
     radial-gradient(
       120% 80% at 50% -10%,
-      color-mix(in srgb, var(--peek-surface, #252526) 70%, transparent) 0%,
+      color-mix(in srgb, var(--peek-surface, #ffffff) 70%, transparent) 0%,
       transparent 55%
     ),
-    linear-gradient(180deg, var(--peek-bg, #1f1f1f) 0%, var(--peek-sidebar, #181818) 100%);
-  color: var(--peek-text, #f3f4f6);
+    linear-gradient(180deg, var(--peek-bg, #f8f8f8) 0%, var(--peek-sidebar, #f3f3f3) 100%);
+  color: var(--peek-text, #242424);
   font-family: var(--peek-font-sans, "Noto Sans SC", "Segoe UI", sans-serif);
   user-select: none;
 }
@@ -55,14 +55,7 @@ const label = computed(() =>
 .loading-logo {
   width: 168px;
   height: 168px;
-  object-fit: contain;
-  filter: invert(1);
   animation: logo-breathe 2.2s ease-in-out infinite;
-}
-
-:global(html[data-theme="light"]) .loading-logo,
-.workbench[data-theme="light"] .loading-logo {
-  filter: none;
 }
 
 .loading-label {

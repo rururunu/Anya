@@ -219,6 +219,7 @@ pub fn set_settings(app: &AppHandle, next: AppSettings) -> Result<AppSettings, S
 
     apply_runtime_settings(&next);
     crate::services::workbench_glass::apply_from_settings(app, &next);
+    crate::services::webview_theme::apply_webview_theme(app, &next);
     register_enabled_mcp_tools(app);
 
     broadcast_settings(app, &next);

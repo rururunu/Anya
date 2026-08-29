@@ -59,6 +59,11 @@ import {
   settleInterruptedMessages,
 } from "./chatHistory";
 import { appendTimelineText, findLastMessageIndex } from "./chatStream";
+import { useChatSessionsStore } from "./chatSessions";
+
+function sessionsStore() {
+  return useChatSessionsStore();
+}
 
 export type { SessionCompose } from "./chatCompose";
 export { defaultCompose } from "./chatCompose";
@@ -75,9 +80,7 @@ const log = createLogger("chat-store");
  */
 export const useChatStore = defineStore("chat", {
   state: () => ({
-    sessions: {} as Record<string, ChatMessage[]>,
     sending: {} as Record<string, boolean>,
-    startedSessionIds: {} as Record<string, boolean>,
     /** Per-conversation compose settings (model / mode / approval / draft). */
     sessionCompose: {} as Record<string, SessionCompose>,
     /** User messages typed while a turn is executing — held until the guide
@@ -86,7 +89,6 @@ export const useChatStore = defineStore("chat", {
     stagedMessages: {} as Record<string, string[]>,
     /** Prevent duplicate finish events from dispatching multiple queued turns. */
     stagedDispatching: {} as Record<string, boolean>,
-    overlayDraftSessionId: "" as string,
     contextNotices: {} as Record<string, string | undefined>,
     contextUsage: {} as Record<string, ContextUsageSnapshot | undefined>,
     /** Aggregated DeepSeek prompt-cache snapshot per conversation. */
@@ -95,12 +97,6 @@ export const useChatStore = defineStore("chat", {
     messageCacheUsage: {} as Record<string, Record<string, SessionCacheUsage>>,
     /** Live in-session task list from update_tasks. */
     sessionTasks: {} as Record<string, TaskItem[]>,
-    /**
-     * Bumps when draft presence / draft-only sidebar rows should refresh.
-     * Intentionally separate from sessionCompose so typing does not rebuild
-     * the whole session list on every keystroke.
-     */
-    draftListVersion: 0,
     /** Session plan-mode gate (writer tools blocked until approve). */
     sessionPlanMode: {} as Record<string, boolean>,
     /** How the active plan was entered. Auto plans (agent complexity
@@ -112,43 +108,45 @@ export const useChatStore = defineStore("chat", {
     sessionRejectedPlanFingerprint: loadRejectedPlanFingerprints() as Record<string, string>,
   }),
   getters: {
-    overlayMessages(state): ChatMessage[] {
-      const sessionId = state.overlayDraftSessionId;
-      if (!sessionId) {
-        return [];
-      }
-      return state.sessions[sessionId] ?? [];
+    sessions(): Record<string, ChatMessage[]> {
+      return sessionsStore().sessions;
     },
-    overlayContextNotice(state): string | undefined {
-      const sessionId = state.overlayDraftSessionId;
+    startedSessionIds(): Record<string, boolean> {
+      return sessionsStore().startedSessionIds;
+    },
+    overlayDraftSessionId(): string {
+      return sessionsStore().overlayDraftSessionId;
+    },
+    draftListVersion(): number {
+      return sessionsStore().draftListVersion;
+    },
+    overlayMessages(): ChatMessage[] {
+      return sessionsStore().overlayMessages;
+    },
+    overlayContextNotice(): string | undefined {
+      const sessionId = sessionsStore().overlayDraftSessionId;
       if (!sessionId) {
         return undefined;
       }
-      return state.contextNotices[sessionId];
+      return this.contextNotices[sessionId];
     },
-    overlayContextUsage(state): ContextUsageSnapshot | undefined {
-      const sessionId = state.overlayDraftSessionId;
+    overlayContextUsage(): ContextUsageSnapshot | undefined {
+      const sessionId = sessionsStore().overlayDraftSessionId;
       if (!sessionId) {
         return undefined;
       }
-      return state.contextUsage[sessionId];
+      return this.contextUsage[sessionId];
     },
   },
   actions: {
     setOverlayDraftSession(sessionId: string) {
-      this.overlayDraftSessionId = sessionId;
+      sessionsStore().setOverlayDraftSession(sessionId);
     },
     setStartedSessionIds(ids: string[]) {
-      const record: Record<string, boolean> = {};
-      for (const id of ids) {
-        record[id] = true;
-      }
-      this.startedSessionIds = record;
+      sessionsStore().setStartedSessionIds(ids);
     },
     markSessionStarted(sessionId: string) {
-      if (sessionId) {
-        this.startedSessionIds[sessionId] = true;
-      }
+      sessionsStore().markSessionStarted(sessionId);
     },
     /** Return the conversation's own compose settings, creating them on first
      * open by inheriting the last used conversation (or app defaults). */
@@ -169,7 +167,7 @@ export const useChatStore = defineStore("chat", {
       } else if (cached) {
         resolved = sanitizeCompose(cached);
         this.sessionCompose = { ...this.sessionCompose, [sessionId]: resolved };
-      } else if (this.startedSessionIds[sessionId]) {
+      } else if (sessionsStore().startedSessionIds[sessionId]) {
         resolved = sanitizeCompose({
           chatModel: settingStore.chatModel ?? "",
           chatModelProvider: settingStore.chatModelProvider ?? "",
@@ -301,60 +299,25 @@ export const useChatStore = defineStore("chat", {
         schedulePersistComposeCache(1000);
       }
 
-      const messages = this.sessions[sessionId] ?? [];
+      const messages = sessionsStore().sessions[sessionId] ?? [];
       const isDraftOnlySession =
-        !this.startedSessionIds[sessionId] &&
+        !sessionsStore().startedSessionIds[sessionId] &&
         !messages.some((item) => item.role === "user" || item.role === "assistant");
       // Draft icon / draft-only row membership — immediate on presence flip.
       if (hadDraft !== hasDraft || prevWorkspaceId !== nextWorkspaceId) {
-        this.draftListVersion += 1;
+        sessionsStore().bumpDraftListVersion();
       } else if (isDraftOnlySession && hasDraft) {
         // Preview text for brand-new chats: refresh at most ~1/s.
         scheduleDraftListBump(() => {
-          this.draftListVersion += 1;
+          sessionsStore().bumpDraftListVersion();
         });
       }
     },
-    /** True when the conversation has unsent composer text cached. */
     sessionHasDraft(sessionId: string): boolean {
-      if (!sessionId) return false;
-      loadComposeCache();
-      const compose = this.sessionCompose[sessionId] ?? composeCache.entries[sessionId];
-      return Boolean(compose?.draft?.trim());
+      return sessionsStore().sessionHasDraft(sessionId, this.sessionCompose);
     },
-    /** Local draft-only sessions that are not yet in the backend session list. */
-    listDraftOnlySessions(knownSessionIds: Iterable<string>): Array<{
-      sessionId: string;
-      workspaceId?: string;
-      preview: string;
-      updatedAt: number;
-    }> {
-      loadComposeCache();
-      const known = new Set(knownSessionIds);
-      // Prefer live store entries; fall back to disk cache for sessions not yet hydrated.
-      const entries = { ...composeCache.entries, ...this.sessionCompose };
-      const out: Array<{
-        sessionId: string;
-        workspaceId?: string;
-        preview: string;
-        updatedAt: number;
-      }> = [];
-      for (const [sessionId, compose] of Object.entries(entries)) {
-        const draft = compose.draft?.trim();
-        if (!draft || known.has(sessionId)) continue;
-        const messages = this.sessions[sessionId] ?? [];
-        if (messages.some((item) => item.role === "user" || item.role === "assistant")) {
-          continue;
-        }
-        out.push({
-          sessionId,
-          workspaceId: compose.draftWorkspaceId ?? undefined,
-          preview: draft,
-          updatedAt: compose.draftUpdatedAt ?? Date.now(),
-        });
-      }
-      out.sort((left, right) => right.updatedAt - left.updatedAt);
-      return out;
+    listDraftOnlySessions(knownSessionIds: Iterable<string>) {
+      return sessionsStore().listDraftOnlySessions(knownSessionIds, this.sessionCompose);
     },
     /** Drop the compose record when a conversation is deleted. */
     removeCompose(sessionId: string) {
@@ -369,7 +332,7 @@ export const useChatStore = defineStore("chat", {
         composeCache.last = "";
       }
       flushPersistComposeCache();
-      this.draftListVersion += 1;
+      sessionsStore().bumpDraftListVersion();
     },
     setContextNotice(sessionId: string, message: string | undefined) {
       if (!sessionId) {
@@ -502,20 +465,10 @@ export const useChatStore = defineStore("chat", {
       };
     },
     setSessionMessages(sessionId: string, messages: ChatMessage[]) {
-      if (!sessionId) {
-        return;
-      }
-      this.sessions = {
-        ...this.sessions,
-        [sessionId]: messages,
-      };
+      sessionsStore().setSessionMessages(sessionId, messages);
     },
     resolveOverlaySessionId(preferred?: string) {
-      // Prefer the event/request session id. Only fall back to the overlay draft
-      // when the payload omitted a session (legacy / incomplete IPC).
-      // Preferring overlayDraft first remapped Companion "new chat" turns into
-      // whatever conversation was last sent from the desktop.
-      return resolveSessionId(preferred, this.overlayDraftSessionId);
+      return sessionsStore().resolveOverlaySessionId(preferred);
     },
     upsertMessage(message: ChatMessage) {
       const sessionId = message.sessionId;
@@ -528,7 +481,7 @@ export const useChatStore = defineStore("chat", {
         sessionId,
         role: normalizeRole(message.role),
       };
-      const messages = this.sessions[sessionId] ?? [];
+      const messages = sessionsStore().sessions[sessionId] ?? [];
       const index = messages.findIndex((item) => item.id === normalized.id);
 
       if (index === -1) {
@@ -554,7 +507,7 @@ export const useChatStore = defineStore("chat", {
       }
 
       const resolvedSessionId = this.resolveOverlaySessionId(sessionId);
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         return;
       }
@@ -706,7 +659,7 @@ export const useChatStore = defineStore("chat", {
       const trimmed = content.trim();
       if (!trimmed) return;
       const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const messages = this.sessions[sessionId] ?? [];
+      const messages = sessionsStore().sessions[sessionId] ?? [];
       // Place the inject after the active assistant so MessageList can fold it
       // into that turn (not as a new unanswered user bubble).
       this.setSessionMessages(sessionId, [
@@ -727,7 +680,7 @@ export const useChatStore = defineStore("chat", {
       if (!trimmed) return;
       const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const timestamp = Date.now();
-      const messages = this.sessions[sessionId] ?? [];
+      const messages = sessionsStore().sessions[sessionId] ?? [];
       this.setSessionMessages(sessionId, [
         ...messages,
         {
@@ -749,33 +702,7 @@ export const useChatStore = defineStore("chat", {
       ]);
     },
     mergeSession(fromSessionId: string, toSessionId: string) {
-      if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) {
-        return;
-      }
-
-      const source = this.sessions[fromSessionId] ?? [];
-      const target = this.sessions[toSessionId] ?? [];
-      if (source.length === 0) {
-        return;
-      }
-
-      const merged = [...target];
-      for (const message of source) {
-        const index = merged.findIndex((item) => item.id === message.id);
-        if (index === -1) {
-          merged.push({ ...message, sessionId: toSessionId });
-        } else {
-          merged[index] = { ...message, sessionId: toSessionId };
-        }
-      }
-
-      const nextSessions = { ...this.sessions, [toSessionId]: merged };
-      delete nextSessions[fromSessionId];
-      this.sessions = nextSessions;
-
-      if (this.overlayDraftSessionId === fromSessionId) {
-        this.overlayDraftSessionId = toSessionId;
-      }
+      sessionsStore().mergeSession(fromSessionId, toSessionId);
     },
     applyChatStarted(payload: RawChatStarted) {
       const normalized = normalizeChatStarted(payload);
@@ -810,7 +737,7 @@ export const useChatStore = defineStore("chat", {
         this.mergeSession(eventSessionId, targetSessionId);
       }
 
-      const messages = [...(this.sessions[targetSessionId] ?? [])];
+      const messages = [...(sessionsStore().sessions[targetSessionId] ?? [])];
 
       // Always surface the user turn (including plan approve) in the thread.
       const localUserIndex = findLastMessageIndex(
@@ -843,12 +770,12 @@ export const useChatStore = defineStore("chat", {
 
       this.setSessionMessages(targetSessionId, messages);
       if (isOverlayEvent) {
-        this.overlayDraftSessionId = targetSessionId;
+        this.setOverlayDraftSession(targetSessionId);
       }
       this.sending = { ...this.sending, [targetSessionId]: true };
     },
     reconcileOptimisticIds(sessionId: string, userMessageId: string, assistantMessageId: string) {
-      const messages = [...(this.sessions[sessionId] ?? [])];
+      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
       const localUserIndex = findLastMessageIndex(messages, (item) =>
         item.id.startsWith("local-user-"),
       );
@@ -870,7 +797,7 @@ export const useChatStore = defineStore("chat", {
       if (changed) this.setSessionMessages(sessionId, messages);
     },
     markMessageInjected(sessionId: string, messageId: string) {
-      const messages = [...(this.sessions[sessionId] ?? [])];
+      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
       const index = messages.findIndex((item) => item.id === messageId);
       if (index === -1) return;
       const current = messages[index]!;
@@ -884,7 +811,7 @@ export const useChatStore = defineStore("chat", {
       this.setSessionMessages(sessionId, messages);
     },
     failOptimisticSend(sessionId: string, error: unknown, softInject = false) {
-      const messages = [...(this.sessions[sessionId] ?? [])];
+      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
       if (softInject) {
         const index = findLastMessageIndex(messages, (item) => item.id.startsWith("local-user-"));
         if (index !== -1) {
@@ -916,7 +843,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         return;
       }
@@ -945,7 +872,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         return;
       }
@@ -975,7 +902,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         return;
       }
@@ -1025,7 +952,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         return;
       }
@@ -1090,7 +1017,7 @@ export const useChatStore = defineStore("chat", {
       }
 
       for (const [resolvedSessionId, byMessage] of grouped) {
-        const messages = this.sessions[resolvedSessionId];
+        const messages = sessionsStore().sessions[resolvedSessionId];
         if (!messages) {
           continue;
         }
@@ -1145,7 +1072,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         this.clearSendingMany([
           sessionId,
@@ -1235,7 +1162,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         return;
       }
@@ -1333,7 +1260,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages?.length) {
         return;
       }
@@ -1360,7 +1287,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages?.length) {
         return;
       }
@@ -1389,7 +1316,7 @@ export const useChatStore = defineStore("chat", {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
       );
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         this.clearSendingMany([
           sessionId,
@@ -1453,7 +1380,7 @@ export const useChatStore = defineStore("chat", {
       }
     },
     hasActiveAssistantResponse(sessionId: string) {
-      return (this.sessions[sessionId] ?? []).some(
+      return (sessionsStore().sessions[sessionId] ?? []).some(
         (message) =>
           normalizeRole(message.role) === "assistant" &&
           (message.status === "pending" || message.status === "streaming"),
@@ -1461,7 +1388,7 @@ export const useChatStore = defineStore("chat", {
     },
     completeAskUserToolActivities(sessionId: string, answer?: string) {
       const resolvedSessionId = this.resolveOverlaySessionId(sessionId);
-      const messages = this.sessions[resolvedSessionId];
+      const messages = sessionsStore().sessions[resolvedSessionId];
       if (!messages) {
         return;
       }
@@ -1515,9 +1442,9 @@ export const useChatStore = defineStore("chat", {
             : message,
         );
         const nextMessages = this.sending[sessionId]
-          ? mergeActiveHistory(loaded, this.sessions[sessionId] ?? [])
+          ? mergeActiveHistory(loaded, sessionsStore().sessions[sessionId] ?? [])
           : settleInterruptedMessages(loaded);
-        const existing = this.sessions[sessionId];
+        const existing = sessionsStore().sessions[sessionId];
         if (
           !existing ||
           messagesHistoryFingerprint(existing) !== messagesHistoryFingerprint(nextMessages)
@@ -1540,13 +1467,13 @@ export const useChatStore = defineStore("chat", {
       } catch (error) {
         log.error("chat_history failed", error);
         // A transient history failure must not blank an already visible chat.
-        if (!this.sessions[sessionId]) {
+        if (!sessionsStore().sessions[sessionId]) {
           this.setSessionMessages(sessionId, []);
         }
       }
     },
     settleInterruptedSession(sessionId: string) {
-      const messages = this.sessions[sessionId];
+      const messages = sessionsStore().sessions[sessionId];
       if (!messages) {
         this.clearSending(sessionId);
         return;
@@ -1596,7 +1523,7 @@ export const useChatStore = defineStore("chat", {
       // happen when no turn is in flight.
       const softInject = !options?.staged && busy;
 
-      this.overlayDraftSessionId = sessionId;
+      this.setOverlayDraftSession(sessionId);
 
       if (!options?.staged) {
         if (softInject) {

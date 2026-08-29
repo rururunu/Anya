@@ -167,9 +167,9 @@ onUnmounted(() => {
   width: max-content;
   max-width: min(360px, calc(100vw - 16px));
   padding: 5px 8px;
-  border: 1px solid color-mix(in srgb, var(--peek-text) 10%, transparent);
+  border: 1px solid var(--peek-border);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--peek-surface) 96%, var(--peek-text));
+  background: var(--peek-surface);
   color: var(--peek-text);
   box-shadow: 0 6px 18px color-mix(in srgb, #000 18%, transparent);
   font-size: 11px;

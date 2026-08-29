@@ -124,9 +124,7 @@ fn parse_patch_strict(patch: &str) -> Result<ApplyPatchArgs, ParseError> {
                 if let Some(rest) = body.strip_prefix('+') {
                     contents.push_str(rest);
                     contents.push('\n');
-                } else if body_trim.is_empty() {
-                    // ignore blank separators
-                } else {
+                } else if !body_trim.is_empty() {
                     return Err(ParseError::InvalidHunk {
                         message: format!("Add File lines must start with '+', got '{}'", body_trim),
                         line_number: i + 1,
@@ -217,9 +215,7 @@ fn parse_patch_strict(patch: &str) -> Result<ApplyPatchArgs, ParseError> {
                 } else if let Some(rest) = raw.strip_prefix(' ') {
                     chunk.old_lines.push(rest.to_string());
                     chunk.new_lines.push(rest.to_string());
-                } else if t.is_empty() {
-                    // ignore
-                } else {
+                } else if !t.is_empty() {
                     return Err(ParseError::InvalidHunk {
                         message: format!(
                             "Unexpected line found in update hunk: '{t}'. Every line should start with ' ' (context line), '+' (added line), or '-' (removed line)"

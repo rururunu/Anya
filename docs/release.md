@@ -6,12 +6,12 @@ Anya uses the [Tauri Updater](https://v2.tauri.app/plugin/updater/) plugin. The 
 
 ## Where is `latest.json`?
 
-| Location           | Notes                                                          |
-| ------------------ | -------------------------------------------------------------- |
-| **Git repo**       | No committed `latest.json` by default                          |
-| **Local output**   | **`release/latest.json`** after `pnpm release:json`            |
-| **GitHub Release** | Uploaded asset; **must be named `latest.json`**                |
-| **Client URL**     | `releases/latest/download/latest.json` (latest non-prerelease) |
+| Location           | Notes                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| **Git repo**       | No committed `latest.json` by default                                                       |
+| **Local output**   | **`release/latest.json`** after `pnpm release:json` (plus a copy named with the notes slug) |
+| **GitHub Release** | Uploaded asset; **must be named `latest.json`**                                             |
+| **Client URL**     | `releases/latest/download/latest.json` (latest non-prerelease)                              |
 
 Signed build artifacts:
 
@@ -50,12 +50,12 @@ pnpm tauri:build
 3. Generate **`release/latest.json`**:
 
 ```powershell
-pnpm release:json -- --tag v0.2.12 --notes "Reasoning profiles, Anthropic Messages, protocol fallback, workspace archive, Companion, and token usage improvements"
+pnpm release:json -- --tag v0.2.14 --notes "Optimistic workspace/session archive, DeepSeek multimodal with the built-in key, IME placeholder fix, CSS-token light/dark theme (WebView2 stays only-light), and 16px workbench window corners."
 ```
 
-4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.12` and upload:
-   - `Anya_0.2.12_x64.msi`
-   - `Anya_0.2.12_x64.msi.sig`
+4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.14` and upload:
+   - `Anya_0.2.14_x64.msi`
+   - `Anya_0.2.14_x64.msi.sig`
    - `latest.json` (from `release/latest.json`)
 
 5. Verify `https://github.com/rururunu/Anya/releases/latest/download/latest.json` and check for updates in the app.

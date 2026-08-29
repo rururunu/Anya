@@ -87,6 +87,7 @@
                 v-else
                 :items="visibleItems"
                 :page-title="fieldPageTitle"
+                :page-description="fieldPageDescription"
                 :empty-text="t.empty"
                 v-model:api-key-draft="apiKeyDraft"
                 v-model:mem0-api-key-draft="mem0ApiKeyDraft"
@@ -152,6 +153,7 @@ import RagSettings from "@/components/settings/RagSettings.vue";
 import ImageSettings from "@/components/settings/ImageSettings.vue";
 import SettingFieldList from "@/components/settings/SettingFieldList.vue";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
+import { reloadAppearanceWindow } from "@/services/overlay/appearance";
 import { gsapSettingsNavMount, gsapSettingsNavUnmount } from "@/services/motion/gsapPresets";
 import { getAppInfo, relaunchApp, webviewGpuDisabled } from "@/services/ipc";
 import {
@@ -168,6 +170,7 @@ import {
 import { useSettingStore } from "@/stores/setting";
 import { useChatModelStore } from "@/stores/chatModel";
 import { tr } from "@/services/i18n";
+import type { SettingsI18nKey } from "@/services/locales/settings";
 import {
   buildSettingDefinitions,
   type CategoryId,
@@ -350,6 +353,21 @@ const fieldPageTitle = computed(() => {
   return t.value.categories[id as keyof typeof t.value.categories] ?? "";
 });
 
+const FIELD_LIST_PAGE_DESC_KEYS = new Set([
+  "appearance",
+  "ai",
+  "agent",
+  "memory",
+  "search",
+  "plugins",
+]);
+
+const fieldPageDescription = computed(() => {
+  const id = activeCategory.value;
+  if (!FIELD_LIST_PAGE_DESC_KEYS.has(id)) return "";
+  return tr(settingStore.language, `settings.pages.${id}.description` as SettingsI18nKey);
+});
+
 function minimize() {
   void appWindow.minimize();
 }
@@ -363,11 +381,18 @@ function onColorSchemeChange(value: unknown) {
     return;
   }
   const scheme = value.slice("builtin:".length);
-  if (scheme === "dark" || scheme === "light") {
-    void settingStore.update({
+  if (scheme !== "dark" && scheme !== "light") {
+    return;
+  }
+  if (scheme === settingStore.colorScheme) {
+    return;
+  }
+  void (async () => {
+    await settingStore.update({
       colorScheme: scheme as ColorScheme,
     });
-  }
+    reloadAppearanceWindow();
+  })();
 }
 
 function onLanguageChange(value: unknown) {

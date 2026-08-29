@@ -146,7 +146,7 @@ defineExpose({ edit });
   padding: 16px;
   border: 1px solid var(--peek-border, rgba(255, 255, 255, 0.14));
   border-radius: var(--peek-radius-lg, 12px);
-  background: var(--peek-dialog-bg, var(--peek-surface, #252526));
+  background: var(--peek-dialog-bg, var(--peek-surface, #ffffff));
   color: var(--peek-text, #f3f4f6);
   box-shadow: var(--peek-elev-md);
   transform: translate(-50%, -50%);

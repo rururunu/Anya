@@ -24,6 +24,7 @@ export interface UseWorkbenchWorkspacesOptions {
   workspaces: Ref<Workspace[]>;
   sessions: Ref<ChatSessionSummary[]>;
   activeSessionWorkspaceId: Ref<string | null>;
+  workspaceMenuId?: Ref<string>;
   navigationLabels: WorkbenchLabels["navigationLabels"];
   labels: WorkbenchLabels["labels"];
   confirmDialogRef: Ref<InstanceType<typeof AppConfirmDialog> | null>;
@@ -54,7 +55,7 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
 
   const collapsedWorkspaceIds = ref(new Set<string>());
   const collapsedNavigationSections = ref(new Set<string>());
-  const workspaceMenuId = ref("");
+  const workspaceMenuId = options.workspaceMenuId ?? ref("");
   const draggedWorkspaceId = ref("");
   const dragOverWorkspaceId = ref("");
   const workspaceDropPosition = ref<WorkspaceDropPosition | null>(null);

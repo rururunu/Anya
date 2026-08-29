@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url";
  *
  * Usage:
  *   node scripts/generate-latest-json.mjs --tag v0.2.1
- *   node scripts/generate-latest-json.mjs --tag v0.2.1 --notes "Release notes"
+ *   node scripts/generate-latest-json.mjs --tag v0.2.14 --notes "Release notes"
+ *
+ * Writes `release/latest.json` (required GitHub asset name) and
+ * `release/Anya_<version>_latest_<notes-slug>.json`.
  *
  * Requires a signed release build:
  *   src-tauri/target/release/bundle/msi/{productName}_<version>_x64.msi
@@ -103,7 +106,17 @@ const latest = {
 await mkdir(outDir, { recursive: true });
 await writeFile(outFile, `${JSON.stringify(latest, null, 2)}\n`, "utf8");
 
+const notesSlug = String(options.notes)
+  .replace(/[\\/:*?"<>|]/g, "")
+  .replace(/\s+/g, "")
+  .slice(0, 32);
+const namedFile = notesSlug
+  ? join(outDir, `Anya_${version}_latest_${notesSlug}.json`)
+  : join(outDir, `Anya_${version}_latest.json`);
+await writeFile(namedFile, `${JSON.stringify(latest, null, 2)}\n`, "utf8");
+
 console.log(`[generate-latest-json] wrote ${outFile}`);
+console.log(`[generate-latest-json] wrote ${namedFile}`);
 console.log(`[generate-latest-json] upload to GitHub Release ${tag}:`);
 console.log(`  - ${msiName}`);
 console.log(`  - ${sigName}`);

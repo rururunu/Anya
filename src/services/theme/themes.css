@@ -1,15 +1,16 @@
-/* The only application themes are the explicit built-in light and dark schemes.
-   App default is light (:root). */
+/* Light is the default. Dark is a full token remap on html[data-theme="dark"].
+   Chromium/WebView2 color-scheme stays "only light" so native paints are not inverted;
+   darkness comes from these variables, not from color-scheme: dark. */
+
 :root,
-[data-theme="light"] {
-  color-scheme: light;
+html[data-theme="light"] {
   --peek-bg: #f8f8f8;
   --peek-sidebar: #f3f3f3;
   --peek-surface: #ffffff;
   --peek-input-bg: #ffffff;
   --peek-text: #242424;
-  --peek-muted: #616161;
-  --peek-faint: #8a8a8a;
+  --peek-muted: #5a5a5a;
+  --peek-faint: #767676;
   --peek-accent: #111111;
   --peek-border: rgba(0, 0, 0, 0.16);
   --peek-strong-border: rgba(0, 0, 0, 0.24);
@@ -17,30 +18,49 @@
   --peek-active-fg: #111111;
   --peek-list-bg: #ffffff;
   --peek-list-active: #e8e8e8;
-  --peek-placeholder: #767676;
+  --peek-placeholder: #6b6b6b;
   --peek-send-bg: #e5e5e5;
   --peek-send-fg: #4d4d4d;
   --peek-send-active-bg: #111111;
   --peek-send-active-fg: #ffffff;
   --peek-primary-foreground: #ffffff;
-  --peek-user-bubble-bg: #f0f0f0;
-  --peek-user-bubble-border: rgba(0, 0, 0, 0.14);
-  --peek-user-bubble-text: #1f1f1f;
+  --peek-user-bubble-bg: #ececec;
+  --peek-user-bubble-border: transparent;
+  --peek-user-bubble-text: #1a1a1a;
+  --peek-user-bubble-radius: 18px;
+  --peek-user-bubble-shadow: 0 1px 2px rgb(0 0 0 / 5%);
   --peek-warning: #8a6500;
   --peek-danger: #c42b1c;
   --peek-success: #18794e;
   --peek-info: #006ab1;
   --peek-focus: #111111;
   --peek-shadow: rgb(0 0 0 / 18%);
-  --peek-composer-border: color-mix(in srgb, var(--peek-text) 16%, transparent);
-  --peek-composer-border-focus: color-mix(in srgb, var(--peek-text) 28%, transparent);
-  --peek-composer-shadow: inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent);
-  --peek-composer-shadow-focus: inset 0 1px 0 color-mix(in srgb, #fff 86%, transparent);
-  --peek-scrollbar: rgba(0, 0, 0, 0.16);
-  --peek-scrollbar-hover: rgba(0, 0, 0, 0.3);
+  --peek-composer-fill: var(--peek-list-bg);
+  --peek-interaction-fill: var(--peek-list-bg);
+  --peek-composer-border: color-mix(in srgb, var(--peek-text) 9%, transparent);
+  --peek-composer-border-focus: color-mix(in srgb, var(--peek-text) 17%, transparent);
+  --peek-composer-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 78%, transparent),
+    0 1px 2px color-mix(in srgb, var(--peek-shadow) 10%, transparent),
+    0 6px 22px color-mix(in srgb, var(--peek-shadow) 7%, transparent);
+  --peek-composer-shadow-focus:
+    inset 0 1px 0 color-mix(in srgb, #fff 90%, transparent),
+    0 2px 5px color-mix(in srgb, var(--peek-shadow) 12%, transparent),
+    0 10px 28px color-mix(in srgb, var(--peek-shadow) 9%, transparent);
+  --peek-pane-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
+  --workbench-glass-fill: rgb(232 232 232 / 0.9);
+  --workbench-glass-fill-covering: rgb(243 243 243 / 0.98);
+  --peek-scrollbar: rgba(0, 0, 0, 0.12);
+  --peek-scrollbar-hover: rgba(0, 0, 0, 0.22);
   --peek-code-fg: #1f2328;
   --peek-code-muted: #656d76;
   --peek-code-selection: #add6ff;
+  --peek-code-bg: #ffffff;
+  --peek-code-body-bg: #f6f8fa;
+  --peek-code-border: rgba(27, 31, 36, 0.12);
+  --peek-code-toolbar-bg: #f6f8fa;
+  --peek-code-shadow: 0 1px 2px rgba(27, 31, 36, 0.06), 0 0 0 1px rgba(27, 31, 36, 0.04);
+  --peek-code-icon: #57606a;
   --peek-syntax-comment: #6e7781;
   --peek-syntax-keyword: #cf222e;
   --peek-syntax-string: #0a3069;
@@ -61,47 +81,64 @@
   --peek-chart-8: #8a9aa8;
 }
 
-[data-theme="dark"] {
-  color-scheme: dark;
-  --peek-bg: #1f1f1f;
-  --peek-sidebar: #181818;
-  --peek-surface: #252526;
-  --peek-input-bg: #292929;
-  --peek-text: #f3f4f6;
-  --peek-muted: #b7bcc5;
-  --peek-faint: #858b96;
-  --peek-accent: #f3f4f6;
-  --peek-border: rgba(255, 255, 255, 0.14);
-  --peek-strong-border: rgba(255, 255, 255, 0.24);
-  --peek-icon: #e5e7eb;
+html[data-theme="dark"] {
+  --peek-bg: #141414;
+  --peek-sidebar: #101010;
+  --peek-surface: #1c1c1c;
+  --peek-input-bg: #242424;
+  --peek-text: #e8e8e8;
+  --peek-muted: #9a9a9a;
+  --peek-faint: #6e6e6e;
+  --peek-accent: #f5f5f5;
+  --peek-border: rgba(255, 255, 255, 0.1);
+  --peek-strong-border: rgba(255, 255, 255, 0.18);
+  --peek-icon: #e0e0e0;
   --peek-active-fg: #ffffff;
-  --peek-list-bg: #252526;
-  --peek-list-active: #343941;
-  --peek-placeholder: #8b8b8b;
-  --peek-send-bg: #333333;
-  --peek-send-fg: #c8c8c8;
-  --peek-send-active-bg: #f3f4f6;
-  --peek-send-active-fg: #1b1b1b;
-  --peek-primary-foreground: #1b1b1b;
-  --peek-user-bubble-bg: #2b2b2b;
-  --peek-user-bubble-border: rgba(255, 255, 255, 0.14);
-  --peek-user-bubble-text: #e1e1e1;
-  --peek-warning: #cca700;
-  --peek-danger: #f14c4c;
-  --peek-success: #73c991;
-  --peek-info: #75beff;
-  --peek-focus: #f3f4f6;
-  --peek-shadow: rgb(0 0 0 / 28%);
-  --peek-composer-border: color-mix(in srgb, var(--peek-text) 16%, transparent);
-  --peek-composer-border-focus: color-mix(in srgb, var(--peek-text) 28%, transparent);
-  --peek-composer-shadow: inset 0 1px 0 color-mix(in srgb, #fff 9%, transparent);
-  --peek-composer-shadow-focus: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
-  --peek-scrollbar: rgba(255, 255, 255, 0.14);
-  --peek-scrollbar-hover: rgba(255, 255, 255, 0.28);
-  --peek-code-fg: #e6edf3;
-  --peek-code-muted: #8b949e;
+  --peek-list-bg: #1c1c1c;
+  --peek-list-active: #2a2a2a;
+  --peek-placeholder: #737373;
+  --peek-send-bg: #2e2e2e;
+  --peek-send-fg: #c4c4c4;
+  --peek-send-active-bg: #f5f5f5;
+  --peek-send-active-fg: #141414;
+  --peek-primary-foreground: #141414;
+  --peek-user-bubble-bg: #2a2a2a;
+  --peek-user-bubble-border: transparent;
+  --peek-user-bubble-text: #f0f0f0;
+  --peek-user-bubble-radius: 18px;
+  --peek-user-bubble-shadow: 0 1px 3px rgb(0 0 0 / 36%);
+  --peek-warning: #d4a017;
+  --peek-danger: #e85d5d;
+  --peek-success: #5dba83;
+  --peek-info: #6cb6ff;
+  --peek-focus: #f5f5f5;
+  --peek-shadow: rgb(0 0 0 / 48%);
+  --peek-composer-fill: #222222;
+  --peek-interaction-fill: #222222;
+  --peek-composer-border: color-mix(in srgb, var(--peek-text) 12%, transparent);
+  --peek-composer-border-focus: color-mix(in srgb, var(--peek-text) 22%, transparent);
+  --peek-composer-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent), 0 1px 2px rgb(0 0 0 / 28%),
+    0 8px 24px rgb(0 0 0 / 22%);
+  --peek-composer-shadow-focus:
+    inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent), 0 2px 6px rgb(0 0 0 / 32%),
+    0 12px 28px rgb(0 0 0 / 26%);
+  --peek-pane-shadow:
+    -2px 1px 10px rgb(0 0 0 / 32%), inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+  --workbench-glass-fill: rgb(16 16 16 / 0.92);
+  --workbench-glass-fill-covering: rgb(20 20 20 / 0.98);
+  --peek-scrollbar: rgba(255, 255, 255, 0.12);
+  --peek-scrollbar-hover: rgba(255, 255, 255, 0.22);
+  --peek-code-fg: #e6e6e6;
+  --peek-code-muted: #8a8a8a;
   --peek-code-selection: #264f78;
-  --peek-syntax-comment: #8b949e;
+  --peek-code-bg: #1a1a1a;
+  --peek-code-body-bg: #121212;
+  --peek-code-border: rgba(255, 255, 255, 0.08);
+  --peek-code-toolbar-bg: #202020;
+  --peek-code-shadow: 0 1px 2px rgb(0 0 0 / 32%), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --peek-code-icon: #9a9a9a;
+  --peek-syntax-comment: #8a8a8a;
   --peek-syntax-keyword: #ff7b72;
   --peek-syntax-string: #a5d6ff;
   --peek-syntax-number: #79c0ff;
@@ -110,7 +147,7 @@
   --peek-syntax-variable: #ffa198;
   --peek-syntax-property: #79c0ff;
   --peek-syntax-operator: #ff7b72;
-  --peek-syntax-punctuation: #c9d1d9;
+  --peek-syntax-punctuation: #c8c8c8;
   --peek-chart-1: #6ea8ff;
   --peek-chart-2: #4fd6a0;
   --peek-chart-3: #ffb46b;
@@ -122,8 +159,8 @@
 }
 
 :root,
-[data-theme="dark"],
-[data-theme="light"] {
+html[data-theme="dark"],
+html[data-theme="light"] {
   --warning: var(--peek-warning);
   --background: var(--peek-bg);
   --foreground: var(--peek-text);
@@ -151,26 +188,38 @@
   --sidebar-accent-foreground: var(--peek-text);
   --sidebar-border: var(--peek-border);
   --sidebar-ring: var(--peek-focus);
-  --peek-hover-bg: color-mix(in srgb, var(--peek-icon) 9%, transparent);
+  --peek-hover-bg: color-mix(in srgb, var(--peek-text) 7%, transparent);
+  --peek-press-bg: color-mix(in srgb, var(--peek-text) 11%, transparent);
   --peek-dialog-bg: var(--peek-surface);
-  --peek-row-hover: color-mix(in srgb, var(--peek-text) 6%, transparent);
-  --peek-row-active: color-mix(in srgb, var(--peek-accent) 13%, transparent);
+  --peek-row-hover: color-mix(in srgb, var(--peek-text) 5.5%, transparent);
+  --peek-row-active: color-mix(in srgb, var(--peek-accent) 11%, var(--peek-list-bg));
+
+  --peek-space-1: 4px;
+  --peek-space-2: 8px;
+  --peek-space-3: 12px;
+  --peek-space-4: 16px;
+  --peek-space-5: 20px;
+  --peek-space-6: 24px;
 
   --peek-radius-sm: 6px;
   --peek-radius-md: 8px;
   --peek-radius-lg: 12px;
   --peek-radius-composer: 16px;
 
-  --peek-control-icon: 28px;
-  --peek-control-row: 30px;
+  --peek-control-icon: 30px;
+  --peek-control-row: 32px;
   --peek-titlebar-h: 42px;
 
-  --peek-font-xs: 11px;
-  --peek-font-sm: 12px;
-  --peek-font-md: 13px;
-  --peek-font-lg: 14px;
+  --peek-font-xs: 12px;
+  --peek-font-sm: 13px;
+  --peek-font-md: 14px;
+  --peek-font-lg: 15px;
 
-  --peek-elev-sm: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
-  --peek-elev-md: 0 6px 18px color-mix(in srgb, var(--peek-shadow) 42%, transparent);
-  --peek-focus-ring: 0 0 0 1px color-mix(in srgb, var(--peek-text) 22%, transparent);
+  --peek-elev-sm:
+    0 1px 3px color-mix(in srgb, var(--peek-shadow) 18%, transparent),
+    0 4px 12px color-mix(in srgb, var(--peek-shadow) 12%, transparent);
+  --peek-elev-md:
+    0 4px 16px color-mix(in srgb, var(--peek-shadow) 28%, transparent),
+    0 12px 32px color-mix(in srgb, var(--peek-shadow) 16%, transparent);
+  --peek-focus-ring: 0 0 0 2px color-mix(in srgb, var(--peek-accent) 28%, transparent);
 }

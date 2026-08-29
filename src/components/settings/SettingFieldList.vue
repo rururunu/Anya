@@ -1,10 +1,8 @@
 <template>
   <section :class="hideHeader ? 'settings-embedded' : 'settings-page'">
-    <SettingsPageHeader v-if="!hideHeader" :title="pageTitle" />
+    <SettingsPageHeader v-if="!hideHeader" :title="pageTitle" :description="pageDescription" />
 
-    <p v-if="items.length === 0" class="text-muted-foreground px-1 py-6 text-sm">
-      {{ emptyText }}
-    </p>
+    <SettingsEmptyState v-if="items.length === 0" :message="emptyText" />
 
     <section v-for="group in groups" :key="group.id" class="settings-group">
       <h2 class="settings-group-title">{{ group.title }}</h2>
@@ -53,17 +51,27 @@
               'collaboration-control': item.type === 'collaboration-models',
             }"
           >
-            <div v-if="item.type === 'select-color'" class="settings-seg">
-              <button
-                v-for="option in builtInThemeOptions"
-                :key="option.value"
-                type="button"
-                :class="{ on: selectedThemeValue === option.value }"
-                @click="onThemeOptionSelect(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
+            <Select
+              v-if="item.type === 'select-color'"
+              :model-value="selectedThemeValue"
+              @update:model-value="onThemeOptionSelect"
+            >
+              <SelectTrigger class="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup v-for="group in builtInThemeGroups" :key="group.id">
+                  <SelectLabel>{{ group.label }}</SelectLabel>
+                  <SelectItem
+                    v-for="option in group.options"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
 
             <Select
               v-else-if="item.type === 'select-language'"
@@ -202,15 +210,10 @@
             </div>
 
             <div v-else-if="item.type === 'collaboration-models'" class="collaboration-models">
-              <button
-                type="button"
-                class="setting-toggle"
-                :class="{ active: settingStore.multiModelCollaboration }"
-                :aria-pressed="settingStore.multiModelCollaboration"
-                @click="toggleModelCollaboration"
-              >
-                <span class="setting-toggle-knob"></span>
-              </button>
+              <SettingsToggle
+                :model-value="settingStore.multiModelCollaboration"
+                @update:model-value="toggleModelCollaboration"
+              />
               <div
                 v-if="settingStore.multiModelCollaboration"
                 class="collaboration-model-list peek-scrollbar"
@@ -349,16 +352,11 @@
               @blur="emit('save-memory-settings')"
             />
 
-            <button
+            <SettingsToggle
               v-else-if="item.type === 'toggle'"
-              type="button"
-              class="setting-toggle"
-              :class="{ active: toggleActive(item.id) }"
-              :aria-pressed="toggleActive(item.id)"
-              @click="emit('toggle', item.id)"
-            >
-              <span class="setting-toggle-knob"></span>
-            </button>
+              :model-value="toggleActive(item.id)"
+              @update:model-value="() => emit('toggle', item.id)"
+            />
 
             <div
               v-else-if="item.type === 'slider'"
@@ -433,10 +431,14 @@ import { SecretInput } from "@/components/ui/secret-input";
 import HotkeyRecordField from "@/components/settings/HotkeyRecordField.vue";
 import SettingsHelpTip from "@/components/settings/SettingsHelpTip.vue";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import SettingsToggle from "@/components/settings/SettingsToggle.vue";
+import SettingsEmptyState from "@/components/settings/SettingsEmptyState.vue";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -457,7 +459,6 @@ import { tr } from "@/services/i18n";
 import type { SettingDefinition } from "@/pages/Settings/settingsDefinitions";
 import type { ModelSelection } from "@/types/setting";
 import {
-  colorSchemeOptions,
   languageOptions,
   localizedOptionLabel,
   reasoningEffortOptions,
@@ -467,6 +468,7 @@ import {
   agentWorkDisplayOptions,
   zoomOptions,
 } from "@/types/setting";
+import { themeOptionGroups } from "@/services/theme/catalog";
 
 type DescriptionPart = { type: "text" | "url"; value: string };
 
@@ -510,6 +512,7 @@ const props = withDefaults(
     items: SettingDefinition[];
     emptyText: string;
     pageTitle: string;
+    pageDescription?: string;
     hideHeader?: boolean;
     apiKeyDraft?: string;
     mem0ApiKeyDraft?: string;
@@ -559,7 +562,10 @@ const chatModelStore = useChatModelStore();
 
 const selectedThemeValue = computed(() => `builtin:${settingStore.colorScheme}`);
 
-function onThemeOptionSelect(value: string) {
+function onThemeOptionSelect(value: unknown) {
+  if (typeof value !== "string") {
+    return;
+  }
   if (value !== selectedThemeValue.value) {
     emit("color-scheme-change", value);
   }
@@ -581,10 +587,14 @@ const groups = computed(() => {
   }));
 });
 
-const builtInThemeOptions = computed(() =>
-  colorSchemeOptions.map((option) => ({
-    value: `builtin:${option.value}`,
-    label: localizedOptionLabel(option, settingStore.language),
+const builtInThemeGroups = computed(() =>
+  themeOptionGroups.map((group) => ({
+    id: group.id,
+    label: group.label[settingStore.language as keyof typeof group.label] ?? group.label["en-US"],
+    options: group.options.map((option) => ({
+      value: `builtin:${option.value}`,
+      label: localizedOptionLabel(option, settingStore.language),
+    })),
   })),
 );
 
@@ -861,42 +871,6 @@ function onSearchSecretInput(id: string, value: string | number) {
 .setting-row {
   border-radius: 6px;
   transition: background-color 120ms ease;
-}
-
-.setting-toggle {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--muted);
-  cursor: default;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease;
-}
-
-.setting-toggle.active {
-  background: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 70%, white 30%);
-}
-
-.setting-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: white;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 28%);
-  transition: transform 160ms ease;
-}
-
-.setting-toggle.active .setting-toggle-knob {
-  transform: translateX(20px);
 }
 
 .collaboration-models {

@@ -272,6 +272,7 @@ onUnmounted(() => {
   justify-content: center;
   overflow: hidden;
   cursor: grab;
+  color-scheme: only light;
   background: color-mix(in srgb, var(--peek-bg) 88%, black 12%);
 }
 
@@ -287,6 +288,7 @@ onUnmounted(() => {
   transform-origin: center center;
   will-change: transform;
   pointer-events: none;
+  color-scheme: only light;
 }
 
 .preview-empty {

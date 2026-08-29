@@ -41,7 +41,7 @@
       </DialogPortal>
     </DialogRoot>
 
-    <SettingsPageHeader :title="copy.title">
+    <SettingsPageHeader :title="copy.title" :hide-title="embedded">
       <template #actions>
         <Button
           variant="outline"
@@ -100,7 +100,7 @@
       </button>
     </div>
 
-    <p v-if="error" class="form-error">{{ error }}</p>
+    <SettingsFormError :message="error" />
 
     <McpServerEditor
       v-if="editor"
@@ -171,6 +171,7 @@ import { ExternalLink, Plus, Settings } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import SettingsFormError from "@/components/settings/SettingsFormError.vue";
 import {
   DialogContent,
   DialogDescription,
@@ -222,7 +223,7 @@ import McpInstalledList from "./mcp/McpInstalledList.vue";
 import McpServerEditor from "./mcp/McpServerEditor.vue";
 import McpSmitheryPanel from "./mcp/McpSmitheryPanel.vue";
 
-const props = defineProps<{ query?: string }>();
+const props = defineProps<{ query?: string; embedded?: boolean }>();
 const settingStore = useSettingStore();
 const saving = ref(false);
 const error = ref("");
@@ -1137,13 +1138,6 @@ watch(
   flex-direction: column;
   gap: 0;
 }
-
-.form-error {
-  margin: 0 0 12px;
-  color: #ef4444;
-  font-size: 12px;
-  line-height: 1.5;
-}
 </style>
 
 <style>
@@ -1168,7 +1162,7 @@ watch(
   padding: 16px;
   border: 1px solid var(--peek-border, rgba(255, 255, 255, 0.14));
   border-radius: 12px;
-  background: var(--peek-dialog-bg, var(--peek-surface, #252526));
+  background: var(--peek-dialog-bg, var(--peek-surface, #ffffff));
   color: var(--peek-text, #f3f4f6);
   box-shadow: 0 18px 48px var(--peek-shadow, rgb(0 0 0 / 28%));
   transform: translate(-50%, -50%);

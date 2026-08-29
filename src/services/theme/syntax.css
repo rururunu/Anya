@@ -1,0 +1,77 @@
+/* Highlight.js — colors from theme tokens only. */
+
+.markdown-body :deep(.hljs-comment),
+.markdown-body :deep(.hljs-quote),
+.file-diff-body :deep(.hljs-comment),
+.file-diff-body :deep(.hljs-quote) {
+  color: var(--peek-syntax-comment);
+  font-style: italic;
+}
+
+.markdown-body :deep(.hljs-keyword),
+.markdown-body :deep(.hljs-selector-tag),
+.markdown-body :deep(.hljs-literal),
+.markdown-body :deep(.hljs-type),
+.file-diff-body :deep(.hljs-keyword),
+.file-diff-body :deep(.hljs-selector-tag),
+.file-diff-body :deep(.hljs-type),
+.file-diff-body :deep(.hljs-literal) {
+  color: var(--peek-syntax-keyword);
+}
+
+.markdown-body :deep(.hljs-string),
+.markdown-body :deep(.hljs-regexp),
+.markdown-body :deep(.hljs-addition),
+.markdown-body :deep(.hljs-attribute),
+.file-diff-body :deep(.hljs-string),
+.file-diff-body :deep(.hljs-regexp),
+.file-diff-body :deep(.hljs-attribute) {
+  color: var(--peek-syntax-string);
+}
+
+.markdown-body :deep(.hljs-number),
+.markdown-body :deep(.hljs-symbol),
+.markdown-body :deep(.hljs-bullet),
+.file-diff-body :deep(.hljs-number),
+.file-diff-body :deep(.hljs-symbol) {
+  color: var(--peek-syntax-number);
+}
+
+.markdown-body :deep(.hljs-title),
+.markdown-body :deep(.hljs-section),
+.markdown-body :deep(.hljs-function .hljs-title),
+.file-diff-body :deep(.hljs-title),
+.file-diff-body :deep(.hljs-section),
+.file-diff-body :deep(.hljs-built_in) {
+  color: var(--peek-syntax-function);
+}
+
+.markdown-body :deep(.hljs-variable),
+.markdown-body :deep(.hljs-template-variable),
+.markdown-body :deep(.hljs-params),
+.file-diff-body :deep(.hljs-variable),
+.file-diff-body :deep(.hljs-params) {
+  color: var(--peek-syntax-variable);
+}
+
+.markdown-body :deep(.hljs-built_in),
+.markdown-body :deep(.hljs-meta),
+.markdown-body :deep(.hljs-link) {
+  color: var(--peek-syntax-type);
+}
+
+.markdown-body :deep(.hljs-deletion) {
+  color: var(--peek-danger);
+}
+
+.markdown-body :deep(pre code.language-diff .hljs-addition) {
+  display: inline-block;
+  min-width: 100%;
+  background: color-mix(in srgb, var(--peek-success) 18%, transparent);
+}
+
+.markdown-body :deep(pre code.language-diff .hljs-deletion) {
+  display: inline-block;
+  min-width: 100%;
+  background: color-mix(in srgb, var(--peek-danger) 18%, transparent);
+}

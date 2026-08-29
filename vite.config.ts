@@ -10,6 +10,10 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [vue(), tailwindcss()],
 
+  optimizeDeps: {
+    include: ["mermaid"],
+  },
+
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -19,10 +23,9 @@ export default defineConfig(async () => ({
   },
 
   build: {
-    // ECharts core alone exceeds Vite's default 500 kB once minified. ChartCard
-    // (and chartEchartsExtra / echarts-gl) are already dynamic-imported off the
-    // boot path — raise the warn so intentional chart chunks do not fail CI noise.
-    chunkSizeWarningLimit: 1000,
+    // ECharts and Mermaid (incl. @upsetjs/venn.js) exceed 1 MB minified but load
+    // only on demand via chartHydration / mermaidHydration — not on the boot path.
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       onwarn(warning, warn) {
         const id = warning.id?.replaceAll("\\", "/") ?? "";
@@ -45,9 +48,11 @@ export default defineConfig(async () => ({
           const packageName = parts[0]?.startsWith("@") ? `${parts[0]}/${parts[1]}` : parts[0];
           if (!packageName) return undefined;
 
-          if (packageName === "katex") return "vendor-katex";
+          if (packageName === "mermaid" || packageName === "@upsetjs/venn.js") {
+            return "vendor-mermaid";
+          }
           if (packageName === "highlight.js") return "vendor-highlight";
-          if (["marked", "marked-katex-extension", "dompurify"].includes(packageName)) {
+          if (["marked", "dompurify"].includes(packageName)) {
             return "vendor-markdown";
           }
           // Language grammars are dynamically imported by CodeDiffEditor — leave

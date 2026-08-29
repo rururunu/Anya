@@ -1,54 +1,101 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
-import { Bug, FileDiff, Image as ImageIcon, Workflow } from "@lucide/vue";
+import { Bug, FileDiff } from "@lucide/vue";
 
 import {
   useReviewSidebarResize,
+  readStoredReviewSidebarWidth,
   REVIEW_RESIZE_HANDLE_WIDTH,
   REVIEW_SIDEBAR_MIN_WIDTH,
   REVIEW_SIDEBAR_MAX_WIDTH,
 } from "@/composables/useReviewSidebarResize";
-import { tr } from "@/services/i18n";
+import {
+  useNavigationSidebarResize,
+  readStoredNavigationSidebarWidth,
+  NAVIGATION_RESIZE_HANDLE_WIDTH,
+  NAVIGATION_SIDEBAR_MIN_WIDTH,
+  NAVIGATION_SIDEBAR_MAX_WIDTH,
+} from "@/composables/useNavigationSidebarResize";
 import { SUBAGENT_TOOLS } from "@/services/chat/subagentTools";
+import { findSubagentEntry, resolvePanelSessionId } from "@/services/chat/subagentPanel";
+import { rootSessionId } from "@/services/chat/subagentSession";
+import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore } from "@/stores/setting";
-import type { ChatMessage } from "@/types/chat";
+import type { ChatMessage, ChatSessionSummary } from "@/types/chat";
 import type { ReviewView } from "./types";
 import type { WorkbenchLabels } from "./useWorkbenchLabels";
 
-export { REVIEW_RESIZE_HANDLE_WIDTH, REVIEW_SIDEBAR_MIN_WIDTH, REVIEW_SIDEBAR_MAX_WIDTH };
+export {
+  REVIEW_RESIZE_HANDLE_WIDTH,
+  REVIEW_SIDEBAR_MIN_WIDTH,
+  REVIEW_SIDEBAR_MAX_WIDTH,
+  NAVIGATION_RESIZE_HANDLE_WIDTH,
+  NAVIGATION_SIDEBAR_MIN_WIDTH,
+  NAVIGATION_SIDEBAR_MAX_WIDTH,
+};
 
 export interface UseWorkbenchReviewOptions {
   navigationOpen: Ref<boolean>;
+  navigationWidth?: Ref<number>;
   activeSessionId: Ref<string>;
   messages: ComputedRef<ChatMessage[]>;
+  sessions: Ref<ChatSessionSummary[]>;
   labels: WorkbenchLabels["labels"];
   clearSessionUnread: (sessionId: string) => void;
+  selectConversation: (sessionId: string) => void | Promise<void>;
 }
 
 /**
- * Review sidebar (diff / sub-agents / runtime / image tabs), its resizable
- * width, and the sub-agent / image tab bookkeeping that feeds it.
+ * Review sidebar (diff / runtime / image tabs), its resizable width, and image
+ * preview bookkeeping.
  */
 export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
-  const { navigationOpen, activeSessionId, messages, labels, clearSessionUnread } = options;
+  const {
+    navigationOpen,
+    activeSessionId,
+    messages,
+    sessions,
+    labels,
+    clearSessionUnread,
+    selectConversation,
+  } = options;
   const settingStore = useSettingStore();
+  const subagentSessionStore = useSubagentSessionStore();
 
   const reviewOpen = ref(false);
   const reviewView = ref<ReviewView>("diff");
-  const openedSubagentIds = ref<string[]>([]);
-  const selectedSubagentId = ref("");
+  const imageLightboxOpen = ref(false);
   const openedImageSources = ref<string[]>([]);
   const selectedImageSource = ref("");
   const reviewFocusPath = ref("");
   const reviewFocusAt = ref(0);
+  const navigationWidth = options.navigationWidth ?? ref(readStoredNavigationSidebarWidth());
+  const reviewWidth = ref(readStoredReviewSidebarWidth());
 
   const {
+    navigationResizing,
+    startResize: startNavigationResize,
+    handleResizeKey: handleNavigationResizeKey,
+    resetWidth: resetNavigationWidth,
+    updateWidth: updateNavigationWidth,
+  } = useNavigationSidebarResize({
+    navigationOpen,
+    reviewOpen,
     reviewWidth,
+    navigationWidth,
+  });
+
+  const {
     reviewResizing,
     startResize: startReviewResize,
     handleResizeKey: handleReviewResizeKey,
     resetWidth: resetReviewWidth,
     updateWidth: updateReviewWidth,
-  } = useReviewSidebarResize({ navigationOpen, reviewOpen });
+  } = useReviewSidebarResize({
+    navigationOpen,
+    reviewOpen,
+    navigationWidth,
+    reviewWidth,
+  });
 
   const allToolActivities = computed(() =>
     messages.value.flatMap((message) => message.toolActivities ?? []),
@@ -60,28 +107,22 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     () => subagentActivities.value.filter((activity) => activity.status === "running").length,
   );
 
-  // The runtime/debug panel is a development aid; keep it out of packaged builds.
   const reviewViews = computed(() => [
     { id: "diff" as const, label: labels.value.diff, icon: FileDiff },
-    { id: "agents" as const, label: labels.value.agents, icon: Workflow },
-    ...(openedImageSources.value.length
-      ? [
-          {
-            id: "image" as const,
-            label: tr(settingStore.language, "image.preview"),
-            icon: ImageIcon,
-          },
-        ]
-      : []),
     ...(import.meta.env.DEV
       ? [{ id: "runtime" as const, label: labels.value.runtime, icon: Bug }]
       : []),
   ]);
 
   function openReview(view: ReviewView) {
-    reviewView.value = view;
+    if (view === "agents") {
+      reviewView.value = "diff";
+    } else {
+      reviewView.value = view;
+    }
     reviewOpen.value = true;
     updateReviewWidth();
+    updateNavigationWidth();
   }
 
   function openReviewFile(path: string) {
@@ -96,24 +137,30 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
       return;
     }
 
-    if (reviewView.value === "agents" && !openedSubagentIds.value.length) {
-      reviewView.value = "diff";
-    }
+    reviewView.value = "diff";
     reviewOpen.value = true;
     updateReviewWidth();
+    updateNavigationWidth();
   }
 
-  function openAgentReview(activityId: string) {
-    if (!openedSubagentIds.value.includes(activityId)) openedSubagentIds.value.push(activityId);
-    selectedSubagentId.value = activityId;
-    openReview("agents");
-  }
+  function openAgentReview(entryId: string) {
+    const parentId = rootSessionId(activeSessionId.value);
+    const entry = findSubagentEntry(allToolActivities.value, entryId, settingStore.language);
+    if (!entry) return;
 
-  function closeSubagent(activityId: string) {
-    openedSubagentIds.value = openedSubagentIds.value.filter((id) => id !== activityId);
-    if (selectedSubagentId.value === activityId) {
-      selectedSubagentId.value = openedSubagentIds.value[openedSubagentIds.value.length - 1] ?? "";
-    }
+    const sessionId = resolvePanelSessionId(parentId, allToolActivities.value, entry.entryId);
+    const parentSummary = sessions.value.find((session) => session.sessionId === parentId);
+
+    subagentSessionStore.upsert({
+      sessionId,
+      parentSessionId: parentId,
+      entryId: entry.entryId,
+      preview: entry.title,
+      workspaceId: parentSummary?.workspaceId ?? null,
+      visible: true,
+    });
+
+    void selectConversation(sessionId);
   }
 
   function previewImage(source: string) {
@@ -121,7 +168,11 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
       openedImageSources.value = [...openedImageSources.value, source];
     }
     selectedImageSource.value = source;
-    openReview("image");
+    imageLightboxOpen.value = true;
+  }
+
+  function closeImageLightbox() {
+    imageLightboxOpen.value = false;
   }
 
   function closeImageTab(source: string) {
@@ -133,18 +184,24 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     if (selectedImageSource.value === source) {
       selectedImageSource.value = remaining[index] ?? remaining[index - 1] ?? "";
     }
-    if (!remaining.length && reviewView.value === "image") {
-      reviewView.value = "diff";
+    if (!remaining.length) {
+      imageLightboxOpen.value = false;
     }
   }
 
   watch(activeSessionId, () => {
     clearSessionUnread(activeSessionId.value);
-    openedSubagentIds.value = [];
-    selectedSubagentId.value = "";
     openedImageSources.value = [];
     selectedImageSource.value = "";
-    if (reviewView.value === "image") reviewView.value = "diff";
+    imageLightboxOpen.value = false;
+  });
+
+  watch(navigationWidth, () => {
+    if (reviewOpen.value) updateReviewWidth();
+  });
+
+  watch(reviewWidth, () => {
+    if (navigationOpen.value) updateNavigationWidth();
   });
 
   return {
@@ -157,11 +214,16 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     handleReviewResizeKey,
     resetReviewWidth,
     updateReviewWidth,
+    navigationWidth,
+    navigationResizing,
+    startNavigationResize,
+    handleNavigationResizeKey,
+    resetNavigationWidth,
+    updateNavigationWidth,
     allToolActivities,
     subagentActivities,
     runningSubagentCount,
-    openedSubagentIds,
-    selectedSubagentId,
+    imageLightboxOpen,
     openedImageSources,
     selectedImageSource,
     reviewFocusPath,
@@ -170,8 +232,8 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     openReviewFile,
     toggleReviewSidebar,
     openAgentReview,
-    closeSubagent,
     previewImage,
+    closeImageLightbox,
     closeImageTab,
   };
 }

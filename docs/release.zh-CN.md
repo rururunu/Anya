@@ -62,22 +62,22 @@ pnpm tauri:build
 ### 3. 生成本地 `latest.json`
 
 ```powershell
-pnpm release:json -- --tag v0.2.12 --notes "新增按模型族的思考力度、Anthropic Messages 与协议自动回退；改进工作区归档、Companion 和 token 用量。"
+pnpm release:json -- --tag v0.2.14 --notes "改进工作台归档体验、DeepSeek 多模态内置 Key、中文输入法占位符；浅色/深色改为 CSS token（WebView2 保持 only light），工作台窗口圆角 16px。升级自 v0.2.13，设置、OAuth token、工作区和聊天数据会保留。"
 ```
 
-生成文件：**`release/latest.json`**。
+生成文件：**`release/latest.json`**（GitHub 附件必须用这个文件名），以及一份带版本说明的副本 **`release/Anya_<version>_latest_<说明摘要>.json`**。
 
 也可手写，格式示例：
 
 ```json
 {
-  "version": "0.2.12",
+  "version": "0.2.14",
   "notes": "更新说明",
-  "pub_date": "2026-08-15T08:00:00Z",
+  "pub_date": "2026-08-29T09:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://github.com/rururunu/Anya/releases/download/v0.2.12/Anya_0.2.12_x64.msi",
-      "signature": "<Anya_0.2.12_x64.msi.sig 文件的全部内容>"
+      "url": "https://github.com/rururunu/Anya/releases/download/v0.2.14/Anya_0.2.14_x64.msi",
+      "signature": "<Anya_0.2.14_x64.msi.sig 文件的全部内容>"
     }
   }
 }
@@ -86,11 +86,11 @@ pnpm release:json -- --tag v0.2.12 --notes "新增按模型族的思考力度、
 ### 4. 在 GitHub 创建 Release
 
 1. 打开 [Releases](https://github.com/rururunu/Anya/releases) → **Draft a new release**
-2. Tag：`v0.2.12`（与 `--tag` 一致）
+2. Tag：`v0.2.14`（与 `--tag` 一致）
 3. 填写 Release 说明（与 `notes` 可相同，给用户看）
 4. 上传 **3 个文件**：
-   - `Anya_0.2.12_x64.msi`
-   - `Anya_0.2.12_x64.msi.sig`
+   - `Anya_0.2.14_x64.msi`
+   - `Anya_0.2.14_x64.msi.sig`
    - `latest.json`（来自 `release/latest.json`，**文件名保持 `latest.json`**）
 5. 发布（不要勾 Pre-release，否则 `latest` 不会指向它）
 
@@ -106,8 +106,8 @@ pnpm release:json -- --tag v0.2.12 --notes "新增按模型族的思考力度、
 仓库已包含 `.github/workflows/release.yml`：推送 `v*` 标签时自动构建、签名并上传 Release。
 
 ```powershell
-git tag v0.2.12
-git push origin v0.2.12
+git tag v0.2.14
+git push origin v0.2.14
 ```
 
 配置好上述 Secrets 后，无需再手动写 Release 正文或上传 MSI；`latest.json` 由 `tauri-action` 生成并上传。

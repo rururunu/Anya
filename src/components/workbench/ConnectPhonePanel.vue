@@ -1088,7 +1088,7 @@ function formatTime(epochMs: number) {
   padding: 18px 16px 14px;
   border: 1px solid var(--peek-border, rgba(255, 255, 255, 0.14));
   border-radius: 14px;
-  background: var(--peek-dialog-bg, var(--peek-surface, #252526));
+  background: var(--peek-dialog-bg, var(--peek-surface, #ffffff));
   color: var(--peek-text, #f3f4f6);
   box-shadow: 0 18px 48px var(--peek-shadow, rgb(0 0 0 / 28%));
   transform: translate(-50%, -50%);

@@ -14,8 +14,7 @@
   background: transparent;
   color: var(--peek-text);
   font-family: var(--peek-font-sans);
-  font-size: 14px;
-  font-weight: 400;
+  font-size: var(--peek-font-md, 14px);
   line-height: 24px;
   caret-color: var(--peek-accent);
   white-space: pre-wrap;

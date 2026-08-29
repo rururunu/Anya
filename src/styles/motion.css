@@ -13,6 +13,7 @@ a,
 input,
 textarea,
 select {
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform;
   transition-duration: var(--motion-fast);
   transition-timing-function: var(--motion-ease-out);
 }
@@ -43,7 +44,7 @@ html.peek-window select:focus-visible {
 @media (hover: hover) {
   button:not(:disabled):active,
   [role="button"]:not([aria-disabled="true"]):active {
-    transform: translateY(0.5px);
+    transform: scale(0.98);
   }
 }
 

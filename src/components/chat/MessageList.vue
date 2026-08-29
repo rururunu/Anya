@@ -59,7 +59,7 @@
       class="message-preview-rail"
       tabindex="0"
       :aria-label="tr(settingStore.language, 'userMessageNav')"
-      @keydown="onRailKeydown"
+      @keydown="onRailKeydown($event, scrollToMessage)"
     >
       <button
         v-for="(message, index) in userMessages"
@@ -308,7 +308,6 @@
             @review="$emit('reviewChanges')"
             @review-file="$emit('reviewFile', $event)"
           />
-          <SharedOfferCards :message="item.message" />
           <PlanApprovalCard
             v-if="showPlanCardFor(item.message)"
             :tasks="planTasksForMessage(item.message, isApprovedPlan(item.message))"
@@ -430,7 +429,6 @@ import {
 import { lookupInstallIcon, peekInstallIcon, warmInstallIcons } from "@/services/iconCache";
 import AgentWorkDetails from "@/components/chat/AgentWorkDetails.vue";
 import CodeChangesSummary from "@/components/chat/CodeChangesSummary.vue";
-import SharedOfferCards from "@/components/chat/SharedOfferCards.vue";
 import PlanApprovalCard from "@/components/chat/PlanApprovalCard.vue";
 import AssistantActivityIndicator from "@/components/chat/AssistantActivityIndicator.vue";
 import AskUserAnswerCard from "@/components/chat/AskUserAnswerCard.vue";
@@ -446,7 +444,6 @@ import { isSoftInjectContent, stripSoftInjectMarker } from "@/services/chat/soft
 import { isCompactionSummary } from "@/services/chat/compactMarker";
 import { tr } from "@/services/i18n";
 import { createLogger } from "@/services/logger";
-import { gsapScrollContainerTo } from "@/services/motion/gsapPresets";
 import { copyText } from "@/services/clipboard";
 import {
   estimateMessageTokens,
@@ -461,6 +458,8 @@ import {
   paintCurrentFindHit,
 } from "@/services/chat/conversationFind";
 import { provideConversationFind } from "@/composables/chat/useConversationFind";
+import { useMessagePreviewRail } from "@/composables/chat/useMessagePreviewRail";
+import { useMessageScroll } from "@/composables/chat/useMessageScroll";
 import { useAppStore } from "@/stores/app";
 import { storeToRefs } from "pinia";
 
@@ -471,7 +470,6 @@ function previewImage(url: string) {
   emit("previewImage", url);
 }
 
-const SCROLL_NEAR_BOTTOM_THRESHOLD = 96;
 const props = defineProps<{
   messages: ChatMessage[];
   sessionId?: string;
@@ -995,14 +993,12 @@ const userMessages = computed(() =>
     .map((item) => item.message),
 );
 const listRef = ref<HTMLElement | null>(null);
-const railRef = ref<HTMLElement | null>(null);
+const stickToBottom = ref(true);
 const findOpen = ref(false);
 const findQuery = ref("");
 const findIndex = ref(0);
 const findHits = ref<HTMLElement[]>([]);
 const findInputRef = ref<HTMLInputElement | null>(null);
-const stickToBottom = ref(true);
-const activeUserMessageId = ref("");
 const rewindBusy = ref(false);
 const copyStatus = ref<{ id: string; state: "copied" | "failed" } | null>(null);
 const durationClock = ref(Date.now());
@@ -1159,6 +1155,25 @@ function softInjectText(message: ChatMessage) {
 function userContent(message: ChatMessage) {
   return parseSelectionAttachment(stripSoftInjectMarker(message.content));
 }
+
+const { railRef, activeUserMessageId, messagePreview, onRailKeydown, updateActiveUserMessage } =
+  useMessagePreviewRail({
+    listRef,
+    userMessages,
+    stickToBottom,
+    findOpen,
+    userContent,
+  });
+
+const { handleScroll, scrollToMessage, scrollToLatest } = useMessageScroll({
+  listRef,
+  stickToBottom,
+  messages: computed(() => props.messages),
+  displayItems,
+  activeUserMessageId,
+  railRef,
+  updateActiveUserMessage,
+});
 
 type InlineMessagePart =
   | { kind: "text"; text: string }
@@ -1339,11 +1354,6 @@ async function confirmRewind(message: ChatMessage) {
 function isPending(message: ChatMessage) {
   return message.status === "pending" || message.status === "streaming";
 }
-function getFilename(path: string | undefined): string {
-  if (!path) return "";
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
-}
 
 function isWaitingForAskUser(message: ChatMessage) {
   return (message.toolActivities ?? []).some(
@@ -1375,78 +1385,14 @@ function activityLabel(message: ChatMessage) {
     return tr(settingStore.language, "analyzingImages");
   }
 
-  const running = [...(message.toolActivities ?? [])]
-    .reverse()
-    .find((activity) => activity.status === "running");
-  if (running) {
-    if (running.toolName === "ask_user") {
-      return tr(settingStore.language, "waitingAnswer");
-    }
-
-    const args = (running.arguments || {}) as Record<string, string | undefined>;
-
-    // 1. Reading file
-    if (running.toolName === "read_file" || running.toolName === "view_file") {
-      const path = args.AbsolutePath || args.TargetFile || args.path;
-      const file = getFilename(path);
-      return file ? `正在读取 ${file}` : "正在读取文件";
-    }
-
-    // 2. Listing directory / Getting workspace details
-    if (
-      running.toolName === "list_dir" ||
-      running.toolName === "list_folder" ||
-      running.toolName === "list_workspace_files"
-    ) {
-      return "正在获取目录信息";
-    }
-
-    // 3. Writing or editing file
-    if (
-      running.toolName === "write_to_file" ||
-      running.toolName === "replace_file_content" ||
-      running.toolName === "multi_replace_file_content" ||
-      ["create", "edit", "delete", "move"].includes(running.kind)
-    ) {
-      const path = args.TargetFile || args.AbsolutePath || args.path || args.to || args.from;
-      const file = getFilename(path);
-      return file ? `正在编写 ${file}` : "正在编写中";
-    }
-
-    // 4. Searching / Grep search
-    if (
-      running.toolName === "grep_search" ||
-      running.toolName === "find_files" ||
-      running.toolName === "search_files"
-    ) {
-      const query = args.Query || args.pattern || args.query;
-      return query ? `正在查找 "${query}"` : "正在查找";
-    }
-
-    // 5. Web Search / Read URL
-    if (running.toolName === "search_web") {
-      const query = args.query;
-      return query ? `正在搜索 "${query}"` : "正在进行网页搜索";
-    }
-    if (running.toolName === "read_url_content") {
-      return "正在读取网页内容";
-    }
-
-    // 6. Shell Command
-    if (running.toolName === "run_command" || running.kind === "shell") {
-      const cmd = args.CommandLine || args.command || args.commandLine;
-      return cmd ? `正在执行: ${cmd}` : "正在执行命令";
-    }
-
-    if (running.kind === "image" || running.toolName === "generate_image") {
-      return tr(settingStore.language, "image.generating");
-    }
-
-    if (running.kind === "read") return tr(settingStore.language, "reading");
-    return tr(settingStore.language, "working");
+  const hasWorkStream =
+    Boolean(message.reasoning?.trim()) || (message.toolActivities?.length ?? 0) > 0;
+  if (hasWorkStream) {
+    return "";
   }
-  if (message.content) return tr(settingStore.language, "responding");
-  return tr(settingStore.language, "thinking");
+
+  if (message.content.trim()) return tr(settingStore.language, "responding");
+  return tr(settingStore.language, "agentTurnActive");
 }
 
 function activityIcon(message: ChatMessage): Component | undefined {
@@ -1458,205 +1404,6 @@ function activityIcon(message: ChatMessage): Component | undefined {
   }
   return undefined;
 }
-function isNearBottom(element: HTMLElement) {
-  const padBottom = Number.parseFloat(getComputedStyle(element).paddingBottom) || 0;
-  // Ignore composer clearance padding — it would otherwise make scrollTop=0
-  // look "not at bottom" on short threads and break stick-to-bottom.
-  const contentBottom = element.scrollHeight - padBottom;
-  const viewportBottom = element.scrollTop + element.clientHeight;
-  return contentBottom - viewportBottom <= SCROLL_NEAR_BOTTOM_THRESHOLD;
-}
-function handleScroll() {
-  const element = listRef.value;
-  if (!element) return;
-  stickToBottom.value = isNearBottom(element) || isLastTurnOnScreen(element);
-  updateActiveUserMessage();
-}
-function updateActiveUserMessage() {
-  const element = listRef.value;
-  const users = userMessages.value;
-  if (!element || !users.length) {
-    activeUserMessageId.value = "";
-    return;
-  }
-  // Geometric bottom, pinned last-turn follow, and "last item still on screen"
-  // all mean the latest user tick — not a 40% spy-line that often still sits
-  // inside the previous turn while the last reply is visible.
-  if (stickToBottom.value || isNearBottom(element) || isLastTurnOnScreen(element)) {
-    activeUserMessageId.value = users[users.length - 1]?.id ?? "";
-    return;
-  }
-
-  const listRect = element.getBoundingClientRect();
-  const inset = 8;
-  let active = users[0]?.id ?? "";
-  for (let index = 0; index < users.length; index += 1) {
-    const message = users[index];
-    const node = element.querySelector<HTMLElement>(
-      `[data-message-id="${CSS.escape(message.id)}"]`,
-    );
-    if (!node) continue;
-    const next = users[index + 1]
-      ? element.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(users[index + 1].id)}"]`)
-      : null;
-    const turnTop = node.getBoundingClientRect().top;
-    let turnBottom = listRect.bottom;
-    if (next) {
-      turnBottom = next.getBoundingClientRect().top;
-    } else {
-      const items = element.querySelectorAll<HTMLElement>(".message-item");
-      const lastItem = items[items.length - 1];
-      if (lastItem) turnBottom = lastItem.getBoundingClientRect().bottom;
-    }
-    const intersects = turnBottom > listRect.top + inset && turnTop < listRect.bottom - inset;
-    if (intersects) active = message.id;
-  }
-  activeUserMessageId.value = active;
-}
-
-function isLastTurnOnScreen(element: HTMLElement) {
-  const items = element.querySelectorAll<HTMLElement>(".message-item");
-  const lastItem = items[items.length - 1];
-  if (!lastItem) return false;
-  const listRect = element.getBoundingClientRect();
-  const lastRect = lastItem.getBoundingClientRect();
-  return lastRect.top < listRect.bottom && lastRect.bottom <= listRect.bottom + 48;
-}
-function scrollToMessage(messageId: string) {
-  const container = listRef.value;
-  const node = container?.querySelector<HTMLElement>(
-    `[data-message-id="${CSS.escape(messageId)}"]`,
-  );
-  if (!container || !node) return;
-  stickToBottom.value = false;
-  activeUserMessageId.value = messageId;
-  // Scroll the message list scroller only — not the overlay / window.
-  // Offset accounts for the absolute thread header overlay.
-  gsapScrollContainerTo(container, node, { offsetY: 42 });
-  railRef.value?.focus();
-}
-function jumpRail(delta: number) {
-  const users = userMessages.value;
-  if (!users.length) return;
-  const index = users.findIndex((message) => message.id === activeUserMessageId.value);
-  const from = index < 0 ? (delta > 0 ? -1 : users.length) : index;
-  const next = users[Math.min(users.length - 1, Math.max(0, from + delta))];
-  if (next) scrollToMessage(next.id);
-}
-function onRailKeydown(event: KeyboardEvent) {
-  if (findOpen.value) return;
-  if (event.key === "ArrowUp") {
-    event.preventDefault();
-    jumpRail(-1);
-    return;
-  }
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
-    jumpRail(1);
-    return;
-  }
-  if (event.key === "Home") {
-    event.preventDefault();
-    const first = userMessages.value[0];
-    if (first) scrollToMessage(first.id);
-    return;
-  }
-  if (event.key === "End") {
-    event.preventDefault();
-    const last = userMessages.value[userMessages.value.length - 1];
-    if (last) scrollToMessage(last.id);
-  }
-}
-function scrollToLatest() {
-  const element = listRef.value;
-  if (!element) return;
-  stickToBottom.value = true;
-  element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-  updateActiveUserMessage();
-}
-function messagePreview(message: ChatMessage) {
-  const parsed = userContent(message);
-  const compact = parsed.message.replace(/\s+/g, " ").trim();
-  if (compact) {
-    return compact.length > 72 ? `${compact.slice(0, 72)}...` : compact;
-  }
-  if (parsed.attachedFiles?.length) {
-    return parsed.attachedFiles.map((file) => file.name).join(", ");
-  }
-  if (parsed.images?.length) {
-    return parsed.images.length === 1 ? "image" : `${parsed.images.length} images`;
-  }
-  return "";
-}
-/**
- * Keep the latest user turn on-screen.
- *
- * Absolute scroll-to-bottom fights the large composer `padding-bottom`: on short
- * turns (especially while the overlay is still expanding) it scrolls the first
- * user bubble above the viewport. If the turn still fits, pin to the user
- * message (scrollTop 0 for the first turn); only follow the true bottom once
- * the reply no longer fits with that user message.
- */
-async function scrollToBottomIfNeeded() {
-  await nextTick();
-  const element = listRef.value;
-  if (!element) return;
-
-  if (!stickToBottom.value) {
-    updateActiveUserMessage();
-    return;
-  }
-
-  const padBottom = Number.parseFloat(getComputedStyle(element).paddingBottom) || 0;
-  const maxScroll = element.scrollHeight - element.clientHeight;
-  if (maxScroll <= 1) {
-    element.scrollTop = 0;
-    updateActiveUserMessage();
-    return;
-  }
-
-  const users = element.querySelectorAll<HTMLElement>(".message-item.user");
-  const lastUser = users[users.length - 1];
-  if (lastUser) {
-    const listTop = element.getBoundingClientRect().top;
-    const userTop = lastUser.getBoundingClientRect().top - listTop + element.scrollTop;
-    const contentBottom = element.scrollHeight - padBottom;
-    const turnHeight = contentBottom - userTop;
-
-    // Whole turn still fits: keep the user bubble visible (top of thread for
-    // the first message; otherwise align that user message near the top).
-    if (turnHeight <= element.clientHeight - 4) {
-      element.scrollTop = users.length <= 1 ? 0 : Math.max(0, userTop - 8);
-      updateActiveUserMessage();
-      return;
-    }
-  }
-
-  element.scrollTop = element.scrollHeight;
-  updateActiveUserMessage();
-}
-
-watch(
-  () => props.messages.length,
-  (length, previousLength) => {
-    if (length > (previousLength ?? 0)) stickToBottom.value = true;
-  },
-);
-watch(
-  () => {
-    const messages = props.messages;
-    const last = messages[messages.length - 1];
-    if (!last) return "0";
-    const tools =
-      last.toolActivities
-        ?.map((activity) => `${activity.id}:${activity.status}:${activity.detail?.length ?? 0}`)
-        .join(",") ?? "";
-    const asks = last.askUserAnswer?.map((answer) => answer.selected.join(",")).join(";") ?? "";
-    return `${messages.length}|${last.id}:${last.content.length}:${last.reasoning?.length ?? 0}:${tools}:${asks}:${last.status}:${last.activityStatus ?? ""}`;
-  },
-  () => void scrollToBottomIfNeeded(),
-  { immediate: true },
-);
 
 watch(
   () => {
@@ -1669,23 +1416,13 @@ watch(
   },
 );
 
-let resizeObserver: ResizeObserver | null = null;
 onMounted(() => {
   durationTimer = window.setInterval(() => {
     if (visibleMessages.value.some(isPending)) durationClock.value = Date.now();
   }, 1000);
-  const element = listRef.value;
-  if (!element || typeof ResizeObserver === "undefined") return;
-  resizeObserver = new ResizeObserver(() => {
-    if (element.clientHeight < 8) return;
-    void scrollToBottomIfNeeded();
-  });
-  resizeObserver.observe(element);
   globalThis.addEventListener("keydown", onFindWindowKeydown);
 });
 onUnmounted(() => {
-  resizeObserver?.disconnect();
-  resizeObserver = null;
   if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
   if (durationTimer) window.clearInterval(durationTimer);
   globalThis.removeEventListener("keydown", onFindWindowKeydown);
@@ -1786,11 +1523,16 @@ defineExpose({ openFind, closeFind });
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px 28px 10px 12px;
+  padding: var(--peek-space-4, 16px) 28px var(--peek-space-3, 12px) var(--peek-space-4, 16px);
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  scroll-padding-top: 12px;
+  gap: var(--peek-space-4, 16px);
+  scroll-padding-top: var(--peek-space-4, 16px);
+  contain: layout style paint;
+}
+.message-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 .empty-thread {
   flex: 1;
@@ -1799,7 +1541,8 @@ defineExpose({ openFind, closeFind });
   justify-content: center;
   min-height: 120px;
   color: var(--peek-muted);
-  font-size: 13px;
+  font-size: var(--peek-font-md, 14px);
+  line-height: 1.5;
   text-align: center;
   user-select: none;
 }
@@ -1915,11 +1658,13 @@ defineExpose({ openFind, closeFind });
   display: flex;
   justify-content: flex-end;
   width: 100%;
+  contain: layout style;
 }
 .message-item.assistant {
   display: flex;
   justify-content: flex-start;
   width: 100%;
+  contain: layout style;
 }
 .user-turn {
   display: flex;
@@ -1948,15 +1693,16 @@ defineExpose({ openFind, closeFind });
   align-items: center;
   gap: 6px;
   max-width: min(220px, 100%);
-  height: var(--peek-control-icon, 28px);
-  padding: 0 10px;
-  border: 1px solid var(--peek-border);
-  border-radius: var(--peek-radius-sm, 6px);
-  background: color-mix(in srgb, var(--peek-user-bubble-bg) 88%, var(--peek-surface));
+  min-height: var(--peek-control-icon, 28px);
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--peek-user-bubble-radius, 18px);
+  background: var(--peek-user-bubble-bg);
   color: var(--peek-user-bubble-text);
   font-size: 12px;
   font-weight: 500;
-  line-height: 1;
+  line-height: 1.3;
+  box-shadow: var(--peek-user-bubble-shadow, none);
 }
 .user-file-icon-img {
   flex: none;
@@ -1979,17 +1725,19 @@ defineExpose({ openFind, closeFind });
   padding: 0;
   border: none;
   background: transparent;
-  border-radius: 12px;
+  border-radius: var(--peek-user-bubble-radius, 18px);
   overflow: hidden;
   cursor: zoom-in;
   max-width: min(280px, 72vw);
   line-height: 0;
-  box-shadow: 0 0 0 1px var(--peek-border);
+  box-shadow: var(--peek-user-bubble-shadow, none);
   transform: translateZ(0);
   transition: box-shadow 140ms ease;
 }
 .user-image-btn:hover {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--peek-accent) 55%, var(--peek-border));
+  box-shadow:
+    var(--peek-user-bubble-shadow, none),
+    0 0 0 1px color-mix(in srgb, var(--peek-accent) 35%, transparent);
 }
 .user-image {
   display: block;
@@ -2004,18 +1752,19 @@ defineExpose({ openFind, closeFind });
 .user-bubble {
   width: fit-content;
   max-width: 100%;
-  padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--peek-user-bubble-border) 70%, transparent);
-  border-radius: var(--peek-radius-lg, 12px) var(--peek-radius-lg, 12px) var(--peek-radius-sm, 6px)
-    var(--peek-radius-lg, 12px);
+  padding: 12px 16px;
+  border: 0;
+  border-radius: var(--peek-user-bubble-radius, 18px);
   background: var(--peek-user-bubble-bg);
   color: var(--peek-user-bubble-text);
-  font-size: var(--peek-font-md, 13px);
-  line-height: 1.65;
+  font-size: var(--peek-font-md, 14px);
+  font-weight: 450;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
-  box-shadow: var(--peek-elev-sm);
+  box-shadow: var(--peek-user-bubble-shadow, none);
 }
 .user-message-text {
   display: inline;
@@ -2055,11 +1804,20 @@ defineExpose({ openFind, closeFind });
   color: var(--peek-icon, var(--peek-muted));
   cursor: pointer;
   opacity: 0.88;
+  transition:
+    opacity var(--motion-fast, 110ms) ease,
+    background-color var(--motion-fast, 110ms) ease,
+    color var(--motion-fast, 110ms) ease,
+    transform var(--motion-instant, 80ms) ease;
 }
 .message-action-btn:hover:not(:disabled) {
   opacity: 1;
   color: var(--peek-accent);
-  background: color-mix(in srgb, var(--peek-accent) 14%, transparent);
+  background: color-mix(in srgb, var(--peek-accent) 12%, transparent);
+}
+.message-action-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  background: color-mix(in srgb, var(--peek-accent) 18%, transparent);
 }
 .message-action-btn:focus-visible {
   outline: none;

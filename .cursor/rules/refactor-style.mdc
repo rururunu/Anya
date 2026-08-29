@@ -1,0 +1,38 @@
+---
+description: Anya 代码规范 — 注释、体积、分层、纯重构
+alwaysApply: true
+---
+
+# Anya 代码规范
+
+完整条文见仓库根目录 [`AGENTS.md`](../../AGENTS.md)。
+
+## 注释
+
+- **保留**：导出函数一行 JSDoc / Rust `///`（只写用途）；模块 `//!`。
+- **删除**：实现步骤行内 `//`；注释掉的死代码；复述标识符的注释。
+
+```ts
+/** 把用户输入提交到当前会话。 */
+export function submit() {}
+```
+
+## 文件体积
+
+- Vue/TS 逻辑 ≤ 400 行（template/style 另计）。
+- Rust 模块 ≤ 500 行；`mod.rs` 做 `pub use` façade，commands import 路径不变。
+- `src/components`、`src/stores`：ESLint `max-lines` warn 800。
+
+## 分层
+
+- `stores/` 不得 import UI（`components/`、`pages/`、`layouts/`）。
+- `services/` 不得 import stores 或 UI。
+- `types/` 不得 import `@/services` 等运行时模块。
+- Composables 可以依赖 stores 和 services。
+
+## 重构
+
+- 只搬家，不改逻辑、IPC、UI 交互。
+- 按职责拆分，不要一函数一文件。
+- 跳过 `src/services/locales/` 纯键值文件。
+- 每步验收：`pnpm check`；Rust 改动加 `cargo test`。

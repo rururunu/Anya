@@ -16,16 +16,11 @@
             <p>{{ t("settings.rag.enableHint") }}</p>
           </div>
           <div class="settings-row-control">
-            <button
-              type="button"
-              class="setting-toggle"
-              :class="{ active: form.enabled }"
-              :aria-pressed="form.enabled"
+            <SettingsToggle
+              :model-value="form.enabled"
               :disabled="saving"
-              @click="toggleEnabled"
-            >
-              <span class="setting-toggle-knob"></span>
-            </button>
+              @click.prevent="toggleEnabled"
+            />
           </div>
         </article>
       </div>
@@ -216,6 +211,7 @@ import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import SettingsHelpTip from "@/components/settings/SettingsHelpTip.vue";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import SettingsToggle from "@/components/settings/SettingsToggle.vue";
 import {
   Select,
   SelectContent,
@@ -625,41 +621,5 @@ onUnmounted(() => {
   to {
     transform: rotate(360deg);
   }
-}
-
-.setting-toggle {
-  position: relative;
-  width: 40px;
-  height: 22px;
-  border: 0;
-  border-radius: 9999px;
-  background: var(--border);
-  transition: background 0.15s ease;
-  flex: none;
-  cursor: pointer;
-}
-
-.setting-toggle.active {
-  background: var(--primary);
-}
-
-.setting-toggle:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.setting-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 9999px;
-  background: #fff;
-  transition: transform 0.15s ease;
-}
-
-.setting-toggle.active .setting-toggle-knob {
-  transform: translateX(18px);
 }
 </style>

@@ -32,6 +32,7 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
           conversations: "对话",
           refresh: "刷新会话",
           untitled: "新对话",
+          conversationArchived: "已归档",
           archiveConversation: "归档对话",
           deleteConversation: "删除对话",
           noConversations: "还没有对话",
@@ -56,6 +57,7 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
           conversations: "Conversations",
           refresh: "Refresh conversations",
           untitled: "New conversation",
+          conversationArchived: "Archived",
           archiveConversation: "Archive conversation",
           deleteConversation: "Delete conversation",
           noConversations: "No conversations yet",
@@ -79,6 +81,7 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
           quickAsk: "\u968f\u95ee",
           skills: "\u6280\u80fd",
           mcp: "MCP",
+          plugins: "\u63d2\u4ef6",
           connectPhone: "\u8fde\u63a5\u624b\u673a",
           extensions: "\u6269\u5c55",
           addWorkspace: "\u6dfb\u52a0\u5de5\u4f5c\u533a",
@@ -109,6 +112,7 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
           quickAsk: "Quick Ask",
           skills: "Skills",
           mcp: "MCP",
+          plugins: "Plugins",
           connectPhone: "Connect phone",
           extensions: "Extensions",
           addWorkspace: "Add workspace",
@@ -199,8 +203,6 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
       : `What would you like me to help you accomplish in ${activeWorkspaceName.value}?`;
   });
 
-  const tutorialButtonLabel = computed(() => (isChinese.value ? "查看教程" : "Tutorial"));
-
   return {
     isChinese,
     labels,
@@ -210,7 +212,6 @@ export function useWorkbenchLabels(options: UseWorkbenchLabelsOptions) {
     shortcutLabels,
     shortcutHelpItems,
     emptyConversationPrompt,
-    tutorialButtonLabel,
   };
 }
 

@@ -42,6 +42,8 @@ export const IPC_COMMANDS = {
   listCheckpoints: "list_checkpoints",
   rewindSession: "rewind_session",
   branchChatSession: "branch_chat_session",
+  setChatSessionTitle: "set_chat_session_title",
+  regenerateChatSessionTitle: "regenerate_chat_session_title",
   revealInExplorer: "reveal_in_explorer",
   openInDefaultApp: "open_in_default_app",
 } as const;

@@ -51,13 +51,9 @@ pub fn shell_stall_timeout_secs() -> u64 {
 
 /// Reject clearly destructive / privilege-escalating shell commands.
 pub fn reject_dangerous_shell(command: &str) -> Result<(), ToolError> {
-    let normalized = normalize_shell_command(command);
-
-    // PowerShell has `-EncodedCommand <base64>` which can trivially hide a
-    // dangerous payload from simple substring filters. Decode when present
-    // (best-effort) and append to the scan input.
-    let decoded = extract_powershell_encodedcommand(&normalized)
+    let decoded = extract_powershell_encodedcommand(command)
         .and_then(|payload| base64_decode_utf16le_or_utf8(&payload).ok());
+    let normalized = normalize_shell_command(command);
     let scan_input = decoded
         .map(|d| format!("{normalized}\n# decoded -EncodedCommand\n{d}"))
         .unwrap_or(normalized.clone());
@@ -116,11 +112,8 @@ pub fn reject_dangerous_shell(command: &str) -> Result<(), ToolError> {
     Ok(())
 }
 
+/// Lowercases the command, strips PowerShell backticks, and collapses whitespace for denylist matching.
 fn normalize_shell_command(command: &str) -> String {
-    // 1) Lowercase for stable matching.
-    // 2) Remove PowerShell backtick escape (`) which often appears in obfuscation.
-    // 3) Collapse whitespace so `git   reset --hard` still matches
-    //    `git reset --hard`.
     let lower = command.to_lowercase().replace('`', "");
     let mut out = String::with_capacity(lower.len());
     let mut prev_space = false;
@@ -138,12 +131,11 @@ fn normalize_shell_command(command: &str) -> String {
     out.trim().to_string()
 }
 
-fn extract_powershell_encodedcommand(normalized_lower: &str) -> Option<String> {
-    // Expect already-normalized lowercase string.
-    // Match both `-encodedcommand <token>` and `-encodedcommand:"<token>"` styles.
+fn extract_powershell_encodedcommand(command: &str) -> Option<String> {
+    let lower = command.to_ascii_lowercase();
     let marker = "-encodedcommand";
-    let idx = normalized_lower.find(marker)?;
-    let after = normalized_lower[idx + marker.len()..].trim_start();
+    let idx = lower.find(marker)?;
+    let after = command[idx + marker.len()..].trim_start();
     if after.is_empty() {
         return None;
     }
@@ -181,7 +173,6 @@ fn base64_decode_utf16le_or_utf8(payload: &str) -> Result<String, ToolError> {
         .decode(payload)
         .map_err(|e| ToolError::new(format!("failed to decode -EncodedCommand base64: {e}")))?;
 
-    // Try UTF-16LE first.
     if bytes.len() % 2 == 0 {
         let mut u16s = Vec::with_capacity(bytes.len() / 2);
         for chunk in bytes.chunks_exact(2) {
@@ -192,7 +183,6 @@ fn base64_decode_utf16le_or_utf8(payload: &str) -> Result<String, ToolError> {
         }
     }
 
-    // Fallback to UTF-8.
     let s = String::from_utf8(bytes)
         .map_err(|e| ToolError::new(format!("decoded payload is not UTF-8: {e}")))?;
     Ok(s)

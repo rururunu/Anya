@@ -60,13 +60,13 @@ export async function applyChromeFrostedGlass(enabled: boolean) {
     return;
   }
 
-  const theme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  const scheme = "only light";
 
   if (enabled) {
     document.documentElement.classList.add("chrome-frosted-glass");
     document.documentElement.style.colorScheme = "normal";
     document.documentElement.style.background = "transparent";
-    document.body.style.colorScheme = theme;
+    document.body.style.colorScheme = scheme;
     document.body.style.background = "transparent";
     // Windows acrylic is applied from Rust. Calling setEffects here would
     // switch the window to Win11 SYSTEMBACKDROP (too faint behind WebView2).
@@ -86,10 +86,17 @@ export async function applyChromeFrostedGlass(enabled: boolean) {
     console.error("clear workbench window effects failed:", error);
   }
   document.documentElement.classList.remove("chrome-frosted-glass");
-  document.documentElement.style.colorScheme = theme;
+  document.documentElement.style.colorScheme = scheme;
   document.documentElement.style.removeProperty("background");
   document.body.style.removeProperty("color-scheme");
   document.body.style.removeProperty("background");
+}
+
+/** Re-apply frosted-glass chrome after a hot color-scheme switch. */
+export async function reloadAppearanceWindow() {
+  const enabled = document.documentElement.classList.contains("chrome-frosted-glass");
+  await applyChromeFrostedGlass(enabled);
+  await refreshOverlayWindowBackground();
 }
 
 export function markPeekWindow() {

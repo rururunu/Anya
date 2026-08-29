@@ -23,12 +23,12 @@
     </SettingsPageHeader>
 
     <div class="filter-row">
-      <div class="segmented" role="group">
+      <div class="settings-seg" role="group">
         <button
           v-for="item in granularityOptions"
           :key="item.value"
           type="button"
-          :class="{ active: granularity === item.value }"
+          :class="{ on: granularity === item.value }"
           @click="setGranularity(item.value)"
         >
           {{ item.label }}
@@ -46,17 +46,17 @@
       </div>
     </div>
 
-    <div v-if="error" class="status error">
-      <CircleAlert :size="16" />
+    <div v-if="error" class="settings-form-error">
+      <CircleAlert :size="16" class="inline mr-1.5 align-text-bottom" />
       <span>{{ copy.error }}: {{ error }}</span>
     </div>
-    <div v-else-if="loading" class="status">
+    <div v-else-if="loading" class="settings-empty">
       <span class="loader" />
       {{ copy.loading }}
     </div>
 
     <template v-else>
-      <section class="summary-strip" aria-label="Token summary">
+      <section class="settings-card summary-strip" aria-label="Token summary">
         <div class="summary-item total">
           <span>{{ copy.total }}</span>
           <strong>{{ format(report.total.totalTokens) }}</strong>
@@ -517,26 +517,8 @@ onMounted(() => void load());
   gap: 12px;
   border-bottom: 1px solid var(--peek-border);
 }
-.segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--peek-text) 5%, transparent);
-}
-.segmented button {
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--peek-muted);
-  font-size: 11px;
-}
-.segmented button.active {
-  background: var(--peek-surface);
-  color: var(--peek-text);
-  box-shadow: 0 1px 4px color-mix(in srgb, #000 12%, transparent);
+.filter-row .settings-seg {
+  width: auto;
 }
 .custom-range {
   gap: 8px;
@@ -557,27 +539,6 @@ onMounted(() => void load());
   color: var(--peek-text);
   font-size: 10px;
 }
-.status,
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--peek-muted);
-  font-size: 11px;
-}
-.status {
-  min-height: 80px;
-  gap: 8px;
-}
-.status.error {
-  justify-content: flex-start;
-  min-height: 0;
-  margin-top: 12px;
-  padding: 10px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--destructive) 8%, transparent);
-  color: var(--destructive);
-}
 .loader {
   width: 15px;
   height: 15px;
@@ -589,7 +550,8 @@ onMounted(() => void load());
 .summary-strip {
   display: grid;
   grid-template-columns: 1.35fr repeat(3, 1fr);
-  border-bottom: 1px solid var(--peek-border);
+  margin-bottom: 18px;
+  overflow: hidden;
 }
 .summary-item {
   min-width: 0;

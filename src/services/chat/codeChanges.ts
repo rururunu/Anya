@@ -27,7 +27,7 @@ function changesForActivity(messageId: string, activity: ToolActivity): CodeChan
   const diff = previewDiff(preview);
   if (!diff.trim()) return [];
 
-  const sections = splitUnifiedDiff(diff, preview.path || activity.title);
+  const sections = splitUnifiedDiff(diff, preview.path || sanitizeDiffPath(activity.title));
   return sections.map((section, index) => ({
     id: `${messageId}:${activity.id}:${index}`,
     path: section.path,
@@ -53,7 +53,13 @@ function changesFromArguments(messageId: string, activity: ToolActivity): CodeCh
   if (activity.toolName === "replace_many_in_file" && path && Array.isArray(args.edits)) {
     return args.edits.flatMap((value, index) => {
       const edit = value as Record<string, unknown>;
-      return fallbackEntry(messageId, `${activity.id}:${index}`, path, edit.old_string, edit.new_string);
+      return fallbackEntry(
+        messageId,
+        `${activity.id}:${index}`,
+        path,
+        edit.old_string,
+        edit.new_string,
+      );
     });
   }
   if (activity.toolName === "write_file" && path) {
@@ -70,8 +76,12 @@ function changesFromPatchInput(messageId: string, activityId: string, input: str
 
   const flush = () => {
     if (!path) return;
-    const changedLines = body.filter((line) =>
-      line.startsWith("@@") || line.startsWith("+") || line.startsWith("-") || line.startsWith(" ")
+    const changedLines = body.filter(
+      (line) =>
+        line.startsWith("@@") ||
+        line.startsWith("+") ||
+        line.startsWith("-") ||
+        line.startsWith(" "),
     );
     const diff = [`--- a/${path}`, `+++ b/${path}`, ...changedLines].join("\n");
     entries.push({
@@ -119,7 +129,9 @@ function fallbackEntry(
     ...toLines(oldText).map((line) => `-${line}`),
     ...toLines(newText).map((line) => `+${line}`),
   ].join("\n");
-  return [{ id: `${messageId}:${activityId}`, path, diff, oldText, newText, ...countChanges(diff) }];
+  return [
+    { id: `${messageId}:${activityId}`, path, diff, oldText, newText, ...countChanges(diff) },
+  ];
 }
 
 function previewDiff(preview: ToolPreviewPayload) {
@@ -127,7 +139,13 @@ function previewDiff(preview: ToolPreviewPayload) {
   if (preview.oldText == null && preview.newText == null) return "";
   const oldLines = toLines(preview.oldText).map((line) => `-${line}`);
   const newLines = toLines(preview.newText).map((line) => `+${line}`);
-  return [`--- a/${preview.path}`, `+++ b/${preview.path}`, "@@ -1 +1 @@", ...oldLines, ...newLines].join("\n");
+  return [
+    `--- a/${preview.path}`,
+    `+++ b/${preview.path}`,
+    "@@ -1 +1 @@",
+    ...oldLines,
+    ...newLines,
+  ].join("\n");
 }
 
 function splitUnifiedDiff(diff: string, fallbackPath: string) {
@@ -149,9 +167,47 @@ function splitUnifiedDiff(diff: string, fallbackPath: string) {
 }
 
 function diffPath(header: string, fallback: string) {
-  const raw = header.replace(/^\+\+\+\s+/, "").split("\t", 1)[0]?.trim() ?? "";
-  if (!raw || raw === "/dev/null") return fallback;
-  return raw.replace(/^[ab]\//, "");
+  const raw =
+    header
+      .replace(/^\+\+\+\s+/, "")
+      .split("\t", 1)[0]
+      ?.trim() ?? "";
+  if (!raw || raw === "/dev/null") return sanitizeDiffPath(fallback);
+  return sanitizeDiffPath(raw.replace(/^[ab]\//, ""));
+}
+
+export function sanitizeDiffPath(path: string): string {
+  return path
+    .trim()
+    .replace(/^(?:Write|Edit|Read|Delete|Move)\s+/i, "")
+    .replace(/^[ab]\//, "")
+    .replace(/^\/+/, "");
+}
+
+export function findActivityForChange(
+  change: CodeChangeEntry,
+  messages: ChatMessage[],
+): ToolActivity | undefined {
+  for (const message of messages) {
+    for (const activity of message.toolActivities ?? []) {
+      const prefix = `${message.id}:${activity.id}`;
+      if (change.id === prefix || change.id.startsWith(`${prefix}:`)) {
+        return activity;
+      }
+    }
+  }
+  return undefined;
+}
+
+export function resolveChangeFilePath(change: CodeChangeEntry, messages: ChatMessage[]): string {
+  const activity = findActivityForChange(change, messages);
+  const fromPreview = activity?.preview?.path?.trim();
+  if (fromPreview) return sanitizeDiffPath(fromPreview);
+  const fromArgs = activity?.arguments?.path;
+  if (typeof fromArgs === "string" && fromArgs.trim()) {
+    return sanitizeDiffPath(fromArgs);
+  }
+  return sanitizeDiffPath(change.path);
 }
 
 function countChanges(diff: string) {

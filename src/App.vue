@@ -35,7 +35,7 @@ const isPeek =
 .route-boot-fill {
   width: 100%;
   height: 100%;
-  background: var(--peek-bg, #1f1f1f);
+  background: var(--peek-bg, #f8f8f8);
 }
 
 .route-peek-fill {

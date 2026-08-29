@@ -1,0 +1,297 @@
+﻿cargo :     Blocking waiting for file lock on build directory
+所在位置 C:\Users\GuoLv\AppData\Local\Temp\ps-script-2c302be0-f724-4cc5-b4fc-e06de2e0e6c3.ps1:115 字符: 35
++ cd c:/My/code/AltAltAi/src-tauri; cargo test --no-run 2>&1 | Out-File ...
++                                   ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Blocking wa...build directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling peek v0.2.14 (C:\My\code\AltAltAi\src-tauri)
+warning: unused import: `map_read_error`
+ --> src\core\ai\deepseek\stream\runner.rs:8:48
+  |
+8 | use super::errors::{is_retryable_stream_error, map_read_error};
+  |                                                ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `StreamReadOutcome`
+  --> src\core\ai\deepseek\stream\runner.rs:10:29
+   |
+10 | use super::types::{SseKind, StreamReadOutcome, MAX_STREAM_ATTEMPTS, RETRY_BACKOFF, USER_STREAM_INTERRUPTED};
+   |                             ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::core::runtime::ToolCallPayload`
+ --> src\core\ai\deepseek\stream\types.rs:1:5
+  |
+1 | use crate::core::runtime::ToolCallPayload;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::Value`
+ --> src\core\ai\deepseek\stream\types.rs:3:5
+  |
+3 | use serde_json::Value;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> src\core\ai\deepseek\stream\types.rs:4:5
+  |
+4 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `StreamReadOutcome` and `USER_STREAM_INTERRUPTED`
+  --> src\core\ai\deepseek\stream\mod.rs:11:24
+   |
+11 | pub(crate) use types::{StreamReadOutcome, USER_STREAM_INTERRUPTED};
+   |                        ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `user_facing_stream_error`
+  --> src\core\ai\deepseek\stream\mod.rs:13:44
+   |
+13 | pub(crate) use errors::{emit_stream_error, user_facing_stream_error};
+   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Path`
+ --> src\core\mcp\command.rs:7:17
+  |
+7 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+
+warning: unused import: `Command`
+ --> src\core\mcp\process.rs:6:39
+  |
+6 | use std::process::{Child, ChildStdin, Command, Stdio};
+  |                                       ^^^^^^^
+
+warning: unused import: `McpManager`
+  --> src\core\mcp\mod.rs:13:39
+   |
+13 | pub use manager::{shared_mcp_manager, McpManager};
+   |                                       ^^^^^^^^^^
+
+warning: unused imports: `find_node_exe`, `find_npm_js_cli`, and `find_uvx_exe`
+  --> src\core\mcp\mod.rs:14:19
+   |
+14 | pub use runtime::{find_node_exe, find_npm_js_cli, find_uvx_exe, runtime_support, McpRuntimeSupport};
+   |                   ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `Manager`
+ --> src\core\remote\gateway\server.rs:4:33
+  |
+4 | use tauri::{AppHandle, Emitter, Manager};
+  |                                 ^^^^^^^
+
+warning: unused import: `prepare_command`
+  --> src\core\tools\shell_jobs\foreground.rs:11:32
+   |
+11 | use crate::runtime::terminal::{prepare_command, prepare_powershell};
+   |                                ^^^^^^^^^^^^^^^
+
+warning: unused import: `Child`
+  --> src\core\tools\shell_jobs\foreground.rs:14:20
+   |
+14 | use std::process::{Child, Command, Stdio};
+   |                    ^^^^^
+
+warning: unused import: `std::process::Child`
+ --> src\core\tools\shell_jobs\output.rs:7:5
+  |
+7 | use std::process::Child;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `append_raw_bounded`
+ --> src\core\tools\shell_jobs\types.rs:3:21
+  |
+3 |     append_bounded, append_raw_bounded, format_job_status, format_job_status_with_output,
+  |                     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `prepare_command`
+  --> src\core\tools\shell_jobs\types.rs:10:32
+   |
+10 | use crate::runtime::terminal::{prepare_command, prepare_powershell};
+   |                                ^^^^^^^^^^^^^^^
+
+warning: unused import: `Duration`
+  --> src\core\tools\shell_jobs\types.rs:18:17
+   |
+18 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^
+
+warning: unused import: `ShellJob`
+  --> src\core\tools\shell_jobs\mod.rs:12:17
+   |
+12 | pub use types::{ShellJob, ShellJobStore};
+   |                 ^^^^^^^^
+
+warning: unused import: `PathBuf`
+ --> src\core\workspace\helpers.rs:1:23
+  |
+1 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused import: `Path`
+ --> src\core\workspace\manager.rs:4:17
+  |
+4 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+
+warning: unused import: `WorkspaceId`
+ --> src\core\workspace\mod.rs:8:28
+  |
+8 | pub use types::{Workspace, WorkspaceId, WorkspaceManager};
+  |                            ^^^^^^^^^^^
+
+warning: unused import: `find_uvx_exe`
+  --> src\core\mcp\mod.rs:14:51
+   |
+14 | pub use runtime::{find_node_exe, find_npm_js_cli, find_uvx_exe, runtime_support, McpRuntimeSupport};
+   |                                                   ^^^^^^^^^^^^
+
+warning: unused import: `std::io::Read`
+  --> src\core\tools\shell_jobs\types.rs:14:5
+   |
+14 | use std::io::Read;
+   |     ^^^^^^^^^^^^^
+
+error: linking with `link.exe` failed: exit code: 1104
+  |
+  = note: "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\
+link.exe" "/NOLOGO" "C:\\Users\\GuoLv\\AppData\\Local\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\ca
+rgo-target\\debug\\deps\\rustcNOnysA\\symbols.o" "<257 object files omitted>" "dwmapi.lib" "C:\\Users\\GuoLv\\AppData\\
+Local\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\cargo-target\\debug\\deps/{libtauri_plugin_single_
+instance-7217e477dcf805e9,libtauri_plugin_dialog-61ace0347f6f776a,librfd-6721de52d2bcc48d,libtauri_plugin_fs-88b5777be5
+dcdf81,libtauri_plugin_process-fc646ca71c393fcf,liburlencoding-5236e4fde49bdec3,libtracing_appender-efee29d67b0b4cf5,li
+bsymlink-fd2bede691d4c742,libnotify_rust-1996c00bddf93b68,libtauri_winrt_notification-b806daf879774fb3}.rlib" "<sysroot
+>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libtest-*,libgetopts-*,librustc_std_workspace_std-*}.rlib" "C:\\Users\\Gu
+oLv\\AppData\\Local\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\cargo-target\\debug\\deps/{librdev-7
+d57fd16f9b4243e,libreqwest-9e2707b5bd9c5a58,libhyper_tls-4c2316df2474dc6b,libtokio_native_tls-3f281cdd10498995,libencod
+ing_rs-6668f9a3bfbb9061,libmime_guess-e135fc03bfd894f6,libunicase-6d10acccdf2a87a4,libzip-3272518bdfcc7776,libzopfli-85
+f7a5a08ac96d8a,libbumpalo-67e1deeee87a4b48,libtokenizers-ce74a17499068e62,libdaachorse-d36c373e8bb33a7f,libtiktoken_rs-
+ca8963d53f8ae149,libbstr-0eb1b24325f612b0,librustc_hash-9fcd30567199ac12,libfancy_regex-f1451ced05e90c54,libbit_set-857
+528453bcff696,libbit_vec-ea5972973f4a61c2,libqrcode-a8b26858e184a293,libtokio_tungstenite-05d732e7668ba166,libtungsteni
+te-5042c92ac0591b57,libdata_encoding-1a485ab030f780e2,libutf8-6f25ecb014b12fd3,libsha1-7a576e6f8d4dbe84,libmd5-3479e680
+afb9a867,libtracing_subscriber-a81c48207cb11796,libsharded_slab-fc424d802078f3e9,liblazy_static-efb5120646cb6465,libmat
+chers-a9d1a7f31de92c14,libnu_ansi_term-3f19c5da6aa92b5c,libthread_local-02b64d56363ce195,libtracing_log-6c23be809804ab9
+a,libfastembed-95af0298e2140d5e,libsafetensors-138e5c08f24819ae,libimage-708e1ac9680d1aaf,libqoi-42024c92d2a81751,libmo
+xcms-aa39194c12001260,libpxfm-e697bf126c6c8808,libimage_webp-d41a1ae41ca7c2bc,libtiff-17561f2332ce4de7,libfax-76584e33a
+6298a3a,libpng-745351838185c2da,libfdeflate-3de5f3be6e25ed1f,libexr-7169658a82cccd74,libzune_inflate-c8fdf28cfef5c185,l
+ibbit_field-e2dae1d2c93713fa,libpulp-9a597849ce3635f5,liblebe-5ec9782ef96679a5,libhalf-636bed6815f8e0dd,libzune_jpeg-18
+a19fd207f43952,libzune_core-462fe04af10accc5,libgif-528a73a72d83159a,libcolor_quant-0e173493ee3e1e59,libweezl-0e998b1d0
+ba4ebcf,libbyteorder_lite-5d86d1a9ba413796,libravif-1f8c5f51409872a4,libloop9-8f65c99972af22ef,libavif_serialize-f6c614
+85f9da898b,libquick_error-39e658cc0146e635,librgb-17683fa064f156b1,librav1e-2b8299da433149ca,libprofiling-7256e8e3094a2
+666,libav_scenechange-5c9598d73423c807,liby4m-f4039ba20917ef6c,libaligned-419041713cb825c7,libas_slice-71c1955e4df3a836
+,libav1_grain-6c1283bb0c0f13cc,libnom-3a5844c36f3065a2,libnum_rational-d265736661a6c034,libnum_bigint-0c851beeee4a8f0f,
+libmaybe_rayon-08b6caa58c2e4da9,libv_frame-f751dec22572040f,libarrayvec-972e98f926d4c3fa,libaligned_vec-326bfe2cd31fad9
+6,libequator-b21f4fa5901d3422,libbitstream_io-3909d9a191ddecaa,libimgref-ec28200fa6e1be80,libtokenizers-9f0a6c28ea6539b
+d,libesaxx_rs-4a1ee6e96687d324,libunicode_normalization_alignments-6488556e6a552154,libspm_precompiled-747d30ce36408ce1
+,libbase64-b7568a5cc2df39d3,libnom-078c95e54d96064e,libunicode_categories-a14116268a47c3e3,libdary_heap-ae090510af2368f
+6,libcompact_str-fcecee6beb034ff1,libstatic_assertions-31613c61247f4e53,libcastaway-7803320c30bd063f,libmonostate-657ba
+167353c6b5a,libmacro_rules_attribute-6c4bdd2a432356ae,librayon_cond-4daef39ced9469e5,libitertools-14979ed8532b694f,libr
+ayon-a7a72d14a6991ffc,librayon_core-899fe0a30386449e,libcrossbeam_deque-30b26ed31ac66804,libcrossbeam_epoch-4c9887ce1f8
+96494,libonig-aef901de55b73959,libonig_sys-d3257d5691e3cfe5,libahash-246b9cb879db4cc3,libderive_builder-5616f00048ad549
+3,libort-099584a91304889b,libort_sys-4d75a05f5a02a219,libndarray-59a7418e3d451fce,libmatrixmultiply-416d737ee325bfbb,li
+bnum_complex-4f8a3ddd52e43e19,libbytemuck-65cf1ca716cd5173,libnum_integer-c24616e637fc3903,librawpointer-e6f971ed076fc4
+06,libhf_hub-5ce29e51a48e37d4,libureq-f4c3a20befd9f91e,libwebpki_root_certs-a507b167f5df1e17,libwebpki_roots-468a4aad5d
+a6e0c0,libnative_tls-bf559e31a2735bf1,libschannel-ece9a09bc7306576,libder-40069f4f1198d8c8,libpem_rfc7468-283bc25fb495b
+0c0,libbase64ct-fcad21d3248b6c1a,libsocks-97ecd9f22a25253c,libwinapi-8a3f2a57eb04a650,libflate2-dc23f61923b21c58,libmin
+iz_oxide-6ec082edc88d04e6,libsimd_adler32-5c67de1b7e0b2697,libutf8_zero-836311d285701140,libureq_proto-7442103f48518c8c
+,libbase64-8d881c80190aa9ad,librand-effa809f8153a943,librand_chacha-d7205319069d4455,libppv_lite86-a86f46e043d8f657,lib
+zerocopy-e4044d9790373d01,librand_core-89ccd736eeb9dfa9,libindicatif-ca57f9153acaf51f,libportable_atomic-f77806e9e69077
+b9,libunit_prefix-69b60a94c3098b2b,libconsole-d739a08343bececb,libencode_unicode-fea56b92a3ba3994,libunicode_width-1ae8
+73d2057a2782,libwindows-5744a062c5fcdd4c,libwindows_core-c5acffda26b1f3c8,libwindows_strings-fa3bb8cff924c08b,libwindow
+s_result-bb6f3ca44143eca5,libtauri_plugin_updater-7b04a5f276147491,libtempfile-b80a04665d2e8643,libfastrand-4a126395407
+3aeeb,libzip-4702130f7f6bd160,libcrc32fast-86462daa201d12b1,libwindows_sys-58615dd2cd22d394,libwindows_targets-11541c13
+87113afb,libreqwest-843b28f001079bac,librustls_platform_verifier-c9055717ed4210ec,libhyper_rustls-8bbcba62b36c6160,libt
+okio_rustls-eb47fa4c3326d764,librustls-662276dd47443b08,libsubtle-ff5c8053a15a735d,libwebpki-85f2efe0f0390583,libring-d
+628a315d61bbcb3,libgetrandom-c52c4dcb593455bd,libuntrusted-566b390964d57499,librustls_pki_types-88bc39a88c4a8cee,libzer
+oize-35512d46bd99a7d8,libtower_http-9ea374a55cf5b969,libtower-fb38f1c56201e047,libtower_layer-b9c1d30a49fec744,libhyper
+_util-857fac62eab01ec6,libwindows_registry-3f616270143b5fd1,libwindows_strings-6c06bdbe82030cd2,libwindows_result-5d464
+b800e498903,libipnet-aa3e9fda91d840a9,libtower_service-3d89b48e7529514a,libhyper-39b7e0613a246828,libwant-ec73f91f5af7d
+404,libtry_lock-275b5e8e17894b19,libhttparse-7ca13416f5fd0f0e,libh2-4ba603fa4bd2ca30,libatomic_waker-a63bfe5478bbd105,l
+ibtokio_util-6551b58a743daff4,libhttp_body_util-21a17f2c5728413b,libhttp_body-e822e9501bf35b92,libsync_wrapper-9eab9c51
+d70c3d00,libminisign_verify-4207e87b00529013,libsqlx-516263c5660e2f7b,libsqlx_sqlite-777f4afc5583e90c,libfutures_execut
+or-e28a94951ebeb963,libflume-9383ee88f664c671,libspin-12bde225018883a9,libserde_urlencoded-085947f3641cbd4e,libryu-e66e
+2e84528ce1f6,libfutures_channel-4cb0fd1e4ccd0d08,libfutures_intrusive-b8dc2f6fdbc3a868,liblibsqlite3_sys-122b0898d98fe7
+de,libatoi-fefeff15eaf6df4e,libsqlx_core-ea7cae318ce52c14,libhashlink-784b5bd94733975e,libhashbrown-b7ea92f191da9429,li
+bfoldhash-e0e750b5d57e29ec,liballocator_api2-2a8f64255b7efe9c,libtracing-79e9af4f4982152f,libtracing_core-5cdb8fcd1697b
+405,libcrossbeam_queue-1fdfb5bd34cf738e,libeither-510e2dbf895d6797,libevent_listener-d722692940cfb9fd,libparking-7f133a
+8ea2480594,libfutures_util-3636c78d447fae8d,libfutures_io-c7e9a141364169be,libslab-c54587d90acfdd62,libfutures_sink-5fd
+b8519727a1913,libfutures_task-60becbd56e7ca8c9,libfutures_core-9166b2296ca3ccdd,libchrono-4428a5a3de68f405,libnum_trait
+s-4b6169cb616e7235,libtauri_plugin_opener-c8fc1213d344efc0,libopen-c203d1d82d796470,libsha2-5154d74ec555db3c,libcpufeat
+ures-4d496b483da4b1a1,libdigest-d81a0dd7f7fe1c1e,libblock_buffer-79c3cbccb2d3574f,libcrypto_common-7c11122a85a4d2ae,lib
+generic_array-3e4a3eca1ffab09a,libtypenum-a4fa7814b0cb2834,libsimilar-4a52f5f87b552759,libtauri-59f4eaceb418bc14,libdir
+s-3f08ea08169f733d,libdirs_sys-737461ccdade55cd,liboption_ext-d34cdf2551cb6085,libwindow_vibrancy-5a4d2925c6e02e7b,libw
+indows_sys-e74719f1aaf3fcd4,libwindows_targets-b170585257b0d7b4,libmime-73aaa303d72938a8,libgetrandom-fd0120638a30d7bb,
+libtauri_runtime_wry-05c684e646ab049a,libsoftbuffer-de52ef6766bfc110,libwry-15cf489cc35f1249,libtao-3e7dae6ae29eaf1a,li
+bwindows_version-311dc7bf13e799e0,libparking_lot-aac4af3416353425,libparking_lot_core-2a311a7a6fe427a9,liblock_api-adbb
+4475e277e311,libscopeguard-e5d2c7e18f425fea,liblog-ffc7268d8ed70421,libtray_icon-5960891523392de5,libmuda-bfd82dfa894af
+758,libkeyboard_types-d53aeef926924162,libbitflags-30fc6862cc05481b,libunicode_segmentation-60cced87b8299ca1,libonce_ce
+ll-0e6203ca65831a86,libcrossbeam_channel-c76bd3e943bf8fa8,libcrossbeam_utils-4158c2da1ffa1f85,libhttp_range-2799daae66e
+9e69b,libtokio-d109562f8bc9effa,libsocket2-c4213e192ee45d3a,libmio-ff9b72a443d80e6f,libpin_project_lite-c9545d3e1667129
+9,libtauri_runtime-3a6117bb19d5b5da,libwebview2_com-ca23464fa33d1284,libwebview2_com_sys-25a1ed2efa4525f4,libcookie-ec5
+a27575d4f96f7,libwindows-28c82453e7520893,libwindows_collections-0b611560c16e9869,libwindows_future-5f13d9df4d9391ca,li
+bwindows_core-ca3083dac8a83d96,libwindows_strings-de162edd9fd4c3ba,libwindows_result-79f61ce203a58cae,libwindows_link-e
+5d67dbb9625e185,libdpi-39aaee50e78f0076,libserialize_to_javascript-55c5fa264da5d515,libraw_window_handle-97de44c0dc830f
+12,libtauri_utils-cbfcfe7c8855995b,libdunce-055fb06185da01ec,libinfer-24e5c2f8e40ee7ed,libcfb-ff31982c3c92e2ba,libfnv-0
+3937741514939f5,libbyteorder-04b068faa2a5ce23,libuuid-94ca4a481f19b3c3,libgetrandom-ca9fc29bbdd8a10e,libcfg_if-50da2642
+d7d10359,libbrotli-fa9ea9fe98c05eeb,libbrotli_decompressor-6b6ed68d02105bb8,liballoc_stdlib-bf403664edbc1af8,liballoc_n
+o_stdlib-f942eb6e35a4ef08,liburlpattern-0e2295226c61bf9d,libunic_ucd_ident-1402fb92ca1b767c,libunic_ucd_version-7cacdd7
+714cf71de,libunic_common-c67dc0dad09f681e,libunic_char_property-527bd1fb13d87383,libunic_char_range-20d3b3d8ff8ddb0c,li
+bregex-123f056b973d61c0,libregex_automata-f380b89d8d8afedd,libaho_corasick-91a9d47207803199,libregex_syntax-5886ff8c8d4
+5f96f,libglob-efb502089a9f2466,libwalkdir-365d532ad32b6f84,libsame_file-40735cc0eeb1864b,libwinapi_util-d692d2c51dba748
+b,libwindows_sys-f56ec81638f59a33,libwindows_link-d2ef63ecef51002c,libctor-262999504c7e1fbc,libplist-538b0499078fac7a,l
+ibtime-3e7bcadc51f9df8a,libpowerfmt-69c7238331924e58,libnum_conv-1a31483c0368ad4f,libderanged-5e6ba09f1b3a35e4,libtime_
+core-b288d17a3ec02cc5,libquick_xml-b506eea9b7e84b2f,libbase64-ca72789b075579c1,libindexmap-762e5b6277c8ca7c,libequivale
+nt-b19a42cd8c2442b0,libhashbrown-bae4266ff5dabe82,libjson_patch-b6d9e80fd623b13b,libthiserror-d4575dbaa865f3f9,libjsonp
+tr-bd465a4aaf501420,libserde_with-9736ee815b8dc56a,libserde_json-dbeefcf647a524ed,libmemchr-3fdb47decd1214b5,libzmij-a8
+25a2c509402988,libhttp-7363a95b75b4c05c,libitoa-a8758a9001f01135,libbytes-433673b3eb8a91f5,libphf-ec43b612319e7d16,libp
+hf_shared-9ee7a876cd36c6e4,libsiphasher-d89e92747f1de111,libtoml-9da44f338d99e317,libtoml_writer-069397b67fa4c0ad,libto
+ml_parser-85e4cb17b25993a4,libwinnow-063dd3eacc746808,libserde_spanned-59c053c480f06baa,libtoml_datetime-5bb11b2ae87322
+1f,libserde_untagged-eda5406a6195e5aa,liberased_serde-7f15bb9cbe57e034,libtypeid-dfb99493f7620faa,liburl-ed6031e4d1b748
+f8,libidna-317bf3344b229208,libidna_adapter-6b39a92eb0e56f0b,libicu_properties-af7f1f441a17005e,libicu_properties_data-
+22e67dfbb93d8ee9,libicu_normalizer-edda830f044a9a41,libsmallvec-d25926bc73209089,libicu_normalizer_data-aacece9abdcdcc8
+b,libicu_collections-006777a36663eb2f,libutf8_iter-95d82ed6768ab36e,libpotential_utf-3a8c9cfe1a6a63ae,libicu_provider-a
+454d672edde56a9,libicu_locale_core-78023984ec16a741,libtinystr-d2220b99cbd4e700,liblitemap-bc0b328e814c0a7a,libwriteabl
+e-3f9e5d7c77afadb6,libzerovec-ac7ddebaf09b6399,libzerotrie-a2824eb27e7b777b,libyoke-37a00989a60b29e9,libstable_deref_tr
+ait-9030104b42672411,libzerofrom-f82cd4aef8f14e06,libform_urlencoded-f56a3cd6753b58f7,libpercent_encoding-62d9e9a014bdc
+3c1,libthiserror-8f01b11b50ea2d9c,libanyhow-149a8668c1970f6f,libserde-5676819fd5f4a5cf,libsemver-ff853803859e92b1,libse
+rde_core-c9d2120bd2e23502}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libstd-*,libpanic_unwind-*,libc
+fg_if-*,libwindows_link-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libunwind-*
+,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "kernel32.lib" "dxguid.lib" "DXCORE.l
+ib" "DXGI.lib" "D3D12.lib" "DirectML.lib" "advapi32.lib" "cfgmgr32.lib" "gdi32.lib" "kernel32.lib" "msimg32.lib" "openg
+l32.lib" "user32.lib" "winspool.lib" "ws2_32.lib" "C:\\Users\\GuoLv\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5
+b557f\\windows_x86_64_msvc-0.52.6\\lib\\windows.0.52.0.lib" "C:\\Users\\GuoLv\\.cargo\\registry\\src\\index.crates.io-1
+949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib\\windows.0.52.0.lib" "C:\\Users\\GuoLv\\.cargo\\registry\\src\\index.c
+rates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib\\windows.0.52.0.lib" "C:\\Users\\GuoLv\\.cargo\\registry\\sr
+c\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib\\windows.0.52.0.lib" "C:\\Users\\GuoLv\\.cargo\\re
+gistry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.53.1\\lib\\windows.0.53.0.lib" "bcrypt.lib" "advap
+i32.lib" "advapi32.lib" "shell32.lib" "ole32.lib" "C:\\Users\\GuoLv\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5
+b557f\\windows_x86_64_msvc-0.52.6\\lib\\windows.0.52.0.lib" "advapi32.lib" "kernel32.lib" "kernel32.lib" "kernel32.lib"
+ "ntdll.lib" "userenv.lib" "ws2_32.lib" "dbghelp.lib" "/defaultlib:msvcrt" "/NXCOMPAT" "/LIBPATH:C:\\Users\\GuoLv\\AppD
+ata\\Local\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\cargo-target\\debug\\build\\ring-90a209bb4ee0
+f05f\\out" "/LIBPATH:C:\\Users\\GuoLv\\AppData\\Local\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\ca
+rgo-target\\debug\\build\\onig_sys-683ee215071b581f\\out" "/LIBPATH:C:\\Users\\GuoLv\\AppData\\Local\\Temp\\cursor-sand
+box-cache\\7533f3371d634f6b8a1723d0b4aa4988\\cargo-target\\debug\\build\\libsqlite3-sys-63740f33f37a64b9\\out" "/LIBPAT
+H:C:\\Users\\GuoLv\\AppData\\Local\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\cargo-target\\debug\\
+build\\webview2-com-sys-6f0ab2412a515fff\\out\\x64" "/LIBPATH:C:\\Users\\GuoLv\\AppData\\Local\\ort.pyke.io\\dfbin\\x86
+_64-pc-windows-msvc\\f7c654b3729cb9e5ad2a36a0c38e5b48e63bf4eed22968931aed33a0ad0b527d" "/LIBPATH:C:\\Program Files\\Mic
+rosoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\atlmfc\\lib\\x64" "/LIBPATH:C:\\Users\\GuoLv\\.cargo
+\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib" "/LIBPATH:C:\\Users\\GuoLv\\.cargo\
+\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.53.1\\lib" "/OUT:C:\\Users\\GuoLv\\AppData\\Loc
+al\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\cargo-target\\debug\\deps\\peek_lib-ac39197671a3d7c4.
+exe" "/OPT:REF,NOICF" "/DEBUG" "/PDBALTPATH:%_PDB%" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\intrinsic.natvis" "/NATVIS:<
+sysroot>\\lib\\rustlib\\etc\\liballoc.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libcore.natvis" "/NATVIS:<sysroot>
+\\lib\\rustlib\\etc\\libstd.natvis" "/NATVIS:C:\\Users\\GuoLv\\AppData\\Local\\Temp\\cursor-sandbox-cache\\7533f3371d63
+4f6b8a1723d0b4aa4988\\cargo-target\\debug\\deps\\rustcNOnysA\\peek_lib-0.natvis" "/NATVIS:C:\\Users\\GuoLv\\AppData\\Lo
+cal\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\cargo-target\\debug\\deps\\rustcNOnysA\\peek_lib-1.n
+atvis" "/NATVIS:C:\\Users\\GuoLv\\AppData\\Local\\Temp\\cursor-sandbox-cache\\7533f3371d634f6b8a1723d0b4aa4988\\cargo-t
+arget\\debug\\deps\\rustcNOnysA\\peek_lib-2.natvis" "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Co
+ntrols' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥淐:\Users\GuoLv\AppData\Local\Temp\cursor-sandbox-cache\7533f3371d634f6b
+8a1723d0b4aa4988\cargo-target\debug\deps\peek_lib-ac39197671a3d7c4.exe鈥?
+          
+
+warning: `peek` (lib test) generated 21 warnings (20 duplicates)
+error: could not compile `peek` (lib test) due to 1 previous error; 21 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `peek` (lib) generated 23 warnings (run `cargo fix --lib -p peek` to apply 22 suggestions)

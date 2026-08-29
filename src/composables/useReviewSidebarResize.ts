@@ -1,5 +1,10 @@
 import { onUnmounted, ref, type Ref, watch } from "vue";
 
+import {
+  NAVIGATION_RESIZE_HANDLE_WIDTH,
+  NAVIGATION_SIDEBAR_DEFAULT_WIDTH,
+} from "@/composables/useNavigationSidebarResize";
+
 const DEFAULT_WIDTH = 520;
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 900;
@@ -17,6 +22,10 @@ function readStoredWidth(): number {
   return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, stored));
 }
 
+export function readStoredReviewSidebarWidth() {
+  return readStoredWidth();
+}
+
 /**
  * Resizable review sidebar width with persistence and keyboard nudging.
  * `navigationOpen` is observed so the max width tracks the remaining layout.
@@ -24,10 +33,10 @@ function readStoredWidth(): number {
 export function useReviewSidebarResize(options: {
   navigationOpen: Ref<boolean>;
   reviewOpen: Ref<boolean>;
-  navigationWidth?: number;
+  navigationWidth?: Ref<number>;
+  reviewWidth?: Ref<number>;
 }) {
-  const navigationWidth = options.navigationWidth ?? 250;
-  const reviewWidth = ref(readStoredWidth());
+  const reviewWidth = options.reviewWidth ?? ref(readStoredWidth());
   const reviewResizing = ref(false);
   let resizeStartX = 0;
   let resizeStartWidth = DEFAULT_WIDTH;
@@ -35,7 +44,10 @@ export function useReviewSidebarResize(options: {
   /** Remaining width available for the review pane given current chrome. */
   function availableWidth() {
     const contentWidth = document.documentElement.clientWidth;
-    const nav = options.navigationOpen.value ? navigationWidth : 0;
+    const nav = options.navigationOpen.value
+      ? (options.navigationWidth?.value ?? NAVIGATION_SIDEBAR_DEFAULT_WIDTH) +
+        NAVIGATION_RESIZE_HANDLE_WIDTH
+      : 0;
     return Math.min(
       MAX_WIDTH,
       Math.max(MIN_WIDTH, contentWidth - nav - CHAT_PANE_MIN_WIDTH - RESIZE_HANDLE_WIDTH),

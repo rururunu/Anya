@@ -2,27 +2,62 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::app_state::AppState;
+use crate::core::tools::path::{normalize_path, resolve_path_candidate};
 use crate::core::workspace::Workspace;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 use walkdir::{DirEntry, WalkDir};
 
-fn resolve_existing_path(state: &AppState, path: &str) -> Result<PathBuf, String> {
+fn strip_ui_path_prefix(path: &str) -> &str {
     let trimmed = path.trim();
-    if trimmed.is_empty() {
-        return Err("Path is empty".to_string());
-    }
-    let raw = PathBuf::from(trimmed);
-    if raw.exists() {
-        return Ok(raw);
-    }
-    if let Some(workspace) = state.core.workspaces().current() {
-        let joined = Path::new(&workspace.root).join(&raw);
-        if joined.exists() {
-            return Ok(joined);
+    for prefix in [
+        "Write ",
+        "write ",
+        "Edit ",
+        "Read ",
+        "Delete ",
+        "Move ",
+    ] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            return rest.trim();
         }
     }
-    Err("Path no longer exists".to_string())
+    trimmed
+}
+
+fn resolve_existing_path(state: &AppState, path: &str) -> Result<PathBuf, String> {
+    let stripped = strip_ui_path_prefix(path);
+    if stripped.is_empty() {
+        return Err("Path is empty".to_string());
+    }
+
+    let try_resolve = |root: &Path| -> Option<PathBuf> {
+        let resolved = resolve_path_candidate(root, stripped).ok()?;
+        if resolved.exists() {
+            Some(resolved)
+        } else {
+            None
+        }
+    };
+
+    let raw = PathBuf::from(stripped);
+    if raw.exists() {
+        return Ok(normalize_path(&raw));
+    }
+
+    if let Some(workspace) = state.core.workspaces().current() {
+        if let Some(resolved) = try_resolve(Path::new(&workspace.root)) {
+            return Ok(resolved);
+        }
+    }
+
+    for workspace in state.core.workspaces().list() {
+        if let Some(resolved) = try_resolve(Path::new(&workspace.root)) {
+            return Ok(resolved);
+        }
+    }
+
+    Err(format!("Path no longer exists: {stripped}"))
 }
 
 const MAX_WORKSPACE_FILES: usize = 5_000;

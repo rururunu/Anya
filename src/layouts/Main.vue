@@ -4,6 +4,7 @@
     :class="{
       'is-glass': settingStore.chromeFrostedGlass,
       'navigation-closed': !navigationOpen,
+      'navigation-resizing': navigationResizing,
       'is-settings': settingsOpen,
       'is-maximized': isMaximized,
     }"
@@ -13,6 +14,7 @@
     <div class="glass-chrome" aria-hidden="true" />
     <AppConfirmDialog ref="confirmDialogRef" />
     <EditWorkspaceDialog ref="editWorkspaceDialogRef" />
+    <RenameSessionDialog ref="renameSessionDialogRef" />
     <Teleport to="body">
       <div
         v-if="sessionDragGhost"
@@ -24,39 +26,82 @@
         <MessageSquare :size="14" :stroke-width="1.75" />
         <span>{{ sessionDragGhost.title }}</span>
       </div>
+      <div
+        v-if="activeWorkspaceMenu"
+        class="workspace-menu workspace-menu-floating"
+        :style="workspaceMenuStyle"
+        @click.stop
+      >
+        <button type="button" @click.stop="toggleWorkspacePinned(activeWorkspaceMenu)">
+          <PinOff v-if="activeWorkspaceMenu.pinned" :size="13" />
+          <Pin v-else :size="13" />
+          <span>
+            {{
+              activeWorkspaceMenu.pinned
+                ? navigationLabels.unpinWorkspace
+                : navigationLabels.pinWorkspace
+            }}
+          </span>
+        </button>
+        <button type="button" @click.stop="editWorkspace(activeWorkspaceMenu)">
+          <Pencil :size="13" />
+          <span>{{ navigationLabels.editWorkspace }}</span>
+        </button>
+        <button type="button" @click.stop="openWorkspaceFolder(activeWorkspaceMenu)">
+          <FolderOpen :size="13" />
+          <span>{{ navigationLabels.openFolder }}</span>
+        </button>
+        <button type="button" @click.stop="openWorkspaceInTerminal(activeWorkspaceMenu)">
+          <Terminal :size="13" />
+          <span>{{ navigationLabels.openInTerminal }}</span>
+        </button>
+        <button type="button" @click.stop="archiveWorkspace(activeWorkspaceMenu)">
+          <Archive :size="13" />
+          <span>{{ navigationLabels.archiveWorkspace }}</span>
+        </button>
+        <button type="button" class="danger" @click.stop="removeWorkspace(activeWorkspaceMenu)">
+          <Trash2 :size="13" />
+          <span>{{ navigationLabels.deleteWorkspace }}</span>
+        </button>
+      </div>
     </Teleport>
     <Transition name="workbench-ready">
       <WorkbenchLoading v-if="initializing" />
     </Transition>
-    <header class="titlebar" data-tauri-drag-region>
-      <div class="titlebar-leading" data-tauri-drag-region="false">
-        <button
-          v-if="settingsOpen"
-          type="button"
-          class="titlebar-back"
-          :title="labels.backToChat"
-          :aria-label="labels.backToChat"
-          @click="closeSettings"
-        >
-          <ArrowLeft :size="15" />
-          <span>{{ labels.backToChat }}</span>
-        </button>
-        <button
-          v-else
-          type="button"
-          class="icon-button nav-toggle"
-          :title="labels.toggleNavigation"
-          :aria-label="labels.toggleNavigation"
-          :aria-pressed="navigationOpen"
-          @click="navigationOpen = !navigationOpen"
-        >
-          <PanelLeft :size="15" />
-        </button>
-      </div>
+    <header class="titlebar" :class="{ 'titlebar-compact': !settingsOpen }" data-tauri-drag-region>
+      <template v-if="settingsOpen">
+        <div class="titlebar-leading" data-tauri-drag-region="false">
+          <button
+            type="button"
+            class="titlebar-back"
+            :title="labels.backToChat"
+            :aria-label="labels.backToChat"
+            @click="closeSettings"
+          >
+            <ArrowLeft :size="15" />
+            <span>{{ labels.backToChat }}</span>
+          </button>
+        </div>
 
-      <div class="titlebar-context" data-tauri-drag-region>
-        <span>{{ activeTitle }}</span>
-      </div>
+        <div class="titlebar-context" data-tauri-drag-region>
+          <span>{{ activeTitle }}</span>
+        </div>
+      </template>
+      <template v-else>
+        <div class="titlebar-leading" data-tauri-drag-region="false">
+          <button
+            type="button"
+            class="icon-button nav-toggle"
+            :title="labels.toggleNavigation"
+            :aria-label="labels.toggleNavigation"
+            :aria-pressed="navigationOpen"
+            @click="navigationOpen = !navigationOpen"
+          >
+            <PanelLeft :size="15" />
+          </button>
+        </div>
+        <div class="titlebar-drag" data-tauri-drag-region aria-hidden="true" />
+      </template>
 
       <div class="titlebar-trailing" data-tauri-drag-region="false">
         <nav class="view-actions" :aria-label="labels.views">
@@ -72,17 +117,6 @@
           >
             <ArrowUpCircle :size="15" />
             <span class="status-dot update-dot" />
-          </button>
-          <button
-            type="button"
-            class="icon-button"
-            :class="{ active: reviewOpen }"
-            :title="labels.views"
-            :aria-label="labels.views"
-            @click="toggleReviewSidebar"
-          >
-            <PanelRight :size="15" />
-            <span v-if="runningSubagentCount" class="status-dot" />
           </button>
           <button
             type="button"
@@ -140,271 +174,284 @@
         :inert="settingsOpen"
         :aria-hidden="settingsOpen"
       >
-        <aside class="navigation-pane" :inert="!navigationOpen" :aria-hidden="!navigationOpen">
-          <div class="navigation-brand">
-            <img class="navigation-brand-logo" :src="appIconAsset" alt="" draggable="false" />
-            <div class="navigation-brand-text">
-              <strong>{{ appDisplayName }}</strong>
-              <span v-if="isDevBuild" class="debug-badge">debug</span>
-            </div>
-            <button
-              type="button"
-              class="icon-button navigation-search-button"
-              :title="searchLabels.open"
-              :aria-label="searchLabels.open"
-              @click.stop="openSearchPalette"
-            >
-              <Search :size="16" />
-            </button>
-          </div>
-
-          <button type="button" class="new-chat-button" @click.stop="handleCreateQuickConversation">
-            <SquarePen :size="15" />
-            <span>{{ labels.newChat }}</span>
-          </button>
-
-          <div class="navigation-shortcuts" role="group" :aria-label="navigationLabels.extensions">
-            <button
-              type="button"
-              class="nav-shortcut-button"
-              :class="{ active: extensionView === 'skills' }"
-              @click.stop="openExtensionView('skills')"
-            >
-              <ScrollText :size="15" :stroke-width="1.75" />
-              <span>{{ navigationLabels.skills }}</span>
-            </button>
-            <button
-              type="button"
-              class="nav-shortcut-button"
-              :class="{ active: extensionView === 'mcp' }"
-              @click.stop="openExtensionView('mcp')"
-            >
-              <Cable :size="15" :stroke-width="1.75" />
-              <span>{{ navigationLabels.mcp }}</span>
-            </button>
-            <button
-              type="button"
-              class="nav-shortcut-button"
-              :class="{ active: extensionView === 'phone' }"
-              @click.stop="openExtensionView('phone')"
-            >
-              <span class="nav-shortcut-icon">
-                <Smartphone :size="15" :stroke-width="1.75" />
-                <span
-                  v-if="remoteGatewayRunning"
-                  class="nav-status-dot"
-                  :title="navigationLabels.connectPhone"
-                  aria-hidden="true"
-                />
-              </span>
-              <span>{{ navigationLabels.connectPhone }}</span>
-            </button>
-          </div>
-
-          <nav
-            class="session-list peek-scrollbar"
-            :class="{ 'is-dragging': Boolean(draggedWorkspaceId || draggedSessionId) }"
-            :aria-label="labels.conversations"
-            @click.stop
-          >
-            <section
-              v-for="workspaceSection in workspaceNavigationSections"
-              :key="workspaceSection.id"
-              class="navigation-section"
-            >
-              <header class="navigation-section-header">
-                <button
-                  type="button"
-                  class="navigation-section-toggle"
-                  @click="toggleNavigationSection(workspaceSection.id)"
-                >
-                  <ChevronRight
-                    :size="13"
-                    :class="{ expanded: !collapsedNavigationSections.has(workspaceSection.id) }"
-                  />
-                  <span>{{ workspaceSection.label }}</span>
-                  <small>{{ workspaceSection.items.length }}</small>
-                </button>
-                <button
-                  v-if="workspaceSection.id === 'workspaces'"
-                  type="button"
-                  class="section-action"
-                  :title="navigationLabels.addWorkspace"
-                  @click="addWorkspace"
-                >
-                  <Plus :size="14" />
-                </button>
-              </header>
-
-              <div
-                v-show="!collapsedNavigationSections.has(workspaceSection.id)"
-                class="navigation-section-body"
+        <div
+          class="navigation-shell"
+          :style="navigationShellStyle"
+          :inert="!navigationOpen"
+          :aria-hidden="!navigationOpen"
+        >
+          <aside class="navigation-pane">
+            <div class="navigation-brand">
+              <div class="navigation-brand-text">
+                <strong>{{ appDisplayName }}</strong>
+                <span v-if="isDevBuild" class="debug-badge">debug</span>
+              </div>
+              <button
+                type="button"
+                class="icon-button navigation-search-button"
+                :title="searchLabels.open"
+                :aria-label="searchLabels.open"
+                @click.stop="openSearchPalette"
               >
-                <section
-                  v-for="workspace in workspaceSection.items"
-                  :key="workspace.id"
-                  class="workspace-group"
-                  :data-workspace-id="workspace.id"
-                  :class="{
-                    dragging: draggedWorkspaceId === workspace.id,
-                    'drop-before':
-                      dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'before',
-                    'drop-after':
-                      dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'after',
-                  }"
-                >
-                  <div
-                    class="workspace-row"
-                    :class="{ 'session-drop-target': sessionDropWorkspaceId === workspace.id }"
-                    role="button"
-                    tabindex="0"
-                    :aria-expanded="!collapsedWorkspaceIds.has(workspace.id)"
-                    :aria-label="
-                      collapsedWorkspaceIds.has(workspace.id)
-                        ? navigationLabels.expandWorkspace
-                        : navigationLabels.collapseWorkspace
-                    "
-                    @click="handleWorkspaceClick(workspace)"
-                    @keydown.enter.self.prevent="handleWorkspaceClick(workspace)"
-                    @keydown.space.self.prevent="handleWorkspaceClick(workspace)"
-                    @pointerdown="startWorkspacePointerDrag($event, workspace)"
-                    @dragstart.prevent
+                <Search :size="16" />
+              </button>
+            </div>
+
+            <div class="navigation-menu-items">
+              <button
+                type="button"
+                class="nav-shortcut-button"
+                :class="{ active: extensionView === 'plugins' }"
+                @click.stop="openExtensionView('plugins')"
+              >
+                <Puzzle :size="15" :stroke-width="1.75" />
+                <span>{{ navigationLabels.plugins }}</span>
+              </button>
+              <button
+                type="button"
+                class="nav-shortcut-button"
+                :class="{ active: extensionView === 'phone' }"
+                @click.stop="openExtensionView('phone')"
+              >
+                <span class="nav-shortcut-icon">
+                  <Smartphone :size="15" :stroke-width="1.75" />
+                  <span
+                    v-if="remoteGatewayRunning"
+                    class="nav-status-dot"
+                    :title="navigationLabels.connectPhone"
+                    aria-hidden="true"
+                  />
+                </span>
+                <span>{{ navigationLabels.connectPhone }}</span>
+              </button>
+            </div>
+
+            <nav
+              class="session-list peek-scrollbar"
+              :class="{ 'is-dragging': Boolean(draggedWorkspaceId || draggedSessionId) }"
+              :aria-label="labels.conversations"
+              @click.stop
+            >
+              <section
+                v-for="workspaceSection in workspaceNavigationSections"
+                :key="workspaceSection.id"
+                class="navigation-section"
+              >
+                <header class="navigation-section-header">
+                  <button
+                    type="button"
+                    class="navigation-section-toggle"
+                    @click="onToggleNavigationSection(workspaceSection.id)"
                   >
-                    <span class="workspace-collapse" aria-hidden="true" />
-                    <span class="workspace-path-tip">
-                      <TooltipProvider :delay-duration="280">
-                        <Tooltip :disabled="Boolean(draggedWorkspaceId || draggedSessionId)">
-                          <TooltipTrigger as-child>
-                            <span class="workspace-group-header">
-                              <Folder v-if="collapsedWorkspaceIds.has(workspace.id)" :size="14" />
-                              <FolderOpen v-else :size="14" />
-                              <span>{{ workspace.name }}</span>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="right"
-                            :side-offset="8"
-                            class="max-w-[320px] break-all font-mono text-[11px] leading-snug font-medium whitespace-normal"
-                          >
-                            {{ workspace.root }}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </span>
-                    <div class="workspace-actions">
-                      <button
-                        type="button"
-                        :title="navigationLabels.more"
-                        @click.stop="toggleWorkspaceMenu(workspace.id)"
-                      >
-                        <Ellipsis :size="14" />
-                      </button>
-                      <button
-                        type="button"
-                        :title="navigationLabels.newWorkspaceChat"
-                        @click.stop="handleCreateWorkspaceConversation(workspace)"
-                      >
-                        <SquarePen :size="13" />
-                      </button>
-                    </div>
-                  </div>
-                  <div v-if="workspaceMenuId === workspace.id" class="workspace-menu" @click.stop>
-                    <button type="button" @click.stop="toggleWorkspacePinned(workspace)">
-                      <PinOff v-if="workspace.pinned" :size="13" />
-                      <Pin v-else :size="13" />
-                      <span>
-                        {{
-                          workspace.pinned
-                            ? navigationLabels.unpinWorkspace
-                            : navigationLabels.pinWorkspace
-                        }}
+                    <ChevronRight
+                      :size="13"
+                      :class="{ expanded: !collapsedNavigationSections.has(workspaceSection.id) }"
+                    />
+                    <span>{{ workspaceSection.label }}</span>
+                    <small>{{ workspaceSection.items.length }}</small>
+                  </button>
+                  <button
+                    v-if="workspaceSection.id === 'workspaces'"
+                    type="button"
+                    class="section-action"
+                    :title="navigationLabels.addWorkspace"
+                    @click="addWorkspace"
+                  >
+                    <Plus :size="14" />
+                  </button>
+                </header>
+
+                <NavCollapse
+                  :collapsed="collapsedNavigationSections.has(workspaceSection.id)"
+                  class="navigation-section-body"
+                >
+                  <section
+                    v-for="workspace in workspaceSection.items"
+                    :key="workspace.id"
+                    class="workspace-group"
+                    :data-workspace-id="workspace.id"
+                    :class="{
+                      dragging: draggedWorkspaceId === workspace.id,
+                      'workspace-menu-open': workspaceMenuId === workspace.id,
+                      'drop-before':
+                        dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'before',
+                      'drop-after':
+                        dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'after',
+                    }"
+                  >
+                    <div
+                      class="workspace-row"
+                      :class="{ 'session-drop-target': sessionDropWorkspaceId === workspace.id }"
+                      role="button"
+                      tabindex="0"
+                      :aria-expanded="!collapsedWorkspaceIds.has(workspace.id)"
+                      :aria-label="
+                        collapsedWorkspaceIds.has(workspace.id)
+                          ? navigationLabels.expandWorkspace
+                          : navigationLabels.collapseWorkspace
+                      "
+                      @click="onWorkspaceHeaderClick(workspace)"
+                      @keydown.enter.self.prevent="onWorkspaceHeaderClick(workspace)"
+                      @keydown.space.self.prevent="onWorkspaceHeaderClick(workspace)"
+                      @pointerdown="startWorkspacePointerDrag($event, workspace)"
+                      @dragstart.prevent
+                    >
+                      <span class="workspace-collapse" aria-hidden="true" />
+                      <span class="workspace-path-tip">
+                        <TooltipProvider :delay-duration="280">
+                          <Tooltip :disabled="Boolean(draggedWorkspaceId || draggedSessionId)">
+                            <TooltipTrigger as-child>
+                              <span class="workspace-group-header">
+                                <Folder v-if="collapsedWorkspaceIds.has(workspace.id)" :size="14" />
+                                <FolderOpen v-else :size="14" />
+                                <span>{{ workspace.name }}</span>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="right"
+                              :side-offset="8"
+                              class="max-w-[320px] break-all font-mono text-[11px] leading-snug font-medium whitespace-normal"
+                            >
+                              {{ workspace.root }}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </span>
-                    </button>
-                    <button type="button" @click.stop="editWorkspace(workspace)">
-                      <Pencil :size="13" />
-                      <span>{{ navigationLabels.editWorkspace }}</span>
-                    </button>
-                    <button type="button" @click.stop="openWorkspaceFolder(workspace)">
-                      <FolderOpen :size="13" />
-                      <span>{{ navigationLabels.openFolder }}</span>
-                    </button>
-                    <button type="button" @click.stop="openWorkspaceInTerminal(workspace)">
-                      <Terminal :size="13" />
-                      <span>{{ navigationLabels.openInTerminal }}</span>
-                    </button>
-                    <button type="button" @click.stop="archiveWorkspace(workspace)">
-                      <Archive :size="13" />
-                      <span>{{ navigationLabels.archiveWorkspace }}</span>
-                    </button>
-                    <button type="button" class="danger" @click.stop="removeWorkspace(workspace)">
-                      <Trash2 :size="13" />
-                      <span>{{ navigationLabels.deleteWorkspace }}</span>
-                    </button>
-                  </div>
+                      <div class="workspace-actions">
+                        <button
+                          type="button"
+                          :title="navigationLabels.more"
+                          @click.stop="onWorkspaceMenuToggle(workspace.id, $event)"
+                        >
+                          <Ellipsis :size="14" />
+                        </button>
+                        <button
+                          type="button"
+                          :title="navigationLabels.newWorkspaceChat"
+                          @click.stop="handleCreateWorkspaceConversation(workspace)"
+                        >
+                          <SquarePen :size="13" />
+                        </button>
+                      </div>
+                    </div>
+                    <NavCollapse :collapsed="collapsedWorkspaceIds.has(workspace.id)">
+                      <WorkbenchSessionList
+                        :sessions="sessionsForWorkspace(workspace.id)"
+                        :all-sessions="sessionsWithLiveTokens"
+                        :active-session-id="activeSessionId"
+                        :language="settingStore.language"
+                        :untitled-label="labels.untitled"
+                        :archive-label="labels.archiveConversation"
+                        :archived-label="labels.conversationArchived"
+                        :rename-label="tr(settingStore.language, 'session.renameTitle')"
+                        :regenerate-title-label="
+                          tr(settingStore.language, 'session.regenerateTitle')
+                        "
+                        :generating-title-label="
+                          tr(settingStore.language, 'session.generatingTitle')
+                        "
+                        :delete-label="labels.deleteConversation"
+                        :session-menu-label="tr(settingStore.language, 'session.sessionMenu')"
+                        :archive-visual-state="archiveVisualBySessionId"
+                        :dismiss-subagent-label="
+                          tr(settingStore.language, 'subagent.hideFromSidebar')
+                        "
+                        :running-session-ids="runningSessionIds"
+                        :title-generating-session-ids="titleGeneratingSessionIds"
+                        :attention-session-ids="attentionSessionIds"
+                        :unread-session-ids="unreadSessionIdList"
+                        :draft-session-ids="draftSessionIds"
+                        :dragged-session-id="draggedSessionId"
+                        variant="workspace"
+                        @select="handleSelectConversation"
+                        @archive="archiveConversation"
+                        @rename="renameConversation"
+                        @regenerate-title="regenerateConversationTitle"
+                        @delete="removeConversation"
+                        @dismiss="dismissSubagentSession"
+                        @session-pointer-down="startSessionPointerDrag"
+                      />
+                    </NavCollapse>
+                  </section>
+                </NavCollapse>
+              </section>
+
+              <section class="navigation-section quick-ask-section">
+                <header class="navigation-section-header">
+                  <button
+                    type="button"
+                    class="navigation-section-toggle"
+                    @click="onToggleNavigationSection('quick')"
+                  >
+                    <ChevronRight
+                      :size="13"
+                      :class="{ expanded: !collapsedNavigationSections.has('quick') }"
+                    />
+                    <span>{{ navigationLabels.quickAsk }}</span>
+                    <small>{{ quickAskSessions.length }}</small>
+                  </button>
+                  <button
+                    type="button"
+                    class="section-action"
+                    :title="navigationLabels.newQuickAsk"
+                    @click="handleCreateQuickConversation"
+                  >
+                    <SquarePen :size="13" />
+                  </button>
+                </header>
+                <NavCollapse :collapsed="collapsedNavigationSections.has('quick')">
                   <WorkbenchSessionList
-                    v-show="!collapsedWorkspaceIds.has(workspace.id)"
-                    :sessions="sessionsForWorkspace(workspace.id)"
+                    :sessions="quickAskSessions"
+                    :all-sessions="sessionsWithLiveTokens"
                     :active-session-id="activeSessionId"
                     :language="settingStore.language"
                     :untitled-label="labels.untitled"
                     :archive-label="labels.archiveConversation"
+                    :archived-label="labels.conversationArchived"
+                    :rename-label="tr(settingStore.language, 'session.renameTitle')"
+                    :regenerate-title-label="tr(settingStore.language, 'session.regenerateTitle')"
+                    :delete-label="labels.deleteConversation"
+                    :generating-title-label="tr(settingStore.language, 'session.generatingTitle')"
+                    :session-menu-label="tr(settingStore.language, 'session.sessionMenu')"
+                    :archive-visual-state="archiveVisualBySessionId"
+                    :dismiss-subagent-label="tr(settingStore.language, 'subagent.hideFromSidebar')"
                     :running-session-ids="runningSessionIds"
+                    :title-generating-session-ids="titleGeneratingSessionIds"
                     :attention-session-ids="attentionSessionIds"
                     :unread-session-ids="unreadSessionIdList"
                     :draft-session-ids="draftSessionIds"
                     :dragged-session-id="draggedSessionId"
-                    variant="workspace"
+                    variant="quick"
                     @select="handleSelectConversation"
                     @archive="archiveConversation"
+                    @rename="renameConversation"
+                    @regenerate-title="regenerateConversationTitle"
+                    @delete="removeConversation"
+                    @dismiss="dismissSubagentSession"
                     @session-pointer-down="startSessionPointerDrag"
                   />
-                </section>
-              </div>
-            </section>
-
-            <section class="navigation-section quick-ask-section">
-              <header class="navigation-section-header">
-                <button
-                  type="button"
-                  class="navigation-section-toggle"
-                  @click="toggleNavigationSection('quick')"
-                >
-                  <ChevronRight
-                    :size="13"
-                    :class="{ expanded: !collapsedNavigationSections.has('quick') }"
-                  />
-                  <span>{{ navigationLabels.quickAsk }}</span>
-                  <small>{{ quickAskSessions.length }}</small>
-                </button>
-                <button
-                  type="button"
-                  class="section-action"
-                  :title="navigationLabels.newQuickAsk"
-                  @click="handleCreateQuickConversation"
-                >
-                  <SquarePen :size="13" />
-                </button>
-              </header>
-              <WorkbenchSessionList
-                v-show="!collapsedNavigationSections.has('quick')"
-                :sessions="quickAskSessions"
-                :active-session-id="activeSessionId"
-                :language="settingStore.language"
-                :untitled-label="labels.untitled"
-                :archive-label="labels.archiveConversation"
-                :running-session-ids="runningSessionIds"
-                :attention-session-ids="attentionSessionIds"
-                :unread-session-ids="unreadSessionIdList"
-                :draft-session-ids="draftSessionIds"
-                :dragged-session-id="draggedSessionId"
-                variant="quick"
-                @select="handleSelectConversation"
-                @archive="archiveConversation"
-                @session-pointer-down="startSessionPointerDrag"
-              />
-            </section>
-          </nav>
-        </aside>
+                </NavCollapse>
+              </section>
+            </nav>
+          </aside>
+          <div
+            v-if="navigationOpen"
+            class="navigation-resize-handle"
+            :class="{ active: navigationResizing }"
+            role="separator"
+            aria-orientation="vertical"
+            :aria-label="tr(settingStore.language, 'resizeNavigationSidebar')"
+            :title="tr(settingStore.language, 'resizeNavigationSidebar')"
+            :aria-valuemin="NAVIGATION_SIDEBAR_MIN_WIDTH"
+            :aria-valuemax="NAVIGATION_SIDEBAR_MAX_WIDTH"
+            :aria-valuenow="Math.round(navigationWidth)"
+            tabindex="0"
+            data-tauri-drag-region="false"
+            @pointerdown="startNavigationResize"
+            @keydown="handleNavigationResizeKey"
+            @dblclick="resetNavigationWidth"
+          />
+        </div>
 
         <WorkbenchSearchPalette
           v-model:open="searchPaletteOpen"
@@ -423,11 +470,31 @@
           }"
           :style="composerOverlayStyle"
         >
+          <header
+            v-if="showConversationHeader"
+            class="conversation-header"
+            data-tauri-drag-region="false"
+          >
+            <span class="conversation-header-spacer" aria-hidden="true" />
+            <p class="conversation-title" :title="activeTitle">{{ activeTitle }}</p>
+            <button
+              v-if="!reviewOpen"
+              type="button"
+              class="icon-button review-toggle"
+              :class="{ active: reviewOpen }"
+              :title="labels.views"
+              :aria-label="labels.views"
+              @click="toggleReviewSidebar"
+            >
+              <PanelRight :size="15" />
+              <span v-if="runningSubagentCount" class="status-dot" />
+            </button>
+          </header>
+
           <div v-if="extensionView" class="extension-pane">
             <div class="extension-scroll peek-scrollbar">
               <div class="extension-panel">
-                <SkillsSettings v-if="extensionView === 'skills'" />
-                <McpSettings v-else-if="extensionView === 'mcp'" />
+                <PluginsPanel v-if="extensionView === 'plugins'" />
                 <ConnectPhonePanel v-else-if="extensionView === 'phone'" />
               </div>
             </div>
@@ -438,23 +505,36 @@
               <span>{{ contextNotice }}</span>
             </div>
             <Transition name="empty-hero">
-              <div v-if="!hasConversationMessages" class="empty-conversation-hero">
+              <div
+                v-if="!viewingSubagent && !hasConversationMessages"
+                class="empty-conversation-hero"
+              >
                 <div
                   class="empty-conversation-brand"
                   data-onboarding-logo-target
                   aria-hidden="true"
                 >
-                  <img :src="appIconAsset" alt="" draggable="false" />
+                  <AnyaLogo />
                 </div>
                 <p class="empty-conversation-prompt">
                   {{ emptyConversationPrompt }}
                 </p>
               </div>
             </Transition>
-            <AppErrorBoundary compact class="workbench-messages">
+            <AppErrorBoundary v-if="viewingSubagent" compact class="workbench-messages">
+              <SubagentConversationPanel
+                class="workbench-messages"
+                :session-id="activeSessionId"
+                :parent-messages="parentMessages"
+                :language="settingStore.language"
+                :show-reasoning="settingStore.showReasoning"
+                :display-mode="settingStore.agentWorkDisplay"
+              />
+            </AppErrorBoundary>
+            <AppErrorBoundary v-else compact class="workbench-messages">
               <MessageList
                 class="workbench-messages"
-                :messages="messages"
+                :messages="conversationMessages"
                 :session-id="activeSessionId"
                 :checkpoints="checkpoints"
                 @rewound="handleRewound"
@@ -467,12 +547,8 @@
               />
             </AppErrorBoundary>
 
-            <div v-if="hasConversationMessages" class="composer-fade" aria-hidden="true">
-              <div class="composer-fade-blur"></div>
-              <div class="composer-fade-tint"></div>
-            </div>
-
             <div
+              v-if="!viewingSubagent"
               ref="composerWrapRef"
               class="composer-wrap"
               :class="{ 'has-interaction-picker': Boolean(activePendingInteraction) }"
@@ -596,23 +672,7 @@
                 :focus-path="reviewFocusPath"
                 :focus-at="reviewFocusAt"
               />
-              <SubagentSidebar
-                v-show="reviewView === 'agents'"
-                embedded
-                :activities="subagentActivities"
-                :all-activities="allToolActivities"
-                :opened-entry-ids="openedSubagentIds"
-                :selected-entry-id="selectedSubagentId"
-                @close-entry="closeSubagent"
-              />
               <AgentDebugPanel v-show="reviewView === 'runtime'" embedded />
-              <ImagePreviewSidebar
-                v-show="reviewView === 'image'"
-                :sources="openedImageSources"
-                :selected-source="selectedImageSource"
-                @select="selectedImageSource = $event"
-                @close="closeImageTab"
-              />
             </aside>
           </div>
         </Transition>
@@ -625,16 +685,14 @@
 
     <WelcomeOnboarding v-if="showOnboarding" @completed="showOnboarding = false" />
 
-    <button
-      v-if="isDevBuild"
-      type="button"
-      class="debug-tutorial-button"
-      :title="tutorialButtonLabel"
-      @click="openTutorial"
-    >
-      <BookOpen :size="14" />
-      <span>{{ tutorialButtonLabel }}</span>
-    </button>
+    <ImageLightbox
+      :open="imageLightboxOpen"
+      :sources="openedImageSources"
+      :selected-source="selectedImageSource"
+      @close="closeImageLightbox"
+      @select="selectedImageSource = $event"
+      @edit-from-image="handleEditFromImage"
+    />
 
     <Transition name="shortcut-help">
       <div
@@ -673,15 +731,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  type CSSProperties,
+} from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   ArrowLeft,
   ArrowUpCircle,
   Archive,
-  BookOpen,
-  Cable,
   CircleAlert,
   ChevronRight,
   CornerDownLeft,
@@ -697,7 +761,7 @@ import {
   Pin,
   PinOff,
   Plus,
-  ScrollText,
+  Puzzle,
   Search,
   Settings,
   Smartphone,
@@ -710,33 +774,40 @@ import AppErrorBoundary from "@/components/AppErrorBoundary.vue";
 import AgentDebugPanel from "@/components/chat/AgentDebugPanel.vue";
 import ChatInputBar from "@/components/chat/ChatInputBar.vue";
 import CodeDiffSidebar from "@/components/chat/CodeDiffSidebar.vue";
-import ImagePreviewSidebar from "@/components/chat/ImagePreviewSidebar.vue";
+import ImageLightbox from "@/components/chat/ImageLightbox.vue";
 import MessageList from "@/components/chat/MessageList.vue";
-import SubagentSidebar from "@/components/chat/SubagentSidebar.vue";
+import SubagentConversationPanel from "@/components/chat/SubagentConversationPanel.vue";
 import WorkbenchSessionList from "@/components/workbench/WorkbenchSessionList.vue";
+import NavCollapse from "@/components/workbench/NavCollapse.vue";
 import WorkbenchSearchPalette from "@/components/workbench/WorkbenchSearchPalette.vue";
 import WorkbenchLoading from "@/components/workbench/WorkbenchLoading.vue";
 import WelcomeOnboarding from "@/components/onboarding/WelcomeOnboarding.vue";
+import AnyaLogo from "@/components/icons/AnyaLogo.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import EditWorkspaceDialog from "@/components/workspace/EditWorkspaceDialog.vue";
-import appIconAsset from "../../src-tauri/icons/Anya-transparent.svg";
+import RenameSessionDialog from "@/components/workbench/RenameSessionDialog.vue";
 import {
+  useWorkbenchReview,
   REVIEW_RESIZE_HANDLE_WIDTH,
   REVIEW_SIDEBAR_MIN_WIDTH,
   REVIEW_SIDEBAR_MAX_WIDTH,
-} from "@/composables/useReviewSidebarResize";
+  NAVIGATION_RESIZE_HANDLE_WIDTH,
+  NAVIGATION_SIDEBAR_MIN_WIDTH,
+  NAVIGATION_SIDEBAR_MAX_WIDTH,
+} from "@/composables/workbench/useWorkbenchReview";
 import { useWorkbenchLabels } from "@/composables/workbench/useWorkbenchLabels";
 import { useWorkbenchWindow } from "@/composables/workbench/useWorkbenchWindow";
 import { useWorkbenchInteractions } from "@/composables/workbench/useWorkbenchInteractions";
-import { useWorkbenchReview } from "@/composables/workbench/useWorkbenchReview";
 import { useWorkbenchSessions } from "@/composables/workbench/useWorkbenchSessions";
 import { useWorkbenchWorkspaces } from "@/composables/workbench/useWorkbenchWorkspaces";
 import { useWorkbenchHotkeys } from "@/composables/workbench/useWorkbenchHotkeys";
 import { useWorkbenchLifecycle } from "@/composables/workbench/useWorkbenchLifecycle";
 import { tr } from "@/services/i18n";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
+import { isSubagentSessionId, rootSessionId } from "@/services/chat/subagentSession";
 import { useChatStore } from "@/stores/chat";
+import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore, applyZoom, applyTheme } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
 import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
@@ -744,20 +815,18 @@ import type { Workspace } from "@/commands/workspace";
 import type { ChatSessionSummary, CapturedContext } from "@/types/chat";
 
 const SettingsPage = defineAsyncComponent(() => import("@/pages/Settings/index.vue"));
-const SkillsSettings = defineAsyncComponent(
-  () => import("@/components/settings/SkillsSettings.vue"),
-);
-const McpSettings = defineAsyncComponent(() => import("@/components/settings/McpSettings.vue"));
+const PluginsPanel = defineAsyncComponent(() => import("@/components/workbench/PluginsPanel.vue"));
 const ConnectPhonePanel = defineAsyncComponent(
   () => import("@/components/workbench/ConnectPhonePanel.vue"),
 );
 
-type ExtensionView = "skills" | "mcp" | "phone";
+type ExtensionView = "plugins" | "phone";
 const extensionView = ref<ExtensionView | null>(null);
 const remoteGatewayRunning = ref(false);
 let remoteGatewayUnlisten: UnlistenFn | null = null;
 
 const chatStore = useChatStore();
+const subagentSessionStore = useSubagentSessionStore();
 const settingStore = useSettingStore();
 const updaterStore = useUpdaterStore();
 const appDisplayName = "Anya";
@@ -766,6 +835,7 @@ const appWindow = getCurrentWebviewWindow();
 const inputRef = ref<InstanceType<typeof ChatInputBar> | null>(null);
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 const editWorkspaceDialogRef = ref<InstanceType<typeof EditWorkspaceDialog> | null>(null);
+const renameSessionDialogRef = ref<InstanceType<typeof RenameSessionDialog> | null>(null);
 const composerWrapRef = ref<HTMLElement | null>(null);
 const composerFootprint = ref(0);
 
@@ -773,9 +843,7 @@ function handleEditFromImage(payload: { images: string[]; draftText?: string; re
   void inputRef.value?.attachImageEditReference?.(payload);
 }
 
-/** How far the blur continues above the composer card. */
-const COMPOSER_FADE_OVERHANG = 28;
-/** Air between the last message and the top of the fade. */
+/** Extra space between the last message and the composer. */
 const COMPOSER_CLEARANCE_EXTRA = 12;
 let composerResizeObserver: ResizeObserver | null = null;
 
@@ -784,10 +852,10 @@ const composerOverlayStyle = computed(() => {
   if (height <= 0) {
     return undefined;
   }
-  const fade = height + 10 + COMPOSER_FADE_OVERHANG;
+  const dock = height + 10;
   return {
-    "--composer-fade-height": `${fade}px`,
-    "--composer-list-clearance": `${fade + COMPOSER_CLEARANCE_EXTRA}px`,
+    "--composer-fade-height": `${dock}px`,
+    "--composer-list-clearance": `${dock + COMPOSER_CLEARANCE_EXTRA}px`,
   };
 });
 
@@ -824,7 +892,13 @@ const activeSessionWorkspaceId = ref<string | null>(null);
 const showOnboarding = ref(!settingStore.onboardingCompleted);
 
 const builtInTheme = computed(() => settingStore.colorScheme);
-const messages = computed(() => chatStore.sessions[activeSessionId.value] ?? []);
+const messages = computed(() => chatStore.sessions[rootSessionId(activeSessionId.value)] ?? []);
+const conversationMessages = computed(() => {
+  if (isSubagentSessionId(activeSessionId.value)) return [];
+  return chatStore.sessions[activeSessionId.value] ?? [];
+});
+const viewingSubagent = computed(() => isSubagentSessionId(activeSessionId.value));
+const parentMessages = messages;
 
 const {
   isMaximized,
@@ -844,17 +918,6 @@ function openSettings(category?: Parameters<typeof openSettingsPanel>[0]) {
   openSettingsPanel(category);
 }
 
-function openExtensionView(view: ExtensionView) {
-  closeSettings();
-  extensionView.value = extensionView.value === view ? null : view;
-}
-
-function openTutorial() {
-  settingsOpen.value = false;
-  extensionView.value = null;
-  showOnboarding.value = true;
-}
-
 const {
   labels,
   navigationLabels,
@@ -862,7 +925,6 @@ const {
   shortcutLabels,
   shortcutHelpItems,
   emptyConversationPrompt,
-  tutorialButtonLabel,
 } = useWorkbenchLabels({
   language: computed(() => settingStore.language),
   workspaces,
@@ -929,11 +991,14 @@ const {
   handleReviewResizeKey,
   resetReviewWidth,
   updateReviewWidth,
-  allToolActivities,
-  subagentActivities,
+  navigationWidth,
+  navigationResizing,
+  startNavigationResize,
+  handleNavigationResizeKey,
+  resetNavigationWidth,
+  updateNavigationWidth,
   runningSubagentCount,
-  openedSubagentIds,
-  selectedSubagentId,
+  imageLightboxOpen,
   openedImageSources,
   selectedImageSource,
   reviewFocusPath,
@@ -942,10 +1007,23 @@ const {
   openReviewFile,
   toggleReviewSidebar,
   openAgentReview,
-  closeSubagent,
   previewImage,
-  closeImageTab,
-} = useWorkbenchReview({ navigationOpen, activeSessionId, messages, labels, clearSessionUnread });
+  closeImageLightbox,
+} = useWorkbenchReview({
+  navigationOpen,
+  activeSessionId,
+  messages,
+  sessions,
+  labels,
+  clearSessionUnread,
+  selectConversation: handleSelectConversation,
+});
+
+const navigationShellStyle = computed(() => ({
+  "--nav-shell-width": navigationOpen.value
+    ? `${navigationWidth.value + NAVIGATION_RESIZE_HANDLE_WIDTH}px`
+    : "0px",
+}));
 
 const {
   checkpoints,
@@ -955,6 +1033,7 @@ const {
   hasConversationMessages,
   sending,
   runningSessionIds,
+  titleGeneratingSessionIds,
   stagedMessages,
   contextNotice,
   sessionsForWorkspace,
@@ -963,8 +1042,13 @@ const {
   createQuickConversation,
   refreshCheckpoints,
   selectConversation,
+  dismissSubagentSession,
   moveSessionToWorkspace,
   archiveConversation,
+  archiveVisualBySessionId,
+  renameConversation,
+  regenerateConversationTitle,
+  removeConversation,
   branchConversation,
   guideStaged,
   startStagedEdit,
@@ -975,12 +1059,12 @@ const {
 } = useWorkbenchSessions({
   activeSessionId,
   activeSessionWorkspaceId,
-  sessions,
   workspaces,
   messages,
   labels,
   navigationLabels,
   confirmDialogRef,
+  renameSessionDialogRef,
   inputRef,
   reviewOpen,
   removePendingInteraction,
@@ -1052,6 +1136,63 @@ const {
   moveSessionToWorkspace,
 });
 
+function onToggleNavigationSection(id: string) {
+  toggleNavigationSection(id);
+}
+
+function onWorkspaceHeaderClick(workspace: Workspace) {
+  handleWorkspaceClick(workspace);
+}
+
+const workspaceMenuStyle = ref<CSSProperties>({});
+const activeWorkspaceMenu = computed(
+  () => workspaces.value.find((workspace) => workspace.id === workspaceMenuId.value) ?? null,
+);
+
+function syncWorkspaceMenuPosition(anchor: HTMLElement) {
+  const rect = anchor.getBoundingClientRect();
+  const menuWidth = 188;
+  workspaceMenuStyle.value = {
+    position: "fixed",
+    top: `${rect.bottom + 4}px`,
+    left: `${Math.min(window.innerWidth - menuWidth - 8, Math.max(8, rect.right - menuWidth))}px`,
+    zIndex: 80,
+  };
+}
+
+function onWorkspaceMenuToggle(id: string, event: Event) {
+  const opening = workspaceMenuId.value !== id;
+  if (opening && event.currentTarget instanceof HTMLElement) {
+    syncWorkspaceMenuPosition(event.currentTarget);
+    toggleWorkspaceMenu(id);
+    return;
+  }
+  workspaceMenuId.value = "";
+}
+
+function closeWorkspaceMenu() {
+  workspaceMenuId.value = "";
+}
+
+let workspaceMenuScrollTarget: HTMLElement | null = null;
+
+function onWorkspaceMenuScroll() {
+  closeWorkspaceMenu();
+}
+
+watch(workspaceMenuId, (id) => {
+  workspaceMenuScrollTarget?.removeEventListener("scroll", onWorkspaceMenuScroll);
+  workspaceMenuScrollTarget = null;
+  if (!id) return;
+  workspaceMenuScrollTarget = document.querySelector<HTMLElement>(".session-list");
+  workspaceMenuScrollTarget?.addEventListener("scroll", onWorkspaceMenuScroll, { passive: true });
+});
+
+function openExtensionView(view: ExtensionView) {
+  closeSettings();
+  extensionView.value = extensionView.value === view ? null : view;
+}
+
 async function handleSelectConversation(sessionId: string) {
   if (consumeSuppressedSessionClick(sessionId)) return;
   extensionView.value = null;
@@ -1078,11 +1219,24 @@ const { searchPaletteOpen, shortcutHelpOpen, openSearchPalette, handleWorkbenchH
     createQuickConversation: handleCreateQuickConversation,
   });
 
+const showConversationHeader = computed(
+  () => !settingsOpen.value && !reviewOpen.value && !extensionView.value,
+);
+
 const activeTitle = computed(() => {
   if (settingsOpen.value) return labels.value.settings;
-  if (extensionView.value === "skills") return navigationLabels.value.skills;
-  if (extensionView.value === "mcp") return navigationLabels.value.mcp;
+  if (extensionView.value === "plugins") return navigationLabels.value.plugins;
   if (extensionView.value === "phone") return navigationLabels.value.connectPhone;
+  if (isSubagentSessionId(activeSessionId.value)) {
+    const badge = tr(settingStore.language, "subagent.badge");
+    const preview =
+      subagentSessionStore.records[activeSessionId.value]?.preview ||
+      sessionsWithLiveTokens.value.find((session) => session.sessionId === activeSessionId.value)
+        ?.preview ||
+      "";
+    const title = formatSessionPreview(preview) || labels.value.untitled;
+    return title.startsWith(badge) ? title : `${badge} ${title}`;
+  }
   if (!hasConversationMessages.value) return labels.value.untitled;
   const preview =
     sessions.value.find((session) => session.sessionId === activeSessionId.value)?.preview || "";
@@ -1115,6 +1269,7 @@ useWorkbenchLifecycle({
   removePendingInteraction,
   sessionDisplayName,
   updateReviewWidth,
+  updateNavigationWidth,
   handleWorkbenchHotkey,
   moveWorkspacePointerDrag,
   finishWorkspacePointerDrag,
@@ -1131,6 +1286,7 @@ async function refreshRemoteGatewayRunning() {
 }
 
 onMounted(async () => {
+  window.addEventListener("resize", closeWorkspaceMenu);
   await refreshRemoteGatewayRunning();
   try {
     remoteGatewayUnlisten = await listen<GatewayStatus>("remote-gateway-status", (event) => {
@@ -1142,6 +1298,9 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener("resize", closeWorkspaceMenu);
+  workspaceMenuScrollTarget?.removeEventListener("scroll", onWorkspaceMenuScroll);
+  workspaceMenuScrollTarget = null;
   remoteGatewayUnlisten?.();
   remoteGatewayUnlisten = null;
   composerResizeObserver?.disconnect();
@@ -1178,8 +1337,8 @@ watch(settingsOpen, (open) => {
 <style scoped>
 .workbench {
   --workbench-chrome-bg: color-mix(in srgb, var(--peek-sidebar) 92%, var(--peek-bg));
-  --nav-col: 250px;
-  --titlebar-h: 42px;
+  --nav-col: 258px;
+  --titlebar-h: 32px;
   /*
    * Scale via transform (not CSS zoom): WebView2/Chromium zoom on a subtree
    * shrinks layout without reliably expanding paint into the leftover space,
@@ -1211,30 +1370,6 @@ watch(settingsOpen, (open) => {
   opacity: 0;
 }
 
-.debug-tutorial-button {
-  position: absolute;
-  z-index: 40;
-  left: 12px;
-  bottom: 12px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 12px;
-  border: 1px solid var(--peek-border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--peek-surface) 92%, transparent);
-  color: var(--peek-muted);
-  box-shadow: 0 6px 18px var(--peek-shadow);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 550;
-}
-.debug-tutorial-button:hover {
-  color: var(--peek-text);
-  background: var(--peek-surface);
-}
-
 .titlebar {
   flex: none;
   height: var(--titlebar-h);
@@ -1243,6 +1378,13 @@ watch(settingsOpen, (open) => {
   align-items: center;
   background: var(--workbench-chrome-bg);
   user-select: none;
+}
+.titlebar.titlebar-compact {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.titlebar-drag {
+  min-width: 0;
+  align-self: stretch;
 }
 
 .glass-chrome {
@@ -1257,6 +1399,9 @@ watch(settingsOpen, (open) => {
 .workbench.is-glass .navigation-pane {
   background: transparent;
   box-shadow: none;
+}
+.workbench.is-glass .navigation-shell {
+  background: transparent;
 }
 
 .workbench.is-glass .review-shell,
@@ -1301,7 +1446,6 @@ watch(settingsOpen, (open) => {
 button {
   font: inherit;
 }
-.new-chat-button,
 .nav-shortcut-button,
 .session-row,
 .review-tabs button {
@@ -1335,6 +1479,7 @@ button {
   background: var(--peek-hover-bg);
 }
 .nav-toggle {
+  flex: none;
   width: var(--peek-control-icon);
   height: var(--peek-control-icon);
 }
@@ -1382,6 +1527,10 @@ button {
   background: transparent;
   color: var(--peek-muted);
   cursor: pointer;
+  transition:
+    background-color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    transform var(--motion-instant, 80ms) var(--motion-ease-out, ease);
 }
 .icon-button {
   position: relative;
@@ -1393,8 +1542,8 @@ button {
   height: var(--peek-control-icon);
 }
 .window-button {
-  width: 42px;
-  height: 42px;
+  width: var(--titlebar-h);
+  height: var(--titlebar-h);
   border-radius: 0;
 }
 .windows-caption-icon {
@@ -1408,6 +1557,11 @@ button {
 .window-button:hover {
   color: var(--peek-text);
   background: var(--peek-hover-bg);
+}
+.icon-button:active:not(:disabled),
+.small-icon-button:active:not(:disabled) {
+  background: var(--peek-press-bg);
+  transform: scale(0.96);
 }
 .icon-button.active {
   color: var(--peek-accent);
@@ -1468,7 +1622,7 @@ button {
   overflow: hidden;
   background: var(--workbench-chrome-bg);
 }
-.workspace-grid > .navigation-pane {
+.workspace-grid > .navigation-shell {
   grid-column: 1;
   grid-row: 1;
 }
@@ -1494,61 +1648,94 @@ button {
   background: var(--workbench-chrome-bg);
 }
 
-.navigation-pane {
+.navigation-shell {
   min-width: 0;
-  width: 250px;
+  min-height: 0;
+  width: var(--nav-shell-width, 265px);
+  max-width: 100%;
   display: flex;
-  flex-direction: column;
-  padding: 6px 8px 8px;
-  background: var(--workbench-chrome-bg);
   overflow: hidden;
   transition:
     width 220ms cubic-bezier(0.2, 0.72, 0.25, 1),
-    padding-left 220ms cubic-bezier(0.2, 0.72, 0.25, 1),
-    padding-right 220ms cubic-bezier(0.2, 0.72, 0.25, 1),
     opacity 160ms ease;
 }
-.workspace-grid.navigation-closed .navigation-pane {
-  width: 0;
-  padding-left: 0;
-  padding-right: 0;
+.workbench.navigation-resizing .navigation-shell {
+  transition: opacity 160ms ease;
+}
+.workspace-grid.navigation-closed .navigation-shell {
+  width: 0 !important;
   opacity: 0;
   pointer-events: none;
+}
+
+.navigation-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: var(--peek-space-2, 8px) var(--peek-space-2, 8px) var(--peek-space-3, 12px);
+  background: var(--peek-sidebar);
+  overflow: hidden;
+}
+.navigation-resize-handle {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  width: 7px;
+  min-width: 7px;
+  cursor: col-resize;
+  outline: none;
+  touch-action: none;
+}
+.navigation-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 18px);
+  right: 2px;
+  width: 3px;
+  height: 36px;
+  border-radius: 2px;
+  background: transparent;
+  transition:
+    background 100ms ease,
+    transform 100ms ease;
+}
+.navigation-resize-handle:hover::after,
+.navigation-resize-handle:focus-visible::after,
+.navigation-resize-handle.active::after {
+  background: color-mix(in srgb, var(--peek-accent) 68%, var(--peek-border));
+  transform: scaleY(1.15);
+}
+.workspace-grid.navigation-closed .navigation-pane {
+  padding-left: 0;
+  padding-right: 0;
 }
 .navigation-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 56px;
-  margin: 0 0 4px;
-  padding: 4px 4px 6px 8px;
+  gap: var(--peek-space-2, 8px);
+  min-height: 36px;
+  margin: 0 2px var(--peek-space-2, 8px);
+  padding: 2px 4px 2px 8px;
   color: var(--peek-text);
-}
-.navigation-brand-logo {
-  flex: none;
-  width: 52px;
-  height: 52px;
-  object-fit: contain;
-  border-radius: 10px;
-}
-.workbench[data-theme="dark"] .navigation-brand-logo {
-  filter: invert(1);
 }
 .navigation-brand-text {
   min-width: 0;
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 .navigation-brand strong {
   min-width: 0;
   overflow: hidden;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--peek-font-lg, 15px);
+  font-weight: 650;
   letter-spacing: -0.02em;
-  line-height: 1.1;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1577,27 +1764,38 @@ button {
   line-height: 1;
   text-transform: lowercase;
 }
-.new-chat-button,
 .nav-shortcut-button {
   height: var(--peek-control-row);
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 0 9px;
-  border-radius: var(--peek-radius-sm);
+  padding: 0 10px;
+  border-radius: var(--peek-radius-md);
   background: transparent;
   font-size: var(--peek-font-sm);
   font-weight: 550;
+  transition:
+    background-color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    border-color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    box-shadow var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    transform var(--motion-instant, 80ms) var(--motion-ease-out, ease);
 }
-.new-chat-button:hover,
 .nav-shortcut-button:hover {
-  background: color-mix(in srgb, var(--peek-text) 10%, transparent);
+  background: var(--peek-row-hover);
 }
-.navigation-shortcuts {
+.nav-shortcut-button:active {
+  background: var(--peek-press-bg);
+}
+.navigation-menu-items {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin: 2px 0 6px;
+  gap: 2px;
+  margin: 0 2px var(--peek-space-3, 12px);
+}
+.navigation-menu-items .nav-shortcut-button {
+  width: calc(100% - 4px);
+  margin: 0 2px;
 }
 .nav-shortcut-button {
   width: 100%;
@@ -1609,6 +1807,8 @@ button {
 .nav-shortcut-button.active {
   background: var(--peek-row-active);
   color: var(--peek-text);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--peek-accent) 10%, transparent);
 }
 .nav-shortcut-button > svg {
   flex: none;
@@ -1641,7 +1841,12 @@ button {
 }
 .session-list {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  margin-top: 2px;
+  padding-top: var(--peek-space-2, 8px);
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 48%, transparent);
+  overflow-x: clip;
   overflow-y: auto;
   user-select: none;
   -webkit-user-select: none;
@@ -1653,38 +1858,48 @@ button {
   -webkit-user-select: none !important;
 }
 .navigation-section {
-  margin: 2px 0 8px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0 0 var(--peek-space-2, 8px);
 }
 .navigation-section-header {
-  height: var(--peek-control-row);
+  height: calc(var(--peek-control-row) - 2px);
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-radius: var(--peek-radius-sm);
+  padding: 0 2px;
 }
 .navigation-section-toggle {
   min-width: 0;
-  height: var(--peek-control-row);
+  height: calc(var(--peek-control-row) - 2px);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex: 1;
-  padding: 0 5px;
+  padding: 0 6px;
   border: 0;
   border-radius: var(--peek-radius-sm);
   background: transparent;
-  color: var(--peek-text);
+  color: var(--peek-muted);
   cursor: pointer;
-  font-size: var(--peek-font-xs);
-  font-weight: 650;
+  font-size: var(--peek-font-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
   text-align: left;
+  transition:
+    background-color var(--motion-fast, 110ms) ease,
+    color var(--motion-fast, 110ms) ease;
 }
 .navigation-section-toggle:hover {
-  background: color-mix(in srgb, var(--peek-text) 5%, transparent);
+  background: var(--peek-row-hover);
+  color: var(--peek-text);
 }
 .navigation-section-toggle > svg:first-child {
   flex: none;
   color: var(--peek-faint);
+  opacity: 0.9;
   transition: transform 140ms ease;
 }
 .navigation-section-toggle > svg:first-child.expanded {
@@ -1697,9 +1912,14 @@ button {
 }
 .navigation-section-toggle small {
   margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--peek-text) 5%, transparent);
   color: var(--peek-faint);
-  font-size: 10px;
-  font-weight: 400;
+  font-size: var(--peek-font-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
 }
 .section-action,
 .workspace-actions button {
@@ -1726,11 +1946,20 @@ button {
   background: color-mix(in srgb, var(--peek-accent) 12%, transparent);
 }
 .navigation-section-body {
-  padding-top: 2px;
+  padding-top: 0;
+}
+
+.navigation-section-body :deep(.nav-collapse-inner) {
+  padding-top: 3px;
+}
+
+.quick-ask-section :deep(.nav-collapse-inner) {
+  padding-top: 3px;
 }
 .workspace-group {
   position: relative;
-  margin: 2px 0 5px;
+  margin: 0 0 4px;
+  padding: 0 2px;
 }
 .workspace-group.drop-before::before,
 .workspace-group.drop-after::after {
@@ -1756,17 +1985,21 @@ button {
   align-items: center;
   min-width: 0;
   height: var(--peek-control-row);
-  border-radius: var(--peek-radius-sm);
+  padding-left: 4px;
+  border-radius: var(--peek-radius-md);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
   transition:
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+    background-color var(--motion-fast, 110ms) ease,
+    box-shadow var(--motion-fast, 110ms) ease;
 }
 .workspace-row:hover {
-  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
+  background: var(--peek-row-hover);
+}
+.workspace-row[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--peek-text) 3.5%, transparent);
 }
 .workspace-row.session-drop-target,
 .workspace-row.session-drop-target:hover {
@@ -1786,17 +2019,7 @@ button {
   cursor: grabbing;
 }
 .workspace-collapse {
-  flex: none;
-  width: 25px;
-  height: var(--peek-control-row);
-  display: inline-grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--peek-radius-sm);
-  background: transparent;
-  color: var(--peek-faint);
-  cursor: inherit;
+  display: none;
 }
 .workspace-path-tip {
   min-width: 0;
@@ -1814,22 +2037,19 @@ button {
   display: flex;
   align-items: center;
   flex: 1;
-  gap: 7px;
-  padding: 0 4px 0 1px;
+  gap: 8px;
+  padding: 0 6px 0 2px;
   border: 0;
   border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-text);
   cursor: inherit;
-  font-size: var(--peek-font-xs);
+  font-size: var(--peek-font-sm);
   text-align: left;
-}
-.workspace-group-header:hover {
-  color: var(--peek-text);
 }
 .workspace-group-header > svg {
   flex: none;
-  color: var(--peek-muted);
+  color: color-mix(in srgb, var(--peek-accent) 55%, var(--peek-muted));
 }
 .workspace-group-header span {
   min-width: 0;
@@ -1844,37 +2064,55 @@ button {
 .workspace-actions {
   display: flex;
   align-items: center;
-  gap: 1px;
-  padding-right: 3px;
+  gap: 0;
+  padding-right: 2px;
+  opacity: 0;
+  transition: opacity var(--motion-fast, 110ms) ease;
+}
+.workspace-row:hover .workspace-actions,
+.workspace-row:focus-within .workspace-actions,
+.workspace-group.workspace-menu-open .workspace-actions {
+  opacity: 1;
 }
 .workspace-actions button {
-  width: 24px;
-  height: 24px;
+  width: var(--peek-control-icon, 30px);
+  height: calc(var(--peek-control-icon, 30px) - 2px);
+  border-radius: var(--peek-radius-sm);
+  transition:
+    background-color var(--motion-fast, 110ms) ease,
+    color var(--motion-fast, 110ms) ease;
+}
+.workspace-actions button:hover {
+  color: var(--peek-text);
+  background: var(--peek-hover-bg);
 }
 .workspace-menu {
-  position: absolute;
-  z-index: 20;
-  top: 27px;
-  right: 4px;
-  min-width: 176px;
-  padding: 4px;
-  border-radius: var(--peek-radius-sm);
+  min-width: 188px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 75%, transparent);
+  border-radius: var(--peek-radius-md);
   background: var(--peek-list-bg);
   box-shadow: var(--peek-elev-md);
+  opacity: 1;
+}
+
+.workspace-menu-floating {
+  position: fixed;
+  z-index: 80;
 }
 .workspace-menu button {
   width: 100%;
   height: var(--peek-control-icon);
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 7px;
+  gap: 8px;
+  padding: 0 8px;
   border: 0;
   border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-text);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--peek-font-sm);
   text-align: left;
 }
 .workspace-menu button:hover {
@@ -1886,8 +2124,8 @@ button {
 
 .conversation-pane {
   --composer-dock-gap: 10px;
-  --composer-fade-height: 148px;
-  --composer-list-clearance: 160px;
+  --composer-fade-height: 120px;
+  --composer-list-clearance: 132px;
   position: relative;
   z-index: 1;
   grid-column: 2;
@@ -1900,14 +2138,49 @@ button {
   border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
   border-right: 0;
   border-bottom: 0;
-  border-radius: var(--peek-radius-lg) 0 0 0;
+  border-radius: var(--peek-radius-lg, 12px) 0 0 0;
   background: var(--peek-list-bg);
-  box-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
+  box-shadow: var(--peek-pane-shadow);
   container-type: size;
   container-name: conversation;
 }
 .conversation-pane.extension-open {
   background: var(--peek-list-bg);
+}
+.conversation-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 8px 4px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 42%, transparent);
+  border-top-left-radius: inherit;
+  background: var(--peek-list-bg);
+}
+.conversation-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--peek-text);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.35;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-toggle {
+  flex: none;
+}
+.review-toggle.active {
+  color: var(--peek-accent);
+}
+.conversation-header-spacer {
+  flex: none;
+  width: var(--peek-control-icon);
+  height: var(--peek-control-icon);
 }
 .extension-pane {
   flex: 1;
@@ -1916,6 +2189,7 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-top-left-radius: inherit;
 }
 .extension-scroll {
   flex: 1;
@@ -1935,8 +2209,7 @@ button {
   padding: 4px;
   box-sizing: border-box;
 }
-.extension-panel > :deep(.skills-settings),
-.extension-panel > :deep(.mcp-settings),
+.extension-panel > :deep(.plugins-panel),
 .extension-panel > :deep(.connect-phone) {
   flex: 1;
   min-height: 0;
@@ -1949,12 +2222,15 @@ button {
   min-height: 0;
   margin: 0;
   overflow: hidden;
-  padding-top: 18px;
+  padding-top: 8px;
   padding-bottom: 0;
+  contain: layout style;
+  border-top-left-radius: inherit;
 }
 .workbench-messages :deep(.message-list) {
-  padding: 18px max(40px, calc((100% - 900px) / 2)) var(--composer-list-clearance);
+  padding: 18px clamp(12px, 4vw, max(40px, calc((100% - 900px) / 2))) var(--composer-list-clearance);
   gap: 20px;
+  scroll-behavior: auto;
 }
 .workbench-messages :deep(.message-preview-rail) {
   right: 8px;
@@ -1969,47 +2245,6 @@ button {
 .workbench-messages :deep(.user-turn) {
   max-width: min(76%, 680px);
 }
-.composer-fade {
-  position: absolute;
-  z-index: 7;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: var(--composer-fade-height);
-  pointer-events: none;
-}
-.composer-fade-blur,
-.composer-fade-tint {
-  position: absolute;
-  inset: 0;
-}
-.composer-fade-blur {
-  backdrop-filter: blur(22px) saturate(1.12);
-  -webkit-backdrop-filter: blur(22px) saturate(1.12);
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0, 0, 0, 0.22) 28%,
-    rgba(0, 0, 0, 0.78) 62%,
-    #000 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0, 0, 0, 0.22) 28%,
-    rgba(0, 0, 0, 0.78) 62%,
-    #000 100%
-  );
-}
-.composer-fade-tint {
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    color-mix(in srgb, var(--peek-list-bg) 22%, transparent) 28%,
-    color-mix(in srgb, var(--peek-list-bg) 82%, transparent) 62%,
-    var(--peek-list-bg) 100%
-  );
-}
 .composer-wrap {
   position: absolute;
   z-index: 8;
@@ -2017,8 +2252,9 @@ button {
   top: calc(100% - var(--composer-dock-gap));
   bottom: auto;
   width: min(calc(100% - 48px), 820px);
+  min-width: 0;
   min-height: 0;
-  max-height: min(280px, calc(100% - 16px));
+  max-height: min(320px, calc(100% - 16px));
   margin: 0;
   transform: translate(-50%, -100%);
   display: flex;
@@ -2027,10 +2263,22 @@ button {
   gap: 8px;
   overflow: visible;
   transition:
-    top 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    width 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    max-height 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    transform 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    top 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    width 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    max-height 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.workbench-messages :deep(.scroll-to-bottom) {
+  border-color: color-mix(in srgb, var(--peek-border) 55%, transparent);
+  background: color-mix(in srgb, var(--peek-list-bg) 92%, var(--peek-surface));
+  box-shadow: var(--peek-elev-sm);
+  transition:
+    background-color var(--motion-fast, 110ms) ease,
+    border-color var(--motion-fast, 110ms) ease,
+    transform var(--motion-fast, 110ms) ease;
+}
+.workbench-messages :deep(.scroll-to-bottom:hover) {
+  transform: translateY(-1px);
 }
 .composer-wrap.has-interaction-picker {
   /* Grow with ask / approval panels, but stay inside the conversation pane. */
@@ -2048,12 +2296,12 @@ button {
   max-height: 100%;
   box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
   transition:
-    min-height 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    padding 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    border-radius 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    border-color 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    background 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    box-shadow 420ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    min-height 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    padding 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-radius 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    background 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .composer-wrap :deep(.input-bar:focus-within) {
   box-shadow: var(--peek-composer-shadow-focus, var(--peek-composer-shadow, var(--peek-elev-sm)));
@@ -2188,15 +2436,8 @@ button {
   height: 104px;
   flex: none;
 }
-.empty-conversation-brand img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+.empty-conversation-brand :deep(.anya-logo) {
   opacity: 0.94;
-}
-.workbench[data-theme="dark"] .empty-conversation-brand img {
-  filter: invert(1);
 }
 .empty-conversation-prompt {
   margin: 0;
@@ -2231,7 +2472,7 @@ button {
   border-radius: var(--peek-radius-composer);
   border: 1px solid
     var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
-  background: var(--peek-list-bg);
+  background: var(--peek-composer-fill);
   box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
 }
 
@@ -2272,13 +2513,6 @@ button {
     0 1px 0 color-mix(in srgb, #fff 4%, transparent) inset;
 }
 
-.workbench[data-theme="dark"]
-  .conversation-pane.empty-conversation
-  .composer-wrap
-  :deep(.input-bar) {
-  background: color-mix(in srgb, var(--peek-text) 6%, var(--peek-surface));
-  box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
-}
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-bar:focus-within) {
   border-color: var(
     --peek-composer-border-focus,
@@ -2337,19 +2571,6 @@ button {
   }
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  .composer-fade-blur {
-    display: none;
-  }
-  .composer-fade-tint {
-    background: linear-gradient(
-      to bottom,
-      transparent 0%,
-      color-mix(in srgb, var(--peek-list-bg) 55%, transparent) 40%,
-      var(--peek-list-bg) 100%
-    );
-  }
-}
 .context-notice {
   position: absolute;
   z-index: 9;
@@ -2488,16 +2709,11 @@ button {
 }
 
 @media (max-width: 1120px) {
-  .titlebar {
+  .titlebar:not(.titlebar-compact) {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   }
-  .navigation-pane {
-    width: 210px;
-  }
-  .workspace-grid.review-open .navigation-pane {
-    width: 0;
-    padding-left: 0;
-    padding-right: 0;
+  .workspace-grid.review-open .navigation-shell {
+    width: 0 !important;
     opacity: 0;
     pointer-events: none;
   }
@@ -2506,8 +2722,8 @@ button {
 @media (max-height: 700px) {
   .conversation-pane {
     --composer-dock-gap: 8px;
-    --composer-fade-height: 120px;
-    --composer-list-clearance: 132px;
+    --composer-fade-height: 96px;
+    --composer-list-clearance: 108px;
   }
   .composer-wrap {
     width: min(calc(100% - 28px), 820px);
@@ -2517,16 +2733,11 @@ button {
 
 /* Prefer container queries so compact layout tracks zoom-compensated design size. */
 @container workbench (max-width: 900px) {
-  .titlebar {
+  .titlebar:not(.titlebar-compact) {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   }
-  .navigation-pane {
-    width: 210px;
-  }
-  .workspace-grid.review-open .navigation-pane {
-    width: 0;
-    padding-left: 0;
-    padding-right: 0;
+  .workspace-grid.review-open .navigation-shell {
+    width: 0 !important;
     opacity: 0;
     pointer-events: none;
   }
@@ -2535,12 +2746,65 @@ button {
 @container workbench (max-height: 560px) {
   .conversation-pane {
     --composer-dock-gap: 8px;
-    --composer-fade-height: 112px;
-    --composer-list-clearance: 124px;
+    --composer-fade-height: 96px;
+    --composer-list-clearance: 108px;
   }
   .composer-wrap {
-    width: min(calc(100% - 28px), 820px);
+    width: min(calc(100% - 20px), 820px);
     max-height: min(46cqh, calc(100% - 12px));
+  }
+}
+
+@container conversation (max-width: 560px) {
+  .workbench-messages :deep(.message-list) {
+    padding-left: 14px;
+    padding-right: 14px;
+    gap: 16px;
+  }
+  .workbench-messages :deep(.user-turn) {
+    max-width: 92%;
+  }
+  .composer-wrap {
+    width: calc(100% - 16px);
+    max-height: min(360px, calc(100% - 12px));
+  }
+  .composer-wrap :deep(.workbench-composer .input-footer) {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    align-items: flex-end;
+  }
+  .composer-wrap :deep(.workbench-composer .input-footer-primary) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .composer-wrap :deep(.workbench-composer .input-footer-actions) {
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+  .composer-wrap :deep(.workbench-composer .conversation-token-meta) {
+    display: none;
+  }
+  .composer-wrap :deep(.workbench-composer .model-badge) {
+    max-width: 132px;
+  }
+  .composer-wrap :deep(.workbench-composer .model-name) {
+    max-width: 76px;
+  }
+}
+
+@container conversation (max-width: 400px) {
+  .workbench-messages :deep(.message-list) {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .composer-wrap {
+    width: calc(100% - 10px);
+  }
+  .composer-wrap :deep(.workbench-composer .model-badge) {
+    max-width: 108px;
+  }
+  .composer-wrap :deep(.workbench-composer .model-name) {
+    max-width: 56px;
   }
 }
 

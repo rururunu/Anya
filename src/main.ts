@@ -11,7 +11,8 @@ import { createLogger, rootLogger } from "@/services/logger";
 import { warmInstalledResourceIcons } from "@/services/warmIcons";
 import "@/services/motion/gsapSafe";
 import { useChatStore } from "@/stores/chat";
-import { applyTheme, bootstrapThemeHint, useSettingStore } from "@/stores/setting";
+import { applyThemeAppearance, bootstrapThemeAppearance } from "@/services/theme";
+import { useSettingStore } from "@/stores/setting";
 import "./styles/index.css";
 
 installBrowserGuards();
@@ -90,14 +91,15 @@ async function bootstrap() {
   // cut to a blank frame between splash → Suspense → Main loading.
   if (windowLabel === "workbench") {
     void router.replace("/workbench");
-    applyTheme(bootstrapThemeHint(settingStore.language));
+    applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     // Load persisted settings before Main mounts. Otherwise its first render
     // sees the default onboardingCompleted=false and opens the wizard before
     // the persisted value arrives.
     await settingStore.load();
-    applyTheme({
+    applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
+      chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);
     app.mount("#app");
@@ -108,22 +110,24 @@ async function bootstrap() {
     markPeekWindow();
     hideBootSplash({ fadeMs: 0 });
     void router.replace("/overlay");
-    applyTheme(bootstrapThemeHint(settingStore.language));
+    applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     await settingStore.load();
-    applyTheme({
+    applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
+      chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);
     app.mount("#app");
     await router.isReady();
     await waitForNextPaint();
   } else {
-    applyTheme(bootstrapThemeHint(settingStore.language));
+    applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     await settingStore.load();
-    applyTheme({
+    applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
+      chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);
   }

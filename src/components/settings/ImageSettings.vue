@@ -4,30 +4,35 @@
 
     <Transition name="fade-slide" mode="out-in">
       <div v-if="currentView === 'list'" key="list" class="view-container">
-        <SettingsPageHeader :title="t('settings.image.title')" />
-        <p class="image-lede">{{ t("settings.image.description") }}</p>
+        <SettingsPageHeader
+          :title="t('settings.image.title')"
+          :description="t('settings.image.description')"
+        />
 
         <div class="settings-group">
           <h2 class="settings-group-title">{{ t("settings.image.providersTitle") }}</h2>
-          <div class="cards-list">
+          <div class="settings-nav-list">
             <button
               v-for="provider in settingStore.imageProviders"
               :key="provider.id"
               type="button"
-              class="provider-nav-card"
+              class="settings-nav-row"
               @click="startEdit(provider.id)"
             >
-              <div class="card-left">
-                <div class="icon-wrapper">
+              <div class="settings-nav-row-left">
+                <div class="settings-nav-row-icon">
                   <Globe2 class="size-5" />
                 </div>
-                <div class="card-text">
+                <div class="settings-nav-row-copy">
                   <h3>{{ provider.name }}</h3>
                   <p class="truncate max-w-[280px]">{{ providerSubtitle(provider) }}</p>
                 </div>
               </div>
-              <div class="card-right">
-                <span class="status-badge" :class="{ configured: isConfigured(provider) }">
+              <div class="settings-nav-row-right">
+                <span
+                  class="settings-status-badge"
+                  :class="{ 'is-configured': isConfigured(provider) }"
+                >
                   {{
                     isConfigured(provider)
                       ? t("settings.provider.configured")
@@ -38,18 +43,18 @@
               </div>
             </button>
 
-            <button type="button" class="provider-nav-card is-add" @click="startAdd">
-              <div class="card-left">
-                <div class="icon-wrapper is-muted">
+            <button type="button" class="settings-nav-row is-add" @click="startAdd">
+              <div class="settings-nav-row-left">
+                <div class="settings-nav-row-icon is-muted">
                   <Globe2 class="size-5" />
                 </div>
-                <div class="card-text">
+                <div class="settings-nav-row-copy">
                   <h3>{{ t("settings.image.addProvider") }}</h3>
                   <p>{{ t("settings.image.urlPlaceholder") }}</p>
                 </div>
               </div>
-              <div class="card-right">
-                <span class="status-badge add-badge">
+              <div class="settings-nav-row-right">
+                <span class="settings-status-badge is-add">
                   <Plus class="size-3" />
                   {{ t("settings.provider.add") }}
                 </span>
@@ -93,7 +98,7 @@
 
         <div class="settings-group">
           <h2 class="settings-group-title">{{ t("settings.image.templatesTitle") }}</h2>
-          <p class="image-lede is-inline">{{ t("settings.image.templatesHint") }}</p>
+          <p class="settings-page-lede is-inline">{{ t("settings.image.templatesHint") }}</p>
           <div class="templates-list">
             <p v-if="templates.length === 0" class="templates-empty">
               {{ t("settings.image.templateEmpty") }}
@@ -542,15 +547,6 @@ async function deleteEditing() {
 </script>
 
 <style scoped>
-.image-lede {
-  margin: -8px 0 18px;
-  color: var(--peek-muted);
-  font-size: 13px;
-  line-height: 1.55;
-}
-.image-lede.is-inline {
-  margin: 0 0 10px;
-}
 .templates-list {
   display: flex;
   flex-direction: column;
@@ -624,94 +620,10 @@ async function deleteEditing() {
   display: flex;
   flex-direction: column;
 }
-.cards-list {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: var(--peek-radius-lg, 12px);
-  background: var(--peek-list-bg);
-}
-.provider-nav-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 11px 12px;
-  border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-.provider-nav-card:first-child {
-  border-top: 0;
-}
-.provider-nav-card:hover {
-  background: color-mix(in srgb, var(--peek-text) 3.5%, transparent);
-}
-.card-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.icon-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  color: var(--primary);
-  flex-shrink: 0;
-}
-.icon-wrapper.is-muted {
-  background: color-mix(in srgb, var(--muted) 55%, transparent);
-  color: var(--muted-foreground);
-}
-.card-text {
-  min-width: 0;
-}
-.card-text h3 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-.card-text p {
-  margin: 1px 0 0;
-  color: var(--peek-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-}
-.card-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border: 1px solid var(--peek-border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 80%, transparent);
-  color: var(--peek-muted);
-  font-size: 10px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.status-badge.configured {
-  color: var(--peek-text);
-}
 .arrow-icon {
   transition: transform 0.2s;
 }
-.provider-nav-card:hover .arrow-icon {
+.settings-nav-row:hover .arrow-icon {
   transform: translateX(2px);
 }
 .back-btn-row {

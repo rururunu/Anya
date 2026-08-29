@@ -87,7 +87,7 @@
               {{ activeChange.language.badge }}
             </span>
             <div class="active-file-label">
-              <strong>{{ fileName(activeChange.path) }}</strong>
+              <strong :title="activeChange.path">{{ fileName(activeChange.path) }}</strong>
               <span class="diff-path" :title="activeChange.path">
                 {{ parentPath(activeChange.path) }}
               </span>
@@ -96,26 +96,26 @@
               <span class="added">+{{ activeChange.added }}</span>
               <span class="removed">-{{ activeChange.removed }}</span>
             </span>
+          </div>
+          <div class="diff-view-actions">
             <button
               type="button"
               class="icon-button"
               :aria-label="tr(settingStore.language, 'diff.openFile')"
               :title="tr(settingStore.language, 'diff.openFile')"
-              @click="openActiveFile"
+              @click.stop="openActiveFile"
             >
-              <ExternalLink :size="14" aria-hidden="true" />
+              <ExternalLink :size="13" aria-hidden="true" />
             </button>
             <button
               type="button"
               class="icon-button"
               :aria-label="tr(settingStore.language, 'diff.showInFolder')"
               :title="tr(settingStore.language, 'diff.showInFolder')"
-              @click="revealActiveFile"
+              @click.stop="revealActiveFile"
             >
-              <FolderOpen :size="14" aria-hidden="true" />
+              <FolderOpen :size="13" aria-hidden="true" />
             </button>
-          </div>
-          <div class="diff-view-actions">
             <div
               class="view-mode-switch"
               role="group"
@@ -126,7 +126,7 @@
                 :class="{ active: viewMode === 'unified' }"
                 :aria-label="tr(settingStore.language, 'diffUnified')"
                 :title="tr(settingStore.language, 'diffUnified')"
-                @click="setViewMode('unified')"
+                @click.stop="setViewMode('unified')"
               >
                 <Rows3 :size="14" aria-hidden="true" />
               </button>
@@ -135,7 +135,7 @@
                 :class="{ active: viewMode === 'split' }"
                 :aria-label="tr(settingStore.language, 'diffSplit')"
                 :title="tr(settingStore.language, 'diffSplit')"
-                @click="setViewMode('split')"
+                @click.stop="setViewMode('split')"
               >
                 <Columns2 :size="14" aria-hidden="true" />
               </button>
@@ -149,7 +149,7 @@
                 tr(settingStore.language, wrapLines ? 'disableDiffWrap' : 'enableDiffWrap')
               "
               :title="tr(settingStore.language, wrapLines ? 'disableDiffWrap' : 'enableDiffWrap')"
-              @click="toggleLineWrap"
+              @click.stop="toggleLineWrap"
             >
               <TextWrap :size="14" aria-hidden="true" />
             </button>
@@ -163,7 +163,7 @@
               :title="
                 tr(settingStore.language, copiedId === activeChange.id ? 'copied' : 'copyDiff')
               "
-              @click="copyActiveDiff"
+              @click.stop="copyActiveDiff"
             >
               <Check v-if="copiedId === activeChange.id" :size="14" aria-hidden="true" />
               <Copy v-else :size="14" aria-hidden="true" />
@@ -204,7 +204,7 @@ import {
 } from "@lucide/vue";
 import CodeDiffEditor from "@/components/chat/CodeDiffEditor.vue";
 import { copyText } from "@/services/clipboard";
-import { extractCodeChanges } from "@/services/chat/codeChanges";
+import { extractCodeChanges, resolveChangeFilePath } from "@/services/chat/codeChanges";
 import { codeLanguageForPath, type CodeLanguageInfo } from "@/services/chat/codeLanguage";
 import { fileBasename, fileParentDir } from "@/services/chat/toolDiff";
 import { openInDefaultApp, revealInExplorer } from "@/services/ipc";
@@ -349,21 +349,33 @@ function parentPath(path: string) {
   return fileParentDir(path);
 }
 async function openActiveFile() {
-  const path = activeChange.value?.path;
+  const change = activeChange.value;
+  if (!change) return;
+  const path = resolveChangeFilePath(change, props.messages);
   if (!path) return;
   try {
     await openInDefaultApp(path);
   } catch {
-    /* ignore */
+    try {
+      await revealInExplorer(path);
+    } catch {
+      /* ignore */
+    }
   }
 }
 async function revealActiveFile() {
-  const path = activeChange.value?.path;
+  const change = activeChange.value;
+  if (!change) return;
+  const path = resolveChangeFilePath(change, props.messages);
   if (!path) return;
   try {
     await revealInExplorer(path);
   } catch {
-    /* ignore */
+    try {
+      await openInDefaultApp(path);
+    } catch {
+      /* ignore */
+    }
   }
 }
 async function copyActiveDiff() {
@@ -409,15 +421,19 @@ async function copyActiveDiff() {
 .diff-view {
   background: transparent;
 }
+.diff-view :deep(.code-diff-editor) {
+  flex: 1;
+  min-height: 0;
+}
 .diff-summary {
   flex: none;
-  min-height: 34px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin: 5px 8px 2px;
-  padding: 0 9px;
+  gap: 10px;
+  margin: 4px 6px 2px;
+  padding: 0 8px;
   border-radius: 5px;
   background: color-mix(in srgb, var(--peek-text) 3%, transparent);
 }
@@ -449,8 +465,8 @@ async function copyActiveDiff() {
 }
 .change-files {
   flex: none;
-  min-height: 38px;
-  margin: 0 6px 4px;
+  min-height: 32px;
+  margin: 0 6px 2px;
   padding: 2px;
   gap: 2px;
   border-radius: 6px;
@@ -461,7 +477,7 @@ async function copyActiveDiff() {
   flex: 0 0 auto;
   min-width: 0;
   max-width: 280px;
-  height: 34px;
+  height: 28px;
   gap: 0;
   padding: 0;
   border: 0;
@@ -504,8 +520,8 @@ async function copyActiveDiff() {
 }
 .language-file-icon {
   flex: none;
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
   display: inline-grid;
   place-items: center;
   border-radius: 3px;
@@ -528,8 +544,8 @@ async function copyActiveDiff() {
   position: relative;
   z-index: 1;
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   display: inline-grid;
   place-items: center;
   margin-right: 4px;
@@ -557,14 +573,14 @@ async function copyActiveDiff() {
 }
 .diff-view-header {
   flex: none;
-  min-height: 44px;
+  min-height: 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin: 1px 8px 6px;
-  padding: 4px 7px 4px 9px;
-  border-radius: 6px;
+  gap: 8px;
+  margin: 0 6px 4px;
+  padding: 2px 5px 2px 7px;
+  border-radius: 5px;
   background: color-mix(in srgb, var(--peek-text) 2.5%, transparent);
 }
 .active-file {
@@ -572,21 +588,24 @@ async function copyActiveDiff() {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  overflow: hidden;
 }
 .active-file-icon {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   display: grid;
   place-items: center;
   object-fit: contain;
 }
 .active-file-label {
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
 }
 .active-file-label strong {
   overflow: hidden;
@@ -597,29 +616,25 @@ async function copyActiveDiff() {
   white-space: nowrap;
 }
 .diff-path {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--peek-code-muted, var(--peek-muted));
-  font: 9px/1.2 var(--font-mono);
-  opacity: 0.78;
+  display: none;
 }
 .active-file-stats {
+  flex: none;
   margin-left: 4px;
 }
 .diff-view-actions {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
+  flex-shrink: 0;
 }
 .view-mode-switch {
   display: inline-flex;
-  height: 26px;
-  padding: 2px;
+  height: 22px;
+  padding: 1px;
   border: 1px solid color-mix(in srgb, var(--peek-text) 9%, var(--peek-border));
-  border-radius: 5px;
+  border-radius: 4px;
   background: color-mix(in srgb, var(--peek-text) 3%, transparent);
 }
 .view-mode-switch button,
@@ -634,9 +649,9 @@ async function copyActiveDiff() {
   cursor: pointer;
 }
 .view-mode-switch button {
-  width: 25px;
-  height: 20px;
-  border-radius: 4px;
+  width: 22px;
+  height: 18px;
+  border-radius: 3px;
 }
 .view-mode-switch button.active,
 .icon-button.active {
@@ -645,10 +660,10 @@ async function copyActiveDiff() {
 }
 .icon-button {
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
 }
 .icon-button:hover {
   background: color-mix(in srgb, var(--peek-text) 6%, transparent);

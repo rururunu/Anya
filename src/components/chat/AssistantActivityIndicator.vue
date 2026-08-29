@@ -8,11 +8,6 @@
       aria-hidden="true"
     />
     <span class="activity-label">{{ label }}</span>
-    <span class="activity-dots" aria-hidden="true">
-      <span></span>
-      <span></span>
-      <span></span>
-    </span>
   </div>
 </template>
 
@@ -29,18 +24,17 @@ defineProps<{
 <style scoped>
 .assistant-activity {
   display: inline-flex;
-  align-items: flex-start;
+  align-items: center;
   align-self: flex-start;
-  gap: 6px;
-  min-height: 22px;
+  gap: 8px;
+  min-height: 24px;
   color: var(--peek-muted);
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: var(--peek-font-sm, 12px);
+  line-height: 24px;
 }
 
 .activity-icon {
   flex: none;
-  margin-top: 2px;
   color: var(--peek-accent);
 }
 
@@ -48,38 +42,18 @@ defineProps<{
   animation: activity-spin 1.1s linear infinite;
 }
 
-.activity-icon:not(.spin) {
-  animation: activity-draw 1.6s ease-in-out infinite;
-}
-
 .activity-label {
-  min-width: 3em;
-  word-break: break-word;
-}
-
-.activity-dots {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  gap: 3px;
-  width: 24px;
-  height: 10px;
-  margin-top: 6px;
-}
-
-.activity-dots span {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: activity-bounce 1.2s ease-in-out infinite;
-}
-
-.activity-dots span:nth-child(2) {
-  animation-delay: 140ms;
-}
-.activity-dots span:nth-child(3) {
-  animation-delay: 280ms;
+  background: linear-gradient(
+    90deg,
+    var(--peek-muted) 0%,
+    color-mix(in srgb, var(--peek-text) 72%, var(--peek-muted)) 45%,
+    var(--peek-muted) 90%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: activity-shimmer 1.8s linear infinite;
 }
 
 @keyframes activity-spin {
@@ -88,28 +62,12 @@ defineProps<{
   }
 }
 
-@keyframes activity-draw {
-  0%,
+@keyframes activity-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
   100% {
-    opacity: 0.55;
-    transform: rotate(-12deg);
-  }
-  50% {
-    opacity: 1;
-    transform: rotate(8deg);
-  }
-}
-
-@keyframes activity-bounce {
-  0%,
-  60%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-3px);
+    background-position: -100% 0;
   }
 }
 
@@ -117,13 +75,12 @@ defineProps<{
   .activity-icon.spin {
     animation-duration: 2.4s;
   }
-  .activity-icon:not(.spin) {
+  .activity-label {
     animation: none;
-    opacity: 0.85;
-  }
-  .activity-dots span {
-    animation: none;
-    opacity: 0.65;
+    color: var(--peek-muted);
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
   }
 }
 </style>

@@ -450,7 +450,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.image.templateEmpty": "No custom templates yet.",
 
   "settings.fields.colorScheme.title": "Color Scheme",
-  "settings.fields.colorScheme.description": "Choose the built-in light or dark theme.",
+  "settings.fields.colorScheme.description": "Choose light or dark.",
   "settings.fields.language.title": "Language",
   "settings.fields.language.description": "Choose the display language for the interface.",
   "settings.fields.zoom.title": "Interface Zoom",
@@ -804,7 +804,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.image.templateEmpty": "还没有自定义模板。",
 
     "settings.fields.colorScheme.title": "颜色主题",
-    "settings.fields.colorScheme.description": "选择内置亮色或暗色主题。",
+    "settings.fields.colorScheme.description": "选择浅色或深色。",
     "settings.fields.language.title": "界面语言",
     "settings.fields.language.description": "界面语言。",
     "settings.fields.zoom.title": "界面缩放",

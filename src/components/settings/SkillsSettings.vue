@@ -5,7 +5,7 @@
   >
     <AppConfirmDialog ref="confirmDialogRef" />
 
-    <SettingsPageHeader :title="copy.title">
+    <SettingsPageHeader :title="copy.title" :hide-title="embedded">
       <template v-if="tab === 'installed'" #actions>
         <Button
           variant="ghost"
@@ -62,12 +62,12 @@
       </button>
     </div>
 
-    <p v-if="error" class="form-error">{{ error }}</p>
+    <SettingsFormError :message="error" />
 
     <template v-if="tab === 'installed' || tab === 'builtin'">
       <div class="skill-list">
-        <p v-if="!loading && visibleLocal.length === 0" class="empty">{{ copy.empty }}</p>
-        <p v-else-if="loading" class="empty">{{ copy.loading }}</p>
+        <p v-if="!loading && visibleLocal.length === 0" class="settings-empty">{{ copy.empty }}</p>
+        <p v-else-if="loading" class="settings-empty">{{ copy.loading }}</p>
         <CatalogItemCard
           v-for="skill in visibleLocal"
           :key="`${skill.source}-${skill.name}`"
@@ -84,18 +84,13 @@
           :collapse-label="copy.collapse"
         >
           <template #action>
-            <button
+            <SettingsToggle
               v-if="skill.source === 'builtin'"
-              type="button"
-              class="setting-toggle"
-              :class="{ active: isBuiltinEnabled(skill.name) }"
-              :aria-pressed="isBuiltinEnabled(skill.name)"
-              :title="isBuiltinEnabled(skill.name) ? copy.enabled : copy.disabled"
+              :model-value="isBuiltinEnabled(skill.name)"
               :disabled="busy"
-              @click="toggleBuiltin(skill.name)"
-            >
-              <span class="setting-toggle-knob" />
-            </button>
+              :title="isBuiltinEnabled(skill.name) ? copy.enabled : copy.disabled"
+              @click.prevent="toggleBuiltin(skill.name)"
+            />
             <CatalogRoundAction
               v-else
               :disabled="busy"
@@ -148,17 +143,17 @@
             :submit-label="copy.search"
             @submit="runSmitherySearch"
           />
-          <p v-if="smitheryError" class="form-error">{{ smitheryError }}</p>
+          <SettingsFormError :message="smitheryError" />
 
           <div class="smithery-list-scroll peek-scrollbar">
             <div class="skill-list">
               <p
                 v-if="!smitheryLoading && smitherySkills.length === 0 && smitheryLoaded"
-                class="empty"
+                class="settings-empty"
               >
                 {{ copy.smitheryEmpty }}
               </p>
-              <p v-else-if="smitheryLoading && smitherySkills.length === 0" class="empty">
+              <p v-else-if="smitheryLoading && smitherySkills.length === 0" class="settings-empty">
                 {{ copy.loading }}
               </p>
               <CatalogItemCard
@@ -238,6 +233,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import SettingsFormError from "@/components/settings/SettingsFormError.vue";
+import SettingsToggle from "@/components/settings/SettingsToggle.vue";
 import SettingsSearchField from "@/components/settings/SettingsSearchField.vue";
 import InfiniteScrollSentinel from "@/components/settings/InfiniteScrollSentinel.vue";
 import CatalogItemCard from "@/components/settings/CatalogItemCard.vue";
@@ -270,7 +267,7 @@ import {
 import { cacheInstallIcon, clearInstallIcon, warmInstallIcons } from "@/services/iconCache";
 import { sortByResourceUsage } from "@/services/usage/resourceUsage";
 
-const props = defineProps<{ query?: string }>();
+const props = defineProps<{ query?: string; embedded?: boolean }>();
 const settingStore = useSettingStore();
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 
@@ -606,17 +603,11 @@ onMounted(() => {
   padding-bottom: 4px;
 }
 
-.form-error,
-.empty,
 .smithery-hint {
   margin: 0;
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 1.5;
-}
-
-.form-error {
-  color: #ef4444;
 }
 
 .smithery-layout {
@@ -702,43 +693,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.setting-toggle {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted-foreground) 28%, transparent);
-  cursor: pointer;
-  padding: 0;
-  flex: none;
-  margin-top: 5px;
-}
-
-.setting-toggle:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.setting-toggle.active {
-  background: color-mix(in srgb, var(--primary) 75%, transparent);
-}
-
-.setting-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: white;
-  transition: transform 140ms ease;
-}
-
-.setting-toggle.active .setting-toggle-knob {
-  transform: translateX(16px);
 }
 
 @media (max-width: 640px) {

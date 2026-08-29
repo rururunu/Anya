@@ -14,15 +14,57 @@ export const GENERATED_IMAGE_BRUSH_SIZES = {
   bold: 0.085,
 } as const;
 
+export const BRUSH_RADIUS_MIN = GENERATED_IMAGE_BRUSH_SIZES.fine;
+export const BRUSH_RADIUS_MAX = GENERATED_IMAGE_BRUSH_SIZES.bold;
+
 export type GeneratedImageBrushSizeId = keyof typeof GENERATED_IMAGE_BRUSH_SIZES;
+
+function closestBrushSizeId(radius: number): GeneratedImageBrushSizeId {
+  const entries = Object.entries(GENERATED_IMAGE_BRUSH_SIZES) as Array<
+    [GeneratedImageBrushSizeId, number]
+  >;
+  let closest: GeneratedImageBrushSizeId = "medium";
+  let minDiff = Number.POSITIVE_INFINITY;
+  for (const [id, value] of entries) {
+    const diff = Math.abs(value - radius);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = id;
+    }
+  }
+  return closest;
+}
 
 const STAGE_SELECTOR = ".generated-image-media.selecting .generated-image-select-stage";
 
-export function useGeneratedImagePaint() {
+export type UseGeneratedImagePaintOptions = {
+  stageRef?: Ref<HTMLElement | null>;
+};
+
+export function useGeneratedImagePaint(options: UseGeneratedImagePaintOptions = {}) {
+  const customStageRef = options.stageRef;
   const selectingSource = ref("");
   const strokes = ref<NormalizedStroke[]>([]);
-  const brushSizeId = ref<GeneratedImageBrushSizeId>("medium");
-  const brushRadius = computed(() => GENERATED_IMAGE_BRUSH_SIZES[brushSizeId.value]);
+  const brushRadiusValue = ref<number>(GENERATED_IMAGE_BRUSH_SIZES.medium);
+  const brushRadius = computed(() => brushRadiusValue.value);
+  const brushSizeId = computed({
+    get: () => closestBrushSizeId(brushRadiusValue.value),
+    set: (id: GeneratedImageBrushSizeId) => {
+      brushRadiusValue.value = GENERATED_IMAGE_BRUSH_SIZES[id];
+    },
+  });
+  const brushSlider = computed({
+    get: () => {
+      const range = BRUSH_RADIUS_MAX - BRUSH_RADIUS_MIN;
+      if (range <= 0) return 0;
+      return Math.round(((brushRadiusValue.value - BRUSH_RADIUS_MIN) / range) * 100);
+    },
+    set: (value: number) => {
+      const clamped = Math.min(100, Math.max(0, value));
+      const range = BRUSH_RADIUS_MAX - BRUSH_RADIUS_MIN;
+      brushRadiusValue.value = BRUSH_RADIUS_MIN + (clamped / 100) * range;
+    },
+  });
   const hasPaint = computed(() => hasUsableStrokes(strokes.value));
 
   let pointerId: number | null = null;
@@ -36,7 +78,7 @@ export function useGeneratedImagePaint() {
     activeStroke = null;
     pointerId = null;
     await nextTick();
-    const stage = document.querySelector(STAGE_SELECTOR);
+    const stage = customStageRef?.value ?? document.querySelector(STAGE_SELECTOR);
     if (stage instanceof HTMLElement) bindStage(stage);
   }
 
@@ -201,20 +243,26 @@ export function useGeneratedImagePaint() {
   }
 
   function onBrushWheel(event: WheelEvent) {
-    const order: GeneratedImageBrushSizeId[] = ["fine", "medium", "bold"];
-    const index = order.indexOf(brushSizeId.value);
-    const next = event.deltaY < 0 ? Math.min(order.length - 1, index + 1) : Math.max(0, index - 1);
-    brushSizeId.value = order[next] ?? "medium";
+    const step = 6;
+    brushSlider.value = brushSlider.value + (event.deltaY < 0 ? step : -step);
+  }
+
+  function refreshPaintCanvas() {
+    const stage = customStageRef?.value ?? document.querySelector(STAGE_SELECTOR);
+    if (stage instanceof HTMLElement) bindStage(stage);
   }
 
   return {
     selectingSource: selectingSource as Ref<string>,
     strokes: strokes as Ref<NormalizedStroke[]>,
     brushSizeId,
+    brushSlider,
+    brushRadius,
     hasPaint,
     startSelect,
     cancelSelect,
     clearStrokes,
+    refreshPaintCanvas,
     syncPaintCanvasFromStage,
     onPaintPointerDown,
     onPaintPointerMove,

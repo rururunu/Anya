@@ -3,6 +3,7 @@ import { ref, watch, onBeforeUnmount, nextTick } from "vue";
 import { RotateCcw } from "@lucide/vue";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
+import SettingsToggle from "@/components/settings/SettingsToggle.vue";
 
 function codeToPrimary(code: string, key: string): string | null {
   if (code === "Space" || key === " ") return "Space";
@@ -197,17 +198,12 @@ onBeforeUnmount(() => {
           )
         }}
       </span>
-      <button
-        type="button"
-        class="setting-toggle"
-        :class="{ active: enabled }"
-        :aria-pressed="enabled"
+      <SettingsToggle
+        :model-value="enabled"
         :aria-label="tr(settingStore.language, 'settings.hotkey.toggleListen')"
         :title="tr(settingStore.language, 'settings.hotkey.toggleListen')"
-        @click="toggleEnabled"
-      >
-        <span class="setting-toggle-knob"></span>
-      </button>
+        @click.prevent="toggleEnabled"
+      />
     </div>
 
     <button
@@ -279,37 +275,5 @@ onBeforeUnmount(() => {
 .hotkey-record-btn.recording {
   border-color: var(--peek-accent, var(--primary));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--peek-accent, var(--primary)) 35%, transparent);
-}
-
-.setting-toggle {
-  position: relative;
-  flex: none;
-  width: 36px;
-  height: 20px;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--peek-muted, var(--muted-foreground)) 28%, transparent);
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-
-.setting-toggle.active {
-  background: var(--peek-accent, var(--primary));
-}
-
-.setting-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
-  transition: transform 140ms ease;
-}
-
-.setting-toggle.active .setting-toggle-knob {
-  transform: translateX(16px);
 }
 </style>

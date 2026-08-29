@@ -11,16 +11,14 @@
       </template>
     </SettingsPageHeader>
 
-    <p v-if="error" class="form-error">{{ error }}</p>
+    <SettingsFormError :message="error" />
 
     <div class="settings-card workspace-list">
-      <p v-if="workspaces.length === 0" class="empty">
-        <FolderOpen class="size-5" />
-        <span>{{ copy.empty }}</span>
-      </p>
+      <SettingsEmptyState v-if="workspaces.length === 0" :message="copy.empty" :icon="FolderOpen" />
       <article
         v-for="workspace in workspaces"
         :key="workspace.id"
+        class="settings-list-row workspace-row"
         :class="{ current: workspace.id === current?.id }"
       >
         <button type="button" class="workspace-select" @click="select(workspace)">
@@ -84,6 +82,8 @@ import { Archive, Check, Folder, FolderOpen, Pencil, Plus, Trash2 } from "@lucid
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import SettingsFormError from "@/components/settings/SettingsFormError.vue";
+import SettingsEmptyState from "@/components/settings/SettingsEmptyState.vue";
 import EditWorkspaceDialog from "@/components/workspace/EditWorkspaceDialog.vue";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
@@ -182,41 +182,15 @@ onUnmounted(() => unlisten?.());
 </script>
 
 <style scoped>
-.form-error {
-  margin: 0 0 12px;
-  padding: 9px 10px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--destructive) 8%, transparent);
-  color: var(--destructive);
-  font-size: 11px;
-}
-.empty {
-  min-height: 220px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  color: var(--peek-muted);
-  font-size: 12px;
-}
-.empty svg {
-  color: var(--peek-faint);
-}
-.workspace-list article {
+.workspace-list .workspace-row {
   min-height: 58px;
-  display: flex;
-  align-items: center;
   gap: 5px;
   padding: 0 6px 0 2px;
-  border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
 }
-.workspace-list article:last-child {
-  border-bottom: 0;
-}
-.workspace-list article:hover {
-  background: color-mix(in srgb, var(--peek-text) 3%, transparent);
+
+.workspace-list .workspace-row:first-child {
+  border-top: 0;
 }
 .workspace-select {
   min-width: 0;

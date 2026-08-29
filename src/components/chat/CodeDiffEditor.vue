@@ -50,6 +50,7 @@ let unifiedView: EditorView | null = null;
 let requestVersion = 0;
 let editorVersion = 0;
 let syncingScroll = false;
+let resizeObserver: ResizeObserver | null = null;
 
 const requestKey = computed(() =>
   JSON.stringify({
@@ -74,7 +75,11 @@ watch(
 );
 watch(() => props.wrapLines, updateWrap);
 
-onBeforeUnmount(destroyEditors);
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  destroyEditors();
+});
 
 async function loadDocument() {
   const version = ++requestVersion;
@@ -111,9 +116,25 @@ async function rebuildEditors() {
     rightView = createEditor(rightHost.value, splitSide("right"), language);
     linkVerticalScroll(leftView, rightView);
     linkVerticalScroll(rightView, leftView);
+    observeEditorResize([leftView, rightView]);
     return;
   }
-  if (unifiedHost.value) unifiedView = createEditor(unifiedHost.value, unifiedLines(), language);
+  if (unifiedHost.value) {
+    unifiedView = createEditor(unifiedHost.value, unifiedLines(), language);
+    observeEditorResize([unifiedView]);
+  }
+}
+
+function observeEditorResize(views: EditorView[]) {
+  resizeObserver?.disconnect();
+  const hosts = views
+    .map((view) => view.dom.parentElement)
+    .filter((host): host is HTMLElement => host instanceof HTMLElement);
+  if (!hosts.length) return;
+  resizeObserver = new ResizeObserver(() => {
+    for (const view of views) view.requestMeasure();
+  });
+  for (const host of hosts) resizeObserver.observe(host);
 }
 
 function destroyEditors() {
@@ -150,6 +171,7 @@ function createEditor(parent: HTMLElement, lines: DisplayLine[], language: Exten
   });
   const view = new EditorView({ state, parent });
   view.scrollDOM.classList.add("peek-scrollbar");
+  queueMicrotask(() => view.requestMeasure());
   return view;
 }
 
@@ -315,11 +337,20 @@ const diffHighlightStyle = HighlightStyle.define([
 const diffTheme = EditorView.theme({
   "&": {
     height: "100%",
+    maxHeight: "100%",
     backgroundColor: "transparent",
     color: "var(--peek-code-fg, var(--peek-text))",
   },
+  ".cm-editor": {
+    height: "100%",
+    maxHeight: "100%",
+  },
   ".cm-scroller": {
     overflow: "auto",
+    overscrollBehavior: "contain",
+    minHeight: 0,
+    height: "100%",
+    maxHeight: "100%",
     fontFamily: "var(--font-mono)",
     fontSize: "11px",
     lineHeight: "1.65",
@@ -357,13 +388,16 @@ const diffTheme = EditorView.theme({
   flex: 1;
   min-height: 0;
   position: relative;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: transparent;
 }
 .split-editors {
   box-sizing: border-box;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 6px;
@@ -372,9 +406,15 @@ const diffTheme = EditorView.theme({
 .editor-pane {
   min-width: 0;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
   border-radius: 5px;
   background: color-mix(in srgb, var(--peek-text) 1.2%, transparent);
+}
+.editor-pane.unified-editor {
+  flex: 1;
+  min-height: 0;
+  margin: 0 6px 6px;
 }
 .code-diff-loading {
   position: absolute;

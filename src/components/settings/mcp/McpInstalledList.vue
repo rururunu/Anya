@@ -1,6 +1,6 @@
 <template>
   <div class="server-list">
-    <p v-if="servers.length === 0 && !disabledActions" class="empty">{{ copy.empty }}</p>
+    <p v-if="servers.length === 0 && !disabledActions" class="settings-empty">{{ copy.empty }}</p>
     <CatalogItemCard
       v-for="server in servers"
       :key="server.id"
@@ -33,16 +33,11 @@
           :icon="RefreshCw"
           @click="$emit('reauthenticate', server)"
         />
-        <button
-          type="button"
-          class="setting-toggle"
-          :class="{ active: server.enabled !== false }"
-          :aria-pressed="server.enabled !== false"
+        <SettingsToggle
+          :model-value="server.enabled !== false"
           :title="copy.enabled"
-          @click="$emit('toggle', server)"
-        >
-          <span class="setting-toggle-knob" />
-        </button>
+          @click.prevent="$emit('toggle', server)"
+        />
         <CatalogRoundAction
           :disabled="disabledActions"
           :label="copy.edit"
@@ -66,6 +61,7 @@
 import { Link2, Pencil, RefreshCw, Trash2 } from "@lucide/vue";
 import CatalogItemCard from "@/components/settings/CatalogItemCard.vue";
 import CatalogRoundAction from "@/components/settings/CatalogRoundAction.vue";
+import SettingsToggle from "@/components/settings/SettingsToggle.vue";
 import { isMcpRemoteServer, type McpServerRuntimeStatus } from "@/services/mcp/remote";
 import type { McpServerConfig } from "@/types/setting";
 
@@ -184,48 +180,9 @@ function showReauth(server: McpServerConfig) {
 </script>
 
 <style scoped>
-.empty {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .server-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.setting-toggle {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted-foreground) 28%, transparent);
-  cursor: pointer;
-  padding: 0;
-  flex: none;
-  margin-top: 5px;
-}
-
-.setting-toggle.active {
-  background: color-mix(in srgb, var(--primary) 75%, transparent);
-}
-
-.setting-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: white;
-  transition: transform 140ms ease;
-}
-
-.setting-toggle.active .setting-toggle-knob {
-  transform: translateX(16px);
 }
 </style>

@@ -12,7 +12,7 @@
           <input
             type="checkbox"
             :checked="isAllSelected"
-            class="appearance-none size-3.5 rounded border border-input bg-background checked:bg-primary checked:border-primary cursor-pointer pointer-events-none transition-all relative flex items-center justify-center after:content-[''] after:hidden checked:after:block after:w-1.5 after:h-1 after:border-l-2 after:border-b-2 after:border-primary-foreground after:rotate-[-45deg] after:translate-y-[-0.5px]"
+            class="settings-checkbox settings-checkbox-sm pointer-events-none"
           />
           <span>{{ historyText.selectAll }}</span>
         </Button>
@@ -42,12 +42,10 @@
       </template>
     </SettingsPageHeader>
 
-    <div v-if="pageError" class="history-error">{{ pageError }}</div>
+    <SettingsFormError :message="pageError" />
 
     <div class="history-groups">
-      <div v-if="historyGroups.length === 0" class="history-empty">
-        {{ historyText.empty }}
-      </div>
+      <p v-if="historyGroups.length === 0" class="settings-empty">{{ historyText.empty }}</p>
 
       <section v-for="group in historyGroups" :key="group.id" class="history-group">
         <div class="group-header flex items-center gap-1">
@@ -84,7 +82,7 @@
               type="checkbox"
               :checked="isHistoryGroupSelected(group)"
               :indeterminate="isHistoryGroupPartiallySelected(group)"
-              class="pointer-events-none relative flex size-3.5 cursor-pointer appearance-none items-center justify-center rounded border border-input bg-background transition-all checked:border-primary checked:bg-primary after:hidden after:h-1 after:w-1.5 after:translate-y-[-0.5px] after:rotate-[-45deg] after:border-b-2 after:border-l-2 after:border-primary-foreground after:content-[''] checked:after:block"
+              class="settings-checkbox settings-checkbox-sm pointer-events-none"
             />
             {{ historyText.selectAll }}
           </Button>
@@ -104,14 +102,14 @@
         <article
           v-for="session in isHistoryGroupExpanded(group.id) ? group.sessions : []"
           :key="session.sessionId"
-          class="session-row grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4"
+          class="settings-list-row history-session-row grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4"
         >
           <div class="flex min-w-0 items-start gap-3">
             <input
               v-model="selectedSessionIds"
               type="checkbox"
               :value="session.sessionId"
-              class="appearance-none size-4 rounded border border-input bg-background checked:bg-primary checked:border-primary cursor-pointer mt-1 transition-all relative flex items-center justify-center after:content-[''] after:hidden checked:after:block after:w-2 after:h-1 after:border-l-2 after:border-b-2 after:border-primary-foreground after:rotate-[-45deg] after:translate-y-[-1px]"
+              class="settings-checkbox settings-checkbox-md mt-1"
             />
             <div class="min-w-0 flex-1 space-y-1">
               <p class="text-[11px] text-muted-foreground">{{ formatTime(session.updatedAt) }}</p>
@@ -183,6 +181,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import SettingsFormError from "@/components/settings/SettingsFormError.vue";
 import { listWorkspaces, switchWorkspace, type Workspace } from "@/commands/workspace";
 import {
   listChatSessions,
@@ -497,22 +496,7 @@ onMounted(() => {
 .history-groups {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 10px;
-}
-.history-error {
-  margin: 12px 0 0;
-  padding: 9px 10px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--destructive) 8%, transparent);
-  color: var(--destructive);
-  font-size: 11px;
-}
-.history-empty {
-  min-height: 280px;
-  display: grid;
-  place-items: center;
-  color: var(--peek-muted);
-  font-size: 12px;
+  border-radius: var(--peek-radius-lg, 12px);
 }
 .history-group {
   border-bottom: 1px solid var(--peek-border);
@@ -545,28 +529,25 @@ onMounted(() => {
 .group-header :deep([data-slot="button"]) {
   border-radius: 5px;
 }
-.session-row {
+.history-session-row {
   min-height: 54px;
   padding: 7px 3px 7px 34px;
   border-top: 1px solid color-mix(in srgb, var(--peek-border) 72%, transparent);
 }
-.session-row:hover {
-  background: color-mix(in srgb, var(--peek-text) 3%, transparent);
-}
-.session-row h3 {
+.history-session-row h3 {
   color: var(--peek-text);
   font-size: 11px;
   font-weight: 600;
 }
-.session-row p {
+.history-session-row p {
   margin: 0;
   color: var(--peek-muted);
   font-size: 9px;
 }
-.session-row > div:last-child {
+.history-session-row > div:last-child {
   gap: 3px;
 }
-.session-row :deep([data-slot="button"]) {
+.history-session-row :deep([data-slot="button"]) {
   height: 29px;
   border-radius: 5px;
   font-size: 10px;
@@ -576,11 +557,11 @@ onMounted(() => {
     align-items: flex-start;
     flex-direction: column;
   }
-  .session-row {
+  .history-session-row {
     grid-template-columns: minmax(0, 1fr);
     padding-left: 8px;
   }
-  .session-row > div:last-child {
+  .history-session-row > div:last-child {
     justify-content: flex-start;
     padding-left: 27px;
   }

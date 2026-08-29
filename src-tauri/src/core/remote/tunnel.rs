@@ -74,10 +74,8 @@ fn spawn_tunnel_watchdog(app: AppHandle, local_port: u16) {
     });
 }
 
+/// Parses a trycloudflare hostname from a cloudflared log line.
 fn extract_trycloudflare_url(line: &str) -> Option<String> {
-    // cloudflared generally prints a URL like:
-    //   https://xxxxx.trycloudflare.com
-    // We avoid regex to keep dependencies low.
     let lower = line.to_ascii_lowercase();
     if !lower.contains(".trycloudflare.com") {
         return None;

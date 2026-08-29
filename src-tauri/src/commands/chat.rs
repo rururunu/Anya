@@ -339,6 +339,33 @@ pub fn branch_chat_session(
 }
 
 #[tauri::command]
+pub fn set_chat_session_title(
+    state: State<'_, AppState>,
+    session_id: String,
+    title: String,
+) -> Result<String, String> {
+    if session_id.trim().is_empty() {
+        return Err("Session id is required".into());
+    }
+    state.core.chat().set_session_title(&session_id, &title)
+}
+
+#[tauri::command]
+pub async fn regenerate_chat_session_title(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<String, String> {
+    if session_id.trim().is_empty() {
+        return Err("Session id is required".into());
+    }
+    state
+        .core
+        .chat()
+        .regenerate_session_title(&session_id)
+        .await
+}
+
+#[tauri::command]
 pub fn get_context_usage(
     app: AppHandle,
     state: State<'_, AppState>,

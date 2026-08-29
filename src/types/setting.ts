@@ -1,49 +1,9 @@
-export type ColorScheme = "dark" | "light";
-
-export const LIGHT_COLOR_SCHEMES = new Set<ColorScheme>(["light"]);
-
-/** localStorage key so boot splash can paint the right theme before settings IPC. */
-export const COLOR_SCHEME_CACHE_KEY = "anya.colorScheme";
-
-export function normalizeColorScheme(value: unknown): ColorScheme {
-  if (value === "paper" || value === "light" || value === "cream" || value === "frost") {
-    return "light";
-  }
-  if (
-    value === "dark" ||
-    value === "system" ||
-    value === "auto" ||
-    value === "default" ||
-    value === "nocturne" ||
-    value === "blue-black" ||
-    value === "midnight" ||
-    value === "forest" ||
-    value === "rose" ||
-    value === "ocean" ||
-    value === "graphite" ||
-    value === "ember" ||
-    value === "teal" ||
-    value === "ghost-pastel"
-  ) {
-    return "dark";
-  }
-  // Missing / unknown → light (app default)
-  return "light";
-}
-
-export function readCachedColorScheme(): ColorScheme {
-  try {
-    return normalizeColorScheme(localStorage.getItem(COLOR_SCHEME_CACHE_KEY));
-  } catch {
-    return "light";
-  }
-}
-
-export function isLightColorScheme(scheme: ColorScheme): boolean {
-  return LIGHT_COLOR_SCHEMES.has(scheme);
-}
-
 export type AppLanguage = "zh-CN" | "en-US" | "ja-JP" | "ru-RU" | "de-DE" | "fr-FR" | "ko-KR";
+
+/** Built-in color scheme id (matches html[data-theme] and Rust ColorScheme). */
+export type ThemeId = "light" | "dark";
+
+export type ColorScheme = ThemeId;
 
 export type ReasoningEffort =
   "disabled" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -382,17 +342,6 @@ export function localizedOptionLabel<T extends string>(
 ) {
   return option.label[language] ?? option.label["en-US"];
 }
-
-export const colorSchemeOptions: SelectOption<ColorScheme>[] = [
-  {
-    value: "dark",
-    label: { "zh-CN": "深色", "en-US": "Dark" },
-  },
-  {
-    value: "light",
-    label: { "zh-CN": "浅色", "en-US": "Light" },
-  },
-];
 
 export const languageOptions: SelectOption<AppLanguage>[] = [
   {

@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
-use crate::models::settings::{AppSettings, ColorScheme};
+use crate::models::settings::AppSettings;
 
 static WANT_GLASS: AtomicBool = AtomicBool::new(false);
 static DARK: AtomicBool = AtomicBool::new(false);
@@ -22,7 +22,7 @@ pub fn apply_from_settings(app: &AppHandle, settings: &AppSettings) {
         return;
     };
     let want = settings.chrome_frosted_glass;
-    let dark = settings.color_scheme == ColorScheme::Dark;
+    let dark = settings.color_scheme.is_dark();
     WANT_GLASS.store(want, Ordering::Relaxed);
     DARK.store(dark, Ordering::Relaxed);
     let covering = is_covering_display(&window);
@@ -143,9 +143,9 @@ mod windows_imp {
         // Acrylic (accent 4) adds a heavy noise texture; BlurBehind is the same
         // desktop blur without that grain.
         let tint = if dark {
-            (18_u8, 18_u8, 20_u8, 236_u8)
+            (16_u8, 16_u8, 16_u8, 235_u8)
         } else {
-            (232_u8, 232_u8, 232_u8, 232_u8)
+            (232_u8, 232_u8, 232_u8, 230_u8)
         };
         visit_hwnds(hwnd, |child| {
             set_blur(child, enabled, tint);

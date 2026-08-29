@@ -4,6 +4,7 @@ import {
   listenChatError,
   listenChatFinished,
   listenChatReasoning,
+  listenChatSessionTitleUpdated,
   listenChatStarted,
   listenChatStatus,
   listenChatTokenUsage,
@@ -23,6 +24,7 @@ import { recordToolActivityUsage } from "@/services/usage/resourceUsage";
 import { createLogger } from "@/services/logger";
 import { tr } from "@/services/i18n";
 import { useChatStore } from "@/stores/chat";
+import { useChatSessionsStore } from "@/stores/chatSessions";
 import { useSettingStore } from "@/stores/setting";
 import type {
   ChatContextNoticeEvent,
@@ -54,13 +56,17 @@ export interface ChatIpcDeps {
  */
 export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Promise<void> {
   const log = createLogger("chatIpc");
+  const sessionsStore = useChatSessionsStore();
+  const overlayDraftSessionId = () => sessionsStore.overlayDraftSessionId;
+  const sessionKnown = (sessionId: string) =>
+    Boolean(sessionsStore.sessions[sessionId] || sessionId === overlayDraftSessionId());
 
   // Coalesce high-frequency stream deltas onto animation frames.
   const streamBatch = createRafBatch<StreamBatchUpdate>((batch) => {
     chatStore.applyStreamDeltas(
       batch.map((item) => ({
         ...item,
-        fallbackSessionId: chatStore.overlayDraftSessionId,
+        fallbackSessionId: overlayDraftSessionId(),
       })),
     );
   });
@@ -77,6 +83,11 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
     // Apply for overlay drafts and workbench sessions alike — remote Companion
     // sends never touch overlayDraftSessionId, but still need sending/sidebar state.
     chatStore.applyChatStarted(payload);
+    void sessionsStore.refreshSummaries();
+  });
+
+  await listenChatSessionTitleUpdated(() => {
+    void sessionsStore.refreshSummaries();
   });
 
   await listenChatContextNotice((payload) => {
@@ -87,7 +98,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       context_window_tokens?: number;
     };
     const sId = resolveSessionId(event.sessionId, event.session_id);
-    if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
+    if (sId && sessionKnown(sId)) {
       const estimatedTokens = event.estimatedTokens ?? event.estimated_tokens;
       const contextWindowTokens = event.contextWindowTokens ?? event.context_window_tokens;
       const prev = chatStore.contextUsage[sId];
@@ -120,7 +131,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       message_id?: string;
     };
     const sId = resolveSessionId(event.sessionId, event.session_id);
-    if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
+    if (sId && sessionKnown(sId)) {
       streamBatch.push({
         sessionId: sId,
         messageId: event.messageId ?? event.message_id ?? "",
@@ -135,7 +146,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       message_id?: string;
     };
     const sId = resolveSessionId(event.sessionId, event.session_id);
-    if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
+    if (sId && sessionKnown(sId)) {
       streamBatch.push({
         sessionId: sId,
         messageId: event.messageId ?? event.message_id ?? "",
@@ -151,7 +162,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       kind?: string;
     };
     const sId = resolveSessionId(event.sessionId, event.session_id);
-    if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
+    if (sId && sessionKnown(sId)) {
       if (event.kind?.startsWith("stream_retry")) {
         streamBatch.drain();
       }
@@ -177,7 +188,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
         sId,
         event.messageId ?? event.message_id ?? "",
         event.kind ?? "",
-        chatStore.overlayDraftSessionId,
+        overlayDraftSessionId(),
       );
     }
   });
@@ -188,12 +199,12 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       message_id?: string;
     };
     const sId = resolveSessionId(event.sessionId, event.session_id);
-    if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
+    if (sId && sessionKnown(sId)) {
       chatStore.patchMessageContent(
         sId,
         event.messageId ?? event.message_id ?? "",
         event.content,
-        chatStore.overlayDraftSessionId,
+        overlayDraftSessionId(),
       );
     }
   });
@@ -205,12 +216,12 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       message_id?: string;
     };
     const sId = resolveSessionId(event.sessionId, event.session_id);
-    if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
+    if (sId && sessionKnown(sId)) {
       chatStore.finishMessage(
         sId,
         event.messageId ?? event.message_id ?? "",
         event.content,
-        chatStore.overlayDraftSessionId,
+        overlayDraftSessionId(),
         event.reasoning,
       );
     }
@@ -248,12 +259,12 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       message_id?: string;
     };
     const sId = resolveSessionId(event.sessionId, event.session_id);
-    if (sId && (chatStore.sessions[sId] || sId === chatStore.overlayDraftSessionId)) {
+    if (sId && sessionKnown(sId)) {
       chatStore.failMessage(
         sId,
         event.messageId ?? event.message_id ?? "",
         event.message,
-        chatStore.overlayDraftSessionId,
+        overlayDraftSessionId(),
       );
       void chatStore.flushStaged(sId);
     }
@@ -271,11 +282,8 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       recordToolActivityUsage(normalized.activity.toolName, normalized.activity.arguments);
     }
     const { sessionId, messageId, activity } = normalized;
-    if (
-      sessionId &&
-      (chatStore.sessions[sessionId] || sessionId === chatStore.overlayDraftSessionId)
-    ) {
-      chatStore.upsertToolActivity(sessionId, messageId, activity, chatStore.overlayDraftSessionId);
+    if (sessionId && (sessionsStore.sessions[sessionId] || sessionId === overlayDraftSessionId())) {
+      chatStore.upsertToolActivity(sessionId, messageId, activity, overlayDraftSessionId());
     }
   };
 
@@ -283,20 +291,20 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
   await listenToolFinished(handleToolActivity);
 
   await listenFileOffer((payload) => {
-    chatStore.applyFileOffer(payload, chatStore.overlayDraftSessionId);
+    chatStore.applyFileOffer(payload, overlayDraftSessionId());
   });
   await listenUrlOffer((payload) => {
-    chatStore.applyUrlOffer(payload, chatStore.overlayDraftSessionId);
+    chatStore.applyUrlOffer(payload, overlayDraftSessionId());
   });
 
   await listenTaskListUpdated((payload) => {
-    const sessionId = resolveSessionId(payload.sessionId, chatStore.overlayDraftSessionId);
+    const sessionId = resolveSessionId(payload.sessionId, overlayDraftSessionId());
     if (!sessionId) return;
     chatStore.setSessionTasks(sessionId, payload.tasks ?? []);
   });
 
   await listenPlanModeChanged((payload) => {
-    const sessionId = resolveSessionId(payload.sessionId, chatStore.overlayDraftSessionId);
+    const sessionId = resolveSessionId(payload.sessionId, overlayDraftSessionId());
     if (!sessionId) return;
     const active = Boolean(payload.active);
     const source = payload.source === "auto" ? "auto" : "manual";

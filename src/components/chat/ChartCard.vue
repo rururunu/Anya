@@ -30,7 +30,8 @@
 
 <script setup lang="ts">
 import { Check, Copy, Download } from "@lucide/vue";
-import { useDark } from "@vueuse/core";
+import { useTheme } from "@/composables/useTheme";
+import { readThemeToken } from "@/services/theme";
 import { computed, onMounted, onUnmounted, ref, watch, type Component } from "vue";
 import { copyText } from "@/services/clipboard";
 import { exportChartPng } from "./chartExport";
@@ -87,7 +88,7 @@ const FALLBACK_PALETTE = [
 const props = defineProps<{ spec: ChartSpec }>();
 
 const chartEl = ref<HTMLDivElement | null>(null);
-const isDark = useDark();
+const { isDark } = useTheme();
 const copied = ref(false);
 const errorMessage = ref("");
 let chart: EChartsInstance | null = null;
@@ -99,12 +100,8 @@ const copyIcon = computed<Component>(() => (copied.value ? Check : Copy));
 const copyLabel = computed(() => (copied.value ? "Copied" : "Copy data"));
 const downloadLabel = "Download image";
 
-/** Reads a theme CSS variable from the document root (themes.css sets both
- *  schemes on `html[data-theme=...]`, so the resolved value tracks the app
- *  theme without a second color map). */
 function cssVar(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
+  return readThemeToken(name, fallback);
 }
 
 function readTheme(): ChartTheme {

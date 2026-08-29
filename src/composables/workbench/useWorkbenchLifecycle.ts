@@ -6,8 +6,6 @@ import type ChatInputBar from "@/components/chat/ChatInputBar.vue";
 import {
   listenAskUser,
   listenChatFinished,
-  listenChatSessionTitleUpdated,
-  listenChatStarted,
   listenInteractionResolved,
   listenPathPermission,
   listenToolApproval,
@@ -60,6 +58,7 @@ export interface UseWorkbenchLifecycleOptions {
   removePendingInteraction: (sessionId: string, requestId?: string) => boolean;
   sessionDisplayName: (sessionId: string) => string;
   updateReviewWidth: () => void;
+  updateNavigationWidth: () => void;
   handleWorkbenchHotkey: (event: KeyboardEvent) => void;
   moveWorkspacePointerDrag: (event: PointerEvent) => void;
   finishWorkspacePointerDrag: (event: PointerEvent) => void;
@@ -98,6 +97,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     removePendingInteraction,
     sessionDisplayName,
     updateReviewWidth,
+    updateNavigationWidth,
     handleWorkbenchHotkey,
     moveWorkspacePointerDrag,
     finishWorkspacePointerDrag,
@@ -109,6 +109,11 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
   const settingStore = useSettingStore();
   const unlisteners: UnlistenFn[] = [];
   let pendingWorkbenchSessionId = "";
+
+  const handleLayoutResize = () => {
+    updateNavigationWidth();
+    updateReviewWidth();
+  };
 
   watch(
     [activeSessionId, settingsOpen],
@@ -175,16 +180,6 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
             sessionDisplayName(payload.sessionId),
           );
         })();
-      }),
-    );
-    unlisteners.push(
-      await listenChatSessionTitleUpdated(() => {
-        void refreshSessions();
-      }),
-    );
-    unlisteners.push(
-      await listenChatStarted(() => {
-        void refreshSessions();
       }),
     );
     unlisteners.push(
@@ -275,19 +270,19 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
       }),
     );
 
-    globalThis.addEventListener("resize", updateReviewWidth);
+    globalThis.addEventListener("resize", handleLayoutResize);
     globalThis.addEventListener("keydown", handleWorkbenchHotkey);
     globalThis.addEventListener("pointermove", moveWorkspacePointerDrag);
     globalThis.addEventListener("pointerup", finishWorkspacePointerDrag);
     globalThis.addEventListener("pointercancel", cancelWorkspacePointerDrag);
-    updateReviewWidth();
+    handleLayoutResize();
     useUpdaterStore().startPolling();
   });
 
   onUnmounted(() => {
     useUpdaterStore().stopPolling();
     for (const unlisten of unlisteners) unlisten();
-    globalThis.removeEventListener("resize", updateReviewWidth);
+    globalThis.removeEventListener("resize", handleLayoutResize);
     globalThis.removeEventListener("keydown", handleWorkbenchHotkey);
     globalThis.removeEventListener("pointermove", moveWorkspacePointerDrag);
     globalThis.removeEventListener("pointerup", finishWorkspacePointerDrag);

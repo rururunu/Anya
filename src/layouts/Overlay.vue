@@ -71,14 +71,12 @@ let windowWidthWithSidebar = PANEL_WIDTH;
 let lastInputDesignWidth = 0;
 let lastInputDesignHeight = 0;
 
-// 获取当前窗口的 label，用于所有 IPC 调用
 const windowLabel = getCurrentWebviewWindow().label;
 
 function computePickerHeight(rowCount: number) {
   if (rowCount <= 0) {
     return 0;
   }
-  // rowCount is the total visible rows (options + optional status/meta rows).
   const visibleRows = Math.min(rowCount, PICKER_VISIBLE_ROWS);
   return SUGGESTION_PADDING + visibleRows * SUGGESTION_ROW_HEIGHT;
 }

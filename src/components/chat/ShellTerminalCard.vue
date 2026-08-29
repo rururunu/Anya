@@ -1,5 +1,9 @@
 <template>
-  <section class="shell-terminal-card" :class="[status, { collapsed: !expanded }]">
+  <section
+    class="shell-terminal-card"
+    :class="[status, { collapsed: !expanded }]"
+    :data-state="status === 'running' ? 'running' : status"
+  >
     <button
       type="button"
       class="shell-terminal-header"
@@ -12,13 +16,12 @@
         :size="12"
         aria-hidden="true"
       />
-      <span class="shell-terminal-dot" :class="status" aria-hidden="true"></span>
-      <span class="shell-terminal-prompt" aria-hidden="true">&gt;_</span>
-      <span class="shell-terminal-title">{{ title }}</span>
-      <span v-if="status === 'running'" class="shell-terminal-status">{{ runningLabel }}</span>
-      <span v-else-if="status === 'error'" class="shell-terminal-status error">
-        {{ failedLabel }}
-      </span>
+      <Terminal class="shell-terminal-leading" :size="14" :stroke-width="1.75" aria-hidden="true" />
+      <span class="shell-terminal-variant">{{ variantLabel }}</span>
+      <span v-if="summaryLine" class="shell-terminal-separator" aria-hidden="true" />
+      <span v-if="summaryLine" class="shell-terminal-summary">{{ summaryLine }}</span>
+      <span v-if="status === 'error'" class="shell-terminal-status error">{{ failedLabel }}</span>
+      <span v-else-if="exitBadge" class="shell-terminal-exit-badge">{{ exitBadge }}</span>
     </button>
     <div v-if="expanded" class="shell-terminal-screen">
       <div v-if="command" class="shell-terminal-cmdline">
@@ -41,11 +44,12 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, type CSSProperties } from "vue";
-import { ChevronRight } from "@lucide/vue";
+import { ChevronRight, Terminal } from "@lucide/vue";
 import type { ToolActivity } from "@/types/chat";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
 import { parseAnsi, type AnsiSpan } from "@/services/chat/ansi";
+import { toolVariantLabel, activitySummaryLine } from "@/services/chat/toolActivityDisplay";
 import { activityMatchesQuery } from "@/services/chat/conversationFind";
 import { useExpandForFind } from "@/composables/chat/useConversationFind";
 
@@ -55,23 +59,26 @@ const props = withDefaults(
     startCollapsed?: boolean;
   }>(),
   {
-    startCollapsed: false,
+    startCollapsed: true,
   },
 );
 
 const settingStore = useSettingStore();
-const expanded = ref(!props.startCollapsed || props.activity.status === "running");
-const runningLabel = computed(() => tr(settingStore.language, "running"));
+const expanded = ref(!props.startCollapsed);
 const failedLabel = computed(() => tr(settingStore.language, "failed"));
-const waitingLabel = computed(() => (settingStore.language === "zh-CN" ? "正在运行…" : "Running…"));
+const variantLabel = computed(() => toolVariantLabel(props.activity, settingStore.language));
+const summaryLine = computed(() => {
+  const command = String(props.activity.arguments?.command ?? "").trim();
+  if (command) return command;
+  return activitySummaryLine(props.activity);
+});
 
 const status = computed(() => props.activity.status);
 
 watch(
   () => props.activity.status,
   (next, prev) => {
-    if (next === "running") expanded.value = true;
-    else if (props.startCollapsed && prev === "running") {
+    if (props.startCollapsed && prev === "running" && next !== "running") {
       expanded.value = false;
     }
   },
@@ -84,17 +91,7 @@ useExpandForFind(
   },
 );
 
-const title = computed(() => {
-  const args = props.activity.arguments ?? {};
-  const description = typeof args.description === "string" ? args.description.trim() : "";
-  if (description) return description;
-  const raw = props.activity.title
-    .replace(/^执行命令[：:]\s*/u, "")
-    .replace(/^运行命令[：:]\s*/u, "")
-    .replace(/^Run(?:ning)?(?:\s+command)?[：:]\s*/i, "")
-    .trim();
-  return raw || props.activity.title;
-});
+const waitingLabel = computed(() => (settingStore.language === "zh-CN" ? "正在运行…" : "Running…"));
 
 const command = computed(() => String(props.activity.arguments?.command ?? "").trim());
 
@@ -159,22 +156,48 @@ function extractOutputFromDetail(detail?: string | null): string {
   border-color: color-mix(in srgb, var(--term-red) 45%, var(--term-border));
 }
 .shell-terminal-header {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 34px;
+  min-height: 24px;
   margin: 0;
-  padding: 7px 12px;
+  padding: 4px 10px;
   border: 0;
   border-bottom: 1px solid var(--term-border);
   background: var(--term-header-bg);
   color: var(--term-fg);
   font: inherit;
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 24px;
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
+}
+.shell-terminal-card[data-state="running"] .shell-terminal-header::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 300px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--term-fg) 12%, transparent) 55%,
+    transparent 100%
+  );
+  animation: shell-terminal-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes shell-terminal-sweep {
+  0% {
+    left: -300px;
+  }
+  90%,
+  100% {
+    left: 100%;
+  }
 }
 .shell-terminal-card.collapsed .shell-terminal-header {
   border-bottom: 0;
@@ -187,44 +210,39 @@ function extractOutputFromDetail(detail?: string | null): string {
 .shell-terminal-chevron.open {
   transform: rotate(90deg);
 }
-.shell-terminal-dot {
+.shell-terminal-leading {
   flex: none;
-  width: 7px;
-  height: 7px;
+  color: var(--term-muted);
+}
+.shell-terminal-variant {
+  flex: none;
+  font-weight: 550;
+  color: var(--term-fg);
+}
+.shell-terminal-separator {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 2px;
   border-radius: 50%;
-  background: var(--term-green);
+  background: var(--term-muted);
 }
-.shell-terminal-dot.running {
-  background: var(--peek-accent);
-  animation: shell-terminal-pulse 1.2s ease-in-out infinite;
-}
-.shell-terminal-dot.error {
-  background: var(--term-red);
-}
-@keyframes shell-terminal-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-.shell-terminal-prompt {
-  flex: none;
+.shell-terminal-summary {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--term-muted);
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 700;
-  color: var(--term-muted);
-  letter-spacing: -0.04em;
-}
-.shell-terminal-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 550;
+}
+.shell-terminal-exit-badge {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--term-red);
 }
 .shell-terminal-status {
   flex: none;
@@ -281,5 +299,11 @@ function extractOutputFromDetail(detail?: string | null): string {
   font-size: 11px;
   font-weight: 700;
   color: var(--term-red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-terminal-card[data-state="running"] .shell-terminal-header::after {
+    animation: none;
+  }
 }
 </style>

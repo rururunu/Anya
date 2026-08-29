@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::core::runtime::ChatMessage;
 
+use crate::core::chat::session_title::SessionTitleSource;
+
 use helpers::{
     block_on_compat, ensure_conversation_checkpoints_for_sessions, settle_orphaned_in_sessions,
 };
@@ -22,6 +24,7 @@ pub struct ConversationManager {
     loaded_sessions: Arc<Mutex<HashSet<String>>>,
     session_workspaces: Arc<Mutex<HashMap<String, String>>>,
     session_titles: Arc<Mutex<HashMap<String, String>>>,
+    session_title_sources: Arc<Mutex<HashMap<String, SessionTitleSource>>>,
     session_archived: Arc<Mutex<HashSet<String>>>,
     db_pool: sqlx::SqlitePool,
     journal: super::journal::SessionJournal,
@@ -143,7 +146,7 @@ impl ConversationManager {
                     .expect("Failed to load chat session workspaces")
             }
         });
-        let session_titles = block_on_compat({
+        let session_title_records = block_on_compat({
             let db_pool = db_pool.clone();
             async move {
                 super::db::load_session_titles(&db_pool)
@@ -151,6 +154,14 @@ impl ConversationManager {
                     .expect("Failed to load chat session titles")
             }
         });
+        let mut session_titles = HashMap::new();
+        let mut session_title_sources = HashMap::new();
+        for (session_id, record) in session_title_records {
+            session_titles.insert(session_id.clone(), record.title);
+            if let Some(source) = record.source {
+                session_title_sources.insert(session_id, source);
+            }
+        }
         let session_archived = block_on_compat({
             let db_pool = db_pool.clone();
             async move {
@@ -165,6 +176,7 @@ impl ConversationManager {
             loaded_sessions: Arc::new(Mutex::new(loaded_sessions)),
             session_workspaces: Arc::new(Mutex::new(session_workspaces)),
             session_titles: Arc::new(Mutex::new(session_titles)),
+            session_title_sources: Arc::new(Mutex::new(session_title_sources)),
             session_archived: Arc::new(Mutex::new(session_archived)),
             db_pool,
             journal,
@@ -626,6 +638,7 @@ mod branch_tests {
     use super::branch::{branch_title_stem, next_branch_title};
     use super::{create_message, ConversationManager};
     use crate::core::chat::db;
+    use crate::core::chat::session_title::SessionTitleSource;
     use crate::core::runtime::{MessageStatus, Role};
     use std::collections::HashSet;
 
@@ -640,6 +653,7 @@ mod branch_tests {
         assert_eq!(branch_title_stem("Foo"), "Foo");
         assert_eq!(branch_title_stem("Foo (1)"), "Foo");
         assert_eq!(branch_title_stem("Foo (12)"), "Foo");
+        assert_eq!(branch_title_stem("Foo（2）"), "Foo");
         assert_eq!(branch_title_stem("Report (draft)"), "Report (draft)");
         assert_eq!(branch_title_stem("  "), "");
     }
@@ -683,8 +697,8 @@ mod branch_tests {
         for message in [&user, &assistant] {
             db::save_message(&manager.db_pool, message).await.unwrap();
         }
-        manager.set_session_title(source_id, "Narrow Relativity".into());
-        db::save_session_title(&manager.db_pool, source_id, "Narrow Relativity")
+        manager.set_session_title(source_id, "Narrow Relativity".into(), SessionTitleSource::Auto);
+        db::save_session_title(&manager.db_pool, source_id, "Narrow Relativity", SessionTitleSource::Auto)
             .await
             .unwrap();
         db::bind_session_workspace(&manager.db_pool, source_id, "ws-1")

@@ -6,37 +6,40 @@
       <div v-if="currentView === 'list'" key="list" class="view-container">
         <SettingsPageHeader :title="t('settings.provider.title')" />
 
-        <div class="cards-list">
-          <button type="button" class="provider-nav-card" @click="currentView = 'deepseek'">
-            <div class="card-left">
-              <div class="icon-wrapper">
+        <div class="settings-nav-list">
+          <button type="button" class="settings-nav-row" @click="currentView = 'deepseek'">
+            <div class="settings-nav-row-left">
+              <div class="settings-nav-row-icon">
                 <DeepSeekIcon :size="18" />
               </div>
-              <div class="card-text">
+              <div class="settings-nav-row-copy">
                 <h3>{{ t("settings.provider.deepseek") }}</h3>
                 <p>DeepSeek API</p>
               </div>
             </div>
-            <div class="card-right">
-              <span class="status-badge" :class="{ configured: isDeepSeekConfigured }">
+            <div class="settings-nav-row-right">
+              <span
+                class="settings-status-badge"
+                :class="{ 'is-configured': isDeepSeekConfigured }"
+              >
                 {{ statusLabel(isDeepSeekConfigured) }}
               </span>
               <ChevronRight class="size-4 text-muted-foreground arrow-icon" />
             </div>
           </button>
 
-          <button type="button" class="provider-nav-card" @click="openGemini">
-            <div class="card-left">
-              <div class="icon-wrapper">
+          <button type="button" class="settings-nav-row" @click="openGemini">
+            <div class="settings-nav-row-left">
+              <div class="settings-nav-row-icon">
                 <GeminiIcon :size="18" />
               </div>
-              <div class="card-text">
+              <div class="settings-nav-row-copy">
                 <h3>{{ t("settings.provider.gemini") }}</h3>
                 <p>{{ geminiSubtitle }}</p>
               </div>
             </div>
-            <div class="card-right">
-              <span class="status-badge" :class="{ configured: isGeminiConfigured }">
+            <div class="settings-nav-row-right">
+              <span class="settings-status-badge" :class="{ 'is-configured': isGeminiConfigured }">
                 {{ statusLabel(isGeminiConfigured) }}
               </span>
               <ChevronRight class="size-4 text-muted-foreground arrow-icon" />
@@ -47,27 +50,29 @@
             v-for="provider in settingStore.customProviders"
             :key="provider.id"
             type="button"
-            class="provider-nav-card"
+            class="settings-nav-row"
             @click="startEditCustom(provider.id)"
           >
-            <div class="card-left">
-              <div class="icon-wrapper">
+            <div class="settings-nav-row-left">
+              <div class="settings-nav-row-icon">
                 <img
                   v-if="peekProviderFavicon(provider.id)"
                   :src="peekProviderFavicon(provider.id)!"
                   alt=""
-                  class="favicon-img"
                   @error="markProviderFaviconBroken(provider.id)"
                 />
                 <Globe2 v-else class="size-5" />
               </div>
-              <div class="card-text">
+              <div class="settings-nav-row-copy">
                 <h3>{{ provider.name }}</h3>
                 <p class="truncate max-w-[280px]">{{ customProviderSubtitle(provider) }}</p>
               </div>
             </div>
-            <div class="card-right">
-              <span class="status-badge" :class="{ configured: isCustomConfigured(provider) }">
+            <div class="settings-nav-row-right">
+              <span
+                class="settings-status-badge"
+                :class="{ 'is-configured': isCustomConfigured(provider) }"
+              >
                 {{ statusLabel(isCustomConfigured(provider)) }}
               </span>
               <ChevronRight class="size-4 text-muted-foreground arrow-icon" />
@@ -76,20 +81,20 @@
         </div>
 
         <div class="add-section">
-          <h4 class="add-section-title">{{ t("settings.provider.presets") }}</h4>
-          <div class="cards-list">
-            <button type="button" class="provider-nav-card is-add" @click="addBlankCustomProvider">
-              <div class="card-left">
-                <div class="icon-wrapper is-muted">
+          <h4 class="settings-section-label">{{ t("settings.provider.presets") }}</h4>
+          <div class="settings-nav-list">
+            <button type="button" class="settings-nav-row is-add" @click="addBlankCustomProvider">
+              <div class="settings-nav-row-left">
+                <div class="settings-nav-row-icon is-muted">
                   <Globe2 class="size-5" />
                 </div>
-                <div class="card-text">
+                <div class="settings-nav-row-copy">
                   <h3>{{ t("settings.provider.addBlank") }}</h3>
                   <p>OpenAI-compatible API</p>
                 </div>
               </div>
-              <div class="card-right">
-                <span class="status-badge add-badge">
+              <div class="settings-nav-row-right">
+                <span class="settings-status-badge is-add">
                   <Plus class="size-3" />
                   {{ t("settings.provider.add") }}
                 </span>
@@ -363,11 +368,9 @@
                   <span v-else class="model-row-icon-dot" aria-hidden="true" />
                   <code class="model-id">{{ model }}</code>
                   <div class="model-item-actions">
-                    <button
-                      type="button"
-                      class="setting-toggle model-toggle"
-                      :class="{ active: !isModelDisabled(model) }"
-                      :aria-pressed="!isModelDisabled(model)"
+                    <SettingsToggle
+                      compact
+                      :model-value="!isModelDisabled(model)"
                       :aria-label="
                         isModelDisabled(model)
                           ? t('settings.provider.enableModel')
@@ -378,10 +381,8 @@
                           ? t('settings.provider.enableModel')
                           : t('settings.provider.disableModel')
                       "
-                      @click="toggleModelDisabled(model)"
-                    >
-                      <span class="setting-toggle-knob" />
-                    </button>
+                      @update:model-value="() => toggleModelDisabled(model)"
+                    />
                     <button
                       type="button"
                       class="model-remove"
@@ -423,6 +424,7 @@ import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import SettingsToggle from "@/components/settings/SettingsToggle.vue";
 import {
   geminiOauthCancelLogin,
   geminiOauthLogin,
@@ -875,14 +877,6 @@ header.view-header p {
   padding-top: 4px;
 }
 
-.add-section-title {
-  margin: 0;
-  padding: 0 2px;
-  font-size: 11px;
-  font-weight: 650;
-  color: var(--peek-faint);
-}
-
 .models-header-row {
   display: flex;
   align-items: center;
@@ -900,137 +894,11 @@ header.view-header p {
   }
 }
 
-.cards-list {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 10px;
-  background: var(--peek-list-bg);
-}
-
-.provider-nav-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px 12px;
-  border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
-  border-radius: 0;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-}
-
-.provider-nav-card:first-child {
-  border-top: 0;
-}
-
-.provider-nav-card.is-add {
-  background: transparent;
-}
-
-.provider-nav-card:hover {
-  background: color-mix(in srgb, var(--peek-text) 3.5%, transparent);
-}
-
-.provider-nav-card.is-add:hover {
-  background: color-mix(in srgb, var(--primary) 6%, transparent);
-}
-
-.provider-nav-card:active {
-  transform: scale(0.998);
-}
-
-.card-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.icon-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  color: var(--primary);
-  flex-shrink: 0;
-}
-
-.icon-wrapper.is-muted {
-  background: color-mix(in srgb, var(--muted) 55%, transparent);
-  color: var(--muted-foreground);
-}
-
-.favicon-img {
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  object-fit: contain;
-  flex: none;
-}
-
-.card-text {
-  min-width: 0;
-}
-
-.card-text h3 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.card-text p {
-  margin: 1px 0 0;
-  font-size: 11px;
-  color: var(--muted-foreground);
-  font-family: var(--font-mono, ui-monospace, monospace);
-}
-
-.card-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  font-weight: 500;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 80%, transparent);
-  color: var(--muted-foreground);
-  border: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-.status-badge.configured {
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  color: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 20%, var(--border));
-}
-
-.status-badge.add-badge {
-  background: transparent;
-  color: var(--muted-foreground);
-}
-
 .arrow-icon {
   transition: transform 0.2s;
 }
 
-.provider-nav-card:hover .arrow-icon {
+.settings-nav-row:hover .arrow-icon {
   transform: translateX(2px);
 }
 
@@ -1228,38 +1096,6 @@ header.view-header.edit-header {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-}
-
-.setting-toggle {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted-foreground) 28%, transparent);
-  cursor: pointer;
-  padding: 0;
-  flex: none;
-  transition: background-color 0.15s;
-}
-
-.setting-toggle.active {
-  background: color-mix(in srgb, var(--primary) 75%, transparent);
-}
-
-.setting-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: white;
-  transition: transform 140ms ease;
-}
-
-.setting-toggle.active .setting-toggle-knob {
-  transform: translateX(14px);
 }
 
 .model-remove {

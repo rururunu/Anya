@@ -8,7 +8,7 @@
       @submit="$emit('search')"
     />
     <p v-if="runtimeHint" class="catalog-hint">{{ runtimeHint }}</p>
-    <p v-if="error" class="form-error">{{ error }}</p>
+    <SettingsFormError :message="error" />
 
     <div v-if="showCurated" class="catalog-section">
       <h3>{{ copy.curatedTitle }}</h3>
@@ -46,7 +46,7 @@
         <h3>{{ copy.registryTitle }}</h3>
         <span v-if="registryMeta" class="section-meta">{{ registryMeta }}</span>
       </div>
-      <p v-if="!loading && registryEntries.length === 0" class="empty">
+      <p v-if="!loading && registryEntries.length === 0" class="settings-empty">
         {{ copy.catalogEmpty }}
       </p>
       <div class="server-list">
@@ -89,6 +89,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import SettingsSearchField from "@/components/settings/SettingsSearchField.vue";
+import SettingsFormError from "@/components/settings/SettingsFormError.vue";
 import InfiniteScrollSentinel from "@/components/settings/InfiniteScrollSentinel.vue";
 import CatalogItemCard from "@/components/settings/CatalogItemCard.vue";
 import CatalogRoundAction from "@/components/settings/CatalogRoundAction.vue";
@@ -164,17 +165,9 @@ function registryPills(entry: CatalogEntry) {
   min-width: 0;
 }
 
-.catalog-hint,
-.empty {
+.catalog-hint {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.form-error {
-  margin: 0;
-  color: #ef4444;
   font-size: 12px;
   line-height: 1.5;
 }

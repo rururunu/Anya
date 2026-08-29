@@ -635,7 +635,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { useDebounceFn, useEventListener } from "@vueuse/core";
+import { useEventListener } from "@vueuse/core";
 import { storeToRefs } from "pinia";
 import { gsapPickerEnter, gsapPickerLeave } from "@/services/motion/gsapPresets";
 import {
@@ -643,8 +643,8 @@ import {
   File,
   Folder,
   X,
-  Bot,
   MessageCircle,
+  Sparkle,
   Paintbrush,
   ShieldQuestion,
   Shield,
@@ -678,7 +678,7 @@ import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { executeSlashCommand, fetchEnvironmentContext, slashCommands } from "@/commands/slash";
 import { listSkills } from "@/commands/skills";
 import { peekInstallIcon, warmInstallIcons } from "@/services/iconCache";
-import { getPlanMode, setOverlayPopupOpen, setPlanMode } from "@/services/ipc";
+import { getPlanMode, setPlanMode } from "@/services/ipc";
 import { createLogger } from "@/services/logger";
 import { tr } from "@/services/i18n";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
@@ -686,23 +686,14 @@ import {
   formatMentionPath,
   formatResourceMention,
   normalizeMentionPath,
-  parseComposerTextToSegments,
-  serializeComposerSegments as serializeSegments,
-  type ComposerSegment,
 } from "@/services/chat/composerSegments";
-import { createComposerUndoStack, type ComposerSnapshot } from "@/services/chat/composerUndo";
 import {
   activeFilePathMention,
   activeHashMention,
   filterHashMentionItems,
-  parseHashMentions,
   type HashMentionItem,
 } from "@/services/chat/hashMentions";
-import {
-  recordResourceUsage,
-  recordResourceUsages,
-  sortByResourceUsage,
-} from "@/services/usage/resourceUsage";
+import { recordResourceUsage, sortByResourceUsage } from "@/services/usage/resourceUsage";
 import {
   formatTokenCount,
   promptCacheHitPercent,
@@ -777,6 +768,13 @@ import {
 } from "@/commands/workspace";
 import { useAskUserFlow, type AskUserSession } from "@/composables/chat/useAskUserFlow";
 import { useComposerAttachments } from "@/composables/chat/useComposerAttachments";
+import { useComposerDraft } from "@/composables/chat/useComposerDraft";
+import { useComposerKeyboard } from "@/composables/chat/useComposerKeyboard";
+import { useComposerLayout } from "@/composables/chat/useComposerLayout";
+import { useComposerMentions } from "@/composables/chat/useComposerMentions";
+import { useComposerPickers } from "@/composables/chat/useComposerPickers";
+import { useComposerResize } from "@/composables/chat/useComposerResize";
+import { useComposerSubmit } from "@/composables/chat/useComposerSubmit";
 import { useContextUsage } from "@/composables/chat/useContextUsage";
 
 export type { AskUserSession };
@@ -859,112 +857,72 @@ const emit = defineEmits<{
   modelChange: [modelId: string];
 }>();
 
-const message = ref("");
-/** Leading selection chips only — mentions/skills live as plain text in `message`. */
-const composerSegments = ref<ComposerSegment[]>([]);
-const composerUndo = createComposerUndoStack();
-const composerInputMultiline = ref(false);
-/** Kept as a no-op stub so stale HMR closures never throw ReferenceError. */
-let composerShellResizeObserver: ResizeObserver | null = null;
-const hasComposerChips = computed(() =>
-  composerSegments.value.some((seg) => seg.kind === "selection"),
-);
-/** Esc closes @/# suggestion UI without deleting the typed token. */
-const mentionSuggestSuppressed = ref<{ trigger: "@" | "#"; start: number } | null>(null);
+let onAfterUndoImpl: () => void = () => {};
+let emitLayoutChangeImpl: (force?: boolean) => void = () => {};
 
-function isMentionSuggestSuppressed(trigger: "@" | "#", start: number) {
-  const suppressed = mentionSuggestSuppressed.value;
-  return Boolean(suppressed && suppressed.trigger === trigger && suppressed.start === start);
-}
+const sessionIdRef = computed(() => props.sessionId ?? "");
 
-function suppressMentionSuggestions(trigger: "@" | "#", start: number) {
-  mentionSuggestSuppressed.value = { trigger, start };
-  selectedIndex.value = 0;
-  emitLayoutChange();
-}
-
-/** Flatten selection chips + live textarea into the outbound message body. */
-function serializeComposerSegments() {
-  return serializeSegments(composerSegments.value, message.value);
-}
-
-/** Capture current composer state for programmatic-edit undo. */
-function captureComposerSnapshot(): ComposerSnapshot {
-  return {
-    message: message.value,
-    segments: composerSegments.value.map((seg) => ({ ...seg })),
-  };
-}
-
-/**
- * Restore the most recent snapshot; returns false when the stack is empty so
- * plain text edits can fall through to the textarea's native undo.
- */
-function undoComposerSnapshot(): boolean {
-  const snapshot = composerUndo.pop();
-  if (!snapshot) return false;
-  message.value = snapshot.message;
-  composerSegments.value = snapshot.segments;
-  void nextTick(() => {
-    resizeComposerInput();
-    focusInput();
-    syncComposerCaret();
-    emitLayoutChange();
-  });
-  return true;
-}
-
-function clearComposerSegments() {
-  composerSegments.value = [];
-}
-
-/** Draft persistence is per-conversation: switching chats never loses input
- * and one conversation's draft is not shared with others. */
-function persistDraft(
-  sessionId = props.sessionId,
-  draft = serializeComposerSegments(),
-  immediate = false,
-) {
-  if (!sessionId) return;
-  chatStore.setComposeDraft(sessionId, draft, immediate ? { persistImmediate: true } : undefined);
-}
-
-function loadDraft() {
-  if (!props.sessionId) {
-    clearComposerSegments();
-    message.value = "";
-    return;
-  }
-  const compose = chatStore.ensureCompose(props.sessionId);
-  const parsed = parseComposerTextToSegments(compose.draft || "");
-  message.value = serializeSegments(parsed.segments, parsed.liveMessage);
-  composerSegments.value = [];
-}
-
-const persistDraftDebounced = useDebounceFn((sessionId: string) => {
-  if (!sessionId || sessionId !== props.sessionId) return;
-  persistDraft(sessionId);
-}, 1000);
-
-watch([message, composerSegments], () => {
-  if (!props.sessionId) return;
-  persistDraftDebounced(props.sessionId);
+const {
+  message,
+  composerSegments,
+  composerUndo,
+  hasComposerChips,
+  serializeComposerSegments,
+  captureComposerSnapshot,
+  undoComposerSnapshot,
+  clearComposerSegments,
+  persistDraft,
+  loadDraft,
+} = useComposerDraft({
+  sessionId: sessionIdRef,
+  onAfterUndo: () => onAfterUndoImpl(),
 });
 
 const composerRef = ref<InstanceType<typeof ComposerEditable> | null>(null);
+
+const {
+  composerInputMultiline,
+  composerCaret,
+  syncComposerCaret,
+  onComposerInput,
+  onComposerCaretChange,
+  scheduleResizeComposerInput,
+  resizeComposerInput,
+  resizeWorkbenchInput,
+  disposeComposerResize,
+} = useComposerResize({
+  composerRef,
+  message,
+  appearance: computed(() => props.appearance),
+  emitLayoutChange: () => emitLayoutChangeImpl(),
+});
+
+let composerShellResizeObserver: ResizeObserver | null = null;
+
+const selectedIndex = ref(0);
+const workspacePickerOpen = ref(false);
+const attachPanelOpen = ref(false);
+const workspaceQuickSelectOnly = ref(false);
+let isInteractionRequestOpenImpl: () => boolean = () => false;
+
+const {
+  mentionSuggestSuppressed,
+  isMentionSuggestSuppressed,
+  suppressMentionSuggestions,
+  clearMentionSuppression,
+} = useComposerMentions({
+  resetSelectedIndex: () => {
+    selectedIndex.value = 0;
+  },
+  emitLayoutChange: () => emitLayoutChangeImpl(),
+});
+
 const chatInputShellRef = ref<HTMLElement | null>(null);
 const attachButtonRef = ref<HTMLButtonElement | null>(null);
 const chatModeButtonRef = ref<HTMLButtonElement | null>(null);
 const modelButtonRef = ref<HTMLButtonElement | null>(null);
 const thinkingTierButtonRef = ref<HTMLButtonElement | null>(null);
 const approvalButtonRef = ref<HTMLButtonElement | null>(null);
-const chipPickerPosition = ref({ left: 8, bottom: 42, width: 280 });
-const chipPickerStyle = computed(() => ({
-  "--chip-picker-left": `${chipPickerPosition.value.left}px`,
-  "--chip-picker-bottom": `${chipPickerPosition.value.bottom}px`,
-  "--chip-picker-width": `${chipPickerPosition.value.width}px`,
-}));
-const selectedIndex = ref(0);
 
 watch(selectedIndex, async () => {
   await nextTick();
@@ -986,15 +944,8 @@ watch(selectedIndex, async () => {
   }
 });
 
-const modelPickerOpen = ref(false);
-/** `null` = provider list when multiple groups exist; otherwise the active group. */
-const modelPickerProvider = ref<string | null>(null);
 const modelChipConfirm = ref(false);
 let modelChipConfirmTimer: ReturnType<typeof setTimeout> | null = null;
-const approvalPickerOpen = ref(false);
-const thinkingTierPickerOpen = ref(false);
-const thinkingPickerMode = ref<"slider" | "list">("slider");
-const chatModePickerOpen = ref(false);
 
 const settingStore = useSettingStore();
 watch(
@@ -1025,7 +976,7 @@ const {
   askUser: () => props.askUser,
   selectedIndex,
   emitAskUserComplete: (answer) => emit("askUserComplete", answer),
-  emitLayoutChange: () => emitLayoutChange(),
+  emitLayoutChange: () => emitLayoutChangeImpl(),
   syncPopupState: (open) => syncPopupState(open),
 });
 
@@ -1049,7 +1000,7 @@ const {
   attachedFilesMessagePrefix,
 } = useComposerAttachments({
   language,
-  emitLayoutChange: () => emitLayoutChange(),
+  emitLayoutChange: () => emitLayoutChangeImpl(),
   emitPreviewImage: (url) => emit("previewImage", url),
   effectiveChatMode: () => effectiveChatMode.value,
   selectChatMode: (mode) => selectChatMode(mode),
@@ -1058,9 +1009,7 @@ const {
   },
   captureComposerSnapshot,
   clearComposerSegments,
-  setMentionSuggestSuppressed: (value) => {
-    mentionSuggestSuppressed.value = value;
-  },
+  setMentionSuggestSuppressed: () => clearMentionSuppression(),
   setComposerDraftText: (draft) => {
     if (composerRef.value) {
       composerRef.value.setText(draft, draft.length);
@@ -1187,6 +1136,40 @@ function endModelFilterSession() {
   message.value = modelPickerDraft.value;
   modelPickerDraft.value = null;
 }
+
+const {
+  modelPickerOpen,
+  modelPickerProvider,
+  approvalPickerOpen,
+  thinkingTierPickerOpen,
+  thinkingPickerMode,
+  chatModePickerOpen,
+  imageGenPickerOpen,
+  syncPopupState,
+  closeModelPicker,
+  closeApprovalPicker,
+  closeChatModePicker,
+  closeThinkingTierPicker,
+  closeImageGenPicker,
+  closeApprovalMenu,
+  closeChatModeMenu,
+  closeThinkingTierMenu,
+  closeChipPickers,
+  handleDocumentPointerDown,
+  prepareChipPicker,
+} = useComposerPickers({
+  emitLayoutChange: () => emitLayoutChangeImpl(),
+  endModelFilterSession,
+  onHistoryClose: () => {
+    if (Array.isArray(props.historySessions)) {
+      emit("historyClose");
+    }
+  },
+  workspacePickerOpen,
+  workspaceQuickSelectOnly,
+  attachPanelOpen,
+  isInteractionRequestOpen: () => isInteractionRequestOpenImpl(),
+});
 
 function modelMatchesFilter(model: (typeof availableModels.value)[number], query: string) {
   const q = query.trim().toLowerCase();
@@ -1442,7 +1425,7 @@ const chatModeIcon = computed(() => {
     case "image":
       return Paintbrush;
     default:
-      return Bot;
+      return Sparkle;
   }
 });
 
@@ -1498,7 +1481,7 @@ const chatModePickerOptions = computed(() => [
   {
     id: "agent",
     label: tr(language.value, "chatModeAgent"),
-    icon: Bot,
+    icon: Sparkle,
   },
   {
     id: "plan",
@@ -1548,7 +1531,6 @@ const showThinkingTierList = computed(
 const thinkingPopupOpen = computed(
   () => showThinkingTierSlider.value || showThinkingTierList.value,
 );
-const imageGenPickerOpen = ref<ImageGenFieldId | null>(null);
 const showImageGenPicker = computed(() => imageGenPickerOpen.value !== null);
 const showImageGenSettingsPanel = computed(() => isImageGenSettingsField(imageGenPickerOpen.value));
 const showImageGenListPicker = computed(() => isImageGenListField(imageGenPickerOpen.value));
@@ -1637,11 +1619,6 @@ const thinkingTierPickerRowCount = computed(() => {
   }
   return showThinkingTierList.value ? thinkingTierPickerOptions.value.length : 0;
 });
-
-// function historySlug(sessionId: string) {
-//   const compact = sessionId.replace(/^session-/, "").slice(-8) || sessionId;
-//   return compact.length > 12 ? `${compact.slice(0, 12)}…` : compact;
-// }
 
 const showPathPermissionPicker = computed(() => Boolean(props.pathPermission));
 
@@ -1735,6 +1712,7 @@ const interactivePickerOpen = computed(
 const interactionRequestOpen = computed(
   () => showAskUserPicker.value || showPathPermissionPicker.value || showToolApprovalPicker.value,
 );
+isInteractionRequestOpenImpl = () => interactionRequestOpen.value;
 
 /** Pickers that must keep the input read-only (model picker allows typing to filter). */
 const inputLockedForTyping = computed(
@@ -1834,11 +1812,6 @@ function removeTrailingAttachment(): boolean {
   return false;
 }
 
-let layoutChangeFlushScheduled = false;
-let lastEmittedChromeHeight = 0;
-/** Signature of picker/attachment chrome — only emit layout when this changes. */
-let lastLayoutChromeSignature = "";
-
 function layoutChromeSignature() {
   return [
     activePickerRowCount(),
@@ -1848,21 +1821,6 @@ function layoutChromeSignature() {
     attachedFiles.value.length,
   ].join(":");
 }
-
-function emitLayoutChange(force = false) {
-  if (layoutChangeFlushScheduled) {
-    return;
-  }
-  layoutChangeFlushScheduled = true;
-  void nextTick(() => {
-    layoutChangeFlushScheduled = false;
-    flushLayoutChange(force);
-  });
-}
-
-/** Last measured picker list height —refined after paint so tall/desc rows fit. */
-let measuredPickerHeight = 0;
-let pickerMeasureScheduled = false;
 
 function estimateActivePickerHeight(pickerRows: number): number {
   if (pickerRows <= 0) {
@@ -1939,94 +1897,20 @@ function activePickerRowCount(): number {
   return 0;
 }
 
-function schedulePickerHeightMeasure() {
-  if (pickerMeasureScheduled) {
-    return;
-  }
-  pickerMeasureScheduled = true;
-  void nextTick(async () => {
-    pickerMeasureScheduled = false;
-    // Wait two frames so Transition/GSAP has mounted the list.
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-    );
-    updateInteractionPickerMaxHeight();
-    if (activePickerRowCount() <= 0) {
-      measuredPickerHeight = 0;
-      return;
-    }
-    const list = document.querySelector(".chat-input-shell .command-list") as HTMLElement | null;
-    if (list && interactionRequestOpen.value) {
-      list.scrollTop = 0;
-    }
-    const height = list?.offsetHeight ?? 0;
-    if (height <= 0) {
-      return;
-    }
-    if (Math.abs(height - measuredPickerHeight) < 1) {
-      return;
-    }
-    measuredPickerHeight = height;
-    flushLayoutChange();
-  });
-}
-
-/** Cap ask/approval panels so they never grow past the conversation pane
- *  (absolute overlays would otherwise clip the sticky question header). */
-function updateInteractionPickerMaxHeight() {
-  const shell = chatInputShellRef.value;
-  if (!shell) return;
-  if (!interactionRequestOpen.value) {
-    shell.style.removeProperty("--interaction-picker-max-height");
-    return;
-  }
-
-  const pane =
-    shell.closest<HTMLElement>(".conversation-pane") ||
-    shell.closest<HTMLElement>(".peek-panel") ||
-    shell.closest<HTMLElement>(".composer-dock");
-  const inputBar = shell.querySelector<HTMLElement>(".input-bar");
-  const inputHeight = inputBar?.getBoundingClientRect().height ?? 96;
-  const topReserve = 20;
-  const bottomReserve = 12;
-
-  let available = Math.floor(window.innerHeight * 0.48);
-  if (pane) {
-    const paneHeight = pane.getBoundingClientRect().height;
-    available = Math.floor(paneHeight - inputHeight - topReserve - bottomReserve);
-  }
-
-  const capped = Math.max(180, Math.min(available, Math.floor(window.innerHeight * 0.62)));
-  shell.style.setProperty("--interaction-picker-max-height", `${capped}px`);
-}
-
-function flushLayoutChange(force = false) {
-  const pickerRows = activePickerRowCount();
-  if (pickerRows <= 0) {
-    measuredPickerHeight = 0;
-  }
-
-  const pickerHeight =
-    pickerRows > 0 ? Math.max(measuredPickerHeight, estimateActivePickerHeight(pickerRows)) : 0;
-
-  const shell = chatInputShellRef.value;
-  const inputBar = shell?.querySelector<HTMLElement>(".input-bar");
-  const chromeHeight =
-    props.appearance === "overlay" && shell ? shell.offsetHeight : (inputBar?.offsetHeight ?? 0);
-
-  const signature = layoutChromeSignature();
-  const pickerStateChanged = signature !== lastLayoutChromeSignature;
-  const chromeChanged = Math.abs(chromeHeight - lastEmittedChromeHeight) > 1;
-
-  if (!force && !pickerStateChanged && !chromeChanged) {
-    if (pickerRows > 0) schedulePickerHeightMeasure();
-    return;
-  }
-
-  lastLayoutChromeSignature = signature;
-  lastEmittedChromeHeight = chromeHeight;
-
-  emit("layoutChange", {
+const {
+  chipPickerStyle,
+  positionChipPicker,
+  emitLayoutChange,
+  updateInteractionPickerMaxHeight,
+  resetLayoutTracking,
+} = useComposerLayout({
+  appearance: computed(() => props.appearance),
+  shellRef: chatInputShellRef,
+  interactionRequestOpen,
+  layoutChromeSignature,
+  activePickerRowCount,
+  estimatePickerHeight: estimateActivePickerHeight,
+  buildLayoutPayload: ({ pickerRows, pickerHeight, chromeHeight, layoutReason }) => ({
     showSuggestions: showSuggestions.value,
     suggestionCount: suggestionCount.value,
     showModelMenu: false,
@@ -2037,171 +1921,11 @@ function flushLayoutChange(force = false) {
     hasImages: attachedImages.value.length > 0,
     hasFiles: attachedFiles.value.length > 0,
     inputBarHeight: chromeHeight > 0 ? chromeHeight : undefined,
-    layoutReason: pickerStateChanged ? "picker" : chromeChanged ? "chrome" : "other",
-  });
-
-  if (pickerRows > 0) {
-    schedulePickerHeightMeasure();
-  }
-}
-
-async function syncPopupState(open: boolean) {
-  const windowLabel = getCurrentWebviewWindow().label;
-  try {
-    await Promise.race([
-      setOverlayPopupOpen(windowLabel, open),
-      new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 800);
-      }),
-    ]);
-  } catch (error) {
-    console.error("set_overlay_popup_open failed:", error);
-  }
-}
-
-function closeChipPickers() {
-  if (modelPickerOpen.value) {
-    endModelFilterSession();
-  }
-  modelPickerOpen.value = false;
-  approvalPickerOpen.value = false;
-  chatModePickerOpen.value = false;
-  thinkingTierPickerOpen.value = false;
-  imageGenPickerOpen.value = null;
-}
-
-function anyChipStillOpen() {
-  return (
-    modelPickerOpen.value ||
-    approvalPickerOpen.value ||
-    chatModePickerOpen.value ||
-    thinkingTierPickerOpen.value ||
-    Boolean(imageGenPickerOpen.value)
-  );
-}
-
-function closeModelPicker() {
-  if (!modelPickerOpen.value) {
-    return;
-  }
-  endModelFilterSession();
-  modelPickerOpen.value = false;
-  modelPickerProvider.value = null;
-  if (!anyChipStillOpen()) {
-    void syncPopupState(false);
-  }
-  emitLayoutChange();
-}
-
-function closeApprovalPicker() {
-  if (!approvalPickerOpen.value) {
-    return;
-  }
-  approvalPickerOpen.value = false;
-  if (!anyChipStillOpen()) {
-    void syncPopupState(false);
-  }
-  emitLayoutChange();
-}
-
-function closeChatModePicker() {
-  if (!chatModePickerOpen.value) {
-    return;
-  }
-  chatModePickerOpen.value = false;
-  if (!anyChipStillOpen()) {
-    void syncPopupState(false);
-  }
-  emitLayoutChange();
-}
-
-function closeThinkingTierPicker() {
-  if (!thinkingTierPickerOpen.value) {
-    return;
-  }
-  thinkingTierPickerOpen.value = false;
-  if (!anyChipStillOpen()) {
-    void syncPopupState(false);
-  }
-  emitLayoutChange();
-}
-
-function closeImageGenPicker() {
-  if (!imageGenPickerOpen.value) {
-    return;
-  }
-  imageGenPickerOpen.value = null;
-  if (!anyChipStillOpen()) {
-    void syncPopupState(false);
-  }
-  emitLayoutChange();
-}
-
-/** Compatibility aliases used by shared close sites. */
-function closeApprovalMenu(_immediate = false) {
-  closeApprovalPicker();
-}
-function closeChatModeMenu(_immediate = false) {
-  closeChatModePicker();
-}
-function closeThinkingTierMenu(_immediate = false) {
-  closeThinkingTierPicker();
-}
-
-function dismissFloatingPickers() {
-  const hadChip = chipPickerOpen.value;
-  const hadWorkspace = workspacePickerOpen.value;
-  const hadAttach = attachPanelOpen.value;
-  if (!hadChip && !hadWorkspace && !hadAttach) return;
-  closeChipPickers();
-  if (hadWorkspace) {
-    workspacePickerOpen.value = false;
-    workspaceQuickSelectOnly.value = false;
-  }
-  if (hadAttach) {
-    attachPanelOpen.value = false;
-  }
-  void syncPopupState(false);
-  emitLayoutChange();
-}
-
-function handleDocumentPointerDown(event: PointerEvent) {
-  if (event.button !== 0) return;
-  if (!chipPickerOpen.value && !workspacePickerOpen.value && !attachPanelOpen.value) return;
-  if (interactionRequestOpen.value) return;
-  const target = event.target;
-  if (!(target instanceof Element)) return;
-  if (target.closest(".command-list, .thinking-effort-panel")) return;
-  if (target.closest("[data-picker-trigger]")) return;
-  dismissFloatingPickers();
-}
-
-async function prepareChipPicker() {
-  if (showHistoryPicker.value) {
-    emit("historyClose");
-  }
-  workspacePickerOpen.value = false;
-  workspaceQuickSelectOnly.value = false;
-  attachPanelOpen.value = false;
-  closeChipPickers();
-}
-
-async function positionChipPicker(button: HTMLElement | null, preferredWidth: number) {
-  if (props.appearance !== "workbench") return;
-  await nextTick();
-  const shell = chatInputShellRef.value;
-  if (!shell || !button) return;
-  const shellRect = shell.getBoundingClientRect();
-  const buttonRect = button.getBoundingClientRect();
-  const edge = 8;
-  const width = Math.max(120, Math.min(preferredWidth, shellRect.width - edge * 2));
-  const naturalLeft = buttonRect.left - shellRect.left;
-  chipPickerPosition.value = {
-    left: Math.min(shellRect.width - width - edge, Math.max(edge, naturalLeft)),
-    bottom: shellRect.bottom - buttonRect.top + 4,
-    width,
-  };
-}
+    layoutReason,
+  }),
+  onLayoutChange: (payload) => emit("layoutChange", payload),
+});
+emitLayoutChangeImpl = emitLayoutChange;
 
 function currentModelGroupIndex() {
   const groups = modelPickerGroups.value;
@@ -2608,10 +2332,7 @@ watch(
 
 onUnmounted(() => {
   persistDraft();
-  if (composerResizeRaf) {
-    cancelAnimationFrame(composerResizeRaf);
-    composerResizeRaf = 0;
-  }
+  disposeComposerResize();
   composerShellResizeObserver?.disconnect();
   composerShellResizeObserver = null;
   unlistenWorkspaces?.();
@@ -2621,17 +2342,10 @@ onUnmounted(() => {
   void syncPopupState(false);
 });
 
-useEventListener(window, "keydown", handleGlobalKeydown);
-useEventListener(window, "focus", restorePickerFocus);
 useEventListener(window, "resize", () => {
   updateInteractionPickerMaxHeight();
 });
 useEventListener(document, "pointerdown", handleDocumentPointerDown);
-useEventListener(document, "visibilitychange", () => {
-  if (document.visibilityState === "visible") {
-    restorePickerFocus();
-  }
-});
 
 watch(
   interactionRequestOpen,
@@ -2700,50 +2414,6 @@ const workspaceFilesRoot = ref("");
 const WORKSPACE_FILES_TTL_MS = 4_000;
 let workspaceFilesFetchedAt = 0;
 let workspaceFilesRequestId = 0;
-/** Caret in the live input —`#` / `@` mentions resolve against this, not only EOF. */
-const composerCaret = ref(0);
-
-function syncComposerCaret() {
-  const next = composerRef.value?.getSelection().start ?? message.value.length;
-  if (composerCaret.value !== next) {
-    composerCaret.value = next;
-  }
-}
-
-function onComposerInput() {
-  syncComposerCaret();
-  scheduleResizeComposerInput();
-}
-
-watch(message, (value) => {
-  if (composerCaret.value > value.length) {
-    composerCaret.value = value.length;
-  }
-});
-
-let composerResizeRaf = 0;
-let composerResizePendingForce = false;
-
-/** Coalesce auto-grow measurements to one layout pass per frame while typing. */
-function scheduleResizeComposerInput(force = false) {
-  composerResizePendingForce = composerResizePendingForce || force;
-  if (composerResizeRaf) return;
-  composerResizeRaf = requestAnimationFrame(() => {
-    composerResizeRaf = 0;
-    const forceMeasure = composerResizePendingForce;
-    composerResizePendingForce = false;
-    const heightChanged = resizeComposerInput(forceMeasure);
-    if (props.appearance === "overlay" && heightChanged) {
-      void nextTick(() => emitLayoutChange());
-    }
-  });
-}
-
-function onComposerCaretChange(caret: number) {
-  if (composerCaret.value !== caret) {
-    composerCaret.value = caret;
-  }
-}
 
 const activeFileMention = computed(() => {
   if (!currentWorkspace.value || interactivePickerOpen.value) {
@@ -2901,7 +2571,7 @@ function insertPlainToken(token: string) {
   const inserted = `${needsSpaceBefore ? " " : ""}${token}${needsSpaceAfter ? " " : ""}`;
   const next = `${before}${inserted}${after}`;
   const caret = before.length + inserted.length;
-  mentionSuggestSuppressed.value = null;
+  clearMentionSuppression();
   composerRef.value?.setText(next, caret);
   void nextTick(() => {
     composerRef.value?.focus({ preventScroll: true });
@@ -2923,7 +2593,7 @@ function selectHashMention(item: HashMentionItem) {
   const inserted = `${needsSpaceBefore ? " " : ""}${token}${needsSpaceAfter ? " " : ""}`;
   const next = `${before}${inserted}${after}`;
   const caret = before.length + inserted.length;
-  mentionSuggestSuppressed.value = null;
+  clearMentionSuppression();
   composerRef.value?.setText(next, caret);
   void nextTick(() => {
     resizeComposerInput();
@@ -2985,7 +2655,7 @@ function selectWorkspaceFile(path: string) {
   const inserted = `${needsSpaceBefore ? " " : ""}${token}${needsSpaceAfter ? " " : ""}`;
   const next = `${before}${inserted}${after}`;
   const caret = before.length + inserted.length;
-  mentionSuggestSuppressed.value = null;
+  clearMentionSuppression();
   composerRef.value?.setText(next, caret);
   void nextTick(() => {
     resizeComposerInput();
@@ -3016,6 +2686,13 @@ async function focusInput() {
   composerRef.value?.focus({ preventScroll: true });
 }
 
+onAfterUndoImpl = () => {
+  resizeComposerInput();
+  void focusInput();
+  syncComposerCaret();
+  emitLayoutChange();
+};
+
 /** Click empty padding around the textarea — focus and place caret at end. */
 function onInputBarMouseDown(event: MouseEvent) {
   const target = event.target;
@@ -3033,61 +2710,6 @@ function onInputBarMouseDown(event: MouseEvent) {
     composerRef.value?.setSelection(message.value.length);
     syncComposerCaret();
   });
-}
-
-function resizeComposerInput(force = false): boolean {
-  const editor = composerRef.value;
-  if (!editor) return false;
-  const el = editor.el;
-  if (!el) return false;
-  const lineHeight = 24;
-  const maxLines = props.appearance === "overlay" ? 4 : 8;
-  const minHeight = lineHeight;
-  const maxHeight = lineHeight * maxLines;
-  const prevHeight = el.offsetHeight;
-
-  // Fast path while still single-line: scrollHeight grows even with a fixed
-  // min height, so we can skip the height:auto reflow until wrapping starts.
-  if (!force && prevHeight <= minHeight + 4) {
-    const probe = el.scrollHeight;
-    if (probe <= minHeight + 4) {
-      el.style.overflowY = "hidden";
-      composerInputMultiline.value = false;
-      return false;
-    }
-  }
-
-  // Auto-grow up to maxLines, then scroll.
-  el.style.height = "auto";
-  const contentHeight = el.scrollHeight;
-  const nextHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
-  el.style.height = `${nextHeight}px`;
-  el.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
-
-  composerInputMultiline.value = nextHeight > lineHeight + 4;
-  return Math.abs(nextHeight - prevHeight) > 1;
-}
-
-/** @deprecated use resizeComposerInput — kept as alias for call-site churn */
-function resizeWorkbenchInput() {
-  resizeComposerInput();
-}
-
-/** Keyboard navigation for pickers must work even if the input lost focus (e.g. after Alt-Tab). */
-function handleGlobalKeydown(event: KeyboardEvent) {
-  if (!interactivePickerOpen.value) {
-    return;
-  }
-  if (event.target instanceof Node && composerRef.value?.el?.contains(event.target)) {
-    return;
-  }
-  handleKeydown(event);
-}
-
-function restorePickerFocus() {
-  if (interactivePickerOpen.value) {
-    void focusInput();
-  }
 }
 
 async function executeCommand(command: string) {
@@ -3144,12 +2766,9 @@ async function executeCommand(command: string) {
 // Global workspace selection is available only before a conversation starts.
 const workspaces = ref<Workspace[]>([]);
 const currentWorkspace = ref<Workspace | null>(null);
-const workspacePickerOpen = ref(false);
-const attachPanelOpen = ref(false);
 const attachPickingFiles = ref(false);
 const attachPanelTab = ref<"skills" | "mcp" | "files">("skills");
 const attachVisibleCount = ref(0);
-const workspaceQuickSelectOnly = ref(false);
 const workspaceSaving = ref(false);
 const workspaceError = ref("");
 /** Overlay-only: user explicitly picked a workspace for this summon session. */
@@ -3190,6 +2809,49 @@ function matchKnownWorkspace(root: string) {
     null
   );
 }
+
+function resetWorkspaceFilesCache() {
+  workspaceFiles.value = [];
+  workspaceFilesRoot.value = "";
+  workspaceFilesFetchedAt = 0;
+}
+
+const { resolveSendWorkspaceOptions, reset, setMessage, deliverMessage } = useComposerSubmit({
+  message,
+  composerRef,
+  composerUndo,
+  captureComposerSnapshot,
+  clearComposerSegments,
+  serializeComposerSegments,
+  persistDraft,
+  clearAttachedFiles,
+  clearAttachedImages,
+  clearMentionSuppression,
+  attachedFilesMessagePrefix,
+  formatAttachedImagesForMessage,
+  selectedIndex,
+  overlayWorkspaceOverride,
+  currentWorkspace,
+  appearance: () => props.appearance,
+  capturedContext: () => props.capturedContext,
+  overlayContextWorkspaceRoot,
+  matchKnownWorkspace,
+  emitSubmit: (text) => emit("submit", text),
+  emitLayoutChange: () => emitLayoutChange(),
+  resetLayoutTracking,
+  resizeWorkbenchInput,
+  resizeComposerInput,
+  focusInput,
+  closeModelPicker,
+  closeApprovalMenu,
+  closeChatModeMenu,
+  closeThinkingTierMenu,
+  closeImageGenPicker,
+  workspacePickerOpen,
+  workspaceQuickSelectOnly,
+  attachPanelOpen,
+  resetWorkspaceFilesCache,
+});
 
 function syncOverlayWorkspaceFromContext() {
   if (props.appearance !== "overlay" || overlayWorkspaceOverride.value) {
@@ -3430,29 +3092,6 @@ function closeHistoryPicker() {
   emit("historyClose");
 }
 
-function resolveSendWorkspaceOptions(): { workspaceId?: string; quickAsk?: boolean } {
-  // Overlay must only bind to an explicitly selected (or IDE-matched) workspace
-  // shown in the composer. Never inherit inferred capture context —that often
-  // falls back to the workbench's current workspace and mis-files Quick Ask.
-  const active = overlayWorkspaceOverride.value ?? currentWorkspace.value;
-  if (active) {
-    return { workspaceId: active.id, quickAsk: false };
-  }
-  if (props.appearance === "overlay") {
-    const contextRoot = overlayContextWorkspaceRoot();
-    const matched = contextRoot ? matchKnownWorkspace(contextRoot) : null;
-    if (matched) {
-      return { workspaceId: matched.id, quickAsk: false };
-    }
-    return { quickAsk: true };
-  }
-  const contextRoot = props.capturedContext?.workspace?.root;
-  if (contextRoot) {
-    return { workspaceId: contextRoot, quickAsk: false };
-  }
-  return { quickAsk: true };
-}
-
 async function submit() {
   if (workspacePickerOpen.value || attachPanelOpen.value) {
     return;
@@ -3575,19 +3214,7 @@ async function submit() {
     return;
   }
 
-  const attachedFileBlocks = attachedFilesMessagePrefix();
-  const imageTags = formatAttachedImagesForMessage();
-  const submittedText = [text, attachedFileBlocks, imageTags]
-    .filter((part) => part.length > 0)
-    .join("\n\n");
-  recordResourceUsages(parseHashMentions(submittedText));
-  emit("submit", submittedText);
-  clearComposerSegments();
-  message.value = "";
-  persistDraft();
-  clearAttachedFiles();
-  clearAttachedImages();
-  emitLayoutChange();
+  deliverMessage();
 }
 
 function handlePaste(event: ClipboardEvent) {
@@ -4135,54 +3762,20 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-function reset() {
-  clearComposerSegments();
-  clearAttachedFiles();
-  clearAttachedImages();
-  mentionSuggestSuppressed.value = null;
-  selectedIndex.value = 0;
-  lastEmittedChromeHeight = 0;
-  if (composerRef.value) {
-    composerRef.value.setText("");
-  } else {
-    message.value = "";
-  }
-  closeModelPicker();
-  closeApprovalMenu();
-  closeChatModeMenu();
-  closeThinkingTierMenu();
-  closeImageGenPicker();
-  workspacePickerOpen.value = false;
-  workspaceQuickSelectOnly.value = false;
-  attachPanelOpen.value = false;
-  if (props.appearance === "overlay") {
-    overlayWorkspaceOverride.value = null;
-    currentWorkspace.value = null;
-    workspaceFiles.value = [];
-    workspaceFilesRoot.value = "";
-    workspaceFilesFetchedAt = 0;
-  }
-  emitLayoutChange();
-  void nextTick(resizeWorkbenchInput);
-}
+const { handleGlobalKeydown, restorePickerFocus } = useComposerKeyboard({
+  interactivePickerOpen,
+  composerRef,
+  handleKeydown,
+  focusInput,
+});
 
-function setMessage(text: string) {
-  composerUndo.push(captureComposerSnapshot());
-  clearComposerSegments();
-  clearAttachedFiles();
-  clearAttachedImages();
-  mentionSuggestSuppressed.value = null;
-  const parsed = parseComposerTextToSegments(text);
-  const flat = serializeSegments(parsed.segments, parsed.liveMessage);
-  if (composerRef.value) {
-    composerRef.value.setText(flat);
-  } else {
-    message.value = flat;
+useEventListener(window, "keydown", handleGlobalKeydown);
+useEventListener(window, "focus", restorePickerFocus);
+useEventListener(document, "visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    restorePickerFocus();
   }
-  emitLayoutChange();
-  void nextTick(resizeComposerInput);
-  void focusInput();
-}
+});
 
 watch(
   () => props.selectionLines,
@@ -4219,7 +3812,7 @@ watch(
       mentionSuggestSuppressed.value?.trigger === "@" &&
       (!mention || mention.start !== mentionSuggestSuppressed.value.start)
     ) {
-      mentionSuggestSuppressed.value = null;
+      clearMentionSuppression();
     }
     if (!mention) return;
     // Force a fresh scan when `@` is newly opened; reuse a short TTL while typing.
@@ -4241,7 +3834,7 @@ watch(
       mentionSuggestSuppressed.value?.trigger === "#" &&
       (!mention || mention.start !== mentionSuggestSuppressed.value.start)
     ) {
-      mentionSuggestSuppressed.value = null;
+      clearMentionSuppression();
     }
     if (mention) void ensureHashCatalog();
   },
@@ -4824,17 +4417,16 @@ defineExpose({
   border: 1px solid
     var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
   border-radius: var(--peek-radius-composer, 16px);
-  background: var(--peek-list-bg);
+  background: var(--peek-composer-fill);
   box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
+  transition:
+    border-color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
+    box-shadow var(--motion-fast, 110ms) var(--motion-ease-out, ease);
 }
 
 .workbench-composer :deep(.image-gen-toolbar),
 .overlay-composer :deep(.image-gen-toolbar) {
   flex: none;
-}
-
-:global([data-theme="dark"]) .workbench-composer .input-bar {
-  background: color-mix(in srgb, var(--peek-text) 6%, var(--peek-surface));
 }
 
 .workbench-composer .input-bar:focus-within {
@@ -4852,13 +4444,12 @@ defineExpose({
 .workbench-composer .input-content {
   flex: 1 1 auto;
   min-height: 28px;
-  /* Hard cap so long input scrolls in place instead of growing the composer
-     over whatever sits above it. */
   max-height: min(calc(var(--composer-line-height) * 8), 34vh);
   align-items: flex-start;
   overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .chat-input-shell.overlay-composer {
@@ -4981,11 +4572,8 @@ defineExpose({
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--peek-text) 12%, transparent);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--peek-surface) 94%, transparent);
-  box-shadow:
-    0 10px 28px color-mix(in srgb, #000 16%, transparent),
-    0 1px 0 color-mix(in srgb, #fff 4%, transparent) inset;
-  backdrop-filter: blur(12px);
+  background: var(--peek-surface);
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 16%, transparent);
 }
 
 .workbench-composer.overlay-pickers :deep(.file-suggestion-list),
@@ -5008,11 +4596,8 @@ defineExpose({
   overflow-y: auto;
   border: 1px solid color-mix(in srgb, var(--peek-text) 12%, transparent);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--peek-surface) 94%, transparent);
-  box-shadow:
-    0 10px 28px color-mix(in srgb, #000 16%, transparent),
-    0 1px 0 color-mix(in srgb, #fff 4%, transparent) inset;
-  backdrop-filter: blur(12px);
+  background: var(--peek-surface);
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 16%, transparent);
 }
 
 /* Interaction requests: fused top cap above the composer (in-flow). */
@@ -5029,20 +4614,8 @@ defineExpose({
     var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
-  background: var(--peek-list-bg);
+  background: var(--peek-interaction-fill);
   box-shadow: none;
-}
-
-:global([data-theme="dark"])
-  .workbench-composer.overlay-pickers.interaction-request-open
-  :deep(.ask-user-list),
-:global([data-theme="dark"])
-  .workbench-composer.overlay-pickers.interaction-request-open
-  :deep(.path-permission-list),
-:global([data-theme="dark"])
-  .workbench-composer.overlay-pickers.interaction-request-open
-  :deep(.tool-approval-list) {
-  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
 }
 
 .workbench-composer.overlay-pickers.interaction-request-open :deep(.ask-user-list) {
@@ -5065,7 +4638,7 @@ defineExpose({
 }
 
 .workbench-composer.attach-panel-open.picker-open .input-bar {
-  /* Attach panel floats above — keep the composer frame intact. */
+  box-shadow: none;
   border-top-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
   border-radius: 16px;
 }
@@ -5300,21 +4873,33 @@ defineExpose({
 
 /* Shared ghost-chip language for footer controls */
 .footer-chip {
-  height: 26px;
-  border-radius: 7px;
+  height: var(--peek-control-icon, 28px);
+  border-radius: var(--peek-radius-sm, 6px);
   border: 1px solid transparent;
   background: transparent;
   color: var(--peek-muted);
   font-family: var(--peek-font-sans);
-  font-size: 11px;
+  font-size: var(--peek-font-xs, 12px);
   font-weight: 500;
   letter-spacing: 0.01em;
-  line-height: 16px;
+  line-height: 1.2;
   transition:
-    border-color 160ms ease,
-    color 160ms ease,
-    background 160ms ease,
-    box-shadow 160ms ease;
+    border-color var(--motion-fast, 110ms) ease,
+    color var(--motion-fast, 110ms) ease,
+    background-color var(--motion-fast, 110ms) ease,
+    box-shadow var(--motion-fast, 110ms) ease,
+    transform var(--motion-instant, 80ms) ease;
+}
+
+.footer-chip:hover:not(:disabled) {
+  color: var(--peek-text);
+  background: var(--peek-hover-bg);
+  border-color: color-mix(in srgb, var(--peek-border) 80%, transparent);
+}
+
+.footer-chip:active:not(:disabled) {
+  transform: scale(0.97);
+  background: var(--peek-press-bg);
 }
 
 .footer-chip-icon {

@@ -2,29 +2,34 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ColorScheme {
+    #[default]
+    #[serde(alias = "frost", alias = "cream", alias = "paper")]
+    Light,
     #[serde(
-        rename = "dark",
         alias = "system",
         alias = "auto",
         alias = "default",
-        alias = "nocturne",
-        alias = "blue-black",
-        alias = "dark",
         alias = "midnight",
+        alias = "blue-black",
+        alias = "ocean",
         alias = "forest",
         alias = "rose",
-        alias = "ocean",
+        alias = "ghost-pastel",
         alias = "graphite",
         alias = "ember",
-        alias = "teal",
-        alias = "ghost-pastel"
+        alias = "nocturne",
+        alias = "teal"
     )]
     Dark,
-    #[serde(rename = "light", alias = "paper", alias = "cream", alias = "frost")]
-    Light,
+}
+
+impl ColorScheme {
+    pub fn is_dark(self) -> bool {
+        matches!(self, Self::Dark)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

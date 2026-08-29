@@ -1,5 +1,9 @@
 <template>
-  <section class="file-diff-card" :class="[kind, status, { collapsed: !expanded }]">
+  <section
+    class="file-diff-card"
+    :class="[kind, status, { collapsed: !expanded }]"
+    :data-state="status === 'running' ? 'running' : status"
+  >
     <button
       type="button"
       class="file-diff-header"
@@ -16,13 +20,14 @@
       <span v-else class="file-diff-icon" aria-hidden="true">
         <component :is="fallbackIcon" :size="13" />
       </span>
+      <span class="file-diff-variant">{{ variantLabel }}</span>
+      <span class="file-diff-separator" aria-hidden="true" />
       <span class="file-diff-name" :title="path">{{ name }}</span>
-      <span class="change-stats">
+      <span v-if="added || removed" class="change-stats">
         <span v-if="added" class="added">+{{ added }}</span>
         <span v-if="removed" class="removed">-{{ removed }}</span>
       </span>
-      <span v-if="status === 'running'" class="file-diff-status">{{ runningLabel }}</span>
-      <span v-else-if="status === 'error'" class="file-diff-status error">{{ failedLabel }}</span>
+      <span v-if="status === 'error'" class="file-diff-status error">{{ failedLabel }}</span>
     </button>
     <div v-if="expanded" class="file-diff-body peek-scrollbar">
       <div
@@ -52,6 +57,8 @@ import { textIncludesQuery } from "@/services/chat/conversationFind";
 import { useExpandForFind } from "@/composables/chat/useConversationFind";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
+import { toolVariantLabel } from "@/services/chat/toolActivityDisplay";
+import type { ToolActivity } from "@/types/chat";
 
 const props = withDefaults(
   defineProps<{
@@ -62,14 +69,26 @@ const props = withDefaults(
     startCollapsed?: boolean;
   }>(),
   {
-    startCollapsed: false,
+    startCollapsed: true,
   },
 );
 
 const settingStore = useSettingStore();
-const expanded = ref(!props.startCollapsed || props.status === "running");
-const runningLabel = computed(() => tr(settingStore.language, "running"));
+const expanded = ref(!props.startCollapsed);
 const failedLabel = computed(() => tr(settingStore.language, "failed"));
+
+const pseudoActivity = computed(
+  (): ToolActivity =>
+    ({
+      kind: props.kind ?? "edit",
+      toolName: props.kind === "create" ? "write_file" : "edit_file",
+      title: props.path,
+      status: (props.status ?? "done") as ToolActivity["status"],
+      id: props.path,
+    }) as ToolActivity,
+);
+
+const variantLabel = computed(() => toolVariantLabel(pseudoActivity.value, settingStore.language));
 
 const name = computed(() => fileBasename(props.path));
 const language = computed(() => codeLanguageForPath(props.path));
@@ -82,8 +101,7 @@ const status = computed(() => props.status ?? "done");
 watch(
   () => props.status,
   (next, prev) => {
-    if (next === "running") expanded.value = true;
-    else if (props.startCollapsed && prev === "running" && next !== "running") {
+    if (props.startCollapsed && prev === "running" && next !== "running") {
       expanded.value = false;
     }
   },
@@ -153,22 +171,48 @@ function escapeHtml(text: string) {
   border-color: color-mix(in srgb, var(--destructive) 40%, var(--peek-border));
 }
 .file-diff-header {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 34px;
+  min-height: 24px;
   margin: 0;
-  padding: 7px 12px;
+  padding: 4px 10px;
   border: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
   background: color-mix(in srgb, var(--peek-panel) 55%, transparent);
   color: color-mix(in srgb, var(--peek-text) 88%, var(--peek-muted));
   font: inherit;
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 24px;
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
+}
+.file-diff-card[data-state="running"] .file-diff-header::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 300px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--peek-list-bg) 60%, transparent) 55%,
+    transparent 100%
+  );
+  animation: file-diff-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes file-diff-sweep {
+  0% {
+    left: -300px;
+  }
+  90%,
+  100% {
+    left: 100%;
+  }
 }
 .file-diff-card.collapsed .file-diff-header {
   border-bottom: 0;
@@ -201,15 +245,29 @@ function escapeHtml(text: string) {
 .file-diff-card.delete .file-diff-icon {
   color: var(--destructive);
 }
+.file-diff-variant {
+  flex: none;
+  font-weight: 550;
+  color: var(--peek-text);
+}
+.file-diff-separator {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: var(--peek-faint);
+}
 .file-diff-name {
-  flex: 1;
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 550;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--peek-faint);
 }
 .change-stats {
   display: inline-flex;
@@ -266,50 +324,18 @@ function escapeHtml(text: string) {
   background: color-mix(in srgb, var(--destructive) 16%, transparent);
 }
 .diff-line.deletion .diff-marker {
-  color: color-mix(in srgb, #fecaca 88%, var(--peek-text));
+  color: var(--peek-diff-del-marker);
 }
 .diff-line.addition {
   background: color-mix(in srgb, #22c55e 16%, transparent);
 }
 .diff-line.addition .diff-marker {
-  color: color-mix(in srgb, #bbf7d0 88%, var(--peek-text));
-}
-:global([data-theme="light"]) .diff-line.deletion .diff-marker,
-:global([data-theme="cream"]) .diff-line.deletion .diff-marker {
-  color: #991b1b;
-}
-:global([data-theme="light"]) .diff-line.addition .diff-marker,
-:global([data-theme="cream"]) .diff-line.addition .diff-marker {
-  color: #166534;
+  color: var(--peek-diff-add-marker);
 }
 
-.file-diff-body :deep(.hljs-comment),
-.file-diff-body :deep(.hljs-quote) {
-  color: #7f8c98;
-  font-style: italic;
-}
-.file-diff-body :deep(.hljs-keyword),
-.file-diff-body :deep(.hljs-selector-tag),
-.file-diff-body :deep(.hljs-type),
-.file-diff-body :deep(.hljs-literal) {
-  color: #c792ea;
-}
-.file-diff-body :deep(.hljs-string),
-.file-diff-body :deep(.hljs-regexp),
-.file-diff-body :deep(.hljs-attribute) {
-  color: #addb67;
-}
-.file-diff-body :deep(.hljs-number),
-.file-diff-body :deep(.hljs-symbol) {
-  color: #f78c6c;
-}
-.file-diff-body :deep(.hljs-title),
-.file-diff-body :deep(.hljs-section),
-.file-diff-body :deep(.hljs-built_in) {
-  color: #82aaff;
-}
-.file-diff-body :deep(.hljs-variable),
-.file-diff-body :deep(.hljs-params) {
-  color: #f07178;
+@media (prefers-reduced-motion: reduce) {
+  .file-diff-card[data-state="running"] .file-diff-header::after {
+    animation: none;
+  }
 }
 </style>

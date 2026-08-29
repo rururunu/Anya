@@ -5,6 +5,10 @@ use crate::core::runtime::Role;
 use crate::models::chat::ChatSessionSummary;
 
 use super::helpers::{block_on_compat, session_preview};
+use super::super::session_title::{
+    fallback_session_title, normalize_session_title, SessionTitleSource,
+    FALLBACK_MAX_BYTES, FALLBACK_MAX_WORDS, MAX_TITLE_BYTES,
+};
 use super::ConversationManager;
 
 impl ConversationManager {
@@ -64,22 +68,94 @@ impl ConversationManager {
             .and_then(|workspaces| workspaces.get(session_id).cloned())
     }
 
-    pub fn set_session_title(&self, session_id: &str, title: String) {
-        let title = title.trim().to_string();
+    pub fn set_session_title(
+        &self,
+        session_id: &str,
+        title: String,
+        source: SessionTitleSource,
+    ) {
+        let title = normalize_session_title(&title, MAX_TITLE_BYTES);
         if title.is_empty() {
             return;
         }
         if let Ok(mut titles) = self.session_titles.lock() {
             titles.insert(session_id.to_string(), title.clone());
         }
+        if let Ok(mut sources) = self.session_title_sources.lock() {
+            sources.insert(session_id.to_string(), source);
+        }
         let pool = self.db_pool.clone();
         let session_id = session_id.to_string();
         tauri::async_runtime::spawn(async move {
-            if let Err(error) = super::super::db::save_session_title(&pool, &session_id, &title).await
+            if let Err(error) =
+                super::super::db::save_session_title(&pool, &session_id, &title, source).await
             {
                 eprintln!("Failed to save chat session title: {error}");
             }
         });
+    }
+
+    pub fn session_title_source(&self, session_id: &str) -> Option<SessionTitleSource> {
+        self.session_title_sources
+            .lock()
+            .ok()
+            .and_then(|sources| sources.get(session_id).copied())
+    }
+
+    /// Whether automatic title generation may overwrite the current title.
+    pub fn can_auto_update_title(&self, session_id: &str) -> bool {
+        self.session_title_source(session_id) != Some(SessionTitleSource::User)
+    }
+
+    /// Persist a deterministic fallback title after the first eligible user message.
+    pub fn ensure_fallback_title(&self, session_id: &str, user_text: &str) -> Option<String> {
+        if !self.can_auto_update_title(session_id) {
+            return None;
+        }
+        let user_turn_count = self
+            .messages(session_id)
+            .iter()
+            .filter(|message| message.role == Role::User)
+            .count();
+        if user_turn_count != 1 {
+            return None;
+        }
+        let title = fallback_session_title(user_text, FALLBACK_MAX_WORDS, FALLBACK_MAX_BYTES);
+        if title.is_empty() {
+            return None;
+        }
+        if self.session_title(session_id).as_deref() == Some(title.as_str())
+            && self.session_title_source(session_id) == Some(SessionTitleSource::Fallback)
+        {
+            return None;
+        }
+        self.set_session_title(session_id, title.clone(), SessionTitleSource::Fallback);
+        Some(title)
+    }
+
+    /// Accept an explicit user title and pin it against automatic updates.
+    pub fn rename_session_title(&self, session_id: &str, title: &str) -> Result<String, String> {
+        let normalized = normalize_session_title(title, MAX_TITLE_BYTES);
+        if normalized.is_empty() {
+            return Err("会话标题不能为空".into());
+        }
+        self.set_session_title(session_id, normalized.clone(), SessionTitleSource::User);
+        Ok(normalized)
+    }
+
+    pub fn user_visible_context_for_title(&self, session_id: &str) -> Option<String> {
+        let parts: Vec<String> = self
+            .messages(session_id)
+            .iter()
+            .filter(|message| message.role == Role::User)
+            .map(|message| super::super::selection::visible_user_text(&message.content).to_string())
+            .filter(|text| !text.trim().is_empty())
+            .collect();
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n"))
+        }
     }
 
     pub fn session_title(&self, session_id: &str) -> Option<String> {
@@ -114,6 +190,11 @@ impl ConversationManager {
             .session_archived
             .lock()
             .map(|archived| archived.clone())
+            .unwrap_or_default();
+        let session_titles = self
+            .session_titles
+            .lock()
+            .map(|titles| titles.clone())
             .unwrap_or_default();
 
         // Overlay in-memory loaded sessions so an active stream's preview /
@@ -177,6 +258,9 @@ impl ConversationManager {
             summary.archived = session_archived.contains(&summary.session_id);
             if let Some(workspace_id) = session_workspaces.get(&summary.session_id) {
                 summary.workspace_id = Some(workspace_id.clone());
+            }
+            if let Some(title) = session_titles.get(&summary.session_id) {
+                summary.preview = title.clone();
             }
         }
 
@@ -249,6 +333,12 @@ impl ConversationManager {
         if let Ok(mut workspaces) = self.session_workspaces.lock() {
             workspaces.remove(session_id);
         }
+        if let Ok(mut titles) = self.session_titles.lock() {
+            titles.remove(session_id);
+        }
+        if let Ok(mut sources) = self.session_title_sources.lock() {
+            sources.remove(session_id);
+        }
         if let Ok(mut archived) = self.session_archived.lock() {
             archived.remove(session_id);
         }
@@ -295,6 +385,12 @@ impl ConversationManager {
         }
         if let Ok(mut workspaces) = self.session_workspaces.lock() {
             workspaces.clear();
+        }
+        if let Ok(mut titles) = self.session_titles.lock() {
+            titles.clear();
+        }
+        if let Ok(mut sources) = self.session_title_sources.lock() {
+            sources.clear();
         }
         if let Ok(mut archived) = self.session_archived.lock() {
             archived.clear();

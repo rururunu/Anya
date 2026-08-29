@@ -2,17 +2,23 @@ import { computed, nextTick, ref, watch, type ComputedRef, type Ref } from "vue"
 
 import type ChatInputBar from "@/components/chat/ChatInputBar.vue";
 import type { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import type RenameSessionDialog from "@/components/workbench/RenameSessionDialog.vue";
 import {
   chatCancel,
   deleteChatSession,
   listChatSessions,
   listCheckpoints,
-  branchChatSession,
   setChatSessionArchived,
   setChatSessionWorkspace,
 } from "@/services/ipc";
 import { estimateMessageTokens } from "@/services/chat/tokenEstimate";
+import { formatSessionPreview } from "@/services/chat/sessionPreview";
+import { isSubagentSessionId, rootSessionId } from "@/services/chat/subagentSession";
+import { findSubagentEntry } from "@/services/chat/subagentPanel";
+import { useSubagentSessionStore } from "@/stores/subagentSessions";
+import { useSettingStore } from "@/stores/setting";
 import { useChatStore } from "@/stores/chat";
+import { useChatSessionsStore } from "@/stores/chatSessions";
 import {
   clearCurrentWorkspace,
   listWorkspaces,
@@ -22,15 +28,17 @@ import {
 import type { CheckpointInfo, ChatMessage, ChatSessionSummary } from "@/types/chat";
 import type { WorkbenchLabels } from "./useWorkbenchLabels";
 
+export type { ArchiveVisualState } from "@/stores/chatSessions";
+
 export interface UseWorkbenchSessionsOptions {
   activeSessionId: Ref<string>;
   activeSessionWorkspaceId: Ref<string | null>;
-  sessions: Ref<ChatSessionSummary[]>;
   workspaces: Ref<Workspace[]>;
   messages: ComputedRef<ChatMessage[]>;
   labels: WorkbenchLabels["labels"];
   navigationLabels: WorkbenchLabels["navigationLabels"];
   confirmDialogRef: Ref<InstanceType<typeof AppConfirmDialog> | null>;
+  renameSessionDialogRef: Ref<InstanceType<typeof RenameSessionDialog> | null>;
   inputRef: Ref<InstanceType<typeof ChatInputBar> | null>;
   reviewOpen: Ref<boolean>;
   removePendingInteraction: (sessionId: string, requestId?: string) => boolean;
@@ -46,24 +54,31 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   const {
     activeSessionId,
     activeSessionWorkspaceId,
-    sessions,
     workspaces,
     messages,
     labels,
     navigationLabels,
     confirmDialogRef,
+    renameSessionDialogRef,
     inputRef,
     reviewOpen,
     removePendingInteraction,
     clearSessionUnread,
   } = options;
   const chatStore = useChatStore();
+  const sessionsStore = useChatSessionsStore();
+  const subagentSessionStore = useSubagentSessionStore();
+  const settingStore = useSettingStore();
+  const sessions = computed(() => sessionsStore.summaries);
 
-  const sessionsLoading = ref(false);
   const checkpoints = ref<CheckpointInfo[]>([]);
   const pendingStagedEdit = ref<{ sessionId: string; index: number; original: string } | null>(
     null,
   );
+
+  const sessionsLoading = computed(() => sessionsStore.sessionsLoading);
+  const titleGeneratingSessionIds = computed(() => sessionsStore.titleGeneratingSessionIds);
+  const archiveVisualBySessionId = computed(() => sessionsStore.archiveVisualBySessionId);
 
   const sessionsWithLiveTokens = computed(() => {
     const base = sessions.value.map((session) => {
@@ -92,7 +107,16 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
       estimatedTokens: 0,
       updatedAt: draft.updatedAt,
     }));
-    return [...draftOnly, ...base];
+    const subagentRows = subagentSessionStore.visibleRecords.map((record) => ({
+      sessionId: record.sessionId,
+      workspaceId: record.workspaceId ?? undefined,
+      preview: record.preview,
+      messageCount: 0,
+      turnCount: 0,
+      estimatedTokens: 0,
+      updatedAt: Date.now(),
+    }));
+    return [...subagentRows, ...draftOnly, ...base];
   });
 
   const draftSessionIds = computed(() => {
@@ -106,12 +130,14 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     return ids;
   });
   const quickAskSessions = computed(() =>
-    sessionsWithLiveTokens.value.filter((session) => !session.workspaceId),
+    sessionsWithLiveTokens.value.filter(
+      (session) => !session.workspaceId && !isSubagentSessionId(session.sessionId),
+    ),
   );
   const sessionsByWorkspace = computed(() => {
     const result = new Map<string, ChatSessionSummary[]>();
     for (const session of sessionsWithLiveTokens.value) {
-      if (!session.workspaceId) continue;
+      if (!session.workspaceId || isSubagentSessionId(session.sessionId)) continue;
       const items = result.get(session.workspaceId) ?? [];
       items.push(session);
       result.set(session.workspaceId, items);
@@ -143,6 +169,14 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
         ids.add(sessionId);
       }
     }
+    for (const record of subagentSessionStore.visibleRecords) {
+      const parentMessages = chatStore.sessions[record.parentSessionId] ?? [];
+      const activities = parentMessages.flatMap((message) => message.toolActivities ?? []);
+      const entry = findSubagentEntry(activities, record.entryId, settingStore.language);
+      if (entry?.status === "running") {
+        ids.add(record.sessionId);
+      }
+    }
     return [...ids];
   });
   const stagedMessages = computed(() => chatStore.stagedMessages[activeSessionId.value] ?? []);
@@ -167,21 +201,19 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   }
 
   async function refreshSessions() {
-    sessionsLoading.value = true;
+    sessionsStore.sessionsLoading = true;
     try {
       const [chatResponse, workspaceResponse] = await Promise.all([
         listChatSessions(),
         listWorkspaces().catch(() => []),
       ]);
-      sessions.value = chatResponse.sessions;
+      sessionsStore.setSummaries(chatResponse.sessions);
+      sessionsStore.setStartedSessionIds(chatResponse.sessions.map((session) => session.sessionId));
       workspaces.value = workspaceResponse;
-      if (chatResponse && chatResponse.sessions) {
-        chatStore.setStartedSessionIds(chatResponse.sessions.map((session) => session.sessionId));
-      }
     } catch (error) {
       console.error("list_chat_sessions failed:", error);
     } finally {
-      sessionsLoading.value = false;
+      sessionsStore.sessionsLoading = false;
     }
   }
 
@@ -204,12 +236,13 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   }
 
   async function refreshCheckpoints() {
-    if (!activeSessionId.value) {
+    const sessionId = activeSessionId.value;
+    if (!sessionId) {
       checkpoints.value = [];
       return;
     }
     try {
-      checkpoints.value = await listCheckpoints(activeSessionId.value);
+      checkpoints.value = await listCheckpoints(rootSessionId(sessionId));
     } catch {
       checkpoints.value = [];
     }
@@ -218,19 +251,31 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   async function selectConversation(sessionId: string) {
     cancelStagedEdit();
     clearSessionUnread(sessionId);
-    const summary = sessions.value.find((session) => session.sessionId === sessionId);
-    const compose = chatStore.ensureCompose(sessionId);
-    const workspaceId = summary?.workspaceId ?? compose.draftWorkspaceId ?? null;
+    const parentId = rootSessionId(sessionId);
+    const isSubagentView = parentId !== sessionId;
+    const historySessionId = isSubagentView ? parentId : sessionId;
+    const summary =
+      sessions.value.find((session) => session.sessionId === sessionId) ??
+      subagentSessionStore.records[sessionId];
+    const compose = chatStore.ensureCompose(isSubagentView ? parentId : sessionId);
+    const workspaceId =
+      (summary && "workspaceId" in summary ? summary.workspaceId : undefined) ??
+      compose.draftWorkspaceId ??
+      null;
     const previousWorkspaceId = activeSessionWorkspaceId.value;
     if (workspaceId && compose.draftWorkspaceId !== workspaceId) {
-      chatStore.setComposeDraft(sessionId, compose.draft ?? "", { workspaceId });
+      chatStore.setComposeDraft(isSubagentView ? parentId : sessionId, compose.draft ?? "", {
+        workspaceId,
+      });
     }
 
     // Switch the visible conversation immediately so the UI is not blocked on IPC.
     activeSessionWorkspaceId.value = workspaceId;
     activeSessionId.value = sessionId;
-    chatStore.setOverlayDraftSession(sessionId);
-    void nextTick(() => inputRef.value?.focusInput());
+    chatStore.setOverlayDraftSession(isSubagentView ? parentId : sessionId);
+    if (!isSubagentView) {
+      void nextTick(() => inputRef.value?.focusInput());
+    }
 
     // Same workspace: skip the round-trip (and workspaces-changed fan-out).
     if (workspaceId !== previousWorkspaceId) {
@@ -253,21 +298,29 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
       }
     }
 
-    const cached = chatStore.sessions[sessionId];
+    const cached = chatStore.sessions[historySessionId];
     const hasCachedMessages = Array.isArray(cached);
     if (hasCachedMessages) {
-      // Show memory immediately; refresh from disk/DB in the background.
-      void chatStore.loadHistory(sessionId);
+      void chatStore.loadHistory(historySessionId);
     } else {
-      await chatStore.loadHistory(sessionId);
+      await chatStore.loadHistory(historySessionId);
     }
     void refreshCheckpoints();
+  }
+
+  function dismissSubagentSession(sessionId: string) {
+    if (!isSubagentSessionId(sessionId)) return;
+    subagentSessionStore.hide(sessionId);
+    if (activeSessionId.value === sessionId) {
+      const parentId = rootSessionId(sessionId);
+      void selectConversation(parentId);
+    }
   }
 
   async function leaveConversation(sessionId: string) {
     pendingStagedEdit.value = null;
     chatStore.removeCompose(sessionId);
-    delete chatStore.sessions[sessionId];
+    sessionsStore.removeSessionMessages(sessionId);
     clearSessionUnread(sessionId);
     removePendingInteraction(sessionId);
     await refreshSessions();
@@ -289,9 +342,7 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     const compose = chatStore.ensureCompose(sessionId);
     const previousWorkspaceId = compose.draftWorkspaceId ?? sourceWorkspaceId;
     chatStore.setComposeDraft(sessionId, compose.draft ?? "", { workspaceId });
-    sessions.value = sessions.value.map((session) =>
-      session.sessionId === sessionId ? { ...session, workspaceId } : session,
-    );
+    sessionsStore.patchSummary(sessionId, { workspaceId });
 
     try {
       await setChatSessionWorkspace(sessionId, workspaceId);
@@ -315,18 +366,22 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   }
 
   async function archiveConversation(sessionId: string) {
-    const known = sessions.value.some((session) => session.sessionId === sessionId);
+    if (sessionsStore.archiveVisualBySessionId[sessionId]) return;
+
+    const known = sessionsStore.summaries.some((session) => session.sessionId === sessionId);
     const wasActive = activeSessionId.value === sessionId;
     const nextSessionId = wasActive
       ? sessionsWithLiveTokens.value.find((session) => session.sessionId !== sessionId)?.sessionId
       : undefined;
 
+    await sessionsStore.playArchiveVisual(sessionId);
+
     pendingStagedEdit.value = null;
     chatStore.removeCompose(sessionId);
-    delete chatStore.sessions[sessionId];
+    sessionsStore.removeSessionMessages(sessionId);
     clearSessionUnread(sessionId);
     removePendingInteraction(sessionId);
-    sessions.value = sessions.value.filter((session) => session.sessionId !== sessionId);
+    sessionsStore.removeSummary(sessionId);
 
     if (wasActive) {
       if (nextSessionId) void selectConversation(nextSessionId);
@@ -341,30 +396,38 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     void refreshSessions();
   }
 
-  async function branchConversation(sessionId: string, messageId?: string) {
-    if (!sessionId) return;
-    try {
-      const summary = await branchChatSession(sessionId, messageId);
-      const sourceCompose = chatStore.sessionCompose[sessionId];
-      if (sourceCompose) {
-        chatStore.setCompose(summary.sessionId, {
-          chatModel: sourceCompose.chatModel,
-          chatModelProvider: sourceCompose.chatModelProvider,
-          chatMode: sourceCompose.chatMode === "plan" ? "agent" : sourceCompose.chatMode,
-          toolApprovalMode: sourceCompose.toolApprovalMode,
-          imageGen: sourceCompose.imageGen,
-        });
-      } else {
-        chatStore.ensureCompose(summary.sessionId);
-      }
-      chatStore.setComposeDraft(summary.sessionId, "", {
-        workspaceId: summary.workspaceId ?? null,
-      });
+  async function renameConversation(session: ChatSessionSummary) {
+    const current = formatSessionPreview(session.preview || "") || labels.value.untitled;
+    const saved = await renameSessionDialogRef.value?.edit(session.sessionId, current);
+    if (saved) {
       await refreshSessions();
-      await selectConversation(summary.sessionId);
-    } catch (error) {
-      console.error("branch_chat_session failed:", error);
     }
+  }
+
+  async function regenerateConversationTitle(sessionId: string) {
+    await sessionsStore.regenerateTitle(sessionId);
+  }
+
+  async function branchConversation(sessionId: string, messageId?: string) {
+    const summary = await sessionsStore.branchSession(sessionId, messageId);
+    if (!summary) return;
+    const sourceCompose = chatStore.sessionCompose[sessionId];
+    if (sourceCompose) {
+      chatStore.setCompose(summary.sessionId, {
+        chatModel: sourceCompose.chatModel,
+        chatModelProvider: sourceCompose.chatModelProvider,
+        chatMode: sourceCompose.chatMode === "plan" ? "agent" : sourceCompose.chatMode,
+        toolApprovalMode: sourceCompose.toolApprovalMode,
+        imageGen: sourceCompose.imageGen,
+      });
+    } else {
+      chatStore.ensureCompose(summary.sessionId);
+    }
+    chatStore.setComposeDraft(summary.sessionId, "", {
+      workspaceId: summary.workspaceId ?? null,
+    });
+    await refreshSessions();
+    await selectConversation(summary.sessionId);
   }
 
   async function removeConversation(sessionId: string) {
@@ -485,6 +548,7 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     hasConversationMessages,
     sending,
     runningSessionIds,
+    titleGeneratingSessionIds,
     stagedMessages,
     contextNotice,
     activeAssistantMessageId,
@@ -495,8 +559,12 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     createQuickConversation,
     refreshCheckpoints,
     selectConversation,
+    dismissSubagentSession,
     moveSessionToWorkspace,
     archiveConversation,
+    archiveVisualBySessionId,
+    renameConversation,
+    regenerateConversationTitle,
     branchConversation,
     removeConversation,
     guideStaged,

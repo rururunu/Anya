@@ -137,8 +137,8 @@ function retry() {
   width: 100%;
   height: 100%;
   padding: 24px;
-  color: var(--peek-text, #e8e8e8);
-  background: var(--peek-bg, #1f1f1f);
+  color: var(--peek-text, #242424);
+  background: var(--peek-bg, #f8f8f8);
   box-sizing: border-box;
 }
 

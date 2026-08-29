@@ -575,6 +575,14 @@ async fn completion_claim_after_mutation_and_verification_is_kept() {
         active: Arc::new(AtomicUsize::new(0)),
         payload: "verified".into(),
     }));
+    registry.register(Arc::new(CountingTool {
+        name: "share_to_companion",
+        read_only: true,
+        counter: Arc::new(AtomicUsize::new(0)),
+        parallel_peak: Arc::new(AtomicUsize::new(0)),
+        active: Arc::new(AtomicUsize::new(0)),
+        payload: "shared".into(),
+    }));
     let tools = Arc::new(ToolManager::new(registry));
     let provider = Arc::new(ScriptedProvider {
         scripts: Mutex::new(vec![
@@ -585,6 +593,14 @@ async fn completion_claim_after_mutation_and_verification_is_kept() {
             ProviderTurn {
                 content: String::new(),
                 tool_calls: vec![tool_call("2", "read_file")],
+            },
+            ProviderTurn {
+                content: "已完成修改".into(),
+                tool_calls: vec![],
+            },
+            ProviderTurn {
+                content: String::new(),
+                tool_calls: vec![tool_call("3", "share_to_companion")],
             },
             ProviderTurn {
                 content: "已完成修改".into(),
@@ -637,6 +653,10 @@ async fn completion_claim_after_mutation_without_verification_is_rejected() {
             ProviderTurn {
                 content: String::new(),
                 tool_calls: vec![tool_call("1", "write_file")],
+            },
+            ProviderTurn {
+                content: "已完成修改".into(),
+                tool_calls: vec![],
             },
             ProviderTurn {
                 content: "已完成修改".into(),

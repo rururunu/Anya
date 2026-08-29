@@ -122,21 +122,19 @@ const emit = defineEmits<{
 .agent-work-toggle {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   width: 100%;
-  padding: 3px 2px;
+  min-height: 24px;
+  padding: 0 2px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--peek-muted);
-  font-size: 11px;
-  font-weight: 550;
-  line-height: 1.35;
+  font-size: var(--peek-font-sm, 12px);
+  font-weight: 400;
+  line-height: 24px;
   cursor: pointer;
   text-align: left;
-  transition:
-    color 140ms ease,
-    background 140ms ease;
 }
 
 .agent-work-toggle:hover {

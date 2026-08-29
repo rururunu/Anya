@@ -4,6 +4,7 @@ import {
   hasExpandableActivityContent,
   isProcessSegmentCollapsible,
   summarizeProcessActivities,
+  summarizeWorkFoldMeta,
 } from "@/services/chat/toolActivityDisplay";
 import type { ToolActivity } from "@/types/chat";
 
@@ -34,6 +35,16 @@ describe("toolActivityDisplay", () => {
     ];
     expect(summarizeProcessActivities(items, "en-US")).toBe("Explored 2 files, 1 searches");
     expect(summarizeProcessActivities(items, "zh-CN")).toBe("浏览 2 个文件，1 次搜索");
+  });
+
+  it("summarizes completed work fold meta", () => {
+    const items = [
+      activity({ id: "1", title: "Read a.rs" }),
+      activity({ id: "2", toolName: "search_files", title: "Search foo" }),
+      activity({ id: "3", toolName: "grep", title: "Grep bar" }),
+    ];
+    expect(summarizeWorkFoldMeta(items, 2, "zh-CN")).toBe("3 个工具 · 2 次搜索 · 2 段思考");
+    expect(summarizeWorkFoldMeta(items, 0, "en-US")).toBe("3 tools · 2 searches");
   });
 
   it("keeps single-line titles as-is", () => {
