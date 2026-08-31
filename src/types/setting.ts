@@ -120,14 +120,22 @@ export interface McpServerConfig {
   source?: string;
 }
 
-export type ProviderApiProtocol = "chatCompletions" | "responses";
+export type ProviderApiProtocol = "chatCompletions" | "responses" | "anthropicMessages";
 
-export type ModelWireProtocol = "chatCompletions" | "responses" | "anthropicMessages";
+export type ModelWireProtocol = ProviderApiProtocol;
 
 export const DEFAULT_PROVIDER_API_PROTOCOL: ProviderApiProtocol = "chatCompletions";
 
 export function normalizeProviderApiProtocol(value: unknown): ProviderApiProtocol {
-  return value === "responses" ? "responses" : "chatCompletions";
+  if (value === "responses" || value === "anthropicMessages") return value;
+  return "chatCompletions";
+}
+
+export function normalizeModelProtocol(value: unknown): ModelWireProtocol | undefined {
+  if (value === "chatCompletions" || value === "responses" || value === "anthropicMessages") {
+    return value;
+  }
+  return undefined;
 }
 
 export interface CustomProviderConfig {
@@ -142,9 +150,9 @@ export interface CustomProviderConfig {
   disabledModels?: string;
   /** Optional preset template id (mimo / zhipu / …) for icons and defaults. */
   presetId?: string;
-  /** `chatCompletions` (default) or `responses`. Grok thinking needs Responses. */
+  /** Provider default: Chat Completions, Responses, or Anthropic Messages. */
   apiProtocol?: ProviderApiProtocol;
-  /** Learned wire format per model id. Written by the backend after a successful stream. */
+  /** Per-model protocol override. Missing or empty means inherit `apiProtocol`. */
   modelProtocols?: Record<string, ModelWireProtocol>;
 }
 

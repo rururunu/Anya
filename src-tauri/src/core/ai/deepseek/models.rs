@@ -331,6 +331,7 @@ pub(crate) fn normalize_anthropic_messages_url(base_url: &str) -> String {
 pub(crate) fn endpoint_url_for_protocol(base_url: &str, protocol: ProviderApiProtocol) -> String {
     match protocol {
         ProviderApiProtocol::Responses => normalize_responses_url(base_url),
+        ProviderApiProtocol::AnthropicMessages => normalize_anthropic_messages_url(base_url),
         ProviderApiProtocol::ChatCompletions => normalize_chat_completions_url(base_url),
     }
 }
@@ -352,10 +353,33 @@ fn openai_versioned_root(base_url: &str) -> String {
     if let Some(stripped) = base.strip_suffix("/images/generations") {
         base = stripped.trim_end_matches('/').to_string();
     }
+    if is_command_code_host(&base) {
+        return command_code_provider_root(&base);
+    }
     if !has_versioned_api_path(&base) {
         base = format!("{base}/v1");
     }
     base
+}
+
+/// Command Code's public API lives at `/provider/v1`, not `/v1`.
+fn is_command_code_host(base: &str) -> bool {
+    base.to_ascii_lowercase().contains("commandcode.ai")
+}
+
+fn command_code_provider_root(base: &str) -> String {
+    let lower = base.to_ascii_lowercase();
+    if lower.contains("/provider/v1") {
+        return base.to_string();
+    }
+    if lower.ends_with("/provider") {
+        return format!("{base}/v1");
+    }
+    let without_v1 = base
+        .strip_suffix("/v1")
+        .map(|value| value.trim_end_matches('/').to_string())
+        .unwrap_or_else(|| base.to_string());
+    format!("{without_v1}/provider/v1")
 }
 
 fn has_versioned_api_path(base: &str) -> bool {

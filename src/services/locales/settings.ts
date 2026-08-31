@@ -232,6 +232,12 @@ export type SettingsI18nKey =
   | "settings.provider.apiProtocolGrokHint"
   | "settings.provider.apiProtocolChatCompletions"
   | "settings.provider.apiProtocolResponses"
+  | "settings.provider.apiProtocolAnthropic"
+  | "settings.provider.modelProtocol"
+  | "settings.provider.modelProtocolUnset"
+  | "settings.provider.modelProtocolChatCompletions"
+  | "settings.provider.modelProtocolResponses"
+  | "settings.provider.modelProtocolAnthropic"
   | "settings.provider.modelsList"
   | "settings.provider.modelsPlaceholder"
   | "settings.provider.addModel"
@@ -309,11 +315,17 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.baseUrl": "Base URL",
   "settings.provider.apiProtocol": "API protocol",
   "settings.provider.apiProtocolHint":
-    "Chat Completions is the OpenAI-compatible default. Choose Responses for Grok and other vendors that only stream reasoning on /v1/responses.",
+    "Chat Completions is the OpenAI-compatible default. Choose Responses for Grok and other vendors that only stream reasoning on /v1/responses, or Anthropic for /v1/messages. Each model can override this below.",
   "settings.provider.apiProtocolGrokHint":
     "xAI Grok does not return thinking on Chat Completions. Switch this provider to Responses to show the reasoning process.",
   "settings.provider.apiProtocolChatCompletions": "Chat Completions (/v1/chat/completions)",
   "settings.provider.apiProtocolResponses": "Responses (/v1/responses)",
+  "settings.provider.apiProtocolAnthropic": "Anthropic (/v1/messages)",
+  "settings.provider.modelProtocol": "Model protocol",
+  "settings.provider.modelProtocolUnset": "Unset",
+  "settings.provider.modelProtocolChatCompletions": "Chat Completions",
+  "settings.provider.modelProtocolResponses": "Responses",
+  "settings.provider.modelProtocolAnthropic": "Anthropic",
   "settings.provider.modelsList": "Model List",
   "settings.provider.modelsPlaceholder": "Model ID, e.g. gpt-4o",
   "settings.provider.addModel": "Add",
@@ -717,11 +729,17 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.baseUrl": "Base URL",
     "settings.provider.apiProtocol": "API 协议",
     "settings.provider.apiProtocolHint":
-      "默认使用 OpenAI 兼容的 Chat Completions。Grok 等只在 /v1/responses 上流式返回思考过程的厂商，请改选 Responses。",
+      "默认使用 OpenAI 兼容的 Chat Completions。Grok 等只在 /v1/responses 上流式返回思考过程的厂商请改选 Responses；需要 /v1/messages 的请选 Anthropic。下方可为单个模型覆盖。",
     "settings.provider.apiProtocolGrokHint":
       "xAI Grok 的 Chat Completions 不会返回思考过程。请把该厂商改成 Responses，才能看到推理内容。",
     "settings.provider.apiProtocolChatCompletions": "Chat Completions（/v1/chat/completions）",
     "settings.provider.apiProtocolResponses": "Responses（/v1/responses）",
+    "settings.provider.apiProtocolAnthropic": "Anthropic（/v1/messages）",
+    "settings.provider.modelProtocol": "模型协议",
+    "settings.provider.modelProtocolUnset": "未设定",
+    "settings.provider.modelProtocolChatCompletions": "Chat Completions",
+    "settings.provider.modelProtocolResponses": "Responses",
+    "settings.provider.modelProtocolAnthropic": "Anthropic",
     "settings.provider.modelsList": "模型列表",
     "settings.provider.modelsPlaceholder": "模型 ID，例如 gpt-4o",
     "settings.provider.addModel": "添加",

@@ -1,7 +1,7 @@
 {
   "name": "Anya",
   "private": true,
-  "version": "0.2.15",
+  "version": "0.2.16",
   "description": "Hand your work & questions to Anya anytime.",
   "type": "module",
   "scripts": {

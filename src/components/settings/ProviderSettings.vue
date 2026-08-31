@@ -301,6 +301,9 @@
                 <SelectItem value="responses">
                   {{ t("settings.provider.apiProtocolResponses") }}
                 </SelectItem>
+                <SelectItem value="anthropicMessages">
+                  {{ t("settings.provider.apiProtocolAnthropic") }}
+                </SelectItem>
               </SelectContent>
             </Select>
             <p class="field-hint">{{ protocolHint }}</p>
@@ -367,6 +370,32 @@
                   />
                   <span v-else class="model-row-icon-dot" aria-hidden="true" />
                   <code class="model-id">{{ model }}</code>
+                  <Select
+                    :model-value="modelProtocolValue(model)"
+                    @update:model-value="(value) => onModelProtocolChange(model, value)"
+                  >
+                    <SelectTrigger
+                      size="sm"
+                      class="model-protocol-select w-[8.75rem]"
+                      :aria-label="t('settings.provider.modelProtocol')"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="inherit">
+                        {{ t("settings.provider.modelProtocolUnset") }}
+                      </SelectItem>
+                      <SelectItem value="chatCompletions">
+                        {{ t("settings.provider.modelProtocolChatCompletions") }}
+                      </SelectItem>
+                      <SelectItem value="responses">
+                        {{ t("settings.provider.modelProtocolResponses") }}
+                      </SelectItem>
+                      <SelectItem value="anthropicMessages">
+                        {{ t("settings.provider.modelProtocolAnthropic") }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                   <div class="model-item-actions">
                     <SettingsToggle
                       compact
@@ -433,8 +462,12 @@ import {
 } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import type { SettingsI18nKey } from "@/services/locales/settings";
-import type { CustomProviderConfig, ProviderApiProtocol } from "@/types/setting";
-import { DEFAULT_PROVIDER_API_PROTOCOL, normalizeProviderApiProtocol } from "@/types/setting";
+import type { CustomProviderConfig, ModelWireProtocol, ProviderApiProtocol } from "@/types/setting";
+import {
+  DEFAULT_PROVIDER_API_PROTOCOL,
+  normalizeModelProtocol,
+  normalizeProviderApiProtocol,
+} from "@/types/setting";
 import { getModelIcon } from "@/lib/providerIcons";
 import {
   isCustomProviderConfigured,
@@ -493,6 +526,7 @@ const customApiProtocol = ref<ProviderApiProtocol>(DEFAULT_PROVIDER_API_PROTOCOL
 const customModelList = ref<string[]>([]);
 const customModelDraft = ref("");
 const customDisabledModels = ref<Set<string>>(new Set());
+const customModelProtocols = ref<Record<string, ModelWireProtocol>>({});
 
 const protocolHint = computed(() => {
   if (
@@ -656,6 +690,7 @@ function startEditCustom(id: string) {
     customModelList.value = parseProviderModels(provider.models);
     customModelDraft.value = "";
     customDisabledModels.value = new Set(parseProviderModels(provider.disabledModels ?? ""));
+    customModelProtocols.value = cloneModelProtocols(provider.modelProtocols);
     fetchModelsError.value = "";
     currentView.value = "custom";
   }
@@ -675,6 +710,7 @@ function addBlankCustomProvider() {
   customModelList.value = [];
   customModelDraft.value = "";
   customDisabledModels.value = new Set();
+  customModelProtocols.value = {};
   fetchModelsError.value = "";
   currentView.value = "custom";
 }
@@ -716,6 +752,11 @@ async function removeCustomModel(index: number) {
     const next = new Set(customDisabledModels.value);
     next.delete(removed);
     customDisabledModels.value = next;
+  }
+  if (removed && customModelProtocols.value[removed]) {
+    const next = { ...customModelProtocols.value };
+    delete next[removed];
+    customModelProtocols.value = next;
   }
   await saveCustom();
 }
@@ -763,6 +804,10 @@ async function saveCustom() {
   const nextDisabledModels = serializeProviderModels([...customDisabledModels.value]);
   const nextPresetId = customPresetId.value;
   const nextProtocol = customApiProtocol.value;
+  const nextModelProtocols = serializeModelProtocols(
+    customModelProtocols.value,
+    customModelList.value,
+  );
 
   const list = [...settingStore.customProviders];
   const index = list.findIndex((p) => p.id === editingProviderId.value);
@@ -776,7 +821,7 @@ async function saveCustom() {
     disabledModels: nextDisabledModels,
     presetId: nextPresetId,
     apiProtocol: nextProtocol,
-    modelProtocols: index !== -1 ? list[index].modelProtocols : undefined,
+    modelProtocols: nextModelProtocols,
   };
 
   if (index !== -1) {
@@ -788,7 +833,8 @@ async function saveCustom() {
       current.models === nextModels &&
       (current.disabledModels ?? "") === nextDisabledModels &&
       current.presetId === nextPresetId &&
-      normalizeProviderApiProtocol(current.apiProtocol) === nextProtocol
+      normalizeProviderApiProtocol(current.apiProtocol) === nextProtocol &&
+      modelProtocolsEqual(current.modelProtocols, nextModelProtocols)
     ) {
       return;
     }
@@ -809,6 +855,59 @@ async function saveCustomAndGoBack() {
 function onProtocolChange(value: unknown) {
   customApiProtocol.value = normalizeProviderApiProtocol(value);
   void saveCustom();
+}
+
+function modelProtocolValue(model: string): string {
+  return customModelProtocols.value[model] ?? "inherit";
+}
+
+function onModelProtocolChange(model: string, value: unknown) {
+  const next = { ...customModelProtocols.value };
+  const protocol = normalizeModelProtocol(value);
+  if (protocol) {
+    next[model] = protocol;
+  } else {
+    delete next[model];
+  }
+  customModelProtocols.value = next;
+  void saveCustom();
+}
+
+function cloneModelProtocols(
+  source?: Record<string, ModelWireProtocol>,
+): Record<string, ModelWireProtocol> {
+  const next: Record<string, ModelWireProtocol> = {};
+  if (!source) return next;
+  for (const [model, protocol] of Object.entries(source)) {
+    const normalized = normalizeModelProtocol(protocol);
+    if (normalized) next[model] = normalized;
+  }
+  return next;
+}
+
+function serializeModelProtocols(
+  source: Record<string, ModelWireProtocol>,
+  models: string[],
+): Record<string, ModelWireProtocol> | undefined {
+  const next: Record<string, ModelWireProtocol> = {};
+  for (const model of models) {
+    const protocol = source[model];
+    if (protocol) next[model] = protocol;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function modelProtocolsEqual(
+  left?: Record<string, ModelWireProtocol>,
+  right?: Record<string, ModelWireProtocol>,
+): boolean {
+  const a = left ?? {};
+  const b = right ?? {};
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
 }
 
 async function deleteCustom(id: string | null) {
@@ -1096,6 +1195,12 @@ header.view-header.edit-header {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.model-protocol-select {
+  width: 8.75rem;
+  flex: none;
+  font-size: 11px;
 }
 
 .model-remove {

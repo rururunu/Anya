@@ -10,8 +10,7 @@ use crate::models::settings::{ProviderApiProtocol, ReasoningEffort};
 
 use crate::core::ai::provider::{AIProvider, ProviderError};
 use super::anthropic::{
-    build_anthropic_body, is_format_rejected, remaining_wire_protocols, resolve_wire_protocol,
-    url_for_wire_protocol, WireProtocol,
+    build_anthropic_body, resolve_wire_protocol, url_for_wire_protocol, WireProtocol,
 };
 use super::image_fallback::{apply_image_input_fallback, FallbackPlan};
 use super::messages::{build_api_body, build_responses_body};
@@ -161,8 +160,7 @@ impl DeepSeekProvider {
             &primary_model,
         )
         .map(WireProtocol::from);
-        let primary_wire =
-            resolve_wire_protocol(primary_protocol, &primary_model, &guess_url, cached);
+        let primary_wire = resolve_wire_protocol(primary_protocol, cached);
         let effort = self.effort();
         let pass_tool_reasoning = self.pass_tool_reasoning();
         let continue_thinking_after_tools = self.continue_thinking_after_tools();
@@ -179,10 +177,9 @@ impl DeepSeekProvider {
         let mut model = primary_model.clone();
         let mut api_key = primary_api_key.clone();
         let mut protocol = primary_wire;
-        let mut remember_provider_id = self.provider_id.clone();
 
         if has_images {
-            match dispatch_with_protocol_fallback(
+            match dispatch_configured_protocol(
                 &client,
                 &request,
                 &primary_model,
@@ -194,8 +191,6 @@ impl DeepSeekProvider {
                 primary_wire,
                 endpoint_base.as_deref(),
                 &tx,
-                &self.app,
-                &self.provider_id,
             )
             .await
             {
@@ -215,7 +210,6 @@ impl DeepSeekProvider {
                             api_key = primary_api_key;
                             protocol = primary_wire;
                             endpoint_base = self.provider_base_url();
-                            remember_provider_id = self.provider_id.clone();
                         }
                         Ok(FallbackPlan::SwitchToMultimodal {
                             model: mm_model,
@@ -232,9 +226,7 @@ impl DeepSeekProvider {
                                 &model,
                             )
                             .map(WireProtocol::from);
-                            protocol =
-                                resolve_wire_protocol(mm_protocol, &model, &mm_url, mm_cached);
-                            remember_provider_id = self.provider_id.clone();
+                            protocol = resolve_wire_protocol(mm_protocol, mm_cached);
                         }
                         Err(error) => return emit_stream_error(&tx, error).await,
                     }
@@ -247,7 +239,7 @@ impl DeepSeekProvider {
         // compact and retry" path; custom OpenAI-compatible providers keep the
         // existing surface-error behavior.
         let is_deepseek = model.trim().to_ascii_lowercase().starts_with("deepseek");
-        match dispatch_with_protocol_fallback(
+        match dispatch_configured_protocol(
             &client,
             &request,
             &model,
@@ -259,8 +251,6 @@ impl DeepSeekProvider {
             protocol,
             endpoint_base.as_deref(),
             &tx,
-            &self.app,
-            &remember_provider_id,
         )
         .await
         {
@@ -271,7 +261,7 @@ impl DeepSeekProvider {
     }
 }
 
-async fn dispatch_with_protocol_fallback(
+async fn dispatch_configured_protocol(
     client: &reqwest::Client,
     request: &ChatRequest,
     model: &str,
@@ -280,50 +270,25 @@ async fn dispatch_with_protocol_fallback(
     pass_tool_reasoning: bool,
     continue_thinking_after_tools: bool,
     include_thinking: bool,
-    initial: WireProtocol,
+    protocol: WireProtocol,
     base_url: Option<&str>,
     tx: &Sender<StreamEvent>,
-    app: &tauri::AppHandle,
-    provider_id: &str,
 ) -> Result<(), ProviderError> {
-    let mut protocols = vec![initial];
-    protocols.extend(remaining_wire_protocols(initial));
-    let mut last_error: Option<ProviderError> = None;
-
-    for (index, protocol) in protocols.iter().copied().enumerate() {
-        let url = url_for_wire_protocol(base_url, protocol);
-        match dispatch_stream(
-            client,
-            &url,
-            api_key,
-            request,
-            model,
-            effort,
-            pass_tool_reasoning,
-            continue_thinking_after_tools,
-            include_thinking,
-            protocol,
-            tx,
-        )
-        .await
-        {
-            Ok(()) => {
-                crate::core::ai::registry::remember_model_protocol(
-                    app,
-                    provider_id,
-                    model,
-                    protocol.into(),
-                );
-                return Ok(());
-            }
-            Err(error) if index + 1 < protocols.len() && is_format_rejected(&error.to_string()) => {
-                last_error = Some(error);
-            }
-            Err(error) => return Err(error),
-        }
-    }
-
-    Err(last_error.unwrap_or_else(|| ProviderError::message("model is not supported")))
+    let url = url_for_wire_protocol(base_url, protocol);
+    dispatch_stream(
+        client,
+        &url,
+        api_key,
+        request,
+        model,
+        effort,
+        pass_tool_reasoning,
+        continue_thinking_after_tools,
+        include_thinking,
+        protocol,
+        tx,
+    )
+    .await
 }
 
 async fn dispatch_stream(

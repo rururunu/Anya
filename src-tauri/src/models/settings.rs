@@ -172,6 +172,8 @@ pub enum ProviderApiProtocol {
     ChatCompletions,
     /// OpenAI/xAI `/v1/responses`. Required for Grok visible reasoning.
     Responses,
+    /// Anthropic-compatible `/v1/messages`.
+    AnthropicMessages,
 }
 
 impl ProviderApiProtocol {
@@ -180,9 +182,7 @@ impl ProviderApiProtocol {
     }
 }
 
-/// Learned per-model wire format for a custom provider. Distinct from the
-/// user-facing provider default (`ProviderApiProtocol`), which has no
-/// Anthropic option in Settings.
+/// Per-model protocol override. Same variants as `ProviderApiProtocol`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ModelWireProtocol {
@@ -212,15 +212,14 @@ pub struct CustomProviderConfig {
     /// Optional preset template id used for icons / known defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset_id: Option<String>,
-    /// Wire protocol for this custom endpoint. Existing providers default to
+    /// Default wire protocol for this endpoint. Existing providers default to
     /// Chat Completions so previously saved settings keep working.
     #[serde(
         default,
         skip_serializing_if = "ProviderApiProtocol::is_chat_completions"
     )]
     pub api_protocol: ProviderApiProtocol,
-    /// Learned wire format per model id. Empty until a successful stream
-    /// records which protocol the gateway actually accepted.
+    /// Per-model protocol override. Missing keys inherit `api_protocol`.
     #[serde(default, skip_serializing_if = "model_protocols_is_empty")]
     pub model_protocols: HashMap<String, ModelWireProtocol>,
 }
@@ -986,6 +985,16 @@ mod tests {
         assert_eq!(
             restored.model_protocols.get("minimax-m3"),
             Some(&super::ModelWireProtocol::AnthropicMessages)
+        );
+
+        provider.api_protocol = super::ProviderApiProtocol::AnthropicMessages;
+        let with_provider = serde_json::to_value(&provider).expect("serialize");
+        assert_eq!(with_provider["apiProtocol"], "anthropicMessages");
+        let restored_provider: super::CustomProviderConfig =
+            serde_json::from_value(with_provider).expect("deserialize");
+        assert_eq!(
+            restored_provider.api_protocol,
+            super::ProviderApiProtocol::AnthropicMessages
         );
     }
 }

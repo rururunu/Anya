@@ -682,6 +682,13 @@ fn normalize_responses_url_from_chat_completions() {
         ),
         "https://api.x.ai/v1/responses"
     );
+    assert_eq!(
+        endpoint_url_for_protocol(
+            "https://proxy.example/v1",
+            crate::models::settings::ProviderApiProtocol::AnthropicMessages
+        ),
+        "https://proxy.example/v1/messages"
+    );
 }
 
 #[test]
@@ -727,6 +734,26 @@ fn normalize_chat_completions_url_injects_v1_for_bare_host() {
     assert_eq!(
         normalize_chat_completions_url("https://www.micuapi.ai/chat/completions"),
         "https://www.micuapi.ai/v1/chat/completions"
+    );
+    assert_eq!(
+        normalize_chat_completions_url("https://api.commandcode.ai"),
+        "https://api.commandcode.ai/provider/v1/chat/completions"
+    );
+    assert_eq!(
+        normalize_chat_completions_url("https://api.commandcode.ai/v1"),
+        "https://api.commandcode.ai/provider/v1/chat/completions"
+    );
+    assert_eq!(
+        normalize_chat_completions_url("https://api.commandcode.ai/provider/v1"),
+        "https://api.commandcode.ai/provider/v1/chat/completions"
+    );
+    assert_eq!(
+        normalize_chat_completions_url("https://api.commandcode.ai/provider/"),
+        "https://api.commandcode.ai/provider/v1/chat/completions"
+    );
+    assert_eq!(
+        normalize_chat_completions_url("https://api.commandcode.ai/provider"),
+        "https://api.commandcode.ai/provider/v1/chat/completions"
     );
 }
 

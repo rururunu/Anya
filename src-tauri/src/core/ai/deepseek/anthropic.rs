@@ -1,9 +1,4 @@
 //! Anthropic Messages wire format (`POST /v1/messages`).
-//!
-//! Aggregators such as OpenCode Go / Console Go list MiniMax on `/models` but
-//! reject OpenAI Chat Completions with
-//! `Model minimax-m3 is not supported for format openai`. Those models must be
-//! posted as Anthropic Messages instead.
 
 use serde_json::{json, Map, Value};
 
@@ -33,36 +28,14 @@ impl From<ModelWireProtocol> for WireProtocol {
     }
 }
 
-impl From<WireProtocol> for ModelWireProtocol {
-    fn from(value: WireProtocol) -> Self {
-        match value {
-            WireProtocol::ChatCompletions => Self::ChatCompletions,
-            WireProtocol::Responses => Self::Responses,
-            WireProtocol::AnthropicMessages => Self::AnthropicMessages,
-        }
-    }
-}
-
 impl From<ProviderApiProtocol> for WireProtocol {
     fn from(value: ProviderApiProtocol) -> Self {
         match value {
             ProviderApiProtocol::ChatCompletions => Self::ChatCompletions,
             ProviderApiProtocol::Responses => Self::Responses,
+            ProviderApiProtocol::AnthropicMessages => Self::AnthropicMessages,
         }
     }
-}
-
-const WIRE_PROTOCOL_FALLBACK_ORDER: [WireProtocol; 3] = [
-    WireProtocol::AnthropicMessages,
-    WireProtocol::ChatCompletions,
-    WireProtocol::Responses,
-];
-
-pub(super) fn remaining_wire_protocols(failed: WireProtocol) -> Vec<WireProtocol> {
-    WIRE_PROTOCOL_FALLBACK_ORDER
-        .into_iter()
-        .filter(|protocol| *protocol != failed)
-        .collect()
 }
 
 pub(super) fn url_for_wire_protocol(base_url: Option<&str>, protocol: WireProtocol) -> String {
@@ -80,55 +53,11 @@ pub(super) fn url_for_wire_protocol(base_url: Option<&str>, protocol: WireProtoc
     }
 }
 
-pub(super) fn anthropic_format_model(model: &str) -> bool {
-    let model = model.trim().to_ascii_lowercase();
-    model.contains("minimax")
-        || model.contains("claude")
-        || model.contains("anthropic")
-        || model.contains("qwen3.7")
-}
-
-pub(super) fn prefers_anthropic_messages(model: &str, url: &str) -> bool {
-    if !anthropic_format_model(model) {
-        return false;
-    }
-    let url = url.trim().to_ascii_lowercase();
-    if url.contains("/anthropic") || url.contains("/messages") {
-        return true;
-    }
-    // First-party MiniMax OpenAI hosts speak Chat Completions.
-    if (url.contains("api.minimax.io") || url.contains("api.minimaxi.com"))
-        && !url.contains("/anthropic")
-    {
-        return false;
-    }
-    // Official DeepSeek cannot host MiniMax on either protocol.
-    if url.contains("api.deepseek.com") {
-        return false;
-    }
-    // Custom / aggregator endpoints serve MiniMax on Anthropic Messages.
-    true
-}
-
 pub(super) fn resolve_wire_protocol(
     configured: ProviderApiProtocol,
-    model: &str,
-    url: &str,
-    cached: Option<WireProtocol>,
+    model_override: Option<WireProtocol>,
 ) -> WireProtocol {
-    if let Some(cached) = cached {
-        return cached;
-    }
-    if prefers_anthropic_messages(model, url) {
-        return WireProtocol::AnthropicMessages;
-    }
-    WireProtocol::from(configured)
-}
-
-pub(super) fn is_format_rejected(error: &str) -> bool {
-    let text = error.to_ascii_lowercase();
-    text.contains("not supported for format")
-        || (text.contains("modelerror") && text.contains("not supported"))
+    model_override.unwrap_or_else(|| WireProtocol::from(configured))
 }
 
 pub(super) fn build_anthropic_body(
@@ -413,30 +342,6 @@ mod tests {
     }
 
     #[test]
-    fn minimax_on_aggregator_prefers_anthropic() {
-        assert!(prefers_anthropic_messages(
-            "minimax-m3",
-            "https://opencode.ai/zen/go/v1/chat/completions"
-        ));
-        assert!(prefers_anthropic_messages(
-            "minimax-m3",
-            "https://console.example/v1/chat/completions"
-        ));
-        assert!(!prefers_anthropic_messages(
-            "minimax-m3",
-            "https://api.minimax.io/v1/chat/completions"
-        ));
-        assert!(!prefers_anthropic_messages(
-            "deepseek-v4-pro",
-            "https://opencode.ai/zen/go/v1/chat/completions"
-        ));
-        assert!(!prefers_anthropic_messages(
-            "minimax-m3",
-            "https://api.deepseek.com/chat/completions"
-        ));
-    }
-
-    #[test]
     fn anthropic_body_lifts_system_and_tools() {
         let request = ChatRequest {
             request_id: "r".into(),
@@ -501,75 +406,33 @@ mod tests {
     }
 
     #[test]
-    fn resolve_protocol_cache_then_heuristic_then_default() {
+    fn resolve_protocol_uses_override_then_provider() {
         assert_eq!(
             resolve_wire_protocol(
                 ProviderApiProtocol::Responses,
-                "minimax-m3",
-                "https://proxy.example/v1/chat/completions",
                 Some(WireProtocol::ChatCompletions),
             ),
             WireProtocol::ChatCompletions
         );
         assert_eq!(
-            resolve_wire_protocol(
-                ProviderApiProtocol::Responses,
-                "minimax-m3",
-                "https://proxy.example/v1/chat/completions",
-                None,
-            ),
+            resolve_wire_protocol(ProviderApiProtocol::Responses, None),
+            WireProtocol::Responses
+        );
+        assert_eq!(
+            resolve_wire_protocol(ProviderApiProtocol::ChatCompletions, None),
+            WireProtocol::ChatCompletions
+        );
+        assert_eq!(
+            resolve_wire_protocol(ProviderApiProtocol::AnthropicMessages, None),
             WireProtocol::AnthropicMessages
         );
         assert_eq!(
             resolve_wire_protocol(
-                ProviderApiProtocol::Responses,
-                "deepseek-v4-pro",
-                "https://proxy.example/v1/chat/completions",
-                None,
-            ),
-            WireProtocol::Responses
-        );
-        assert_eq!(
-            resolve_wire_protocol(
                 ProviderApiProtocol::ChatCompletions,
-                "minimax-m3",
-                "https://api.minimax.io/v1/chat/completions",
-                None,
+                Some(WireProtocol::AnthropicMessages),
             ),
-            WireProtocol::ChatCompletions
+            WireProtocol::AnthropicMessages
         );
-    }
-
-    #[test]
-    fn remaining_protocols_skip_the_failed_one() {
-        assert_eq!(
-            remaining_wire_protocols(WireProtocol::ChatCompletions),
-            vec![WireProtocol::AnthropicMessages, WireProtocol::Responses]
-        );
-        assert_eq!(
-            remaining_wire_protocols(WireProtocol::AnthropicMessages),
-            vec![WireProtocol::ChatCompletions, WireProtocol::Responses]
-        );
-        assert_eq!(
-            remaining_wire_protocols(WireProtocol::Responses),
-            vec![
-                WireProtocol::AnthropicMessages,
-                WireProtocol::ChatCompletions
-            ]
-        );
-    }
-
-    #[test]
-    fn format_rejection_covers_anthropic_and_openai() {
-        assert!(is_format_rejected(
-            r#"DeepSeek API 401 Unauthorized: {"type":"error","error":{"type":"ModelError","message":"Model minimax-m3 is not supported for format openai"}}"#
-        ));
-        assert!(is_format_rejected(
-            r#"API 401: {"type":"error","error":{"type":"ModelError","message":"not supported for format anthropic"}}"#
-        ));
-        assert!(!is_format_rejected(
-            "DeepSeek API 500 Internal Server Error: Internal server error"
-        ));
     }
 
     #[test]
@@ -588,6 +451,27 @@ mod tests {
         assert_eq!(
             url_for_wire_protocol(None, WireProtocol::ChatCompletions),
             "https://api.deepseek.com/chat/completions"
+        );
+        assert_eq!(
+            url_for_wire_protocol(
+                Some("https://api.commandcode.ai"),
+                WireProtocol::ChatCompletions
+            ),
+            "https://api.commandcode.ai/provider/v1/chat/completions"
+        );
+        assert_eq!(
+            url_for_wire_protocol(
+                Some("https://api.commandcode.ai/provider/v1"),
+                WireProtocol::ChatCompletions
+            ),
+            "https://api.commandcode.ai/provider/v1/chat/completions"
+        );
+        assert_eq!(
+            url_for_wire_protocol(
+                Some("https://api.commandcode.ai/provider/"),
+                WireProtocol::ChatCompletions
+            ),
+            "https://api.commandcode.ai/provider/v1/chat/completions"
         );
     }
 }

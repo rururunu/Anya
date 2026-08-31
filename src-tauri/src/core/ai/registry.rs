@@ -133,34 +133,6 @@ pub(crate) fn cached_model_protocol(
         .copied()
 }
 
-pub(crate) fn remember_model_protocol(
-    app: &AppHandle,
-    provider_id: &str,
-    model: &str,
-    protocol: ModelWireProtocol,
-) {
-    let provider_id = provider_id.trim();
-    let model = model.trim();
-    if provider_id.is_empty() || model.is_empty() {
-        return;
-    }
-    let Ok(mut settings) = settings_store::get_settings(app) else {
-        return;
-    };
-    let Some(provider) = settings
-        .custom_providers
-        .iter_mut()
-        .find(|provider| provider.id == provider_id)
-    else {
-        return;
-    };
-    if provider.model_protocols.get(model) == Some(&protocol) {
-        return;
-    }
-    provider.model_protocols.insert(model.to_string(), protocol);
-    let _ = settings_store::set_settings(app, settings);
-}
-
 /// Resolve the provider by an explicit model + provider-hint selection.
 /// Used for per-conversation model overrides; empty hint resolves by model match.
 pub(crate) fn resolve_provider_for_selection(
@@ -422,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_model_protocol_reads_learned_map() {
+    fn cached_model_protocol_reads_user_override() {
         let mut hosted = provider("console-go", "key");
         hosted.models = "minimax-m3,deepseek-v4-pro".into();
         hosted.model_protocols.insert(
