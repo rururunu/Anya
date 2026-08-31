@@ -803,16 +803,18 @@ import { useWorkbenchSessions } from "@/composables/workbench/useWorkbenchSessio
 import { useWorkbenchWorkspaces } from "@/composables/workbench/useWorkbenchWorkspaces";
 import { useWorkbenchHotkeys } from "@/composables/workbench/useWorkbenchHotkeys";
 import { useWorkbenchLifecycle } from "@/composables/workbench/useWorkbenchLifecycle";
+import { storeToRefs } from "pinia";
 import { tr } from "@/services/i18n";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import { isSubagentSessionId, rootSessionId } from "@/services/chat/subagentSession";
 import { useChatStore } from "@/stores/chat";
+import { useChatSessionsStore } from "@/stores/chatSessions";
 import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore, applyZoom, applyTheme } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
 import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
 import type { Workspace } from "@/commands/workspace";
-import type { ChatSessionSummary, CapturedContext } from "@/types/chat";
+import type { CapturedContext } from "@/types/chat";
 
 const SettingsPage = defineAsyncComponent(() => import("@/pages/Settings/index.vue"));
 const PluginsPanel = defineAsyncComponent(() => import("@/components/workbench/PluginsPanel.vue"));
@@ -826,6 +828,8 @@ const remoteGatewayRunning = ref(false);
 let remoteGatewayUnlisten: UnlistenFn | null = null;
 
 const chatStore = useChatStore();
+const sessionsStore = useChatSessionsStore();
+const { summaries: sessions } = storeToRefs(sessionsStore);
 const subagentSessionStore = useSubagentSessionStore();
 const settingStore = useSettingStore();
 const updaterStore = useUpdaterStore();
@@ -884,7 +888,6 @@ watch(
 // itself needs labels for its confirm dialogs.
 const navigationOpen = ref(true);
 const initializing = ref(true);
-const sessions = ref<ChatSessionSummary[]>([]);
 const workspaces = ref<Workspace[]>([]);
 const activeSessionId = ref("");
 const activeSessionWorkspaceId = ref<string | null>(null);
@@ -1237,9 +1240,9 @@ const activeTitle = computed(() => {
     const title = formatSessionPreview(preview) || labels.value.untitled;
     return title.startsWith(badge) ? title : `${badge} ${title}`;
   }
-  if (!hasConversationMessages.value) return labels.value.untitled;
   const preview =
-    sessions.value.find((session) => session.sessionId === activeSessionId.value)?.preview || "";
+    sessionsWithLiveTokens.value.find((session) => session.sessionId === activeSessionId.value)
+      ?.preview || "";
   return formatSessionPreview(preview) || labels.value.untitled;
 });
 

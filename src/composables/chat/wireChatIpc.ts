@@ -86,7 +86,10 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
     void sessionsStore.refreshSummaries();
   });
 
-  await listenChatSessionTitleUpdated(() => {
+  await listenChatSessionTitleUpdated((payload) => {
+    if (payload.sessionId && payload.title) {
+      sessionsStore.patchSummary(payload.sessionId, { preview: payload.title });
+    }
     void sessionsStore.refreshSummaries();
   });
 

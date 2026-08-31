@@ -20,9 +20,7 @@ export interface UseWorkbenchNavigationOptions {
   openSettingsPanel: (category?: CategoryId) => void;
   activeSessionId: Ref<string>;
   activeSessionWorkspaceId: Ref<string | null>;
-  sessions: Ref<ChatSessionSummary[]>;
   sessionsWithLiveTokens: ComputedRef<ChatSessionSummary[]>;
-  hasConversationMessages: ComputedRef<boolean>;
   labels: WorkbenchLabels["labels"];
   navigationLabels: WorkbenchLabels["navigationLabels"];
   selectConversation: (sessionId: string) => Promise<void>;
@@ -111,10 +109,10 @@ export function useWorkbenchNavigation(options: UseWorkbenchNavigationOptions) {
       const title = formatSessionPreview(preview) || options.labels.value.untitled;
       return title.startsWith(badge) ? title : `${badge} ${title}`;
     }
-    if (!options.hasConversationMessages.value) return options.labels.value.untitled;
     const preview =
-      options.sessions.value.find((session) => session.sessionId === options.activeSessionId.value)
-        ?.preview || "";
+      options.sessionsWithLiveTokens.value.find(
+        (session) => session.sessionId === options.activeSessionId.value,
+      )?.preview || "";
     return formatSessionPreview(preview) || options.labels.value.untitled;
   });
 
