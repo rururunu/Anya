@@ -1,7 +1,7 @@
 # Anya
 
 <p align="center">
-  <img src="src-tauri/icons/icon.png" alt="Anya" width="120" height="120" />
+  <img src="public/mascot/mascot-icon.svg" alt="Anya" width="120" height="120" />
 </p>
 
 <h1 align="center">Anya</h1>
@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.16-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.17-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -107,7 +107,10 @@ Docs: [Companion README](https://github.com/rururunu/AnyaAndroid) · [Companion 
 The workbench is the full desktop surface: Quick Ask threads from the overlay sit beside pinned chats and project workspaces.
 
 <p align="center">
-  <img src="./docs/image/workspace.png" alt="Anya workbench" width="900" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/image/dark_home.png" />
+    <img src="./docs/image/light_home.png" alt="Anya workbench (light / dark)" width="900" />
+  </picture>
 </p>
 
 | Area           | What it is for                                                                                                          |
@@ -154,6 +157,10 @@ Reasoning controls follow the selected model's advertised family. DeepSeek expos
 | **Image** | Every turn draws a picture          | Only `generate_image`; Settings → Image providers (not chat providers)             |
 
 Ask withholds write / shell / git. Agent enables them under your approval policy. Plan (manual or auto) blocks writes via the plan gate until you approve at the end of the assistant reply. Image mode pins the Images API tool and prompt so each turn produces a real image. All four share the same `AgentRunner` loop — policy lives in tool exposure, approval, plan/image gates, not a second orchestrator.
+
+<p align="center">
+  <img src="./docs/image/image_production.png" alt="Image mode: generate, then refine with follow-ups" width="900" />
+</p>
 
 ### Timeline
 
@@ -292,7 +299,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.16_x64.msi`.
+The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.17_x64.msi`.
 
 For signing, `latest.json`, and GitHub Releases, see [Releases and remote updates](./docs/release.md).
 

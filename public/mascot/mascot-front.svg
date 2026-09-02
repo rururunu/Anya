@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Blob mascot, front view">
+  <title>Blob mascot - front view (blinking)</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1c1e"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <radialGradient id="body" cx=".38" cy=".28" r=".85">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".65" stop-color="#f8f8f8"/>
+      <stop offset="1" stop-color="#dedede"/>
+    </radialGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset=".55" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".1"/>
+    </linearGradient>
+    <path id="blob" d="M256 108C356 108 428 164 428 272C428 388 381 428 256 428C131 428 84 388 84 272C84 164 156 108 256 108Z"/>
+    <rect id="pill" x="-17" y="-46" width="34" height="92" rx="17"/>
+  </defs>
+
+  <style>
+    .blink {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: blink 3.8s infinite;
+    }
+    .blink.b2 { animation-delay: .04s; }
+    @keyframes blink {
+      0%, 60%, 66%, 100% { transform: scaleY(1); }
+      63% { transform: scaleY(.06); }
+    }
+    @media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
+  </style>
+
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+
+  <g class="float">
+    <use href="#blob" fill="url(#body)"/>
+    <use href="#blob" fill="url(#shade)"/>
+    <g fill="#111">
+      <g transform="translate(208 290)"><g class="blink"><use href="#pill"/></g></g>
+      <g transform="translate(304 290)"><g class="blink b2"><use href="#pill"/></g></g>
+    </g>
+  </g>
+</svg>

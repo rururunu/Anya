@@ -18,7 +18,7 @@
       class="onboarding-logo"
       :class="{ 'is-revealing': revealing, 'is-large': step === 1 && !revealing }"
     >
-      <AnyaLogo alt="Anya" />
+      <MascotFace alt="Anya" interactive />
     </div>
 
     <div v-show="!revealing" class="onboarding-stage">
@@ -272,7 +272,7 @@ import { gsap, safeGsap } from "@/services/motion/gsapSafe";
 
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
 import GeminiIcon from "@/components/icons/GeminiIcon.vue";
-import AnyaLogo from "@/components/icons/AnyaLogo.vue";
+import MascotFace from "@/components/icons/MascotFace.vue";
 import { tr } from "@/services/i18n";
 import { geminiOauthCancelLogin, geminiOauthLogin, geminiOauthLogout } from "@/services/ipc";
 import { gsapOnboardingReveal } from "@/services/motion/gsapPresets";
@@ -569,7 +569,7 @@ async function completeOnboarding() {
   margin-top: 0;
 }
 
-.onboarding-logo :deep(.anya-logo) {
+.onboarding-logo :deep(.mascot-face) {
   width: 100%;
   height: 100%;
 }

@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="light" style="color-scheme: only light">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/mascot/mascot-icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anya</title>
     <script>
@@ -114,19 +114,43 @@
         place-items: center;
       }
 
+      /* Inline copy of the mascot (MascotFace.vue, busy state) so the splash needs no
+         framework or asset fetch: body in the text colour, eyes scanning left/right. */
       #boot-splash .boot-logo {
         position: relative;
         z-index: 1;
+        display: block;
         width: 168px;
         height: 168px;
-        background-color: #242424;
-        -webkit-mask: url("/anya-logo.svg") center / contain no-repeat;
-        mask: url("/anya-logo.svg") center / contain no-repeat;
         animation: boot-breathe 2.2s ease-in-out infinite;
+        filter: drop-shadow(0 14px 32px rgba(36, 36, 36, 0.16));
+      }
+
+      #boot-splash .boot-logo .boot-body {
+        fill: #242424;
+      }
+
+      #boot-splash .boot-logo .boot-eye {
+        fill: #f8f8f8;
+        transform-box: fill-box;
+        transform-origin: center;
+        transform: scaleY(0.62);
+      }
+
+      #boot-splash .boot-logo .boot-eyes {
+        animation: boot-scan 1.6s ease-in-out infinite;
       }
 
       html[data-theme="dark"] #boot-splash .boot-logo {
-        background-color: #e8e8e8;
+        filter: drop-shadow(0 14px 32px rgba(232, 232, 232, 0.14));
+      }
+
+      html[data-theme="dark"] #boot-splash .boot-logo .boot-body {
+        fill: #e8e8e8;
+      }
+
+      html[data-theme="dark"] #boot-splash .boot-logo .boot-eye {
+        fill: #141414;
       }
 
       #boot-splash .boot-label {
@@ -192,8 +216,19 @@
         }
       }
 
+      @keyframes boot-scan {
+        0%,
+        100% {
+          transform: translate(-34px, 14px);
+        }
+        50% {
+          transform: translate(34px, 14px);
+        }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         #boot-splash .boot-logo,
+        #boot-splash .boot-logo .boot-eyes,
         #boot-splash .boot-progress > i {
           animation: none;
         }
@@ -204,7 +239,16 @@
   <body>
     <div id="boot-splash" aria-live="polite" aria-busy="true">
       <div class="boot-logo-wrap" aria-hidden="true">
-        <span class="boot-logo"></span>
+        <svg class="boot-logo" viewBox="64 76 384 384" xmlns="http://www.w3.org/2000/svg">
+          <path
+            class="boot-body"
+            d="M256 108C356 108 428 164 428 272C428 388 381 428 256 428C131 428 84 388 84 272C84 164 156 108 256 108Z"
+          />
+          <g class="boot-eyes">
+            <rect class="boot-eye" x="191" y="244" width="34" height="92" rx="17" />
+            <rect class="boot-eye" x="287" y="244" width="34" height="92" rx="17" />
+          </g>
+        </svg>
       </div>
       <p class="boot-label">请稍等，正在为您准备……</p>
       <span class="boot-progress" aria-hidden="true"><i></i></span>

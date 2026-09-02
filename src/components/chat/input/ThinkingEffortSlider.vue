@@ -1,6 +1,7 @@
 <template>
   <div
-    class="thinking-effort-panel command-list"
+    class="thinking-effort-panel"
+    :class="inline ? 'inline' : 'command-list'"
     :style="sliderStyle"
     data-tauri-drag-region="false"
     role="slider"
@@ -9,9 +10,10 @@
     :aria-valuemax="maxIndex"
     :aria-valuenow="index"
     :aria-valuetext="currentLabel"
-    @wheel.prevent="onWheel"
+    @wheel="onWheel"
   >
-    <div class="thinking-slider-value">{{ currentLabel }}</div>
+    <span v-if="inline" class="thinking-slider-title">{{ title }}</span>
+    <div v-else class="thinking-slider-value">{{ currentLabel }}</div>
     <div
       class="thinking-slider-hit"
       @pointerdown="onPointerDown"
@@ -31,6 +33,7 @@
         <div class="thinking-slider-thumb" :class="{ dragging }" />
       </div>
     </div>
+    <span v-if="inline" class="thinking-slider-value">{{ currentLabel }}</span>
   </div>
 </template>
 
@@ -41,6 +44,11 @@ const props = defineProps<{
   options: Array<{ id: string; label: string }>;
   selectedId: string;
   title: string;
+  /**
+   * Embedded inside another list (e.g. under the current model in the model picker):
+   * no panel chrome, title + value on one line, and the wheel scrolls the list instead.
+   */
+  inline?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -113,9 +121,10 @@ function onPointerUp(event: PointerEvent) {
 }
 
 function onWheel(event: WheelEvent) {
-  if (maxIndex.value <= 0) {
+  if (props.inline || maxIndex.value <= 0) {
     return;
   }
+  event.preventDefault();
   const delta = event.deltaY === 0 ? event.deltaX : event.deltaY;
   if (delta === 0) {
     return;
@@ -137,12 +146,48 @@ function onWheel(event: WheelEvent) {
   background: var(--peek-list-bg);
 }
 
+/* Inline: one compact row  [title] [========track========] [value]  matching list rows. */
+.thinking-effort-panel.inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: none;
+  height: 30px;
+  padding: 0 14px 0 33px;
+  border-bottom: 0;
+  background: transparent;
+}
+
 .thinking-slider-value {
   margin-bottom: 8px;
   font-size: 13px;
   font-weight: 500;
   line-height: 16px;
   color: var(--peek-text);
+}
+
+.thinking-slider-title {
+  flex: none;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--peek-muted);
+  white-space: nowrap;
+}
+
+.inline .thinking-slider-hit {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline .thinking-slider-value {
+  flex: none;
+  min-width: 2.5em;
+  margin: 0;
+  font-size: 11px;
+  line-height: 14px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .thinking-slider-hit {

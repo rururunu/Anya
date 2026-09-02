@@ -93,6 +93,8 @@
       class="message-list peek-scrollbar"
       data-tauri-drag-region="false"
       @scroll="handleScroll"
+      @wheel.passive="handleWheel"
+      @keydown="handleKeydown"
     >
       <div v-if="displayItems.length === 0" class="empty-thread">
         {{ emptyThreadPrompt }}
@@ -328,6 +330,14 @@
             "
             class="message-actions assistant-message-actions"
           >
+            <template v-if="processingDuration(item.message)">
+              <span class="turn-mascot" :title="turnMascotTitle(item.message)" aria-hidden="true">
+                <MascotFace :state="turnMascotState(item.message)" :follow-pointer="false" />
+              </span>
+              <span v-if="turnMascotLabel(item.message)" class="turn-state">
+                {{ turnMascotLabel(item.message) }}
+              </span>
+            </template>
             <span v-if="processingDuration(item.message)" class="processing-duration">
               {{
                 tr(settingStore.language, "processedFor", {
@@ -431,6 +441,7 @@ import AgentWorkDetails from "@/components/chat/AgentWorkDetails.vue";
 import CodeChangesSummary from "@/components/chat/CodeChangesSummary.vue";
 import PlanApprovalCard from "@/components/chat/PlanApprovalCard.vue";
 import AssistantActivityIndicator from "@/components/chat/AssistantActivityIndicator.vue";
+import MascotFace, { type MascotState } from "@/components/icons/MascotFace.vue";
 import AskUserAnswerCard from "@/components/chat/AskUserAnswerCard.vue";
 import ImageAnalysisDetails from "@/components/chat/ImageAnalysisDetails.vue";
 import EnvironmentContextCard from "@/components/chat/EnvironmentContextCard.vue";
@@ -442,7 +453,7 @@ import type { ChatMessage, CheckpointInfo, TaskItem } from "@/types/chat";
 import { parseSelectionAttachment } from "@/services/chat/selectionAttachment";
 import { isSoftInjectContent, stripSoftInjectMarker } from "@/services/chat/softInject";
 import { isCompactionSummary } from "@/services/chat/compactMarker";
-import { tr } from "@/services/i18n";
+import { tr, type I18nKey } from "@/services/i18n";
 import { createLogger } from "@/services/logger";
 import { copyText } from "@/services/clipboard";
 import {
@@ -1165,15 +1176,16 @@ const { railRef, activeUserMessageId, messagePreview, onRailKeydown, updateActiv
     userContent,
   });
 
-const { handleScroll, scrollToMessage, scrollToLatest } = useMessageScroll({
-  listRef,
-  stickToBottom,
-  messages: computed(() => props.messages),
-  displayItems,
-  activeUserMessageId,
-  railRef,
-  updateActiveUserMessage,
-});
+const { handleScroll, handleWheel, handleKeydown, scrollToMessage, scrollToLatest } =
+  useMessageScroll({
+    listRef,
+    stickToBottom,
+    messages: computed(() => props.messages),
+    displayItems,
+    activeUserMessageId,
+    railRef,
+    updateActiveUserMessage,
+  });
 
 type InlineMessagePart =
   | { kind: "text"; text: string }
@@ -1361,6 +1373,43 @@ function isWaitingForAskUser(message: ChatMessage) {
   );
 }
 
+/** Face shown next to the turn stats, following what the agent is doing right now. */
+function turnMascotState(message: ChatMessage): MascotState {
+  switch (message.status) {
+    case "error":
+      return "error";
+    case "cancelled":
+      return "idle";
+    case "done":
+      return "done";
+  }
+  if (isWaitingForAskUser(message)) return "waiting";
+  if ((message.toolActivities ?? []).some((activity) => activity.status === "running")) {
+    return "working";
+  }
+  if (message.content.trim()) return "talking";
+  return "thinking";
+}
+
+const MASCOT_STATE_LABEL_KEYS: Record<MascotState, I18nKey> = {
+  idle: "mascotState.idle",
+  thinking: "mascotState.thinking",
+  working: "mascotState.working",
+  talking: "mascotState.talking",
+  waiting: "mascotState.waiting",
+  done: "mascotState.done",
+  error: "mascotState.error",
+};
+function turnMascotTitle(message: ChatMessage) {
+  return tr(settingStore.language, MASCOT_STATE_LABEL_KEYS[turnMascotState(message)]);
+}
+/** Visible caption next to the face: only while something is actually happening. */
+function turnMascotLabel(message: ChatMessage) {
+  const state = turnMascotState(message);
+  if (state === "idle" || state === "done") return "";
+  return tr(settingStore.language, MASCOT_STATE_LABEL_KEYS[state]);
+}
+
 function activityLabel(message: ChatMessage) {
   if (message.activityStatus === "context_compacting") {
     return tr(settingStore.language, "compactingContext");
@@ -1388,6 +1437,11 @@ function activityLabel(message: ChatMessage) {
   const hasWorkStream =
     Boolean(message.reasoning?.trim()) || (message.toolActivities?.length ?? 0) > 0;
   if (hasWorkStream) {
+    return "";
+  }
+  // The mascot in the stats row already narrates the generic thinking / replying
+  // states; showing this indicator too would stack two faces and shift the layout.
+  if (processingDuration(message)) {
     return "";
   }
 
@@ -1781,6 +1835,21 @@ defineExpose({ openFind, closeFind });
 }
 .assistant-message-actions {
   justify-content: flex-start;
+}
+.turn-mascot {
+  flex: none;
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  opacity: 0.9;
+}
+.turn-state {
+  margin-right: 8px;
+  color: var(--peek-muted);
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 .processing-duration,
 .token-usage,

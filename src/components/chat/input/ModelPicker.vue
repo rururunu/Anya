@@ -134,6 +134,23 @@
               />
             </TooltipContent>
           </Tooltip>
+          <!-- Thinking effort lives right under the model it applies to. -->
+          <div
+            v-if="
+              thinkingOptions.length > 1 &&
+              isModelEntrySelected(entry.model, selectedModelId, selectedProvider)
+            "
+            class="model-thinking-inline"
+            @mousedown.prevent
+          >
+            <ThinkingEffortSlider
+              inline
+              :options="thinkingOptions"
+              :selected-id="thinkingSelectedId"
+              :title="thinkingTitle"
+              @select="$emit('selectThinking', $event)"
+            />
+          </div>
         </li>
       </TooltipProvider>
     </template>
@@ -170,27 +187,40 @@ import {
 } from "@/lib/providerIcons";
 import { peekProviderFavicon, warmProviderFavicons } from "@/services/providerFavicon";
 import ModelProviderTip from "./ModelProviderTip.vue";
+import ThinkingEffortSlider from "./ThinkingEffortSlider.vue";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { isModelEntrySelected } from "@/lib/modelThinking";
 import { useSettingStore } from "@/stores/setting";
 
-const props = defineProps<{
-  models: ChatModelInfo[];
-  selectedModelId: string;
-  selectedProvider: string;
-  selectedIndex: number;
-  /** `null` shows the provider list when more than one group exists. */
-  activeProvider: string | null;
-  loading: boolean;
-  refreshing?: boolean;
-  error: string | null;
-  loadingText: string;
-  emptyText: string;
-  refreshText: string;
-  backText: string;
-  modelCountText: string;
-  ariaLabel: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    models: ChatModelInfo[];
+    selectedModelId: string;
+    selectedProvider: string;
+    selectedIndex: number;
+    /** `null` shows the provider list when more than one group exists. */
+    activeProvider: string | null;
+    loading: boolean;
+    refreshing?: boolean;
+    error: string | null;
+    loadingText: string;
+    emptyText: string;
+    refreshText: string;
+    backText: string;
+    modelCountText: string;
+    ariaLabel: string;
+    /** Thinking effort / tier choices for the selected model; shown as a slider under it. */
+    thinkingOptions?: Array<{ id: string; label: string }>;
+    thinkingSelectedId?: string;
+    thinkingTitle?: string;
+  }>(),
+  {
+    refreshing: false,
+    thinkingOptions: () => [],
+    thinkingSelectedId: "",
+    thinkingTitle: "",
+  },
+);
 
 defineEmits<{
   hover: [index: number];
@@ -198,6 +228,7 @@ defineEmits<{
   selectGroup: [provider: string];
   back: [];
   refresh: [];
+  selectThinking: [id: string];
 }>();
 
 const settingStore = useSettingStore();
@@ -359,6 +390,21 @@ const refreshIndex = computed(() =>
 
 .model-picker-item.current:not(.active) {
   background: color-mix(in srgb, var(--peek-accent) 7%, transparent);
+}
+
+/* Slider strip under the current model: same tint as the current row so they read as one
+   block, fixed height so the list rhythm stays even. */
+.model-thinking-inline {
+  height: 30px;
+  overflow: hidden;
+  margin-bottom: 2px;
+  background: color-mix(in srgb, var(--peek-accent) 7%, transparent);
+  border-radius: 0 0 6px 6px;
+}
+
+.model-picker-list .model-picker-row:has(.model-thinking-inline) .model-picker-item {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .model-icon-dot {

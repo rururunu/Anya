@@ -19,6 +19,17 @@ export function useMessageScroll(options: {
   let bottomScrollRaf = 0;
   let resizeScrollRaf = 0;
   let resizeObserver: ResizeObserver | null = null;
+  /* scrollTop we last set ourselves; scroll events landing there are not user intent. */
+  let programmaticScrollTop: number | null = null;
+  /* After the user deliberately scrolls up, ignore re-sticking for a moment so smooth
+     wheel/trackpad scrolling that briefly passes "near bottom" doesn't snap them back. */
+  let userScrollUpUntil = 0;
+  const USER_SCROLL_GRACE_MS = 700;
+
+  function setScrollTop(element: HTMLElement, top: number) {
+    programmaticScrollTop = top;
+    element.scrollTop = top;
+  }
 
   function isNearBottom(element: HTMLElement) {
     const padBottom = Number.parseFloat(getComputedStyle(element).paddingBottom) || 0;
@@ -63,9 +74,36 @@ export function useMessageScroll(options: {
       scrollRaf = 0;
       const element = options.listRef.value;
       if (!element) return;
-      options.stickToBottom.value = isNearBottom(element) || isLastTurnOnScreen(element);
+      // Our own scrollTo() also fires scroll events; those must not flip the sticky flag.
+      const isProgrammatic =
+        programmaticScrollTop !== null && Math.abs(element.scrollTop - programmaticScrollTop) < 2;
+      programmaticScrollTop = null;
+      if (!isProgrammatic) {
+        const wantsBottom = isNearBottom(element) || isLastTurnOnScreen(element);
+        if (!wantsBottom) {
+          options.stickToBottom.value = false;
+        } else if (performance.now() >= userScrollUpUntil) {
+          options.stickToBottom.value = true;
+        }
+      }
       options.updateActiveUserMessage(activeUserMetrics(element));
     });
+  }
+
+  /** Wheel / trackpad: scrolling up is an explicit "let me read" and unsticks at once. */
+  function handleWheel(event: WheelEvent) {
+    if (event.deltaY < 0) {
+      options.stickToBottom.value = false;
+      userScrollUpUntil = performance.now() + USER_SCROLL_GRACE_MS;
+    }
+  }
+
+  /** Keyboard scrolling inside the list: same intent as wheel-up. */
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
+      options.stickToBottom.value = false;
+      userScrollUpUntil = performance.now() + USER_SCROLL_GRACE_MS;
+    }
   }
 
   function scrollToMessage(messageId: string) {
@@ -84,6 +122,7 @@ export function useMessageScroll(options: {
     const element = options.listRef.value;
     if (!element) return;
     options.stickToBottom.value = true;
+    userScrollUpUntil = 0;
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
     options.updateActiveUserMessage(activeUserMetrics(element));
   }
@@ -103,7 +142,7 @@ export function useMessageScroll(options: {
     const padBottom = Number.parseFloat(getComputedStyle(element).paddingBottom) || 0;
     const maxScroll = element.scrollHeight - element.clientHeight;
     if (maxScroll <= 1) {
-      element.scrollTop = 0;
+      setScrollTop(element, 0);
       options.updateActiveUserMessage(activeUserMetrics(element));
       return;
     }
@@ -117,13 +156,13 @@ export function useMessageScroll(options: {
       const turnHeight = contentBottom - userTop;
 
       if (turnHeight <= element.clientHeight - 4) {
-        element.scrollTop = users.length <= 1 ? 0 : Math.max(0, userTop - 8);
+        setScrollTop(element, users.length <= 1 ? 0 : Math.max(0, userTop - 8));
         options.updateActiveUserMessage(activeUserMetrics(element));
         return;
       }
     }
 
-    element.scrollTop = element.scrollHeight;
+    setScrollTop(element, maxScroll);
     options.updateActiveUserMessage(activeUserMetrics(element));
   }
 
@@ -187,6 +226,8 @@ export function useMessageScroll(options: {
 
   return {
     handleScroll,
+    handleWheel,
+    handleKeydown,
     scrollToMessage,
     scrollToLatest,
   };

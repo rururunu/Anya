@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 730" width="640" height="730" role="img" aria-label="Blob mascot agent state sheet">
+  <title>Blob mascot - agent state sheet</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1c1e"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <radialGradient id="body" cx=".38" cy=".28" r=".85">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".65" stop-color="#f8f8f8"/>
+      <stop offset="1" stop-color="#dedede"/>
+    </radialGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset=".55" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".1"/>
+    </linearGradient>
+
+    <rect id="bgr" width="512" height="512" rx="116" fill="url(#bg)"/>
+    <path id="blob" d="M256 108C356 108 428 164 428 272C428 388 381 428 256 428C131 428 84 388 84 272C84 164 156 108 256 108Z"/>
+    <g id="body-g">
+      <use href="#blob" fill="url(#body)"/>
+      <use href="#blob" fill="url(#shade)"/>
+    </g>
+    <rect id="pill" x="-17" y="-46" width="34" height="92" rx="17"/>
+    <rect id="pill-s" x="-17" y="-38" width="34" height="76" rx="17"/>
+    <path id="zed" d="M0 0H14L0 14H14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <g id="gear">
+      <circle r="15" fill="none" stroke="#fff" stroke-width="9" stroke-dasharray="5.9 5.9"/>
+      <circle r="13" fill="#fff"/>
+      <circle r="5.5" fill="#111"/>
+    </g>
+
+    <!-- states (all drawn in the 512x512 icon space) -->
+    <g id="x-icon" fill="#111">
+      <g transform="translate(240 298)"><use href="#pill"/></g>
+      <g transform="translate(330 298)"><use href="#pill"/></g>
+    </g>
+    <g id="x-idle" fill="#111">
+      <g transform="translate(208 290)"><use href="#pill"/></g>
+      <g transform="translate(304 290)"><use href="#pill"/></g>
+    </g>
+    <g id="x-thinking" fill="#111">
+      <g transform="translate(226 272)"><use href="#pill-s"/></g>
+      <g transform="translate(322 272)"><use href="#pill-s"/></g>
+      <g fill="#fff">
+        <circle cx="392" cy="150" r="7" opacity=".45"/>
+        <circle cx="411" cy="121" r="10" opacity=".7"/>
+        <circle cx="436" cy="86" r="14"/>
+      </g>
+    </g>
+    <g id="x-working" fill="#111">
+      <g transform="translate(208 302)"><use href="#pill-s"/></g>
+      <g transform="translate(304 302)"><use href="#pill-s"/></g>
+      <use href="#gear" transform="translate(412 118) scale(1.3)"/>
+    </g>
+    <g id="x-talking" fill="#111">
+      <g transform="translate(208 290)"><use href="#pill"/></g>
+      <g transform="translate(304 290)"><use href="#pill"/></g>
+      <path d="M446 262a22 22 0 0 1 0 40" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+      <path d="M462 250a38 38 0 0 1 0 64" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".55"/>
+    </g>
+    <g id="x-waiting" fill="#111">
+      <circle cx="208" cy="290" r="25"/><circle cx="199" cy="280" r="7" fill="#fff"/>
+      <circle cx="304" cy="290" r="25"/><circle cx="295" cy="280" r="7" fill="#fff"/>
+      <path d="M403 100a13 13 0 1 1 18 12c-4 2-5 4-5 9" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="416" cy="132" r="3.5" fill="#fff"/>
+    </g>
+    <g id="x-done" fill="#111">
+      <circle cx="168" cy="326" r="13" fill="#ffb4c2" opacity=".85"/>
+      <circle cx="344" cy="326" r="13" fill="#ffb4c2" opacity=".85"/>
+      <path class="stroke" d="M182 306Q208 232 234 306"/>
+      <path class="stroke" d="M278 306Q304 232 330 306"/>
+      <circle cx="416" cy="112" r="22" fill="#34c759"/>
+      <path d="M406 112l7 7l13 -14" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="x-error" fill="#111">
+      <path class="stroke" d="M194 272L224 290L194 308"/>
+      <path class="stroke" d="M318 272L288 290L318 308"/>
+      <circle cx="416" cy="112" r="22" fill="#ff453a"/>
+      <rect x="413" y="99" width="6" height="16" rx="3" fill="#fff"/>
+      <circle cx="416" cy="122" r="3.5" fill="#fff"/>
+    </g>
+    <g id="x-sleeping" fill="#111">
+      <g transform="translate(208 290)"><path d="M-17 -4H17V29A17 17 0 0 1 -17 29Z"/></g>
+      <g transform="translate(304 290)"><path d="M-17 -4H17V29A17 17 0 0 1 -17 29Z"/></g>
+      <use href="#zed" transform="translate(386 128)" opacity=".55"/>
+      <use href="#zed" transform="translate(396 108) scale(1.35)" opacity=".8"/>
+      <use href="#zed" transform="translate(408 78) scale(1.7)"/>
+    </g>
+  </defs>
+
+  <style>
+    .stroke { fill: none; stroke: #111; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+    .thin { stroke-width: 10; }
+    .label { font: 15px/1 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #3a3a3c; text-anchor: middle; }
+    .sub { font-size: 12px; fill: #8e8e93; }
+  </style>
+
+  <rect width="640" height="730" fill="#f2f2f4"/>
+
+  <!-- row 1 -->
+  <g transform="translate(40 30) scale(.3125)">
+    <use href="#bgr"/>
+    <g transform="rotate(10 256 268)"><use href="#body-g"/><use href="#x-icon"/></g>
+  </g>
+  <text class="label" x="120" y="218">图标姿势<tspan class="sub" x="120" dy="18">icon</tspan></text>
+
+  <g transform="translate(240 30) scale(.3125)"><use href="#bgr"/><use href="#body-g"/><use href="#x-idle"/></g>
+  <text class="label" x="320" y="218">待机<tspan class="sub" x="320" dy="18">idle (blinks)</tspan></text>
+
+  <g transform="translate(440 30) scale(.3125)"><use href="#bgr"/><use href="#body-g"/><use href="#x-thinking"/></g>
+  <text class="label" x="520" y="218">思考中<tspan class="sub" x="520" dy="18">thinking</tspan></text>
+
+  <!-- row 2 -->
+  <g transform="translate(40 260) scale(.3125)"><use href="#bgr"/><use href="#body-g"/><use href="#x-working"/></g>
+  <text class="label" x="120" y="448">执行中<tspan class="sub" x="120" dy="18">working</tspan></text>
+
+  <g transform="translate(240 260) scale(.3125)"><use href="#bgr"/><use href="#body-g"/><use href="#x-talking"/></g>
+  <text class="label" x="320" y="448">回复中<tspan class="sub" x="320" dy="18">talking</tspan></text>
+
+  <g transform="translate(440 260) scale(.3125)"><use href="#bgr"/><use href="#body-g"/><use href="#x-waiting"/></g>
+  <text class="label" x="520" y="448">等待输入<tspan class="sub" x="520" dy="18">waiting</tspan></text>
+
+  <!-- row 3 -->
+  <g transform="translate(40 490) scale(.3125)"><use href="#bgr"/><use href="#body-g"/><use href="#x-done"/></g>
+  <text class="label" x="120" y="678">完成<tspan class="sub" x="120" dy="18">done</tspan></text>
+
+  <g transform="translate(240 490) scale(.3125)"><use href="#bgr"/><use href="#body-g"/><use href="#x-error"/></g>
+  <text class="label" x="320" y="678">出错<tspan class="sub" x="320" dy="18">error</tspan></text>
+
+  <g transform="translate(440 490) scale(.3125)"><use href="#bgr"/><use href="#body-g"/><use href="#x-sleeping"/></g>
+  <text class="label" x="520" y="678">休眠<tspan class="sub" x="520" dy="18">sleeping</tspan></text>
+</svg>

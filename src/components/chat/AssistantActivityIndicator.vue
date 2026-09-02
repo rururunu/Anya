@@ -1,22 +1,20 @@
 <template>
   <div class="assistant-activity" role="status" aria-live="polite">
-    <component
-      :is="icon ?? LoaderCircle"
-      class="activity-icon"
-      :class="{ spin: !icon }"
-      :size="14"
-      aria-hidden="true"
-    />
+    <component v-if="icon" :is="icon" class="activity-icon" :size="14" aria-hidden="true" />
+    <span v-else class="activity-mascot" aria-hidden="true">
+      <MascotFace busy :follow-pointer="false" />
+    </span>
     <span class="activity-label">{{ label }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { Component } from "vue";
-import { LoaderCircle } from "@lucide/vue";
+import MascotFace from "@/components/icons/MascotFace.vue";
 
 defineProps<{
   label: string;
+  /** Activity-specific icon; when omitted the busy mascot stands in for a spinner. */
   icon?: Component;
 }>();
 </script>
@@ -38,8 +36,12 @@ defineProps<{
   color: var(--peek-accent);
 }
 
-.activity-icon.spin {
-  animation: activity-spin 1.1s linear infinite;
+.activity-mascot {
+  flex: none;
+  display: block;
+  width: 22px;
+  height: 22px;
+  animation: activity-bob 1.6s ease-in-out infinite;
 }
 
 .activity-label {
@@ -56,9 +58,13 @@ defineProps<{
   animation: activity-shimmer 1.8s linear infinite;
 }
 
-@keyframes activity-spin {
-  to {
-    transform: rotate(360deg);
+@keyframes activity-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
   }
 }
 
@@ -72,8 +78,8 @@ defineProps<{
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .activity-icon.spin {
-    animation-duration: 2.4s;
+  .activity-mascot {
+    animation: none;
   }
   .activity-label {
     animation: none;

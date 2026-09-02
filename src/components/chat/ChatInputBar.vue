@@ -144,11 +144,15 @@
         :ariaLabel="
           modelPickerShowingGroups ? tr(language, 'chooseProvider') : tr(language, 'chooseModel')
         "
+        :thinking-options="showThinkingTierPicker ? thinkingTierPickerOptions : []"
+        :thinking-selected-id="thinkingTierSelectedId"
+        :thinking-title="tr(language, 'thinkingTierLabel')"
         @hover="selectedIndex = $event"
         @select="selectModel"
         @select-group="enterModelGroup"
         @back="leaveModelGroup"
         @refresh="refreshModelList"
+        @select-thinking="applyThinkingTier"
       />
 
       <OptionPicker
@@ -478,6 +482,14 @@
                     <span class="model-name" :key="currentModelDisplayName">
                       {{ currentModelDisplayName }}
                     </span>
+                    <span
+                      v-if="showThinkingTierPicker && currentThinkingTierLabel"
+                      class="model-tier"
+                      :title="thinkingTierBadgeTitle"
+                    >
+                      <span class="model-tier-sep" aria-hidden="true">·</span>
+                      {{ currentThinkingTierLabel }}
+                    </span>
                     <ChevronDown :size="11" class="model-chevron" />
                   </button>
                 </TooltipTrigger>
@@ -496,32 +508,6 @@
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          </div>
-
-          <div
-            class="model-picker thinking-tier-slot"
-            :class="{ dormant: !showThinkingTierPicker }"
-            :aria-hidden="!showThinkingTierPicker"
-          >
-            <button
-              ref="thinkingTierButtonRef"
-              type="button"
-              class="model-badge footer-chip"
-              data-picker-trigger
-              data-tauri-drag-region="false"
-              :class="{ open: thinkingTierPickerOpen }"
-              :title="thinkingTierBadgeTitle"
-              :aria-label="thinkingTierBadgeTitle"
-              aria-haspopup="dialog"
-              :aria-expanded="thinkingTierPickerOpen"
-              :tabindex="showThinkingTierPicker ? 0 : -1"
-              :disabled="!showThinkingTierPicker"
-              @mousedown.stop
-              @click.stop="toggleThinkingTierMenu"
-            >
-              <span class="model-name">{{ currentThinkingTierLabel || "—" }}</span>
-              <ChevronDown :size="11" class="model-chevron" />
-            </button>
           </div>
 
           <div
@@ -591,12 +577,7 @@
             @click="emit('pause')"
           >
             <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M5.25 4.5V11.5M10.75 4.5V11.5"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-              />
+              <rect x="3.75" y="3.75" width="8.5" height="8.5" rx="2.25" fill="currentColor" />
             </svg>
           </button>
 
@@ -619,12 +600,7 @@
               />
             </svg>
             <svg v-else viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M5.25 4.5V11.5M10.75 4.5V11.5"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-              />
+              <rect x="3.75" y="3.75" width="8.5" height="8.5" rx="2.25" fill="currentColor" />
             </svg>
           </button>
         </div>
@@ -921,7 +897,6 @@ const chatInputShellRef = ref<HTMLElement | null>(null);
 const attachButtonRef = ref<HTMLButtonElement | null>(null);
 const chatModeButtonRef = ref<HTMLButtonElement | null>(null);
 const modelButtonRef = ref<HTMLButtonElement | null>(null);
-const thinkingTierButtonRef = ref<HTMLButtonElement | null>(null);
 const approvalButtonRef = ref<HTMLButtonElement | null>(null);
 
 watch(selectedIndex, async () => {
@@ -1854,7 +1829,10 @@ function estimateActivePickerHeight(pickerRows: number): number {
       return 6 + Math.max(modelPickerGroups.value.length, 1) * 32 + 34;
     }
     const back = modelPickerHierarchical.value ? 32 : 0;
-    return 6 + back + Math.max(modelPickerActiveModels.value.length, 1) * 32 + 34;
+    // Inline thinking-effort slider under the current model adds one strip.
+    const thinkingStrip =
+      showThinkingTierPicker.value && thinkingTierPickerOptions.value.length > 1 ? 32 : 0;
+    return 6 + back + Math.max(modelPickerActiveModels.value.length, 1) * 32 + 34 + thinkingStrip;
   }
   if (showHistoryPicker.value) {
     return 10 + Math.max(historyItems.value.length, 1) * 32;
@@ -2029,21 +2007,11 @@ async function openThinkingTierPicker(mode: "slider" | "list" = "slider") {
   selectedIndex.value = idx >= 0 ? idx : 0;
   thinkingPickerMode.value = mode;
   thinkingTierPickerOpen.value = true;
-  await positionChipPicker(thinkingTierButtonRef.value, mode === "slider" ? 220 : 200);
+  // The tier is shown inside the model chip ("model · high"), so anchor the popup there.
+  await positionChipPicker(modelButtonRef.value, mode === "slider" ? 220 : 200);
   await syncPopupState(true);
   emitLayoutChange();
   void focusInput();
-}
-
-function toggleThinkingTierMenu() {
-  if (!showThinkingTierPicker.value) {
-    return;
-  }
-  if (thinkingTierPickerOpen.value && thinkingPickerMode.value === "slider") {
-    closeThinkingTierPicker();
-    return;
-  }
-  void openThinkingTierPicker("slider");
 }
 
 function toggleModelMenu() {
@@ -4844,13 +4812,20 @@ defineExpose({
   min-width: 0;
 }
 
-.thinking-tier-slot {
+/* "model · tier" suffix inside the model chip */
+.model-tier {
   flex: none;
-  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--peek-muted);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
-.thinking-tier-slot.dormant {
-  display: none;
+.model-tier-sep {
+  opacity: 0.6;
 }
 
 .approval-slot {
@@ -5315,9 +5290,10 @@ defineExpose({
   cursor: pointer;
 }
 
+/* Stop: same high-contrast disc as the active send button, holding a solid rounded square. */
 .send-btn.pause {
-  background: color-mix(in srgb, var(--destructive) 18%, var(--peek-send-bg));
-  color: color-mix(in srgb, var(--destructive) 85%, var(--peek-send-fg));
+  background: var(--peek-send-active-bg);
+  color: var(--peek-send-active-fg);
   cursor: pointer;
 }
 

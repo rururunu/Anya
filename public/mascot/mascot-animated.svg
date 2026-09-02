@@ -1,0 +1,272 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Animated blob mascot">
+  <title>Blob mascot - agent states loop (turns around between 9 states, 27s)</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1c1e"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <radialGradient id="body" cx=".38" cy=".28" r=".85">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".65" stop-color="#f8f8f8"/>
+      <stop offset="1" stop-color="#dedede"/>
+    </radialGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset=".55" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".1"/>
+    </linearGradient>
+    <!-- soft shading band that sweeps across the body while it turns -->
+    <linearGradient id="sweep" gradientUnits="userSpaceOnUse" x1="116" y1="0" x2="396" y2="0">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#000" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+
+    <path id="blob" d="M256 108C356 108 428 164 428 272C428 388 381 428 256 428C131 428 84 388 84 272C84 164 156 108 256 108Z"/>
+    <clipPath id="blobClip"><use href="#blob"/></clipPath>
+    <rect id="pill" x="-17" y="-46" width="34" height="92" rx="17"/>
+    <rect id="pill-s" x="-17" y="-38" width="34" height="76" rx="17"/>
+    <path id="zed" d="M0 0H14L0 14H14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <g id="gear">
+      <circle r="15" fill="none" stroke="#fff" stroke-width="9" stroke-dasharray="5.9 5.9"/>
+      <circle r="13" fill="#fff"/>
+      <circle r="5.5" fill="#111"/>
+    </g>
+  </defs>
+
+  <style>
+    .face  { fill: #111; }
+    .stroke { fill: none; stroke: #111; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+    .thin  { stroke-width: 10; }
+    .white { fill: none; stroke: #fff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* ---- master timeline: 9 states x 3s = 27s ----------------------------
+       each segment = 2.4s hold + 0.6s "turn around" (fake 3D rotation about
+       the vertical axis: the face slides to the right edge, disappears behind,
+       and comes back in from the left). The body keeps its round silhouette
+       (a sphere does not change shape); a soft shading band sweeping across it
+       sells the rotation. The state swaps at 2.7s while the face is behind.  */
+    .float { animation: float 4s ease-in-out infinite; }
+    .hop   { animation: hop 3s infinite; }
+    .pose  { transform-origin: 256px 268px; animation: pose 27s ease-in-out infinite; }
+    .body  { transform-origin: 256px 268px; animation: body 3s ease-in-out infinite; }
+    .turn  { transform-origin: 256px 290px; animation: turn 3s linear infinite; }
+    .sweep { animation: sweep 3s linear infinite; }
+    .outer { animation: outer 3s linear infinite; }
+
+    .expr       { opacity: 0; animation: show 27s step-end infinite; }
+    .x-icon     { opacity: 1; animation-delay: -.3s; }
+    .x-idle     { animation-delay: 2.7s; }
+    .x-thinking { animation-delay: 5.7s; }
+    .x-working  { animation-delay: 8.7s; }
+    .x-talking  { animation-delay: 11.7s; }
+    .x-waiting  { animation-delay: 14.7s; }
+    .x-done     { animation-delay: 17.7s; }
+    .x-error    { animation-delay: 20.7s; }
+    .x-sleeping { animation-delay: 23.7s; }
+
+    /* ---- per-state micro animations ---- */
+    .blink  { transform-box: fill-box; transform-origin: center; animation: blink 3s infinite; }
+    .dot    { animation: dot 1.2s ease-in-out infinite; }
+    .dot2   { animation-delay: .2s; }
+    .dot3   { animation-delay: .4s; }
+    .scan   { animation: scan 1.6s steps(1) infinite; }
+    .talk   { transform-box: fill-box; transform-origin: center; animation: talk .55s ease-in-out infinite; }
+    .talk2  { animation-delay: -.2s; }
+    .wave   { animation: wave 1.1s ease-out infinite; }
+    .wave2  { animation-delay: .35s; }
+    .bob    { animation: bob 1.2s ease-in-out infinite alternate; }
+    .pop    { transform-box: fill-box; transform-origin: center; animation: pop 3s infinite; }
+    .shake  { animation: shake .1s linear infinite alternate; }
+    .zz     { transform-box: fill-box; transform-origin: center; animation: zz 2.4s ease-out infinite; }
+    .z2     { animation-delay: .8s; }
+    .z3     { animation-delay: 1.6s; }
+
+    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+    @keyframes hop {
+      0%, 80% { transform: translateY(0); animation-timing-function: ease-out; }
+      90%     { transform: translateY(-16px); animation-timing-function: ease-in; }
+      100%    { transform: translateY(0); }
+    }
+    /* keep the silhouette round; just a whisper of squash so it feels alive */
+    @keyframes body {
+      0%, 80%, 90%, 100% { transform: scale(1, 1); }
+      86.67%, 93.33%     { transform: scale(.97, 1.02); }
+    }
+    /* face = point on a sphere sampled every 15 deg: x = R*sin(a), width = cos(a).
+       It fades out before reaching the rim so no thin slivers remain. */
+    @keyframes turn {
+      0%, 80% { transform: translateX(0) scaleX(1); opacity: 1; }
+      81.11%  { transform: translateX(39px) scaleX(.966); opacity: 1; }
+      82.22%  { transform: translateX(75px) scaleX(.866); opacity: 1; }
+      83.33%  { transform: translateX(106px) scaleX(.707); opacity: 1; }
+      84.44%  { transform: translateX(130px) scaleX(.5); opacity: .55; }
+      85.56%  { transform: translateX(145px) scaleX(.259); opacity: 0; }
+      86.67%  { transform: translateX(150px) scaleX(0); opacity: 0; }
+      93.33%  { transform: translateX(-150px) scaleX(0); opacity: 0; }
+      94.44%  { transform: translateX(-145px) scaleX(.259); opacity: 0; }
+      95.56%  { transform: translateX(-130px) scaleX(.5); opacity: .55; }
+      96.67%  { transform: translateX(-106px) scaleX(.707); opacity: 1; }
+      97.78%  { transform: translateX(-75px) scaleX(.866); opacity: 1; }
+      98.89%  { transform: translateX(-39px) scaleX(.966); opacity: 1; }
+      100%    { transform: translateX(0) scaleX(1); opacity: 1; }
+    }
+    /* shading band travels across the body once per turn */
+    @keyframes sweep {
+      0%, 80% { transform: translateX(-340px); opacity: 0; }
+      83%     { opacity: 1; }
+      97%     { opacity: 1; }
+      100%    { transform: translateX(340px); opacity: 0; }
+    }
+    /* badges / bubbles outside the body simply fade during the turn */
+    @keyframes outer {
+      0%, 80% { opacity: 1; }
+      82.5%, 97.5% { opacity: 0; }
+      100%    { opacity: 1; }
+    }
+    @keyframes pose {
+      0%, 9.63%        { transform: rotate(10deg); }
+      10.37%, 98.52%   { transform: rotate(0deg); }
+      99.26%, 100%     { transform: rotate(10deg); }
+    }
+    @keyframes show { 0% { opacity: 1; } 11.111%, 100% { opacity: 0; } }
+
+    @keyframes blink { 0%, 56%, 63%, 100% { transform: scaleY(1); } 59.5% { transform: scaleY(.06); } }
+    @keyframes dot   { 0%, 100% { opacity: .25; } 40% { opacity: 1; } }
+    @keyframes scan  { 0% { transform: translateX(0); } 25% { transform: translateX(10px); } 50% { transform: translateX(-8px); } 75% { transform: translateX(4px); } }
+    @keyframes talk  { 0%, 100% { transform: scaleY(1); } 30% { transform: scaleY(.62); } 55% { transform: scaleY(1.08); } 80% { transform: scaleY(.8); } }
+    @keyframes wave  { 0% { opacity: 0; transform: translateX(-6px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateX(8px); } }
+    @keyframes bob   { from { transform: translateY(-4px) rotate(-6deg); } to { transform: translateY(4px) rotate(6deg); } }
+    @keyframes pop   { 0% { transform: scale(.3); } 8% { transform: scale(1.18); } 14%, 100% { transform: scale(1); } }
+    @keyframes shake { from { transform: translateX(-2px); } to { transform: translateX(2px); } }
+    @keyframes zz {
+      0%   { opacity: 0; transform: translate(0, 0) scale(.5); }
+      25%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(20px, -50px) scale(1.2); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .float, .hop, .pose, .body, .turn, .sweep, .outer, .expr, .blink, .dot, .scan, .talk,
+      .wave, .bob, .pop, .shake, .zz { animation: none; }
+      .expr { opacity: 0; }
+      .x-idle { opacity: 1; }
+      .sweep { opacity: 0; }
+    }
+  </style>
+
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+
+  <g class="float"><g class="hop"><g class="pose"><g class="body">
+    <use href="#blob" fill="url(#body)"/>
+    <use href="#blob" fill="url(#shade)"/>
+    <g clip-path="url(#blobClip)"><rect class="sweep" x="-300" y="0" width="1112" height="512" fill="url(#sweep)" opacity="0"/></g>
+
+    <!-- everything drawn ON the face: clipped to the body so it wraps around the edge -->
+    <g clip-path="url(#blobClip)">
+    <g class="face turn">
+      <!-- icon: brand pose (tilted, glancing right) -->
+      <g class="expr x-icon">
+        <g transform="translate(240 298)"><g class="blink"><use href="#pill"/></g></g>
+        <g transform="translate(330 298)"><g class="blink"><use href="#pill"/></g></g>
+      </g>
+
+      <!-- idle: front, blinking -->
+      <g class="expr x-idle">
+        <g transform="translate(208 290)"><g class="blink"><use href="#pill"/></g></g>
+        <g transform="translate(304 290)"><g class="blink"><use href="#pill"/></g></g>
+      </g>
+
+      <!-- thinking: eyes drift up-right, thought dots outside -->
+      <g class="expr x-thinking">
+        <g transform="translate(226 272)"><g class="blink"><use href="#pill-s"/></g></g>
+        <g transform="translate(322 272)"><g class="blink"><use href="#pill-s"/></g></g>
+      </g>
+
+      <!-- working: focused (shorter eyes, looking down), eyes scan like reading -->
+      <g class="expr x-working"><g class="scan">
+        <g transform="translate(208 302)"><g class="blink"><use href="#pill-s"/></g></g>
+        <g transform="translate(304 302)"><g class="blink"><use href="#pill-s"/></g></g>
+      </g></g>
+
+      <!-- talking / streaming: eyes pulse like a voice waveform -->
+      <g class="expr x-talking">
+        <g transform="translate(208 290)"><g class="talk"><use href="#pill"/></g></g>
+        <g transform="translate(304 290)"><g class="talk talk2"><use href="#pill"/></g></g>
+      </g>
+
+      <!-- waiting for user: wide attentive eyes -->
+      <g class="expr x-waiting">
+        <circle cx="208" cy="290" r="25"/><circle cx="199" cy="280" r="7" fill="#fff"/>
+        <circle cx="304" cy="290" r="25"/><circle cx="295" cy="280" r="7" fill="#fff"/>
+      </g>
+
+      <!-- done: happy -->
+      <g class="expr x-done">
+        <circle cx="168" cy="326" r="13" fill="#ffb4c2" opacity=".85"/>
+        <circle cx="344" cy="326" r="13" fill="#ffb4c2" opacity=".85"/>
+        <path class="stroke" d="M182 306Q208 232 234 306"/>
+        <path class="stroke" d="M278 306Q304 232 330 306"/>
+      </g>
+
+      <!-- error: scrunched eyes -->
+      <g class="expr x-error"><g class="shake">
+        <path class="stroke" d="M194 272L224 290L194 308"/>
+        <path class="stroke" d="M318 272L288 290L318 308"/>
+      </g></g>
+
+      <!-- sleeping: half-closed eyes -->
+      <g class="expr x-sleeping">
+        <g transform="translate(208 290)"><path d="M-17 -4H17V29A17 17 0 0 1 -17 29Z"/></g>
+        <g transform="translate(304 290)"><path d="M-17 -4H17V29A17 17 0 0 1 -17 29Z"/></g>
+      </g>
+    </g>
+    </g>
+
+    <!-- things floating OUTSIDE the body: not clipped, fade out while it turns -->
+    <g class="outer">
+      <g class="expr x-thinking" fill="#fff">
+        <circle class="dot" cx="392" cy="150" r="7"/>
+        <circle class="dot dot2" cx="411" cy="121" r="10"/>
+        <circle class="dot dot3" cx="436" cy="86" r="14"/>
+      </g>
+
+      <g class="expr x-working">
+        <g transform="translate(412 118) scale(1.3)">
+          <use href="#gear"><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2.4s" repeatCount="indefinite"/></use>
+        </g>
+      </g>
+
+      <g class="expr x-talking">
+        <path class="wave" d="M446 262a22 22 0 0 1 0 40" style="stroke:#fff;fill:none;stroke-width:5;stroke-linecap:round"/>
+        <path class="wave wave2" d="M462 250a38 38 0 0 1 0 64" style="stroke:#fff;fill:none;stroke-width:5;stroke-linecap:round"/>
+      </g>
+
+      <g class="expr x-waiting">
+        <g class="bob" style="transform-origin: 416px 112px">
+          <path class="white" d="M403 100a13 13 0 1 1 18 12c-4 2-5 4-5 9" style="stroke-width:6"/>
+          <circle cx="416" cy="132" r="3.5" fill="#fff"/>
+        </g>
+      </g>
+
+      <g class="expr x-done">
+        <g class="pop">
+          <circle cx="416" cy="112" r="22" fill="#34c759"/>
+          <path class="white" d="M406 112l7 7l13 -14" style="stroke-width:6"/>
+        </g>
+      </g>
+
+      <g class="expr x-error">
+        <g class="pop">
+          <circle cx="416" cy="112" r="22" fill="#ff453a"/>
+          <rect x="413" y="99" width="6" height="16" rx="3" fill="#fff"/>
+          <circle cx="416" cy="122" r="3.5" fill="#fff"/>
+        </g>
+      </g>
+
+      <g class="expr x-sleeping">
+        <g class="zz"><use href="#zed" transform="translate(386 128)"/></g>
+        <g class="zz z2"><use href="#zed" transform="translate(386 128) scale(1.35)"/></g>
+        <g class="zz z3"><use href="#zed" transform="translate(386 128) scale(1.7)"/></g>
+      </g>
+    </g>
+  </g></g></g></g>
+</svg>

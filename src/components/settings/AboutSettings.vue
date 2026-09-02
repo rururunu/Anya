@@ -2,7 +2,7 @@
   <section class="settings-page about-page">
     <header class="about-hero">
       <div class="about-logo" aria-hidden="true">
-        <AnyaLogo />
+        <MascotFace interactive />
       </div>
       <h1>{{ name }}</h1>
       <p class="about-tagline">{{ copy.description }}</p>
@@ -103,7 +103,7 @@ import { ArrowUpCircle, CheckCircle2, RefreshCw, ShieldCheck } from "@lucide/vue
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
-import AnyaLogo from "@/components/icons/AnyaLogo.vue";
+import MascotFace from "@/components/icons/MascotFace.vue";
 
 const settingStore = useSettingStore();
 const updaterStore = useUpdaterStore();
@@ -231,8 +231,9 @@ async function copyIdentifier() {
   margin-bottom: 20px;
 }
 
-.about-logo :deep(.anya-logo) {
+.about-logo :deep(.mascot-face) {
   opacity: 0.96;
+  filter: drop-shadow(0 12px 28px color-mix(in srgb, var(--peek-text) 16%, transparent));
 }
 
 .about-hero h1 {

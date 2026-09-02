@@ -1,7 +1,7 @@
 # Anya
 
 <p align="center">
-  <img src="src-tauri/icons/icon.png" alt="Anya" width="120" height="120" />
+  <img src="public/mascot/mascot-icon.svg" alt="Anya" width="120" height="120" />
 </p>
 
 <h1 align="center">Anya</h1>
@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.16-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.17-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -107,7 +107,10 @@ flowchart LR
 工作台是完整的桌面界面。悬浮窗里的快速提问会出现在这里，与置顶会话、项目工作区放在一起。
 
 <p align="center">
-  <img src="./docs/image/workspace.png" alt="Anya 工作台" width="900" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/image/dark_home.png" />
+    <img src="./docs/image/light_home.png" alt="Anya 工作台（浅色 / 深色）" width="900" />
+  </picture>
 </p>
 
 | 区域         | 用途                                                                                               |
@@ -154,6 +157,10 @@ Agent 修改文件后，Anya 会给出按文件汇总，并提供 Diff 视图。
 | **Image** | 每轮真正出图               | 仅 `generate_image`；走设置 → 生图提供商（不用聊天提供商）         |
 
 Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（手动或自动）经计划门禁拦截写操作，直到用户在回答末尾批准；Image 模式钉死 Images API 工具与提示词，确保每轮产出真实图片。四种模式共用同一套 `AgentRunner`——约束落在工具暴露、审批与 plan/image 门禁，而不是第二套编排器。
+
+<p align="center">
+  <img src="./docs/image/image_production.png" alt="生图模式：先出图，再用追问修改" width="900" />
+</p>
 
 ### 时间线
 
@@ -292,7 +299,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.16_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.17_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 

@@ -514,7 +514,11 @@
                   data-onboarding-logo-target
                   aria-hidden="true"
                 >
-                  <AnyaLogo />
+                  <MascotFace
+                    interactive
+                    :tool="heroMascotTool"
+                    :look-at="composerFocused ? composerWrapRef : null"
+                  />
                 </div>
                 <p class="empty-conversation-prompt">
                   {{ emptyConversationPrompt }}
@@ -552,6 +556,8 @@
               ref="composerWrapRef"
               class="composer-wrap"
               :class="{ 'has-interaction-picker': Boolean(activePendingInteraction) }"
+              @focusin="composerFocused = true"
+              @focusout="composerFocused = false"
             >
               <div
                 v-if="stagedMessages.length"
@@ -782,7 +788,7 @@ import NavCollapse from "@/components/workbench/NavCollapse.vue";
 import WorkbenchSearchPalette from "@/components/workbench/WorkbenchSearchPalette.vue";
 import WorkbenchLoading from "@/components/workbench/WorkbenchLoading.vue";
 import WelcomeOnboarding from "@/components/onboarding/WelcomeOnboarding.vue";
-import AnyaLogo from "@/components/icons/AnyaLogo.vue";
+import MascotFace, { type MascotTool } from "@/components/icons/MascotFace.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import EditWorkspaceDialog from "@/components/workspace/EditWorkspaceDialog.vue";
@@ -811,6 +817,7 @@ import { useChatStore } from "@/stores/chat";
 import { useChatSessionsStore } from "@/stores/chatSessions";
 import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore, applyZoom, applyTheme } from "@/stores/setting";
+import { normalizeChatMode, type ChatMode } from "@/types/setting";
 import { useUpdaterStore } from "@/stores/updater";
 import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
 import type { Workspace } from "@/commands/workspace";
@@ -841,6 +848,8 @@ const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null)
 const editWorkspaceDialogRef = ref<InstanceType<typeof EditWorkspaceDialog> | null>(null);
 const renameSessionDialogRef = ref<InstanceType<typeof RenameSessionDialog> | null>(null);
 const composerWrapRef = ref<HTMLElement | null>(null);
+/** True while focus is inside the composer, so the mascot looks at the input. */
+const composerFocused = ref(false);
 const composerFootprint = ref(0);
 
 function handleEditFromImage(payload: { images: string[]; draftText?: string; region?: boolean }) {
@@ -902,6 +911,21 @@ const conversationMessages = computed(() => {
 });
 const viewingSubagent = computed(() => isSubagentSessionId(activeSessionId.value));
 const parentMessages = messages;
+
+/** What the hero mascot holds, per chat mode: ask -> phone, agent -> wrench, plan -> plan, image -> brush. */
+const MASCOT_TOOL_BY_MODE: Record<ChatMode, MascotTool> = {
+  ask: "phone",
+  agent: "wrench",
+  plan: "clipboard",
+  image: "brush",
+};
+const heroMascotTool = computed<MascotTool>(() => {
+  // Mirrors the composer's mode chip: per-session choice, falling back to the global default.
+  const compose = activeSessionId.value
+    ? chatStore.sessionCompose[activeSessionId.value]
+    : undefined;
+  return MASCOT_TOOL_BY_MODE[normalizeChatMode(compose?.chatMode ?? settingStore.chatMode)];
+});
 
 const {
   isMaximized,
@@ -2438,9 +2462,12 @@ button {
   width: 104px;
   height: 104px;
   flex: none;
+  /* The hero itself is click-through; the mascot alone reacts to clicks. */
+  pointer-events: auto;
 }
-.empty-conversation-brand :deep(.anya-logo) {
+.empty-conversation-brand :deep(.mascot-face) {
   opacity: 0.94;
+  filter: drop-shadow(0 10px 24px color-mix(in srgb, var(--peek-text) 18%, transparent));
 }
 .empty-conversation-prompt {
   margin: 0;

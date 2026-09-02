@@ -1,7 +1,7 @@
 <template>
   <div class="workbench-loading" role="status" :aria-label="label">
     <div class="loading-brand" aria-hidden="true">
-      <AnyaLogo class="loading-logo" />
+      <MascotFace class="loading-logo" busy :follow-pointer="false" />
     </div>
     <p class="loading-label">{{ label }}</p>
     <span class="loading-progress" aria-hidden="true"><i /></span>
@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useSettingStore } from "@/stores/setting";
-import AnyaLogo from "@/components/icons/AnyaLogo.vue";
+import MascotFace from "@/components/icons/MascotFace.vue";
 
 const settingStore = useSettingStore();
 
@@ -56,6 +56,7 @@ const label = computed(() =>
   width: 168px;
   height: 168px;
   animation: logo-breathe 2.2s ease-in-out infinite;
+  filter: drop-shadow(0 14px 32px color-mix(in srgb, var(--peek-text, #242424) 16%, transparent));
 }
 
 .loading-label {
