@@ -38,14 +38,57 @@
 
 |                 |                                                                                                                             |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Overlay**     | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                    |
 | **Workbench**   | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                     |
+| **Overlay**     | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                    |
 | **Agent**       | Ask / Agent / Plan / Image; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                      |
 | **Companion**   | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone. |
 | **RAG**         | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.         |
 | **Local-first** | Keys, history, and settings stay on your machine by default.                                                                |
 
 **Docs:** [Architecture](./docs/architecture-overview.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
+
+---
+
+## Workbench — every session in one place
+
+The workbench is the full desktop surface: Quick Ask threads from the overlay sit beside pinned chats and project workspaces.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/image/dark_home.png" />
+    <img src="./docs/image/light_home.png" alt="Anya workbench (light / dark)" width="900" />
+  </picture>
+</p>
+
+| Area           | What it is for                                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Pinned**     | Keep important threads at the top.                                                                                      |
+| **Workspaces** | Bind chats to a project folder; pin, reorder, collapse, archive, restore, or open the folder directly.                  |
+| **Quick Ask**  | Temporary overlay sessions — continue, start new, or keep a long run here while you still summon the overlay elsewhere. |
+
+### Review changes
+
+When Agent edits files, Anya shows a per-file summary and a focused Diff view.
+
+<p align="center">
+  <img src="./docs/image/workspace-diff.png" alt="Diff review in Anya" width="900" />
+</p>
+
+- Task list and verification stay on the conversation timeline.
+- Open **Review** for side-by-side or unified diffs.
+- Undo covers changes Anya applied in the current session (checkpoints).
+
+### Settings
+
+Configure models, providers, agent behavior, Image generation, RAG search, and extensions from the embedded settings page (no separate settings window). Optional frosted-glass chrome blurs the titlebar and sidebars.
+
+<p align="center">
+  <img src="./docs/image/workspace-settings.png" alt="Anya settings" width="900" />
+</p>
+
+Common controls include provider and model protocol, disabled models, model-specific reasoning effort, vision / multimodal fallback, language, tool approval mode, Agent display density, context-window budget, **Image** providers/models, and **RAG Search** (API or local embeddings; off by default).
+
+Reasoning controls follow the selected model's advertised family. DeepSeek exposes disabled / low / high / max; GPT, Grok, Claude, Qwen, Kimi, and other compatible families expose the levels their endpoint supports. Unsupported values are clamped before a request is sent.
 
 ---
 
@@ -102,49 +145,6 @@ Docs: [Companion README](https://github.com/rururunu/AnyaAndroid) · [Companion 
 
 ---
 
-## Workbench — every session in one place
-
-The workbench is the full desktop surface: Quick Ask threads from the overlay sit beside pinned chats and project workspaces.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/image/dark_home.png" />
-    <img src="./docs/image/light_home.png" alt="Anya workbench (light / dark)" width="900" />
-  </picture>
-</p>
-
-| Area           | What it is for                                                                                                          |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **Pinned**     | Keep important threads at the top.                                                                                      |
-| **Workspaces** | Bind chats to a project folder; pin, reorder, collapse, archive, restore, or open the folder directly.                  |
-| **Quick Ask**  | Temporary overlay sessions — continue, start new, or keep a long run here while you still summon the overlay elsewhere. |
-
-### Review changes
-
-When Agent edits files, Anya shows a per-file summary and a focused Diff view.
-
-<p align="center">
-  <img src="./docs/image/workspace-diff.png" alt="Diff review in Anya" width="900" />
-</p>
-
-- Task list and verification stay on the conversation timeline.
-- Open **Review** for side-by-side or unified diffs.
-- Undo covers changes Anya applied in the current session (checkpoints).
-
-### Settings
-
-Configure models, providers, agent behavior, Image generation, RAG search, and extensions from the embedded settings page (no separate settings window). Optional frosted-glass chrome blurs the titlebar and sidebars.
-
-<p align="center">
-  <img src="./docs/image/workspace-settings.png" alt="Anya settings" width="900" />
-</p>
-
-Common controls include provider and model protocol, disabled models, model-specific reasoning effort, vision / multimodal fallback, language, tool approval mode, Agent display density, context-window budget, **Image** providers/models, and **RAG Search** (API or local embeddings; off by default).
-
-Reasoning controls follow the selected model's advertised family. DeepSeek exposes disabled / low / high / max; GPT, Grok, Claude, Qwen, Kimi, and other compatible families expose the levels their endpoint supports. Unsupported values are clamped before a request is sent.
-
----
-
 ## Capabilities
 
 ### Ask / Agent / Plan / Image
@@ -198,8 +198,8 @@ For image input with a text-only primary model, set a vision model or enable mul
 ## Install and get started
 
 1. Download the MSI from [Releases](../../releases) and install.
-2. Open **Settings** from the tray icon and connect a model provider.
-3. Double-tap <kbd>Alt</kbd>, ask a question, press <kbd>Enter</kbd> — or move the session to the workbench when you need the full UI.
+2. Open **Settings** from the workbench (or the tray) and connect a model provider.
+3. Keep working in the workbench; double-tap <kbd>Alt</kbd> when you want the overlay.
 
 | Shortcut                                            | Action                                             |
 | --------------------------------------------------- | -------------------------------------------------- |
