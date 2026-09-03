@@ -4,6 +4,22 @@ use crate::core::chat::agent_loop::types::{now_millis, ToolOutcome};
 use crate::core::tools::context::ToolContext;
 use crate::core::tools::shell_jobs::run_foreground;
 
+/// File tools that count as a successful workspace mutation for auto-verify.
+pub const MUTATION_TOOL_NAMES: &[&str] = &[
+    "apply_patch",
+    "write_file",
+    "replace_in_file",
+    "replace_many_in_file",
+    "move_path",
+    "delete_text_range",
+    "delete_go_symbol",
+    "edit_notebook_cell",
+];
+
+pub fn is_mutation_tool(name: &str) -> bool {
+    MUTATION_TOOL_NAMES.contains(&name)
+}
+
 fn auto_verify_enabled(ctx: &ToolContext) -> bool {
     let Some(app) = &ctx.app_handle else {
         return true;
@@ -14,32 +30,20 @@ fn auto_verify_enabled(ctx: &ToolContext) -> bool {
 }
 
 fn has_successful_mutation(outcomes: &[ToolOutcome]) -> bool {
-    outcomes.iter().any(|o| {
-        o.success
-            && matches!(
-                o.tool_name.as_str(),
-                "apply_patch"
-                    | "write_file"
-                    | "replace_in_file"
-                    | "replace_many_in_file"
-                    | "move_path"
-                    | "delete_text_range"
-                    | "delete_go_symbol"
-                    | "edit_notebook_cell"
-            )
-    })
+    outcomes
+        .iter()
+        .any(|o| o.success && is_mutation_tool(&o.tool_name))
 }
 
 fn detect_verify_command(workspace: &Path) -> Option<String> {
-    let cargo = workspace.join("Cargo.toml");
-    if cargo.exists() {
-        return Some("cargo check -q".to_string());
-    }
     let package_json = workspace.join("package.json");
     if package_json.exists() {
         let raw = std::fs::read_to_string(&package_json).ok()?;
         let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
         let scripts = value.get("scripts")?.as_object()?;
+        if scripts.contains_key("check") {
+            return Some("npm run -s check".to_string());
+        }
         if scripts.contains_key("typecheck") {
             return Some("npm run -s typecheck".to_string());
         }
@@ -50,10 +54,42 @@ fn detect_verify_command(workspace: &Path) -> Option<String> {
             return Some("npm test --silent".to_string());
         }
     }
+    let cargo = workspace.join("Cargo.toml");
+    if cargo.exists() {
+        return Some("cargo check -q".to_string());
+    }
+    let nested_cargo = workspace.join("src-tauri").join("Cargo.toml");
+    if nested_cargo.exists() {
+        return Some("cargo check -q --manifest-path src-tauri/Cargo.toml".to_string());
+    }
     if workspace.join("pyproject.toml").exists() || workspace.join("pytest.ini").exists() {
         return Some("python -m pytest -q".to_string());
     }
     None
+}
+
+/// Parse `exit_code: N` from shell job output. Missing / non-zero → not success.
+pub fn shell_exit_code_ok(output: &str) -> bool {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed
+            .strip_prefix("exit_code:")
+            .or_else(|| trimmed.strip_prefix("exit_code: "))
+        else {
+            continue;
+        };
+        let code = rest.trim().trim_start_matches(':').trim();
+        // Formats: `exit_code: 0`, `exit_code: Some(0)`, `exit_code: None`
+        let digits: String = code
+            .chars()
+            .filter(|c| c.is_ascii_digit() || *c == '-')
+            .collect();
+        if let Ok(n) = digits.parse::<i32>() {
+            return n == 0;
+        }
+        return false;
+    }
+    false
 }
 
 pub fn maybe_run_post_edit_verification(
@@ -64,13 +100,16 @@ pub fn maybe_run_post_edit_verification(
         return None;
     }
     let command = detect_verify_command(&ctx.workspace_root)?;
-    let result = match run_foreground(
+    let (result, ran_ok) = match run_foreground(
         &command,
         Some(&ctx.workspace_root),
         &ctx.cancelled,
         Some(ctx),
     ) {
-        Ok(out) => (out, true),
+        Ok(out) => {
+            let ok = shell_exit_code_ok(&out);
+            (out, ok)
+        }
         Err(err) => (format!("auto verification failed: {err}"), false),
     };
     Some(ToolOutcome {
@@ -81,8 +120,8 @@ pub fn maybe_run_post_edit_verification(
             "description": "Auto verify edits"
         })
         .to_string(),
-        result: result.0,
-        success: result.1,
+        result,
+        success: ran_ok,
         user_denied: false,
     })
 }
@@ -110,7 +149,7 @@ pub fn verify_feedback_content(outcome: &ToolOutcome) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::verify_feedback_content;
+    use super::*;
     use crate::core::chat::agent_loop::types::ToolOutcome;
 
     #[test]
@@ -123,12 +162,20 @@ mod tests {
                 "description": "Auto verify edits"
             })
             .to_string(),
-            result: "Finished `dev` profile [unoptimized + debuginfo]".into(),
+            result: "exit_code: 0\nFinished `dev` profile [unoptimized + debuginfo]".into(),
             success: true,
             user_denied: false,
         };
         let content = verify_feedback_content(&outcome);
         assert!(content.starts_with("[System] Automatic post-edit verification (`cargo check -q`)"));
         assert!(content.contains("Finished `dev` profile"));
+    }
+
+    #[test]
+    fn shell_exit_code_ok_requires_zero() {
+        assert!(shell_exit_code_ok("exit_code: 0\nok"));
+        assert!(!shell_exit_code_ok("exit_code: 1\nerror"));
+        assert!(!shell_exit_code_ok("no exit line here"));
+        assert!(shell_exit_code_ok("status: done\nexit_code: Some(0)\nelapsed: 1s"));
     }
 }

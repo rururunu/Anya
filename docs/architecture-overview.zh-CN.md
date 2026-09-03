@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.17                            |
+| **版本**   | v0.2.18                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -457,15 +457,15 @@ stateDiagram-v2
   StopBreaker --> [*]
 ```
 
-| 模块               | 关注点                                                                 |
-| ------------------ | ---------------------------------------------------------------------- |
-| `stream_turn`      | 将一轮 Provider 流折叠为 content / reasoning / tool_calls              |
-| `tools`            | 串行 / 并行调度；工具 activity 事件                                    |
-| `challenge`        | 空完成 / 校验门禁                                                      |
-| `mid_turn_compact` | 上下文窗口压力下的压缩                                                 |
-| `post_edit_verify` | 成功改文件后做轻量检查；结果以 **system 文本**回灌（不是 `role=tool`） |
-| `soft_inject`      | 在安全边界合并排队中的用户追问                                         |
-| `failure`          | 连续失败 / 同错重复的熔断                                              |
+| 模块               | 关注点                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| `stream_turn`      | 将一轮 Provider 流折叠为 content / reasoning / tool_calls                                         |
+| `tools`            | 串行 / 并行调度；工具 activity 事件                                                               |
+| `challenge`        | 空完成 / 目标路径全覆盖 / 未验证修改 / 未完成 checklist / stall；验证须读回已改路径或成功检查命令 |
+| `mid_turn_compact` | 上下文窗口压力下的压缩（机械摘要钉住目标与路径）                                                  |
+| `post_edit_verify` | 成功改文件后做轻量检查；仅 `exit_code=0` 算成功；结果以 **system 文本**回灌（不是 `role=tool`）   |
+| `soft_inject`      | 在安全边界合并排队中的用户追问                                                                    |
+| `failure`          | 连续失败 / 同错重复的熔断                                                                         |
 
 ### Ask / Agent / Plan / Image
 

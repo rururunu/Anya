@@ -1,0 +1,98 @@
+{
+  "id": "open_tasks_block_finish",
+  "prompt": "Write notes/done.txt to ready and finish the checklist.",
+  "script": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "update_tasks",
+          "arguments": {
+            "tasks": [
+              {
+                "content": "Write notes/done.txt to ready",
+                "status": "pending"
+              },
+              {
+                "content": "Read notes/done.txt to verify",
+                "status": "pending"
+              },
+              {
+                "content": "Run a final checklist review",
+                "status": "pending"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "notes/done.txt",
+            "content": "ready"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "notes/done.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "complete_plan_step",
+          "arguments": {
+            "step": "Write notes/done.txt to ready",
+            "evidence": "notes/done.txt"
+          }
+        },
+        {
+          "name": "complete_plan_step",
+          "arguments": {
+            "step": "Read notes/done.txt to verify",
+            "evidence": "notes/done.txt"
+          }
+        },
+        {
+          "name": "complete_plan_step",
+          "arguments": {
+            "step": "Run a final checklist review",
+            "evidence": "notes/done.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    }
+  ],
+  "assertions": [
+    {
+      "type": "statusSeen",
+      "kind": "open_tasks"
+    },
+    {
+      "type": "fileContains",
+      "path": "notes/done.txt",
+      "text": "ready"
+    }
+  ]
+}

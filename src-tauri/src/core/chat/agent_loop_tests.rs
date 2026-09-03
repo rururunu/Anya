@@ -441,6 +441,14 @@ async fn completion_claim_without_mutation_forces_actual_work() {
         active: Arc::new(AtomicUsize::new(0)),
         payload: "verified".into(),
     }));
+    registry.register(Arc::new(CountingTool {
+        name: "share_to_companion",
+        read_only: true,
+        counter: Arc::new(AtomicUsize::new(0)),
+        parallel_peak: Arc::new(AtomicUsize::new(0)),
+        active: Arc::new(AtomicUsize::new(0)),
+        payload: "shared".into(),
+    }));
     let tools = Arc::new(ToolManager::new(registry));
     let provider = Arc::new(ScriptedProvider {
         scripts: Mutex::new(vec![
@@ -450,7 +458,11 @@ async fn completion_claim_without_mutation_forces_actual_work() {
             },
             ProviderTurn {
                 content: String::new(),
-                tool_calls: vec![tool_call("1", "write_file")],
+                tool_calls: vec![tool_call_args(
+                    "1",
+                    "write_file",
+                    r#"{"path":"config.txt","content":"timeout=30"}"#,
+                )],
             },
             ProviderTurn {
                 content: "已完成修改".into(),
@@ -458,7 +470,15 @@ async fn completion_claim_without_mutation_forces_actual_work() {
             },
             ProviderTurn {
                 content: String::new(),
-                tool_calls: vec![tool_call("2", "read_file")],
+                tool_calls: vec![tool_call_args("2", "read_file", r#"{"path":"config.txt"}"#)],
+            },
+            ProviderTurn {
+                content: "已完成修改".into(),
+                tool_calls: vec![],
+            },
+            ProviderTurn {
+                content: String::new(),
+                tool_calls: vec![tool_call("3", "share_to_companion")],
             },
             ProviderTurn {
                 content: "已完成修改".into(),
@@ -588,11 +608,15 @@ async fn completion_claim_after_mutation_and_verification_is_kept() {
         scripts: Mutex::new(vec![
             ProviderTurn {
                 content: String::new(),
-                tool_calls: vec![tool_call("1", "write_file")],
+                tool_calls: vec![tool_call_args(
+                    "1",
+                    "write_file",
+                    r#"{"path":"config.txt","content":"timeout=30"}"#,
+                )],
             },
             ProviderTurn {
                 content: String::new(),
-                tool_calls: vec![tool_call("2", "read_file")],
+                tool_calls: vec![tool_call_args("2", "read_file", r#"{"path":"config.txt"}"#)],
             },
             ProviderTurn {
                 content: "已完成修改".into(),

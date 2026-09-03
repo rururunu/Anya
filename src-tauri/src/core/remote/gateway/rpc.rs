@@ -89,8 +89,47 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
             request_id,
             session_id,
         } => {
-            let data = session_history(app, &session_id);
+            let data = session_history(app, &session_id).await;
             send_msg(ws, &ServerMessage::rpc_ok(request_id, data)).await
+        }
+        ClientMessage::SessionRewind {
+            request_id,
+            session_id,
+            turn,
+            restore,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            let result = crate::commands::harness::perform_rewind(
+                &state,
+                crate::commands::harness::RewindSessionRequest {
+                    session_id: session_id.clone(),
+                    turn,
+                    restore: restore.unwrap_or_else(|| "both".into()),
+                },
+            )
+            .await;
+            match result {
+                Ok(response) => {
+                    // The desktop workbench reloads the truncated history like its own rewind.
+                    let _ = app.emit("remote-session-rewound", json!({ "sessionId": session_id }));
+                    send_msg(
+                        ws,
+                        &ServerMessage::rpc_ok(
+                            request_id,
+                            json!({
+                                "sessionId": session_id,
+                                "turn": turn,
+                                "restoredFiles": response.restored_files,
+                                "truncatedMessages": response.truncated_messages,
+                            }),
+                        ),
+                    )
+                    .await
+                }
+                Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
+            }
         }
         ClientMessage::SessionDelete {
             request_id,
@@ -126,6 +165,179 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 &ServerMessage::rpc_ok(request_id, json!({ "ok": true, "sessionId": session_id })),
             )
             .await
+        }
+        ClientMessage::SessionArchive {
+            request_id,
+            session_id,
+            archived,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            if session_id.trim().is_empty() {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "sessionId required")).await;
+            }
+            let workspace_id = state
+                .core
+                .chat()
+                .conversation()
+                .workspace_for_session(&session_id);
+            state
+                .core
+                .chat()
+                .set_session_archived(&session_id, archived);
+            // Restoring a session also un-archives its workspace (same as desktop IPC).
+            if !archived {
+                if let Some(workspace_id) = workspace_id {
+                    if state
+                        .core
+                        .workspaces()
+                        .list_archived()
+                        .iter()
+                        .any(|workspace| workspace.id == workspace_id)
+                    {
+                        let manager = state.core.workspaces();
+                        if let Err(message) = manager.set_archived(&workspace_id, false).await {
+                            return send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await;
+                        }
+                        let _ = app.emit("workspaces-changed", manager.current());
+                    }
+                }
+            }
+            let _ = app.emit("history-updated", json!({ "sessionId": session_id }));
+            let snapshot = crate::core::remote::bridge::build_session_snapshot(app);
+            crate::core::remote::bridge::broadcast_server_message(&ServerMessage::Event {
+                name: "session.snapshot".into(),
+                data: snapshot.as_object().cloned().unwrap_or_default(),
+            });
+            let archived_list = crate::core::remote::bridge::build_archived_session_list(app);
+            crate::core::remote::bridge::broadcast_server_message(&ServerMessage::Event {
+                name: "session.archived.snapshot".into(),
+                data: archived_list.as_object().cloned().unwrap_or_default(),
+            });
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(
+                    request_id,
+                    json!({
+                        "ok": true,
+                        "sessionId": session_id,
+                        "archived": archived,
+                    }),
+                ),
+            )
+            .await
+        }
+        ClientMessage::SessionListArchived { request_id } => {
+            let data = crate::core::remote::bridge::build_archived_session_list(app);
+            send_msg(ws, &ServerMessage::rpc_ok(request_id, data)).await
+        }
+        ClientMessage::WorkspaceArchive {
+            request_id,
+            workspace_id,
+            archived,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            if workspace_id.trim().is_empty() {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "workspaceId required")).await;
+            }
+            // Same as the desktop command: the workspace and every session bound to it move together.
+            let manager = state.core.workspaces();
+            if let Err(message) = manager.set_archived(&workspace_id, archived).await {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await;
+            }
+            state
+                .core
+                .chat()
+                .set_sessions_archived_for_workspace(&workspace_id, archived);
+            let _ = app.emit("workspaces-changed", manager.current());
+            let _ = app.emit("history-updated", json!({ "workspaceId": workspace_id }));
+            let snapshot = crate::core::remote::bridge::build_session_snapshot(app);
+            crate::core::remote::bridge::broadcast_server_message(&ServerMessage::Event {
+                name: "session.snapshot".into(),
+                data: snapshot.as_object().cloned().unwrap_or_default(),
+            });
+            let archived_list = crate::core::remote::bridge::build_archived_session_list(app);
+            crate::core::remote::bridge::broadcast_server_message(&ServerMessage::Event {
+                name: "session.archived.snapshot".into(),
+                data: archived_list.as_object().cloned().unwrap_or_default(),
+            });
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(
+                    request_id,
+                    json!({ "ok": true, "workspaceId": workspace_id, "archived": archived }),
+                ),
+            )
+            .await
+        }
+        ClientMessage::WorkspaceListArchived { request_id } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            let workspaces: Vec<serde_json::Value> = state
+                .core
+                .workspaces()
+                .list_archived()
+                .into_iter()
+                .map(|workspace| {
+                    json!({
+                        "id": workspace.id,
+                        "name": workspace.name,
+                        "rootPath": workspace.root.to_string_lossy(),
+                        "pinned": workspace.pinned,
+                        "archived": true,
+                    })
+                })
+                .collect();
+            send_msg(ws, &ServerMessage::rpc_ok(request_id, json!({ "workspaces": workspaces }))).await
+        }
+        ClientMessage::ImageGenOptions { request_id } => {
+            let settings = match crate::services::settings_store::get_settings(app) {
+                Ok(settings) => settings,
+                Err(error) => return send_msg(ws, &ServerMessage::rpc_err(request_id, error)).await,
+            };
+            let payload = super::payloads::image_gen_options_payload(&settings);
+            send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await
+        }
+        ClientMessage::ImageGenSetModel {
+            request_id,
+            provider,
+            model,
+        } => {
+            let settings = match crate::services::settings_store::get_settings(app) {
+                Ok(settings) => settings,
+                Err(error) => return send_msg(ws, &ServerMessage::rpc_err(request_id, error)).await,
+            };
+            let provider = provider.trim().to_string();
+            let model = model.trim().to_string();
+            let known = settings.image_providers.iter().any(|item| {
+                item.id == provider
+                    && item
+                        .models
+                        .split([',', '\n'])
+                        .map(str::trim)
+                        .any(|id| id == model)
+            });
+            if !known {
+                return send_msg(
+                    ws,
+                    &ServerMessage::rpc_err(request_id, "image model is not configured on the desktop"),
+                )
+                .await;
+            }
+            let mut next = settings;
+            next.image_model = model;
+            next.image_model_provider = provider;
+            match crate::services::settings_store::set_settings(app, next) {
+                Ok(saved) => {
+                    let payload = super::payloads::image_gen_options_payload(&saved);
+                    send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await
+                }
+                Err(error) => send_msg(ws, &ServerMessage::rpc_err(request_id, error)).await,
+            }
         }
         ClientMessage::WorkspaceSnapshot {
             request_id,
@@ -243,6 +455,7 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
             tool_approval_mode,
             chat_model,
             chat_model_provider,
+            image_gen,
         } => {
             handle_chat_send(
                 app,
@@ -255,6 +468,7 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 tool_approval_mode,
                 chat_model,
                 chat_model_provider,
+                image_gen,
             )
             .await
         }
@@ -311,6 +525,128 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 &ServerMessage::rpc_ok(
                     request_id,
                     json!({ "sessionId": session_id, "compose": compose }),
+                ),
+            )
+            .await
+        }
+        ClientMessage::SessionStagedGet {
+            request_id,
+            session_id,
+        } => {
+            let messages = crate::core::remote::list_staged(&session_id);
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(
+                    request_id,
+                    json!({ "sessionId": session_id, "messages": messages }),
+                ),
+            )
+            .await
+        }
+        ClientMessage::SessionStagedPush {
+            request_id,
+            session_id,
+            message,
+        } => {
+            let messages = crate::core::remote::push_staged(&session_id, &message);
+            let _ = app.emit(
+                "remote-staged-changed",
+                json!({ "sessionId": session_id, "messages": messages }),
+            );
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(
+                    request_id,
+                    json!({ "sessionId": session_id, "messages": messages }),
+                ),
+            )
+            .await
+        }
+        ClientMessage::SessionStagedRemove {
+            request_id,
+            session_id,
+            index,
+        } => {
+            let messages = crate::core::remote::remove_staged(&session_id, index);
+            let _ = app.emit(
+                "remote-staged-changed",
+                json!({ "sessionId": session_id, "messages": messages }),
+            );
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(
+                    request_id,
+                    json!({ "sessionId": session_id, "messages": messages }),
+                ),
+            )
+            .await
+        }
+        ClientMessage::SessionStagedClear {
+            request_id,
+            session_id,
+        } => {
+            crate::core::remote::clear_staged(&session_id);
+            let _ = app.emit(
+                "remote-staged-changed",
+                json!({ "sessionId": session_id, "messages": [] }),
+            );
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(
+                    request_id,
+                    json!({ "sessionId": session_id, "messages": [] }),
+                ),
+            )
+            .await
+        }
+        ClientMessage::SessionStagedGuide {
+            request_id,
+            session_id,
+            index,
+        } => {
+            let Some(content) = crate::core::remote::take_staged_at(&session_id, index) else {
+                return send_msg(
+                    ws,
+                    &ServerMessage::rpc_err(request_id, "staged message not found"),
+                )
+                .await;
+            };
+            let messages = crate::core::remote::list_staged(&session_id);
+            let _ = app.emit(
+                "remote-staged-changed",
+                json!({ "sessionId": session_id, "messages": messages }),
+            );
+            // Soft-inject into the running turn (same path as mid-turn chat.send).
+            handle_chat_send(
+                app,
+                ws,
+                request_id,
+                Some(session_id),
+                content,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+        }
+        ClientMessage::SessionStagedPop {
+            request_id,
+            session_id,
+        } => {
+            let message = crate::core::remote::pop_staged_front(&session_id);
+            let messages = crate::core::remote::list_staged(&session_id);
+            let _ = app.emit(
+                "remote-staged-changed",
+                json!({ "sessionId": session_id, "messages": messages }),
+            );
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(
+                    request_id,
+                    json!({ "sessionId": session_id, "message": message, "messages": messages }),
                 ),
             )
             .await

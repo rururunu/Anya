@@ -44,6 +44,9 @@ pub struct EvalTask {
     pub setup_files: Vec<EvalSetupFile>,
     #[serde(default, alias = "skip_unless_office")]
     pub skip_unless_office: Option<String>,
+    /// Force plan-mode gate for this task (independent of CLI `--plan-mode`).
+    #[serde(default, alias = "plan_mode")]
+    pub plan_mode: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -344,7 +347,7 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
     let runner = AgentRunner::new(provider, Arc::clone(&tools)).with_max_steps(40);
 
     let session_id = format!("eval-{}", task.id);
-    shared_plan_mode_store().set_active(&session_id, options.plan_mode);
+    shared_plan_mode_store().set_active(&session_id, options.plan_mode || task.plan_mode);
 
     let tool_ctx = ToolContext {
         workspace_root: workspace.clone(),

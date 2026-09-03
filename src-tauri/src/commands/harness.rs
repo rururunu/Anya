@@ -112,6 +112,15 @@ pub async fn rewind_session(
     state: State<'_, AppState>,
     request: RewindSessionRequest,
 ) -> Result<RewindSessionResponse, String> {
+    perform_rewind(&state, request).await
+}
+
+/// Shared by the desktop command and the Companion gateway (`session.rewind`).
+/// Broadcasts `session.rewound` so every client reloads the truncated history.
+pub async fn perform_rewind(
+    state: &AppState,
+    request: RewindSessionRequest,
+) -> Result<RewindSessionResponse, String> {
     let restore = request.restore.as_str();
     if !matches!(restore, "code" | "conversation" | "both") {
         return Err("restore must be code, conversation, or both".into());
@@ -172,6 +181,7 @@ pub async fn rewind_session(
         let _ = shared_checkpoint_store().drop_from_turn(&request.session_id, request.turn);
     }
 
+    remote::push_session_rewound(&request.session_id, request.turn);
     Ok(RewindSessionResponse {
         restored_files,
         truncated_messages,

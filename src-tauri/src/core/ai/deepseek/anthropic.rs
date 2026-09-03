@@ -196,28 +196,44 @@ fn anthropic_user_content(content: &str) -> Value {
             parts.push(json!({ "type": "text", "text": before }));
         }
         if let Some(url) = cap.get(1).map(|m| m.as_str()).filter(|url| !url.is_empty()) {
-            if let Some(b64) = url.strip_prefix("data:") {
-                if let Some((_, data)) = b64.split_once("base64,") {
-                    let media_type = b64
-                        .split(';')
-                        .next()
-                        .unwrap_or("image/png")
-                        .trim()
-                        .to_string();
-                    parts.push(json!({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": data,
+            match crate::core::ai::image_gen::resolve_image_url_for_api(url) {
+                Ok(resolved) => {
+                    if let Some(b64) = resolved.strip_prefix("data:") {
+                        if let Some((_, data)) = b64.split_once("base64,") {
+                            let media_type = b64
+                                .split(';')
+                                .next()
+                                .unwrap_or("image/png")
+                                .trim()
+                                .to_string();
+                            parts.push(json!({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": data,
+                                }
+                            }));
                         }
+                    } else {
+                        parts.push(json!({
+                            "type": "image",
+                            "source": { "type": "url", "url": resolved }
+                        }));
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "anya::ai",
+                        error = %error,
+                        raw = %url,
+                        "dropping unreadable image ref from anthropic payload"
+                    );
+                    parts.push(json!({
+                        "type": "text",
+                        "text": format!("[image unavailable: {error}]"),
                     }));
                 }
-            } else {
-                parts.push(json!({
-                    "type": "image",
-                    "source": { "type": "url", "url": url }
-                }));
             }
         }
         last = mat.end();

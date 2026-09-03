@@ -217,16 +217,26 @@ impl RemoteGatewayState {
         self.inner.lock().ok()?.pairing.clone()
     }
 
-    pub fn authorize(&self, device_id: &str, credential: &str) -> Result<PairedDevice, String> {
+    pub fn authorize(
+        &self,
+        device_id: &str,
+        credential: &str,
+        device_name: Option<String>,
+    ) -> Result<PairedDevice, String> {
         let mut guard = self
             .inner
             .lock()
             .map_err(|_| "remote gateway lock poisoned".to_string())?;
         let now = now_ms();
+        let device_name = normalize_device_name(device_name);
+        let pairing_snapshot = guard.pairing.clone();
 
         if let Some(device) = guard.devices.get_mut(device_id) {
             if device.credential == credential {
                 device.last_seen_epoch_ms = now;
+                if device_name.is_some() {
+                    device.device_name = device_name;
+                }
                 let cloned = device.clone();
                 let path = guard.devices_path.clone();
                 let devices = guard.devices.clone();
@@ -234,11 +244,33 @@ impl RemoteGatewayState {
                 let _ = save_devices(&path, &devices);
                 return Ok(cloned);
             }
-            return Err("invalid device credential".into());
+
+            // Same phone, new pairing token (re-scan QR / rotated tunnel): refresh credential.
+            let Some(pairing) = pairing_snapshot else {
+                return Err("invalid device credential".into());
+            };
+            if pairing.expires_at < SystemTime::now() {
+                guard.pairing = None;
+                return Err("pairing code expired".into());
+            }
+            if credential != pairing.token && credential != pairing.pairing_code {
+                return Err("invalid device credential".into());
+            }
+            device.credential = credential.to_string();
+            device.last_seen_epoch_ms = now;
+            if device_name.is_some() {
+                device.device_name = device_name;
+            }
+            let cloned = device.clone();
+            guard.pairing = None;
+            let path = guard.devices_path.clone();
+            let devices = guard.devices.clone();
+            drop(guard);
+            let _ = save_devices(&path, &devices);
+            return Ok(cloned);
         }
 
-        let pairing = guard.pairing.clone();
-        let Some(pairing) = pairing else {
+        let Some(pairing) = pairing_snapshot else {
             return Err("unknown device; open Connect Phone and generate a new code".into());
         };
         if pairing.expires_at < SystemTime::now() {
@@ -254,9 +286,10 @@ impl RemoteGatewayState {
             // Persist whatever the phone presented so reconnect keeps working
             // whether it used the QR token or the short pairing code.
             credential: credential.to_string(),
-            device_name: None,
+            device_name,
             paired_at_epoch_ms: now,
             last_seen_epoch_ms: now,
+            online: false,
         };
         guard.devices.insert(device_id.to_string(), device.clone());
         // One-shot pairing session — force refresh for the next phone.
@@ -292,6 +325,14 @@ impl RemoteGatewayState {
         if let Ok(mut guard) = self.inner.lock() {
             if guard.connected.get(device_id) == Some(&addr) {
                 guard.connected.remove(device_id);
+                if let Some(device) = guard.devices.get_mut(device_id) {
+                    device.last_seen_epoch_ms = now_ms();
+                    let path = guard.devices_path.clone();
+                    let devices = guard.devices.clone();
+                    drop(guard);
+                    let _ = save_devices(&path, &devices);
+                    return;
+                }
             }
         }
     }
@@ -308,7 +349,15 @@ impl RemoteGatewayState {
         self.inner
             .lock()
             .map(|g| {
-                let mut devices: Vec<_> = g.devices.values().cloned().collect();
+                let mut devices: Vec<_> = g
+                    .devices
+                    .values()
+                    .cloned()
+                    .map(|mut device| {
+                        device.online = g.connected.contains_key(&device.device_id);
+                        device
+                    })
+                    .collect();
                 devices.sort_by_key(|d| std::cmp::Reverse(d.last_seen_epoch_ms));
                 devices
             })
@@ -329,4 +378,10 @@ impl RemoteGatewayState {
         }
         removed
     }
+}
+
+fn normalize_device_name(name: Option<String>) -> Option<String> {
+    name.map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .map(|n| n.chars().take(64).collect())
 }

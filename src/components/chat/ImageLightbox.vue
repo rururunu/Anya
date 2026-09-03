@@ -172,7 +172,6 @@ import {
   BRUSH_RADIUS_MIN,
   BRUSH_RADIUS_MAX,
 } from "@/composables/chat/useGeneratedImagePaint";
-import { resolveChatImageSrc } from "@/services/chat/localImageSrc";
 import {
   prepareFullImageEdit,
   prepareStrokeImageEdit,
@@ -181,6 +180,7 @@ import {
 import { saveChatImage } from "@/services/chat/saveChatImage";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
+import { useResolvedChatImageSrc } from "@/composables/chat/useResolvedChatImageSrc";
 
 const props = defineProps<{
   open: boolean;
@@ -234,7 +234,7 @@ const canGoPrev = computed(() => activeIndex.value > 0);
 const canGoNext = computed(
   () => activeIndex.value >= 0 && activeIndex.value < props.sources.length - 1,
 );
-const resolvedSource = computed(() => resolveChatImageSrc(activeSource.value));
+const { resolvedSource } = useResolvedChatImageSrc(() => activeSource.value);
 const paintMode = computed(
   () => Boolean(selectingSource.value) && selectingSource.value === activeSource.value,
 );

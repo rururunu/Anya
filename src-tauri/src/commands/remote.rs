@@ -1,9 +1,11 @@
 use tauri::AppHandle;
+use tauri::Emitter;
 
 use crate::core::remote::{
-    broadcast_compose_event, create_pairing_session, gateway_status, get_session_compose,
-    list_paired_devices, revoke_device, set_session_compose, start_gateway, stop_gateway,
-    GatewayStatus, PairedDevice, PairingSessionInfo, SessionCompose, TunnelPrefs,
+    broadcast_compose_event, clear_staged, create_pairing_session, gateway_status,
+    get_session_compose, insert_staged, list_paired_devices, list_staged, pop_staged_front,
+    push_staged, remove_staged, revoke_device, set_session_compose, start_gateway, stop_gateway,
+    take_staged_at, GatewayStatus, PairedDevice, PairingSessionInfo, SessionCompose, TunnelPrefs,
 };
 
 #[tauri::command]
@@ -70,4 +72,64 @@ pub fn remote_sync_session_compose(
 #[tauri::command]
 pub fn remote_get_session_compose(session_id: String) -> SessionCompose {
     get_session_compose(&session_id)
+}
+
+fn emit_staged(app: &AppHandle, session_id: &str, messages: &[String]) {
+    let _ = app.emit(
+        "remote-staged-changed",
+        serde_json::json!({ "sessionId": session_id, "messages": messages }),
+    );
+}
+
+#[tauri::command]
+pub fn remote_list_staged(session_id: String) -> Vec<String> {
+    list_staged(&session_id)
+}
+
+#[tauri::command]
+pub fn remote_push_staged(app: AppHandle, session_id: String, message: String) -> Vec<String> {
+    let messages = push_staged(&session_id, &message);
+    emit_staged(&app, &session_id, &messages);
+    messages
+}
+
+#[tauri::command]
+pub fn remote_remove_staged(app: AppHandle, session_id: String, index: usize) -> Vec<String> {
+    let messages = remove_staged(&session_id, index);
+    emit_staged(&app, &session_id, &messages);
+    messages
+}
+
+#[tauri::command]
+pub fn remote_clear_staged(app: AppHandle, session_id: String) {
+    clear_staged(&session_id);
+    emit_staged(&app, &session_id, &[]);
+}
+
+#[tauri::command]
+pub fn remote_insert_staged(
+    app: AppHandle,
+    session_id: String,
+    index: usize,
+    message: String,
+) -> Vec<String> {
+    let messages = insert_staged(&session_id, index, &message);
+    emit_staged(&app, &session_id, &messages);
+    messages
+}
+
+/// Pop the front staged message for post-turn flush (atomic vs Companion).
+#[tauri::command]
+pub fn remote_pop_staged(app: AppHandle, session_id: String) -> Option<String> {
+    let content = pop_staged_front(&session_id)?;
+    emit_staged(&app, &session_id, &list_staged(&session_id));
+    Some(content)
+}
+
+/// Take one staged message for soft-inject guide.
+#[tauri::command]
+pub fn remote_take_staged(app: AppHandle, session_id: String, index: usize) -> Option<String> {
+    let content = take_staged_at(&session_id, index)?;
+    emit_staged(&app, &session_id, &list_staged(&session_id));
+    Some(content)
 }

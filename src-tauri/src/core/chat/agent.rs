@@ -121,6 +121,11 @@ impl AgentRunner {
         if crate::core::tools::image_mode::is_image_mode(&request.session_id) {
             completion_gate.require_image();
         }
+        if crate::core::chat::session_origin::shared_session_origin_store()
+            .is_companion(tool_ctx.root_session_id())
+        {
+            completion_gate.require_share_deliverable();
+        }
         completion_gate.capture_goal_from_request(&request);
         let mut user_msg_index = request
             .messages
@@ -282,8 +287,8 @@ impl AgentRunner {
             };
 
             let mut user_denied = false;
+            completion_gate.record_tool_outcomes(&self.tools, &outcomes);
             for outcome in &outcomes {
-                completion_gate.record_tool_outcome(&self.tools, outcome);
                 used_tokens += estimate_tokens(&outcome.result);
                 tool_ctx.conversation.journal().record_tool_outcome(
                     tool_ctx.root_session_id(),

@@ -105,6 +105,13 @@ pub struct PairedDevice {
     pub device_name: Option<String>,
     pub paired_at_epoch_ms: i64,
     pub last_seen_epoch_ms: i64,
+    /// Live WebSocket presence; omitted from disk when false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub online: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, Serialize)]

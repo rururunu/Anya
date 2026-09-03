@@ -1,0 +1,48 @@
+{
+  "id": "mutation_without_claim_challenged",
+  "prompt": "Write src/b.txt to beta.",
+  "script": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "src/b.txt",
+            "content": "beta"
+          }
+        }
+      ]
+    },
+    {
+      "content": "Updated the file as requested.",
+      "tool_calls": []
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/b.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "Updated the file as requested.",
+      "tool_calls": []
+    }
+  ],
+  "assertions": [
+    {
+      "type": "statusSeen",
+      "kind": "verify_completion"
+    },
+    {
+      "type": "fileContains",
+      "path": "src/b.txt",
+      "text": "beta"
+    }
+  ]
+}

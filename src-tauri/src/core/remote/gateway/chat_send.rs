@@ -20,6 +20,7 @@ pub(super) async fn handle_chat_send(
     tool_approval_mode: Option<String>,
     chat_model: Option<String>,
     chat_model_provider: Option<String>,
+    image_gen: Option<crate::core::remote::protocol::RemoteImageGenOptions>,
 ) -> Result<(), String> {
     let Some(state) = app.try_state::<AppState>() else {
         return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
@@ -30,6 +31,27 @@ pub(super) async fn handle_chat_send(
             return send_msg(ws, &ServerMessage::rpc_err(request_id, error)).await;
         }
     };
+    // Phone toolbar → the same ImageGenSendOptions the desktop composer builds. A custom
+    // style id resolves to the desktop template (prompt + example image) here, since the
+    // phone never sees the example image bytes.
+    let image_gen = image_gen.map(|remote| {
+        let template = remote.style_id.as_deref().and_then(|id| {
+            settings
+                .image_style_templates
+                .iter()
+                .find(|template| template.id == id)
+        });
+        crate::models::chat::ImageGenSendOptions {
+            size: remote.size,
+            quality: remote.quality,
+            n: remote.n,
+            style_prompt: template
+                .map(|t| t.prompt.clone())
+                .filter(|p| !p.trim().is_empty())
+                .or(remote.style_prompt),
+            example_image: template.and_then(|t| t.example_image.clone()),
+        }
+    });
     let preferences = crate::core::chat::SendPreferences::from(&settings);
     let session_id = match session_id
         .map(|s| s.trim().to_string())
@@ -80,7 +102,7 @@ pub(super) async fn handle_chat_send(
         },
         chat_mode: Some(compose.chat_mode),
         tool_approval_mode: Some(compose.tool_approval_mode),
-        image_gen: None,
+        image_gen,
         skip_auto_plan: false,
         resume_plan: false,
     };

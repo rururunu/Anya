@@ -113,19 +113,12 @@
             class="user-images"
             data-tauri-drag-region="false"
           >
-            <button
+            <UserMessageImage
               v-for="(img, idx) in userContent(item.message).images"
               :key="idx"
-              type="button"
-              class="user-image-btn"
-              data-tauri-drag-region="false"
-              data-no-drag
-              :aria-label="'Preview image'"
-              @mousedown.stop
-              @click.stop.prevent="previewImage(img)"
-            >
-              <img :src="img" class="user-image" alt="" draggable="false" />
-            </button>
+              :source="img"
+              @preview="previewImage"
+            />
           </div>
           <div
             v-if="userContent(item.message).attachedFiles?.length"
@@ -445,6 +438,7 @@ import MascotFace, { type MascotState } from "@/components/icons/MascotFace.vue"
 import AskUserAnswerCard from "@/components/chat/AskUserAnswerCard.vue";
 import ImageAnalysisDetails from "@/components/chat/ImageAnalysisDetails.vue";
 import EnvironmentContextCard from "@/components/chat/EnvironmentContextCard.vue";
+import UserMessageImage from "@/components/chat/UserMessageImage.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import { openSettings as ipcOpenSettings, rewindSession, setPlanMode } from "@/services/ipc";
 import { useSettingStore } from "@/stores/setting";
@@ -1772,36 +1766,6 @@ defineExpose({ openFind, closeFind });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.user-image-btn {
-  display: block;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  border-radius: var(--peek-user-bubble-radius, 18px);
-  overflow: hidden;
-  cursor: zoom-in;
-  max-width: min(280px, 72vw);
-  line-height: 0;
-  box-shadow: var(--peek-user-bubble-shadow, none);
-  transform: translateZ(0);
-  transition: box-shadow 140ms ease;
-}
-.user-image-btn:hover {
-  box-shadow:
-    var(--peek-user-bubble-shadow, none),
-    0 0 0 1px color-mix(in srgb, var(--peek-accent) 35%, transparent);
-}
-.user-image {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: min(280px, 72vw);
-  max-height: 360px;
-  object-fit: contain;
-  border-radius: inherit;
-  user-select: none;
 }
 .user-bubble {
   width: fit-content;

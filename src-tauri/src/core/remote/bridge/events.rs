@@ -74,6 +74,10 @@ pub fn on_bus_event(event: &BusEvent) {
             } else {
                 set_run_state(session_id, RemoteRunState::Idle);
             }
+            let completed_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
             broadcast_server_message(&ServerMessage::Event {
                 name: "chat.finished".into(),
                 data: json!({
@@ -81,6 +85,66 @@ pub fn on_bus_event(event: &BusEvent) {
                     "messageId": message_id,
                     "content": content,
                     "reasoning": reasoning,
+                    "completedAtEpochMs": completed_at,
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            });
+        }
+        // Transient turn status ("compressing context", "stream retry 2/5", "analyzing
+        // images"…) — the desktop shows these as an activity line under the bubble.
+        BusEvent::ChatStatus {
+            session_id,
+            message_id,
+            kind,
+        } => {
+            broadcast_server_message(&ServerMessage::Event {
+                name: "chat.status".into(),
+                data: json!({
+                    "sessionId": session_id,
+                    "messageId": message_id,
+                    "kind": kind,
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            });
+        }
+        // Per-message prompt-cache hit rate (DeepSeek); the desktop shows "缓存命中 N%".
+        BusEvent::TokenUsage {
+            session_id: Some(session_id),
+            message_id: Some(message_id),
+            model,
+            usage,
+        } if usage.cache_read_tokens.is_some() => {
+            broadcast_server_message(&ServerMessage::Event {
+                name: "chat.tokenUsage".into(),
+                data: json!({
+                    "sessionId": session_id,
+                    "messageId": message_id,
+                    "model": model,
+                    "inputTokens": usage.input_tokens,
+                    "outputTokens": usage.output_tokens,
+                    "cacheReadTokens": usage.cache_read_tokens.unwrap_or(0),
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            });
+        }
+        // The user bubble was rewritten after send (attachments / selection merged in).
+        BusEvent::ChatUserContent {
+            session_id,
+            message_id,
+            content,
+        } => {
+            broadcast_server_message(&ServerMessage::Event {
+                name: "chat.userContent".into(),
+                data: json!({
+                    "sessionId": session_id,
+                    "messageId": message_id,
+                    "content": content,
                 })
                 .as_object()
                 .cloned()

@@ -157,10 +157,104 @@ fn favicon_url_for_base(base_url: &str) -> Option<String> {
     ))
 }
 
-pub(super) fn session_history(app: &AppHandle, session_id: &str) -> serde_json::Value {
+/// Image-mode choices for Companion: current selection, every configured image provider's
+/// enabled models, and the user's custom style templates (prompt only; example images stay
+/// on the desktop and are resolved from `styleId` at send time).
+pub(super) fn image_gen_options_payload(
+    settings: &crate::models::settings::AppSettings,
+) -> serde_json::Value {
+    let choices: Vec<serde_json::Value> = settings
+        .image_providers
+        .iter()
+        .flat_map(|provider| {
+            let disabled: std::collections::HashSet<&str> = provider
+                .disabled_models
+                .split([',', '\n'])
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .collect();
+            let name = if provider.name.trim().is_empty() {
+                provider.id.clone()
+            } else {
+                provider.name.trim().to_string()
+            };
+            provider
+                .models
+                .split([',', '\n'])
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && !disabled.contains(id))
+                .map(|id| {
+                    json!({
+                        "provider": provider.id,
+                        "providerName": name,
+                        "model": id,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let styles: Vec<serde_json::Value> = settings
+        .image_style_templates
+        .iter()
+        .map(|template| {
+            json!({
+                "id": template.id,
+                "name": template.name,
+                "prompt": template.prompt,
+                "hasExampleImage": template.example_image.is_some(),
+            })
+        })
+        .collect();
+    json!({
+        "model": settings.image_model,
+        "provider": settings.image_model_provider,
+        "choices": choices,
+        "styles": styles,
+    })
+}
+
+pub(super) async fn session_history(app: &AppHandle, session_id: &str) -> serde_json::Value {
     let Some(state) = app.try_state::<AppState>() else {
         return json!({ "sessionId": session_id, "messages": [] });
     };
+    // Companion renders the same turn footer as the desktop ("已处理 12 s"), which
+    // needs the persisted completion time — the runtime message does not carry it.
+    let completed_at = crate::core::chat::db::load_message_completed_at(
+        &state.core.chat().conversation().db_pool(),
+        session_id,
+    )
+    .await
+    .unwrap_or_default();
+    let cache_usages: Vec<serde_json::Value> = crate::core::chat::db::load_message_cache_usages(
+        &state.core.chat().conversation().db_pool(),
+        session_id,
+    )
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|usage| {
+        json!({
+            "messageId": usage.message_id,
+            "inputTokens": usage.input_tokens,
+            "cacheReadTokens": usage.cache_read_tokens,
+        })
+    })
+    .collect();
+    // Rewind points: one per user turn that ran with a workspace snapshot.
+    let checkpoints: Vec<serde_json::Value> = crate::core::checkpoint::shared_checkpoint_store()
+        .list(session_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|checkpoint| {
+            json!({
+                "turn": checkpoint.turn,
+                "timeEpochMs": checkpoint.time,
+                "prompt": checkpoint.prompt,
+                "userMessageId": checkpoint.user_message_id,
+                "fileCount": checkpoint.files.len(),
+            })
+        })
+        .collect();
     match state.core.chat().history(session_id) {
         Ok(messages) => {
             let mapped: Vec<serde_json::Value> = messages
@@ -171,13 +265,18 @@ pub(super) fn session_history(app: &AppHandle, session_id: &str) -> serde_json::
                         crate::core::runtime::Role::Tool | crate::core::runtime::Role::System
                     )
                 })
-                .map(remote_chat_message)
+                .map(|message| {
+                    let completed = completed_at.get(&message.id).copied();
+                    remote_chat_message(message, completed)
+                })
                 .collect();
             json!({
                 "sessionId": session_id,
                 "messages": mapped,
                 "planModeActive": crate::core::tools::plan_mode::shared_plan_mode_store()
                     .is_active(session_id),
+                "messageCacheUsages": cache_usages,
+                "checkpoints": checkpoints,
             })
         }
         Err(_) => json!({
@@ -185,11 +284,16 @@ pub(super) fn session_history(app: &AppHandle, session_id: &str) -> serde_json::
             "messages": [],
             "planModeActive": crate::core::tools::plan_mode::shared_plan_mode_store()
                 .is_active(session_id),
+            "messageCacheUsages": cache_usages,
+            "checkpoints": checkpoints,
         }),
     }
 }
 
-fn remote_chat_message(message: crate::core::runtime::ChatMessage) -> serde_json::Value {
+fn remote_chat_message(
+    message: crate::core::runtime::ChatMessage,
+    completed_at: Option<u64>,
+) -> serde_json::Value {
     use crate::core::runtime::{MessageStatus, Role};
     let role = match message.role {
         Role::User => "User",
@@ -235,6 +339,12 @@ fn remote_chat_message(message: crate::core::runtime::ChatMessage) -> serde_json
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    // Same wire shape as the desktop store: `{type, id, content | toolActivityId}`.
+    let work_timeline = message
+        .work_timeline
+        .as_ref()
+        .map(|items| serde_json::to_value(items).unwrap_or(serde_json::Value::Array(Vec::new())))
+        .unwrap_or(serde_json::Value::Array(Vec::new()));
     json!({
         "id": message.id,
         "sessionId": message.session_id,
@@ -243,9 +353,12 @@ fn remote_chat_message(message: crate::core::runtime::ChatMessage) -> serde_json
         "reasoning": message.reasoning,
         "status": status,
         "createdAtEpochMs": message.timestamp,
+        "completedAtEpochMs": completed_at,
+        "estimatedTokens": message.estimated_tokens,
         "codeChanges": code_changes,
         "planTasks": plan_tasks,
         "toolActivities": tool_activities,
+        "workTimeline": work_timeline,
     })
 }
 

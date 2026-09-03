@@ -6,6 +6,7 @@ export interface PairedDevice {
   deviceName?: string | null;
   pairedAtEpochMs: number;
   lastSeenEpochMs: number;
+  online?: boolean;
 }
 
 export interface PairingSessionInfo {
@@ -88,4 +89,36 @@ export function remoteSyncSessionCompose(
 
 export function remoteGetSessionCompose(sessionId: string): Promise<RemoteSessionCompose> {
   return invoke("remote_get_session_compose", { sessionId });
+}
+
+export function remoteListStaged(sessionId: string): Promise<string[]> {
+  return invoke("remote_list_staged", { sessionId });
+}
+
+export function remotePushStaged(sessionId: string, message: string): Promise<string[]> {
+  return invoke("remote_push_staged", { sessionId, message });
+}
+
+export function remoteRemoveStaged(sessionId: string, index: number): Promise<string[]> {
+  return invoke("remote_remove_staged", { sessionId, index });
+}
+
+export function remoteClearStaged(sessionId: string): Promise<void> {
+  return invoke("remote_clear_staged", { sessionId });
+}
+
+export function remoteInsertStaged(
+  sessionId: string,
+  index: number,
+  message: string,
+): Promise<string[]> {
+  return invoke("remote_insert_staged", { sessionId, index, message });
+}
+
+export function remotePopStaged(sessionId: string): Promise<string | null> {
+  return invoke("remote_pop_staged", { sessionId });
+}
+
+export function remoteTakeStaged(sessionId: string, index: number): Promise<string | null> {
+  return invoke("remote_take_staged", { sessionId, index });
 }

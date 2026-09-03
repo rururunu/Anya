@@ -112,6 +112,69 @@ pub fn decode_image_source(raw: &str) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|error| format!("failed to read reference image: {error}"))
 }
 
+/// Vision / chat APIs only accept `data:image/…` or `http(s)://…` in `image_url`.
+/// Companion refs arrive as `path:C:\…` / `path:/…` — expand them before the wire.
+pub fn resolve_image_url_for_api(raw: &str) -> Result<String, String> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err("empty image ref".into());
+    }
+    if value.starts_with("data:image/") || value.starts_with("http://") || value.starts_with("https://")
+    {
+        return Ok(value.to_string());
+    }
+    if value.starts_with("data:") {
+        return Ok(value.to_string());
+    }
+    let bytes = decode_image_source(value)?;
+    if bytes.is_empty() {
+        return Err("image file is empty".into());
+    }
+    bytes_to_vision_data_url(&bytes)
+}
+
+fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && bytes[8..12] == *b"WEBP" {
+        Some("image/webp")
+    } else if bytes.starts_with(b"GIF8") {
+        Some("image/gif")
+    } else {
+        None
+    }
+}
+
+fn bytes_to_vision_data_url(bytes: &[u8]) -> Result<String, String> {
+    if let Some(mime) = sniff_image_mime(bytes) {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        return Ok(format!("data:{mime};base64,{b64}"));
+    }
+    // HEIC / BMP / etc. — re-encode so DeepSeek / OpenAI accept the payload.
+    use image::codecs::jpeg::JpegEncoder;
+    use image::ImageReader;
+    use std::io::Cursor;
+    let decoded = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|error| format!("unrecognized image format: {error}"))?
+        .decode()
+        .map_err(|error| format!("failed to decode image: {error}"))?;
+    let rgb = decoded.to_rgb8();
+    let mut jpeg = Vec::new();
+    JpegEncoder::new_with_quality(&mut jpeg, 85)
+        .encode(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .map_err(|error| format!("jpeg encode failed: {error}"))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(jpeg);
+    Ok(format!("data:image/jpeg;base64,{b64}"))
+}
+
 fn provider_has_model(provider: &CustomProviderConfig, model: &str) -> bool {
     provider
         .models
@@ -343,16 +406,12 @@ fn build_images_edits_form(
 }
 
 fn image_part_meta(bytes: &[u8], index: usize) -> (&'static str, String) {
-    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-        ("image/png", format!("reference-{index}.png"))
-    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        ("image/jpeg", format!("reference-{index}.jpg"))
-    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && bytes[8..12] == *b"WEBP" {
-        ("image/webp", format!("reference-{index}.webp"))
-    } else if bytes.starts_with(b"GIF8") {
-        ("image/gif", format!("reference-{index}.gif"))
-    } else {
-        ("image/png", format!("reference-{index}.png"))
+    match sniff_image_mime(bytes) {
+        Some("image/png") => ("image/png", format!("reference-{index}.png")),
+        Some("image/jpeg") => ("image/jpeg", format!("reference-{index}.jpg")),
+        Some("image/webp") => ("image/webp", format!("reference-{index}.webp")),
+        Some("image/gif") => ("image/gif", format!("reference-{index}.gif")),
+        _ => ("image/png", format!("reference-{index}.png")),
     }
 }
 
@@ -555,6 +614,34 @@ mod tests {
         assert_eq!(normalize_size("nope"), "1024x1024");
         assert_eq!(normalize_count(0), 1);
         assert_eq!(normalize_count(99), 4);
+    }
+
+    #[test]
+    fn resolve_image_url_expands_path_prefix() {
+        let dir = std::env::temp_dir().join(format!("anya-img-ref-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("ref.png");
+        // Minimal PNG header + IHDR/IDAT/IEND is overkill; write a JPEG so sniff works.
+        let jpeg = {
+            // 1x1 JPEG
+            let png = image::RgbImage::from_pixel(1, 1, image::Rgb([10, 20, 30]));
+            let mut bytes = Vec::new();
+            let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 90);
+            enc.encode(png.as_raw(), 1, 1, image::ExtendedColorType::Rgb8)
+                .unwrap();
+            bytes
+        };
+        std::fs::write(&file, &jpeg).unwrap();
+        let raw = format!("path:{}", file.to_string_lossy());
+        let url = resolve_image_url_for_api(&raw).unwrap();
+        assert!(url.starts_with("data:image/jpeg;base64,"), "{url}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_image_url_keeps_https() {
+        let url = resolve_image_url_for_api("https://cdn.example/a.png").unwrap();
+        assert_eq!(url, "https://cdn.example/a.png");
     }
 
     #[test]

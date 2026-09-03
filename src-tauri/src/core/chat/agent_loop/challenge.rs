@@ -15,6 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::core::chat::agent_loop::post_edit_verify::is_mutation_tool;
 use crate::core::runtime::{ChatMessage, ChatRequest, MessageStatus, Role};
 use crate::runtime::ToolManager;
 
@@ -70,6 +71,12 @@ pub const IMAGE_REQUIRED_CHALLENGE: &str = concat!(
     "say the image is ready, or offer a follow-up edit until the tool returns markdown.",
 );
 
+pub const OPEN_TASKS_CHALLENGE: &str = concat!(
+    "[System] Completion rejected: plan/todo items are still open. ",
+    "Mark each finished step with `complete_plan_step` and evidence ",
+    "(path or check command), or cancel out-of-scope steps explicitly, then answer.",
+);
+
 /// Global ablation switch used by the eval harness (`--no-challenge`).
 static CHALLENGES_DISABLED: AtomicBool = AtomicBool::new(false);
 
@@ -120,6 +127,11 @@ pub struct CompletionGate {
     require_image: bool,
     image_succeeded: bool,
     image_retries: u32,
+    /// Open plan/todo items still pending this turn (from update_tasks).
+    open_task_count: u32,
+    open_tasks_retries: u32,
+    /// Only nudge Companion share when the session originated from the phone app.
+    require_share_deliverable: bool,
     /// Disable all challenges for this gate instance (eval ablation).
     disabled: bool,
 }
@@ -136,59 +148,120 @@ impl CompletionGate {
         self.require_image = true;
     }
 
-    /// Capture path-like targets from the latest user message before the loop.
+    pub fn require_share_deliverable(&mut self) {
+        self.require_share_deliverable = true;
+    }
+
+    /// Capture path-like targets from the latest real user goal (skip plan-approve boilerplate).
     pub fn capture_goal_from_request(&mut self, request: &ChatRequest) {
-        let Some(user) = request
-            .messages
-            .iter()
-            .rev()
-            .find(|message| message.role == Role::User)
-        else {
+        let Some(user) = request.messages.iter().rev().find(|message| {
+            message.role == Role::User && !is_plan_approve_boilerplate(&message.content)
+        }) else {
             return;
         };
         self.goal_paths = extract_goal_paths(&user.content);
     }
 
-    /// Fold one tool outcome into the mutation/verification state. Must be
-    /// called for every outcome in the order the tools ran.
-    pub fn record_tool_outcome(&mut self, tools: &ToolManager, outcome: &ToolOutcome) {
-        if outcome.success {
-            let key = format!("{}|{}", outcome.tool_name, outcome.arguments);
-            let count = self.success_repeats.entry(key).or_insert(0);
-            *count += 1;
-            if *count >= MAX_NO_PROGRESS_REPEATS {
-                self.stalled = true;
+    /// Record a batch with mutation pass first, then verification — fixes parallel
+    /// waves where a read arrives before a write in the outcome list.
+    pub fn record_tool_outcomes(&mut self, tools: &ToolManager, outcomes: &[ToolOutcome]) {
+        for outcome in outcomes {
+            self.record_side_effects(tools, outcome);
+        }
+        for outcome in outcomes {
+            if !outcome.success {
+                continue;
             }
-            if let Some(path) = extract_path_from_args(&outcome.arguments) {
-                if !tools.is_read_only(&outcome.tool_name)
-                    && provides_completion_evidence(tools, outcome)
-                {
-                    self.mutated_paths.insert(path);
-                }
+            if outcome.tool_name == "generate_image" {
+                self.image_succeeded = true;
+                self.mutation_succeeded = true;
+                self.verification_succeeded = true;
+            } else if provides_completion_evidence(outcome) {
+                self.mutation_succeeded = true;
+                self.verification_succeeded = false;
             }
         }
+        for outcome in outcomes {
+            if !outcome.success || !self.mutation_succeeded {
+                continue;
+            }
+            if provides_verification_evidence(outcome, &self.mutated_paths) {
+                self.verification_succeeded = true;
+            }
+        }
+    }
 
+    /// Fold one tool outcome (single-item wrapper around [`Self::record_tool_outcomes`]).
+    pub fn record_tool_outcome(&mut self, tools: &ToolManager, outcome: &ToolOutcome) {
+        self.record_tool_outcomes(tools, std::slice::from_ref(outcome));
+    }
+
+    /// Merge paths a sub-agent mutated into this parent gate.
+    pub fn note_subagent_mutations(&mut self, paths: impl IntoIterator<Item = String>) {
+        let mut any = false;
+        for path in paths {
+            if path.is_empty() {
+                continue;
+            }
+            self.mutated_paths.insert(path);
+            any = true;
+        }
+        if any {
+            self.mutation_succeeded = true;
+            self.verification_succeeded = false;
+            self.wrote_files = true;
+        }
+    }
+
+    /// Track open plan/todo items from `update_tasks` payloads.
+    #[allow(dead_code)]
+    pub fn note_open_task_count(&mut self, count: u32) {
+        self.open_task_count = count;
+    }
+
+    fn record_side_effects(&mut self, _tools: &ToolManager, outcome: &ToolOutcome) {
+        if outcome.tool_name == "update_tasks" {
+            if let Some(count) = count_open_tasks_from_args(&outcome.arguments) {
+                self.open_task_count = count;
+            }
+        }
+        if outcome.tool_name == "complete_plan_step" && outcome.success {
+            self.open_task_count = self.open_task_count.saturating_sub(1);
+        }
+        if outcome.success
+            && matches!(
+                outcome.tool_name.as_str(),
+                "run_subagent" | "run_parallel_subagents" | "run_skill"
+            )
+        {
+            let paths =
+                crate::core::tools::agent::extract_touched_paths_from_subagent_result(&outcome.result);
+            if !paths.is_empty() {
+                self.note_subagent_mutations(paths);
+            }
+        }
         if !outcome.success {
             return;
+        }
+        let key = format!("{}|{}", outcome.tool_name, outcome.arguments);
+        let count = self.success_repeats.entry(key).or_insert(0);
+        *count += 1;
+        if *count >= MAX_NO_PROGRESS_REPEATS {
+            self.stalled = true;
+        }
+        if provides_completion_evidence(outcome) {
+            for path in extract_paths_from_args(&outcome.arguments) {
+                self.mutated_paths.insert(path);
+            }
         }
         if is_share_tool(&outcome.tool_name) {
             self.shared_deliverable = true;
         }
-        if is_write_tool(&outcome.tool_name) {
+        if is_write_tool(&outcome.tool_name) || is_mutation_tool(&outcome.tool_name) {
             self.wrote_files = true;
         }
         if looks_like_local_dev_server(&outcome.tool_name, &outcome.arguments) {
             self.started_local_server = true;
-        }
-        if outcome.tool_name == "generate_image" {
-            self.image_succeeded = true;
-            self.mutation_succeeded = true;
-            self.verification_succeeded = true;
-        } else if self.mutation_succeeded && provides_verification_evidence(tools, outcome) {
-            self.verification_succeeded = true;
-        } else if provides_completion_evidence(tools, outcome) {
-            self.mutation_succeeded = true;
-            self.verification_succeeded = false;
         }
     }
 
@@ -247,23 +320,6 @@ impl CompletionGate {
             };
         }
 
-        if (self.wrote_files || self.started_local_server)
-            && !self.shared_deliverable
-            && self.share_nudge_retries < MAX_COMPLETION_RETRIES
-        {
-            self.share_nudge_retries += 1;
-            push_completion_feedback(
-                request,
-                user_msg_index,
-                content,
-                reasoning,
-                SHARE_DELIVERABLE_CHALLENGE,
-            );
-            return ChallengeOutcome::ContinueWithChallenge {
-                status_kind: "share_deliverable".to_string(),
-            };
-        }
-
         if !self.mutation_succeeded
             && !crate::runtime::tool::is_question_only_request(request)
             && has_completion_claim(&content)
@@ -284,7 +340,6 @@ impl CompletionGate {
 
         if self.mutation_succeeded
             && !self.goal_paths.is_empty()
-            && has_completion_claim(&content)
             && !self.goal_paths_covered()
             && self.goal_coverage_retries < MAX_COMPLETION_RETRIES
         {
@@ -303,7 +358,6 @@ impl CompletionGate {
 
         if self.mutation_succeeded
             && !self.verification_succeeded
-            && has_completion_claim(&content)
             && self.verification_retries < MAX_COMPLETION_RETRIES
         {
             self.verification_retries += 1;
@@ -319,12 +373,48 @@ impl CompletionGate {
             };
         }
 
+        if self.mutation_succeeded
+            && self.open_task_count > 0
+            && self.open_tasks_retries < MAX_COMPLETION_RETRIES
+        {
+            self.open_tasks_retries += 1;
+            push_completion_feedback(
+                request,
+                user_msg_index,
+                content,
+                reasoning,
+                OPEN_TASKS_CHALLENGE,
+            );
+            return ChallengeOutcome::ContinueWithChallenge {
+                status_kind: "open_tasks".to_string(),
+            };
+        }
+
+        if self.require_share_deliverable
+            && (self.wrote_files || self.started_local_server)
+            && !self.shared_deliverable
+            && self.share_nudge_retries < MAX_COMPLETION_RETRIES
+        {
+            self.share_nudge_retries += 1;
+            push_completion_feedback(
+                request,
+                user_msg_index,
+                content,
+                reasoning,
+                SHARE_DELIVERABLE_CHALLENGE,
+            );
+            return ChallengeOutcome::ContinueWithChallenge {
+                status_kind: "share_deliverable".to_string(),
+            };
+        }
+
         let mut final_content = content;
         let completion_rejected = reject_unverified_completion(
             &mut final_content,
             request,
             self.mutation_succeeded,
             self.verification_succeeded,
+            self.mutation_succeeded && self.open_task_count > 0,
         );
         ChallengeOutcome::Finish {
             content: final_content,
@@ -341,7 +431,7 @@ impl CompletionGate {
         if self.goal_paths.is_empty() {
             return true;
         }
-        self.goal_paths.iter().any(|goal| {
+        self.goal_paths.iter().all(|goal| {
             self.mutated_paths
                 .iter()
                 .any(|mutated| paths_match(goal, mutated))
@@ -411,54 +501,91 @@ fn normalize_path_key(path: &str) -> String {
 fn extract_goal_paths(content: &str) -> HashSet<String> {
     let mut paths = HashSet::new();
     for token in content.split_whitespace() {
-        let cleaned = token.trim_matches(|c: char| {
-            matches!(
-                c,
-                ',' | ';' | ':' | '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}'
-            )
-        });
+        let cleaned = trim_path_token(token);
         if looks_like_path(cleaned) {
             paths.insert(cleaned.to_string());
         }
     }
-    // Also catch `path/to/file.ext` inside backticks.
-    for part in content.split('`') {
-        let trimmed = part.trim();
-        if looks_like_path(trimmed) {
-            paths.insert(trimmed.to_string());
+    // Only tokens inside backticks — `split` on a string with no backticks
+    // yields the whole sentence, which must not be treated as a path.
+    if content.contains('`') {
+        for (index, part) in content.split('`').enumerate() {
+            if index % 2 == 0 {
+                continue;
+            }
+            let trimmed = trim_path_token(part.trim());
+            if looks_like_path(trimmed) {
+                paths.insert(trimmed.to_string());
+            }
         }
     }
     paths
 }
 
+fn trim_path_token(token: &str) -> &str {
+    token.trim_matches(|c: char| {
+        matches!(
+            c,
+            ',' | ';' | ':' | '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}' | '.' | '!' | '?'
+        )
+    })
+}
+
 fn looks_like_path(value: &str) -> bool {
-    if value.len() < 3 || value.len() > 240 {
+    if value.len() < 3 || value.len() > 240 || value.contains(' ') {
         return false;
     }
     let has_sep = value.contains('/') || value.contains('\\');
-    let has_ext = value.contains('.')
-        && value
-            .rsplit(['/', '\\'])
-            .next()
-            .is_some_and(|name| name.contains('.') && !name.starts_with('.'));
-    has_sep || has_ext && value.chars().any(|c| c.is_ascii_alphanumeric())
+    if has_sep {
+        return true;
+    }
+    // Extension-only paths must look like `name.ext` with a short alphanumeric ext.
+    // Reject version-like tokens (`1.0.0`) that have multiple dots.
+    let Some((stem, ext)) = value.rsplit_once('.') else {
+        return false;
+    };
+    if stem.is_empty() || stem.starts_with('.') || stem.contains('.') {
+        return false;
+    }
+    let ext_ok = (1..=5).contains(&ext.len()) && ext.chars().all(|c| c.is_ascii_alphanumeric());
+    ext_ok && stem.chars().any(|c| c.is_ascii_alphanumeric())
 }
 
 fn extract_path_from_args(arguments: &str) -> Option<String> {
-    // Arguments are stored as a JSON string on ToolOutcome.
-    let value: serde_json::Value = serde_json::from_str(arguments).ok()?;
-    value
-        .get("path")
-        .and_then(|v| v.as_str())
-        .filter(|p| !p.is_empty())
-        .map(str::to_string)
-        .or_else(|| {
-            value
-                .get("file_path")
-                .and_then(|v| v.as_str())
-                .filter(|p| !p.is_empty())
-                .map(str::to_string)
-        })
+    extract_paths_from_args(arguments).into_iter().next()
+}
+
+fn extract_paths_from_args(arguments: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    for key in ["path", "file_path", "from", "to"] {
+        if let Some(path) = value
+            .get(key)
+            .and_then(|v| v.as_str())
+            .filter(|p| !p.is_empty())
+        {
+            paths.push(path.to_string());
+        }
+    }
+    if let Some(input) = value.get("input").and_then(|v| v.as_str()) {
+        for line in input.lines() {
+            for marker in [
+                "*** Update File: ",
+                "*** Add File: ",
+                "*** Delete File: ",
+            ] {
+                if let Some(path) = line.strip_prefix(marker) {
+                    let path = path.trim();
+                    if !path.is_empty() {
+                        paths.push(path.to_string());
+                    }
+                }
+            }
+        }
+    }
+    paths
 }
 
 pub(crate) fn push_challenge_message(
@@ -511,63 +638,87 @@ fn push_completion_feedback(
     push_challenge_message(request, user_msg_index, feedback);
 }
 
-/// Successful non-read-only tools normally prove that work happened, but
-/// orchestration-only tools must not let a model turn task bookkeeping into
-/// evidence that the requested change was made.
-fn provides_completion_evidence(tools: &ToolManager, outcome: &ToolOutcome) -> bool {
-    if tools.is_read_only(&outcome.tool_name) {
-        return false;
-    }
-    !matches!(
-        outcome.tool_name.as_str(),
-        "update_tasks" | "ask_user" | "complete_plan_step" | "connect_tools"
-    )
+/// Successful file mutations prove that work happened. Orchestration-only tools
+/// and bare shell commands do not count as completion evidence.
+fn provides_completion_evidence(outcome: &ToolOutcome) -> bool {
+    is_mutation_tool(&outcome.tool_name)
 }
 
-fn provides_verification_evidence(tools: &ToolManager, outcome: &ToolOutcome) -> bool {
-    if tools.is_read_only(&outcome.tool_name) {
-        // Forced read-back of a mutated file counts as verification.
-        if matches!(
-            outcome.tool_name.as_str(),
-            "read_file" | "search_files" | "list_folder" | "find_files" | "list_symbols"
-        ) {
-            if let Some(path) = extract_path_from_args(&outcome.arguments) {
-                // Gate instance state is not available here — treat any successful
-                // read_file as verification evidence when mutations already ran
-                // (caller already gated on mutation_succeeded).
-                let _ = path;
-                return true;
-            }
-            return outcome.tool_name == "read_file";
-        }
-        return !matches!(
-            outcome.tool_name.as_str(),
-            "search_memory" | "list_chats" | "read_chat" | "search_past_chats"
-        );
+fn provides_verification_evidence(
+    outcome: &ToolOutcome,
+    mutated_paths: &HashSet<String>,
+) -> bool {
+    if outcome.tool_name == "read_file" {
+        let Some(path) = extract_path_from_args(&outcome.arguments) else {
+            return false;
+        };
+        return mutated_paths
+            .iter()
+            .any(|mutated| paths_match(mutated, &path));
     }
-    if outcome.tool_name != "run_shell" {
+    if outcome.tool_name != "run_shell" || !outcome.success {
         return false;
     }
-    let command = outcome.arguments.to_ascii_lowercase();
+    let Some(command) = extract_shell_command(&outcome.arguments) else {
+        return false;
+    };
+    let command = command.to_ascii_lowercase();
     const CHECK_MARKERS: &[&str] = &[
-        " test",
-        "test ",
         "cargo test",
-        "pytest",
-        "unittest",
-        "pnpm build",
-        "npm run build",
-        "npm test",
         "cargo check",
-        "tsc",
+        "pytest",
+        "python -m pytest",
+        "python -m unittest",
+        "pnpm check",
+        "pnpm test",
+        "pnpm build",
+        "npm run check",
+        "npm run -s check",
+        "npm run typecheck",
+        "npm run -s typecheck",
+        "npm run lint",
+        "npm run -s lint",
+        "npm test",
+        "npm run build",
         "vue-tsc",
-        "lint",
-        "check",
-        "verify",
-        "git diff",
-        "git status",
+        "tsc --noemit",
+        "tsc -p",
+        "git diff --",
     ];
     CHECK_MARKERS.iter().any(|marker| command.contains(marker))
+}
+
+fn extract_shell_command(arguments: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(arguments).ok()?;
+    value
+        .get("command")
+        .and_then(|v| v.as_str())
+        .filter(|c| !c.is_empty())
+        .map(str::to_string)
+}
+
+fn is_plan_approve_boilerplate(content: &str) -> bool {
+    let trimmed = content.trim();
+    trimmed.starts_with("计划已批准")
+        || trimmed.to_ascii_lowercase().starts_with("plan approved")
+        || trimmed.contains("本回合写操作已解除限制")
+        || trimmed.contains("write tools are unlocked for this turn")
+}
+
+fn count_open_tasks_from_args(arguments: &str) -> Option<u32> {
+    let value: serde_json::Value = serde_json::from_str(arguments).ok()?;
+    let tasks = value.get("tasks")?.as_array()?;
+    let open = tasks
+        .iter()
+        .filter(|task| {
+            let status = task
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pending");
+            !matches!(status, "completed" | "cancelled" | "done")
+        })
+        .count();
+    Some(open as u32)
 }
 
 /// A change request cannot finish with a completion claim unless a modifying
@@ -579,25 +730,35 @@ fn reject_unverified_completion(
     request: &ChatRequest,
     mutation_succeeded: bool,
     verification_succeeded: bool,
+    has_open_tasks: bool,
 ) -> bool {
-    if mutation_succeeded && verification_succeeded {
+    if mutation_succeeded && verification_succeeded && !has_open_tasks {
         return false;
     }
     if crate::runtime::tool::is_question_only_request(request) {
         return false;
     }
-    if !has_completion_claim(content) {
+    // After retries are exhausted: rewrite when there was mutation without
+    // verification, open tasks remain, or a completion claim without mutation.
+    let should_rewrite = (mutation_succeeded && !verification_succeeded)
+        || has_open_tasks
+        || (!mutation_succeeded && has_completion_claim(content));
+    if !should_rewrite {
         return false;
     }
     *content = if content
         .chars()
         .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
     {
-        if mutation_succeeded {
+        if has_open_tasks {
+            "未完成：仍有未勾选的计划步骤。请为已完成的步骤提供证据并标记完成，或明确取消超出范围的步骤。".to_string()
+        } else if mutation_succeeded {
             "未验证完成：虽然执行了修改，但没有成功检查修改后的结果，因此不能确认任务真的完成。请运行读取检查、测试或构建验证。".to_string()
         } else {
             "未完成：本轮没有任何修改类工具成功执行，因此无法确认发生了实际改动。请重新执行所需操作，或明确说明当前阻塞项。".to_string()
         }
+    } else if has_open_tasks {
+        "Not completed: plan/todo items are still open. Complete them with evidence or cancel out-of-scope steps before claiming done.".to_string()
     } else if mutation_succeeded {
         "Completion not verified: a modification ran, but its result was not successfully checked. Run a read-back, test, build, or equivalent verification before claiming completion.".to_string()
     } else {
@@ -770,6 +931,300 @@ mod tests {
                 assert_eq!(finish_reason.as_deref(), Some("missing_image"));
             }
             other => panic!("expected missing_image finish, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verification_requires_read_of_mutated_path() {
+        use crate::core::tools::context::Tool;
+        use crate::core::tools::registry::ToolRegistry;
+        use crate::runtime::ToolManager;
+        use std::sync::Arc;
+
+        struct WriteTool;
+        impl Tool for WriteTool {
+            fn name(&self) -> &str {
+                "write_file"
+            }
+            fn description(&self) -> &str {
+                "w"
+            }
+            fn parameters_schema(&self) -> serde_json::Value {
+                serde_json::json!({})
+            }
+            fn read_only(&self) -> bool {
+                false
+            }
+            fn execute(
+                &self,
+                _ctx: &crate::core::tools::context::ToolContext,
+                _args: serde_json::Value,
+            ) -> Result<String, crate::core::tools::error::ToolError> {
+                Ok("ok".into())
+            }
+        }
+        struct ReadTool;
+        impl Tool for ReadTool {
+            fn name(&self) -> &str {
+                "read_file"
+            }
+            fn description(&self) -> &str {
+                "r"
+            }
+            fn parameters_schema(&self) -> serde_json::Value {
+                serde_json::json!({})
+            }
+            fn read_only(&self) -> bool {
+                true
+            }
+            fn execute(
+                &self,
+                _ctx: &crate::core::tools::context::ToolContext,
+                _args: serde_json::Value,
+            ) -> Result<String, crate::core::tools::error::ToolError> {
+                Ok("ok".into())
+            }
+        }
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(WriteTool));
+        registry.register(Arc::new(ReadTool));
+        let tools = ToolManager::new(registry);
+        let mut gate = CompletionGate::new();
+        gate.record_tool_outcomes(
+            &tools,
+            &[
+                ToolOutcome {
+                    call_id: "1".into(),
+                    tool_name: "write_file".into(),
+                    arguments: r#"{"path":"src/a.txt","content":"x"}"#.into(),
+                    result: "ok".into(),
+                    success: true,
+                    user_denied: false,
+                },
+                ToolOutcome {
+                    call_id: "2".into(),
+                    tool_name: "read_file".into(),
+                    arguments: r#"{"path":"noise.txt"}"#.into(),
+                    result: "noise".into(),
+                    success: true,
+                    user_denied: false,
+                },
+            ],
+        );
+        let mut request = empty_request();
+        let mut user_idx = None;
+        match gate.evaluate_final_answer(
+            &mut request,
+            &mut user_idx,
+            "here is the change".into(),
+            String::new(),
+            Some("stop".into()),
+        ) {
+            ChallengeOutcome::ContinueWithChallenge { status_kind } => {
+                assert_eq!(status_kind, "verify_completion");
+            }
+            other => panic!("expected verify_completion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn goal_coverage_requires_all_paths() {
+        use crate::core::tools::context::Tool;
+        use crate::core::tools::registry::ToolRegistry;
+        use crate::runtime::ToolManager;
+        use std::sync::Arc;
+
+        struct WriteTool;
+        impl Tool for WriteTool {
+            fn name(&self) -> &str {
+                "write_file"
+            }
+            fn description(&self) -> &str {
+                "w"
+            }
+            fn parameters_schema(&self) -> serde_json::Value {
+                serde_json::json!({})
+            }
+            fn read_only(&self) -> bool {
+                false
+            }
+            fn execute(
+                &self,
+                _ctx: &crate::core::tools::context::ToolContext,
+                _args: serde_json::Value,
+            ) -> Result<String, crate::core::tools::error::ToolError> {
+                Ok("ok".into())
+            }
+        }
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(WriteTool));
+        let tools = ToolManager::new(registry);
+        let mut gate = CompletionGate::new();
+        let mut request = empty_request();
+        request.messages.push(ChatMessage {
+            id: "u".into(),
+            session_id: "s".into(),
+            role: Role::User,
+            content: "edit a.txt and b.txt".into(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            status: MessageStatus::Done,
+            timestamp: 0,
+            estimated_tokens: None,
+        });
+        gate.capture_goal_from_request(&request);
+        gate.record_tool_outcome(
+            &tools,
+            &ToolOutcome {
+                call_id: "1".into(),
+                tool_name: "write_file".into(),
+                arguments: r#"{"path":"a.txt","content":"1"}"#.into(),
+                result: "ok".into(),
+                success: true,
+                user_denied: false,
+            },
+        );
+        let mut user_idx = None;
+        match gate.evaluate_final_answer(
+            &mut request,
+            &mut user_idx,
+            "done".into(),
+            String::new(),
+            Some("stop".into()),
+        ) {
+            ChallengeOutcome::ContinueWithChallenge { status_kind } => {
+                assert_eq!(status_kind, "goal_coverage");
+            }
+            other => panic!("expected goal_coverage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn skips_plan_approve_when_capturing_goals() {
+        let mut gate = CompletionGate::new();
+        let mut request = empty_request();
+        request.messages.push(ChatMessage {
+            id: "u1".into(),
+            session_id: "s".into(),
+            role: Role::User,
+            content: "Please edit `src/main.rs`".into(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            status: MessageStatus::Done,
+            timestamp: 0,
+            estimated_tokens: None,
+        });
+        request.messages.push(ChatMessage {
+            id: "u2".into(),
+            session_id: "s".into(),
+            role: Role::User,
+            content: "计划已批准。现在按批准的计划执行，本回合写操作已解除限制。".into(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            status: MessageStatus::Done,
+            timestamp: 1,
+            estimated_tokens: None,
+        });
+        gate.capture_goal_from_request(&request);
+        assert!(gate.goal_paths.iter().any(|p| p.contains("main.rs")));
+    }
+
+    #[test]
+    fn write_outcome_records_mutated_path() {
+        use crate::core::tools::context::Tool;
+        use crate::core::tools::registry::ToolRegistry;
+        use crate::runtime::ToolManager;
+        use std::sync::Arc;
+
+        struct WriteTool;
+        impl Tool for WriteTool {
+            fn name(&self) -> &str {
+                "write_file"
+            }
+            fn description(&self) -> &str {
+                "w"
+            }
+            fn parameters_schema(&self) -> serde_json::Value {
+                serde_json::json!({})
+            }
+            fn read_only(&self) -> bool {
+                false
+            }
+            fn execute(
+                &self,
+                _ctx: &crate::core::tools::context::ToolContext,
+                _args: serde_json::Value,
+            ) -> Result<String, crate::core::tools::error::ToolError> {
+                Ok("ok".into())
+            }
+        }
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(WriteTool));
+        let tools = ToolManager::new(registry);
+        let mut gate = CompletionGate::new();
+        let mut request = empty_request();
+        request.messages.push(ChatMessage {
+            id: "u".into(),
+            session_id: "s".into(),
+            role: Role::User,
+            content: "Write src/a.txt to alpha.".into(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            status: MessageStatus::Done,
+            timestamp: 0,
+            estimated_tokens: None,
+        });
+        gate.capture_goal_from_request(&request);
+        assert_eq!(gate.goal_paths.len(), 1, "goals: {:?}", gate.goal_paths);
+        gate.record_tool_outcome(
+            &tools,
+            &ToolOutcome {
+                call_id: "1".into(),
+                tool_name: "write_file".into(),
+                arguments: r#"{"path":"src/a.txt","content":"alpha"}"#.into(),
+                result: "written".into(),
+                success: true,
+                user_denied: false,
+            },
+        );
+        assert!(
+            gate.goal_paths_covered(),
+            "mutated={:?} goals={:?}",
+            gate.mutated_paths,
+            gate.goal_paths
+        );
+        let mut user_idx = None;
+        match gate.evaluate_final_answer(
+            &mut request,
+            &mut user_idx,
+            "任务完成".into(),
+            String::new(),
+            Some("stop".into()),
+        ) {
+            ChallengeOutcome::ContinueWithChallenge { status_kind } => {
+                assert_ne!(status_kind, "goal_coverage");
+                assert_eq!(status_kind, "verify_completion");
+            }
+            other => panic!("expected verify_completion, got {other:?}"),
         }
     }
 }

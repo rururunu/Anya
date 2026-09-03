@@ -30,13 +30,27 @@ pub(super) fn parse_multimodal_content(content: &str) -> Value {
             }
 
             if let Some(url_match) = cap.get(1) {
-                let url = url_match.as_str();
-                parts.push(json!({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": url,
+                let raw = url_match.as_str();
+                match crate::core::ai::image_gen::resolve_image_url_for_api(raw) {
+                    Ok(url) => parts.push(json!({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": url,
+                        }
+                    })),
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "anya::ai",
+                            error = %error,
+                            raw = %raw,
+                            "dropping unreadable image ref from chat payload"
+                        );
+                        parts.push(json!({
+                            "type": "text",
+                            "text": format!("[image unavailable: {error}]"),
+                        }));
                     }
-                }));
+                }
             }
 
             last_index = mat.end();

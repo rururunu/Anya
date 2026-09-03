@@ -1,0 +1,65 @@
+{
+  "id": "compact_preserves_goal_path",
+  "prompt": "After earlier exploration, edit ONLY reports/final.md to say done.",
+  "setupFiles": [
+    {
+      "path": "noise.txt",
+      "content": "ignore"
+    },
+    {
+      "path": "reports/final.md",
+      "content": "todo"
+    }
+  ],
+  "script": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "noise.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "reports/final.md",
+            "content": "done"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "reports/final.md"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    }
+  ],
+  "assertions": [
+    {
+      "type": "fileContains",
+      "path": "reports/final.md",
+      "text": "done"
+    },
+    {
+      "type": "answerContains",
+      "text": "任务完成"
+    }
+  ]
+}

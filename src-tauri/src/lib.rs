@@ -353,6 +353,13 @@ pub fn run() {
             remote::remote_set_tunnel_prefs,
             remote::remote_sync_session_compose,
             remote::remote_get_session_compose,
+            remote::remote_list_staged,
+            remote::remote_push_staged,
+            remote::remote_remove_staged,
+            remote::remote_clear_staged,
+            remote::remote_insert_staged,
+            remote::remote_pop_staged,
+            remote::remote_take_staged,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

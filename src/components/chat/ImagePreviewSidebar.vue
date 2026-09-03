@@ -89,10 +89,11 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { Check, Copy, Download, Image as ImageIcon, Scan, X, ZoomIn, ZoomOut } from "@lucide/vue";
 import { copyText } from "@/services/clipboard";
-import { resolveChatImageSrc, unwrapLocalImagePath } from "@/services/chat/localImageSrc";
+import { unwrapLocalImagePath } from "@/services/chat/localImageSrc";
 import { saveChatImage } from "@/services/chat/saveChatImage";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
+import { useResolvedChatImageSrc } from "@/composables/chat/useResolvedChatImageSrc";
 
 const props = defineProps<{
   sources: string[];
@@ -122,7 +123,7 @@ let stageResizeObserver: ResizeObserver | undefined;
 const activeSource = computed(() =>
   props.sources.includes(props.selectedSource) ? props.selectedSource : (props.sources[0] ?? ""),
 );
-const resolvedSource = computed(() => resolveChatImageSrc(activeSource.value));
+const { resolvedSource } = useResolvedChatImageSrc(() => activeSource.value);
 const displayName = computed(() => sourceName(activeSource.value));
 const previewLabel = computed(() => tr(settingStore.language, "image.preview"));
 const closeTabLabel = computed(() => tr(settingStore.language, "image.close"));

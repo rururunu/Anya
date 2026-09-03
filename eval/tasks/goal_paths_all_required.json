@@ -1,0 +1,71 @@
+{
+  "id": "goal_paths_all_required",
+  "prompt": "Please edit left.txt and right.txt to say ok.",
+  "script": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "left.txt",
+            "content": "ok"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "right.txt",
+            "content": "ok"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "left.txt"
+          }
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "right.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    }
+  ],
+  "assertions": [
+    {
+      "type": "statusSeen",
+      "kind": "goal_coverage"
+    },
+    {
+      "type": "fileContains",
+      "path": "left.txt",
+      "text": "ok"
+    },
+    {
+      "type": "fileContains",
+      "path": "right.txt",
+      "text": "ok"
+    }
+  ]
+}

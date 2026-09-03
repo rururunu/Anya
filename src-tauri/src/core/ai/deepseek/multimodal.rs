@@ -6,25 +6,7 @@ use crate::models::settings::{AppSettings, ProviderApiProtocol};
 
 use super::{normalize_chat_completions_url, ProviderError, RETRY_BACKOFF};
 fn load_image_as_base64(path_or_data: &str) -> Result<String, String> {
-    if path_or_data.starts_with("data:") {
-        return Ok(path_or_data.to_string());
-    }
-    let bytes =
-        std::fs::read(path_or_data).map_err(|e| format!("Failed to read image file: {e}"))?;
-
-    let ext = if path_or_data.ends_with(".jpg") || path_or_data.ends_with(".jpeg") {
-        "jpeg"
-    } else if path_or_data.ends_with(".gif") {
-        "gif"
-    } else if path_or_data.ends_with(".webp") {
-        "webp"
-    } else {
-        "png"
-    };
-
-    use base64::{engine::general_purpose, Engine as _};
-    let b64 = general_purpose::STANDARD.encode(bytes);
-    Ok(format!("data:image/{ext};base64,{b64}"))
+    crate::core::ai::image_gen::resolve_image_url_for_api(path_or_data)
 }
 
 #[derive(Debug)]

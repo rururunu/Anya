@@ -277,8 +277,15 @@
         <ul v-else class="device-list">
           <li v-for="device in status?.devices || []" :key="device.deviceId" class="device-item">
             <div class="device-info">
-              <strong>{{ device.deviceName || device.deviceId.slice(0, 8) }}</strong>
-              <span>{{ formatTime(device.lastSeenEpochMs) }}</span>
+              <div class="device-title">
+                <strong>{{ device.deviceName || device.deviceId.slice(0, 8) }}</strong>
+                <span class="device-presence" :data-online="device.online ? '1' : '0'">
+                  {{ device.online ? copy.online : copy.offline }}
+                </span>
+              </div>
+              <span>
+                {{ copy.lastSeen.replace("{t}", formatTime(device.lastSeenEpochMs) || "—") }}
+              </span>
             </div>
             <button type="button" class="revoke" :disabled="busy" @click="revoke(device.deviceId)">
               {{ copy.revoke }}
@@ -370,6 +377,9 @@ const copy = computed(() =>
         copy: "复制",
         devices: "已配对设备",
         connectedCount: "在线 {n}",
+        online: "在线",
+        offline: "离线",
+        lastSeen: "最后在线 {t}",
         noDevices: "还没有手机连上",
         revoke: "解除",
         expiresIn: "{m} 分钟后失效",
@@ -419,6 +429,9 @@ const copy = computed(() =>
         copy: "Copy",
         devices: "Paired devices",
         connectedCount: "{n} online",
+        online: "Online",
+        offline: "Offline",
+        lastSeen: "Last seen {t}",
         noDevices: "No phones paired yet",
         revoke: "Revoke",
         expiresIn: "Expires in {m} min",
@@ -1042,9 +1055,30 @@ function formatTime(epochMs: number) {
   min-width: 0;
 }
 
+.device-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .device-info strong {
   font-size: 13px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-presence {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.device-presence[data-online="1"] {
+  color: #2f9e64;
 }
 
 .device-info span {

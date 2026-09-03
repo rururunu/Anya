@@ -345,12 +345,25 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
         chatModelProvider: payload.compose.chatModelProvider,
       });
     });
+    await listen<{ sessionId?: string; messages?: string[] }>("remote-staged-changed", (event) => {
+      const sessionId = event.payload.sessionId;
+      if (!sessionId) return;
+      chatStore.applyStagedFromRemote(sessionId, event.payload.messages ?? []);
+    });
     await listen<{ sessionId?: string }>("remote-compose-needed", (event) => {
       const sessionId = event.payload.sessionId;
       if (!sessionId) {
         return;
       }
       chatStore.ensureCompose(sessionId);
+    });
+    await listen<{ sessionId?: string }>("remote-session-rewound", (event) => {
+      const sessionId = event.payload.sessionId;
+      if (!sessionId) {
+        return;
+      }
+      // Companion rolled the turn back; mirror the desktop rewind's history reload.
+      void chatStore.loadHistory(sessionId);
     });
     await listen<{ sessionId?: string }>("remote-plan-approve", (event) => {
       const sessionId = event.payload.sessionId;

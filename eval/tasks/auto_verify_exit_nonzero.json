@@ -1,0 +1,48 @@
+{
+  "id": "auto_verify_exit_nonzero",
+  "prompt": "Write src/ok.txt to ok then finish.",
+  "script": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "src/ok.txt",
+            "content": "ok"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/ok.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    }
+  ],
+  "assertions": [
+    {
+      "type": "statusSeen",
+      "kind": "verify_completion"
+    },
+    {
+      "type": "fileContains",
+      "path": "src/ok.txt",
+      "text": "ok"
+    }
+  ]
+}

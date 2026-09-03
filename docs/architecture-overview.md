@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.17                                            |
+| **Version** | v0.2.18                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -478,15 +478,15 @@ stateDiagram-v2
   StopBreaker --> [*]
 ```
 
-| Module             | Concern                                                                                               |
-| ------------------ | ----------------------------------------------------------------------------------------------------- |
-| `stream_turn`      | Fold one provider stream into content / reasoning / tool_calls; forward UI events                     |
-| `tools`            | Serial vs parallel dispatch; tool activity events                                                     |
-| `challenge`        | Empty-completion / verification gate before accepting a final answer                                  |
-| `mid_turn_compact` | Context-window pressure compaction                                                                    |
-| `post_edit_verify` | After a successful file mutation, run a light check; feed result as **system text** (not `role=tool`) |
-| `soft_inject`      | Merge queued user follow-ups at a safe boundary                                                       |
-| `failure`          | Consecutive / identical tool-error circuit breaker                                                    |
+| Module             | Concern                                                                                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stream_turn`      | Fold one provider stream into content / reasoning / tool_calls; forward UI events                                                                                |
+| `tools`            | Serial vs parallel dispatch; tool activity events                                                                                                                |
+| `challenge`        | Empty completion / all goal paths / unverified mutation / open checklist / stall; verification requires read-back of mutated paths or a successful check command |
+| `mid_turn_compact` | Context-window pressure compaction (mechanical summary pins goals/paths)                                                                                         |
+| `post_edit_verify` | After a successful file mutation, run a light check; **only `exit_code=0` counts**; feed result as **system text** (not `role=tool`)                             |
+| `soft_inject`      | Merge queued user follow-ups at a safe boundary                                                                                                                  |
+| `failure`          | Consecutive / identical tool-error circuit breaker                                                                                                               |
 
 ### Ask / Agent / Plan / Image
 

@@ -1,0 +1,61 @@
+{
+  "id": "plan_tasks_reject_shallow",
+  "planMode": true,
+  "prompt": "Implement a full multi-file refactor across the workspace.",
+  "script": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "update_tasks",
+          "arguments": {
+            "tasks": [
+              {
+                "content": "do it",
+                "status": "pending"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "update_tasks",
+          "arguments": {
+            "tasks": [
+              {
+                "content": "Read src/main.rs entry points",
+                "status": "pending"
+              },
+              {
+                "content": "Edit src/main.rs timeout config",
+                "status": "pending"
+              },
+              {
+                "content": "Run cargo check to verify",
+                "status": "pending"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "content": "Plan ready for approval.",
+      "tool_calls": []
+    }
+  ],
+  "assertions": [
+    {
+      "type": "toolCalled",
+      "name": "update_tasks"
+    },
+    {
+      "type": "answerContains",
+      "text": "Plan ready"
+    }
+  ]
+}

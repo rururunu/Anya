@@ -188,6 +188,8 @@ pub fn finish(upload_id: &str) -> Result<Value, String> {
         "uploadId": upload_id,
         "sessionId": upload.session_id,
         "path": upload.rel_path,
+        // Lets the phone reference the upload as `path:` (e.g. an Images API reference).
+        "absolutePath": upload.dest.to_string_lossy(),
         "name": upload
             .dest
             .file_name()

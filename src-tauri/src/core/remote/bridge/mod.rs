@@ -98,6 +98,20 @@ pub fn push_interaction_resolved(request_id: &str, kind: &str, session_id: Optio
     });
 }
 
+/// A turn was rewound (desktop or phone); clients reload history from the gateway.
+pub fn push_session_rewound(session_id: &str, turn: usize) {
+    broadcast_server_message(&ServerMessage::Event {
+        name: "session.rewound".into(),
+        data: json!({
+            "sessionId": session_id,
+            "turn": turn,
+        })
+        .as_object()
+        .cloned()
+        .unwrap_or_default(),
+    });
+}
+
 /// After desktop/phone resolves an interaction, drop a stale WaitingApproval
 /// badge unless another request is still blocking this session.
 pub fn resume_run_state_after_interaction(app: &AppHandle, session_id: &str) {
@@ -187,30 +201,16 @@ pub fn build_session_snapshot(app: &AppHandle) -> Value {
         return json!({ "sessions": [], "workspaces": [] });
     };
     let workspaces = state.core.workspaces().list();
-    let workspace_name = |id: &str| {
-        workspaces
-            .iter()
-            .find(|w| w.id == id)
-            .map(|w| w.name.clone())
-    };
+    let workspace_names: HashMap<String, String> = workspaces
+        .iter()
+        .map(|w| (w.id.clone(), w.name.clone()))
+        .collect();
     let sessions: Vec<RemoteSessionDto> = state
         .core
         .chat()
         .list_sessions()
         .into_iter()
-        .map(|session| {
-            let run_state = run_state_for(&session.session_id);
-            RemoteSessionDto {
-                id: session.session_id.clone(),
-                title: session.preview.clone(),
-                updated_at_epoch_ms: session.updated_at,
-                workspace_id: session.workspace_id.clone(),
-                workspace_name: session.workspace_id.as_deref().and_then(workspace_name),
-                run_state,
-                plan_mode_active: crate::core::tools::plan_mode::shared_plan_mode_store()
-                    .is_active(&session.session_id),
-            }
-        })
+        .map(|session| map_remote_session(&session, &workspace_names))
         .collect();
     let workspace_dtos: Vec<RemoteWorkspaceDto> = workspaces
         .into_iter()
@@ -221,4 +221,47 @@ pub fn build_session_snapshot(app: &AppHandle) -> Value {
         })
         .collect();
     json!({ "sessions": sessions, "workspaces": workspace_dtos })
+}
+
+/// Archived sessions only (for Companion `session.listArchived`).
+pub fn build_archived_session_list(app: &AppHandle) -> Value {
+    let Some(state) = app.try_state::<AppState>() else {
+        return json!({ "sessions": [] });
+    };
+    // Include archived workspaces so names still resolve after a workspace was archived.
+    let workspace_names: HashMap<String, String> = state
+        .core
+        .workspaces()
+        .list()
+        .into_iter()
+        .chain(state.core.workspaces().list_archived())
+        .map(|w| (w.id, w.name))
+        .collect();
+    let sessions: Vec<RemoteSessionDto> = state
+        .core
+        .chat()
+        .list_archived_sessions()
+        .into_iter()
+        .map(|session| map_remote_session(&session, &workspace_names))
+        .collect();
+    json!({ "sessions": sessions })
+}
+
+fn map_remote_session(
+    session: &crate::models::chat::ChatSessionSummary,
+    workspace_names: &HashMap<String, String>,
+) -> RemoteSessionDto {
+    RemoteSessionDto {
+        id: session.session_id.clone(),
+        title: session.preview.clone(),
+        updated_at_epoch_ms: session.updated_at,
+        workspace_id: session.workspace_id.clone(),
+        workspace_name: session
+            .workspace_id
+            .as_ref()
+            .and_then(|id| workspace_names.get(id).cloned()),
+        run_state: run_state_for(&session.session_id),
+        plan_mode_active: crate::core::tools::plan_mode::shared_plan_mode_store()
+            .is_active(&session.session_id),
+    }
 }

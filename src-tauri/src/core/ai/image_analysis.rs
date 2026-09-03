@@ -230,17 +230,18 @@ pub fn decode_image_inline_payload(payload: &str) -> Result<(String, String), St
         return Ok((mime_type, data.trim().to_string()));
     }
 
-    let bytes = std::fs::read(payload)
+    let bytes = crate::core::ai::image_gen::decode_image_source(payload)
         .map_err(|error| format!("Failed to read image file {payload}: {error}"))?;
     if bytes.is_empty() {
         return Err("Image file is empty".into());
     }
 
-    let mime_type = if payload.ends_with(".jpg") || payload.ends_with(".jpeg") {
+    let path_for_ext = payload.strip_prefix("path:").unwrap_or(payload);
+    let mime_type = if path_for_ext.ends_with(".jpg") || path_for_ext.ends_with(".jpeg") {
         "image/jpeg"
-    } else if payload.ends_with(".gif") {
+    } else if path_for_ext.ends_with(".gif") {
         "image/gif"
-    } else if payload.ends_with(".webp") {
+    } else if path_for_ext.ends_with(".webp") {
         "image/webp"
     } else {
         "image/png"

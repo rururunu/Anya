@@ -132,15 +132,61 @@ fn resolve_in_workspace(
     Ok(canonical)
 }
 
+/// Directories outside any workspace whose files the phone may still pull: generated
+/// images live in app-data, quick-ask turns (no workspace) write into the `peek-public`
+/// scratch root, and phone uploads land in the companion inbox.
+fn shared_asset_roots(app: &AppHandle) -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(data) = app.path().app_data_dir() {
+        roots.push(data.join("generated"));
+    }
+    if let Ok(config) = app.path().app_config_dir() {
+        roots.push(config.join("companion-inbox"));
+    }
+    roots.push(std::env::temp_dir().join("peek-public"));
+    roots
+}
+
+/// Absolute path under one of [`shared_asset_roots`]; `None` when it is not one of ours
+/// (the caller then falls back to workspace-relative resolution).
+fn resolve_shared_asset(app: &AppHandle, raw_path: &str) -> Option<std::path::PathBuf> {
+    let trimmed = raw_path.trim().trim_start_matches("path:");
+    let candidate = std::path::Path::new(trimmed);
+    if !candidate.is_absolute() {
+        return None;
+    }
+    let canonical = std::fs::canonicalize(candidate).ok()?;
+    for root in shared_asset_roots(app) {
+        let Ok(root) = std::fs::canonicalize(&root) else { continue };
+        if canonical.starts_with(&root) {
+            return Some(canonical);
+        }
+    }
+    None
+}
+
+/// Shared-asset path first, else inside the session / requested workspace.
+fn resolve_download_path(
+    app: &AppHandle,
+    session_id: Option<&str>,
+    workspace_id: Option<&str>,
+    rel_path: &str,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(file) = resolve_shared_asset(app, rel_path) {
+        return Ok(file);
+    }
+    let workspace = resolve_workspace(app, session_id, workspace_id)
+        .ok_or_else(|| "No workspace selected".to_string())?;
+    resolve_in_workspace(&workspace.root, rel_path)
+}
+
 pub(super) fn begin_file_download(
     app: &AppHandle,
     session_id: Option<&str>,
     workspace_id: Option<&str>,
     rel_path: &str,
 ) -> Result<serde_json::Value, String> {
-    let workspace = resolve_workspace(app, session_id, workspace_id)
-        .ok_or_else(|| "No workspace selected".to_string())?;
-    let file = resolve_in_workspace(&workspace.root, rel_path)?;
+    let file = resolve_download_path(app, session_id, workspace_id, rel_path)?;
     let meta = std::fs::metadata(&file).map_err(|e| format!("stat failed: {e}"))?;
     if !meta.is_file() {
         return Err("not a file".into());
@@ -177,9 +223,7 @@ pub(super) async fn read_workspace_file_payload(
     offset: Option<u64>,
     length: Option<u64>,
 ) -> Result<serde_json::Value, String> {
-    let workspace = resolve_workspace(app, session_id, workspace_id)
-        .ok_or_else(|| "No workspace selected".to_string())?;
-    let file = resolve_in_workspace(&workspace.root, rel_path)?;
+    let file = resolve_download_path(app, session_id, workspace_id, rel_path)?;
     let rel = rel_path.trim().trim_start_matches(['/', '\\']).to_string();
     let download = mode.eq_ignore_ascii_case("download");
     let max_text_bytes = max_bytes.clamp(1, 2_000_000) as u64;

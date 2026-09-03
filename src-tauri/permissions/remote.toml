@@ -11,5 +11,12 @@ commands.allow = [
   "remote_get_tunnel_prefs",
   "remote_set_tunnel_prefs",
   "remote_sync_session_compose",
-  "remote_get_session_compose"
+  "remote_get_session_compose",
+  "remote_list_staged",
+  "remote_push_staged",
+  "remote_remove_staged",
+  "remote_clear_staged",
+  "remote_insert_staged",
+  "remote_pop_staged",
+  "remote_take_staged"
 ]

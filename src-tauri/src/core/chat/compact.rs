@@ -102,7 +102,20 @@ impl ConversationSummarizer for ProviderSummarizer {
                     id: "compact-system".into(),
                     session_id: "compact".into(),
                     role: Role::System,
-                    content: "You compress earlier conversation turns into a compact factual summary for a coding agent. Preserve decisions, file paths, errors, and unfinished work. Reply with plain text only. Stay under 4000 characters.".into(),
+                    content: concat!(
+                        "You compress earlier conversation turns into a compact factual summary ",
+                        "for a coding agent. Reply with plain text only using these exact section ",
+                        "headers (omit a section only if empty):\n",
+                        "## User goals\n",
+                        "## Key paths\n",
+                        "## Decisions\n",
+                        "## Errors\n",
+                        "## Open work\n",
+                        "## Do not redo\n",
+                        "Preserve paths verbatim. Open work must list blockers and next steps. ",
+                        "Stay under 4000 characters."
+                    )
+                    .into(),
                     reasoning: None,
                     work_timeline: None,
                     tool_activities: None,
@@ -554,10 +567,36 @@ fn is_compactable(message: &ChatMessage) -> bool {
 }
 
 fn build_mechanical_summary(messages: &[ChatMessage]) -> String {
-    let mut lines = Vec::new();
-    let mut total_chars = 0;
+    let mut sections = Vec::new();
+    let mut paths: Vec<String> = Vec::new();
+    let mut tool_lines: Vec<String> = Vec::new();
+    let mut other_lines: Vec<String> = Vec::new();
+
+    let goal = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == Role::User && !m.content.trim().is_empty())
+        .map(|m| truncate_chars(m.content.trim(), 500))
+        .unwrap_or_default();
+
+    if !goal.is_empty() {
+        sections.push(format!("## User goals\n{goal}"));
+        for path in extract_paths_heuristic(&goal) {
+            push_unique(&mut paths, path);
+        }
+    }
 
     for message in messages {
+        for path in extract_paths_heuristic(&message.content) {
+            push_unique(&mut paths, path);
+        }
+        if let Some(line) = format_tool_summary_line(message) {
+            for path in extract_paths_from_tool_message(message) {
+                push_unique(&mut paths, path);
+            }
+            tool_lines.push(line);
+            continue;
+        }
         let role = match message.role {
             Role::User => "User",
             Role::Assistant => "Assistant",
@@ -568,33 +607,63 @@ fn build_mechanical_summary(messages: &[ChatMessage]) -> String {
         if snippet.is_empty() {
             continue;
         }
-        let line = format!("- {role}: {snippet}");
-        total_chars += line.chars().count();
-        if total_chars > SUMMARY_MAX_CHARS {
-            lines.push("...".to_string());
-            break;
-        }
-        lines.push(line);
+        other_lines.push(format!("- {role}: {snippet}"));
     }
 
-    lines.join("\n")
+    if !paths.is_empty() {
+        sections.push(format!(
+            "## Key paths\n{}",
+            paths
+                .iter()
+                .take(24)
+                .map(|p| format!("- {p}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    if !tool_lines.is_empty() {
+        sections.push(format!(
+            "## Tools\n{}",
+            tool_lines.into_iter().take(40).collect::<Vec<_>>().join("\n")
+        ));
+    }
+    if !other_lines.is_empty() {
+        sections.push(format!(
+            "## Notes\n{}",
+            other_lines.into_iter().take(30).collect::<Vec<_>>().join("\n")
+        ));
+    }
+
+    let body = sections.join("\n\n");
+    truncate_chars(&body, SUMMARY_MAX_CHARS)
 }
 
 fn build_fold_payload(messages: &[ChatMessage]) -> String {
+    let mut prioritized: Vec<(u8, &ChatMessage)> = messages
+        .iter()
+        .map(|message| (fold_priority(message), message))
+        .collect();
+    prioritized.sort_by_key(|(priority, _)| *priority);
+
     let mut lines = Vec::new();
     let mut total_chars = 0usize;
-    for message in messages {
+    for (_, message) in prioritized {
         let role = match message.role {
             Role::User => "User",
             Role::Assistant => "Assistant",
             Role::Tool => "Tool",
             Role::System => "System",
         };
+        let header = if let Some(name) = message.name.as_deref() {
+            format!("### {role}:{name}")
+        } else {
+            format!("### {role}")
+        };
         let snippet = truncate_chars(message.content.trim(), FOLD_PAYLOAD_MSG_MAX_CHARS);
         if snippet.is_empty() {
             continue;
         }
-        let line = format!("### {role}\n{snippet}");
+        let line = format!("{header}\n{snippet}");
         let next = total_chars + line.chars().count() + 2;
         if next > FOLD_PAYLOAD_TOTAL_MAX_CHARS {
             lines.push("...".to_string());
@@ -604,6 +673,131 @@ fn build_fold_payload(messages: &[ChatMessage]) -> String {
         lines.push(line);
     }
     lines.join("\n\n")
+}
+
+fn fold_priority(message: &ChatMessage) -> u8 {
+    match message.role {
+        Role::User => 0,
+        Role::Tool => {
+            let name = message.name.as_deref().unwrap_or("");
+            let failed = message.content.to_ascii_lowercase().contains("error")
+                || message.content.contains("exit_code: 1");
+            let write = matches!(
+                name,
+                "write_file"
+                    | "apply_patch"
+                    | "replace_in_file"
+                    | "replace_many_in_file"
+                    | "run_shell"
+            );
+            if failed {
+                1
+            } else if write {
+                2
+            } else {
+                4
+            }
+        }
+        Role::Assistant => 3,
+        Role::System => 5,
+    }
+}
+
+fn format_tool_summary_line(message: &ChatMessage) -> Option<String> {
+    if message.role != Role::Tool && message.tool_calls.is_none() {
+        return None;
+    }
+    if let Some(calls) = message.tool_calls.as_ref() {
+        let mut parts = Vec::new();
+        for call in calls {
+            let path = extract_path_hint(&call.arguments).unwrap_or_default();
+            if path.is_empty() {
+                parts.push(format!("- Tool:{}", call.name));
+            } else {
+                parts.push(format!("- Tool:{} path={path}", call.name));
+            }
+        }
+        if !parts.is_empty() {
+            return Some(parts.join("\n"));
+        }
+    }
+    if message.role == Role::Tool {
+        let name = message.name.as_deref().unwrap_or("tool");
+        let path = extract_paths_from_tool_message(message)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        let snippet = truncate_chars(message.content.trim(), 80);
+        if path.is_empty() {
+            return Some(format!("- Tool:{name} → {snippet}"));
+        }
+        return Some(format!("- Tool:{name} path={path} → {snippet}"));
+    }
+    None
+}
+
+fn extract_paths_from_tool_message(message: &ChatMessage) -> Vec<String> {
+    let mut paths = Vec::new();
+    if let Some(calls) = message.tool_calls.as_ref() {
+        for call in calls {
+            if let Some(path) = extract_path_hint(&call.arguments) {
+                paths.push(path);
+            }
+        }
+    }
+    paths.extend(extract_paths_heuristic(&message.content));
+    paths
+}
+
+fn extract_path_hint(arguments: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(arguments).ok()?;
+    value
+        .get("path")
+        .or_else(|| value.get("file_path"))
+        .and_then(|v| v.as_str())
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+}
+
+fn extract_paths_heuristic(content: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    for token in content.split_whitespace() {
+        let cleaned = token.trim_matches(|c: char| {
+            matches!(
+                c,
+                ',' | ';' | ':' | '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}'
+            )
+        });
+        if looks_like_path_token(cleaned) {
+            push_unique(&mut paths, cleaned.to_string());
+        }
+    }
+    for part in content.split('`') {
+        let trimmed = part.trim();
+        if looks_like_path_token(trimmed) {
+            push_unique(&mut paths, trimmed.to_string());
+        }
+    }
+    paths
+}
+
+fn looks_like_path_token(value: &str) -> bool {
+    if value.len() < 3 || value.len() > 240 {
+        return false;
+    }
+    let has_sep = value.contains('/') || value.contains('\\');
+    let has_ext = value.contains('.')
+        && value
+            .rsplit(['/', '\\'])
+            .next()
+            .is_some_and(|name| name.contains('.') && !name.starts_with('.'));
+    has_sep || has_ext && value.chars().any(|c| c.is_ascii_alphanumeric())
+}
+
+fn push_unique(paths: &mut Vec<String>, path: String) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
 }
 
 fn summary_message(session_id: &str, body: &str, folded_count: usize) -> ChatMessage {

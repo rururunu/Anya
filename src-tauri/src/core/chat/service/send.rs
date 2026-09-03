@@ -174,6 +174,11 @@ impl ChatService {
                 }
             }
         }
+        let content = if overrides.resume_plan {
+            append_plan_checklist(&content, &self.tasks)
+        } else {
+            content
+        };
         let user_message = create_message(&session_id, Role::User, content, MessageStatus::Done);
         let assistant_message = create_message(
             &session_id,
@@ -620,4 +625,30 @@ impl ChatService {
                 .map(|run| run.id),
         })
     }
+}
+
+fn append_plan_checklist(
+    content: &str,
+    tasks: &std::sync::Mutex<Vec<crate::core::tools::context::TaskItem>>,
+) -> String {
+    let Ok(guard) = tasks.lock() else {
+        return content.to_string();
+    };
+    if guard.is_empty() {
+        return content.to_string();
+    }
+    let mut lines = vec![
+        content.trim_end().to_string(),
+        String::new(),
+        "[System] Approved checklist — execute these steps. Mark each finished step with `complete_plan_step` and evidence (path or check command) before finishing:".to_string(),
+    ];
+    for (index, task) in guard.iter().enumerate() {
+        lines.push(format!(
+            "{}. [{}] {}",
+            index + 1,
+            task.status,
+            task.content.trim()
+        ));
+    }
+    lines.join("\n")
 }

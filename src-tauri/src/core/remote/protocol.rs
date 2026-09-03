@@ -4,6 +4,23 @@ use serde_json::Value;
 pub const PROTOCOL_VERSION: i32 = 1;
 pub const DEFAULT_PORT: u16 = 8787;
 
+/// Companion image-mode toolbar payload. `style_id` lets the desktop resolve a custom
+/// style template (prompt + example image) that only exists in desktop settings.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteImageGenOptions {
+    #[serde(default)]
+    pub size: Option<String>,
+    #[serde(default)]
+    pub quality: Option<String>,
+    #[serde(default)]
+    pub n: Option<u8>,
+    #[serde(default)]
+    pub style_prompt: Option<String>,
+    #[serde(default)]
+    pub style_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
@@ -14,6 +31,9 @@ pub enum ClientMessage {
         #[serde(rename = "deviceId")]
         device_id: String,
         credential: String,
+        /// Optional phone label (`Build.MODEL` / user name); older clients omit it.
+        #[serde(rename = "deviceName", default)]
+        device_name: Option<String>,
         /// Part of the wire contract; accepted but not consumed yet.
         #[serde(rename = "appVersion", default)]
         #[allow(dead_code)]
@@ -38,6 +58,63 @@ pub enum ClientMessage {
         #[serde(rename = "sessionId")]
         session_id: String,
     },
+    /// Archive or restore a chat session (`archived` true/false).
+    #[serde(rename = "session.archive")]
+    SessionArchive {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        archived: bool,
+    },
+    /// List archived chat sessions (mirrors desktop `list_archived_chat_sessions`).
+    #[serde(rename = "session.listArchived")]
+    SessionListArchived {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
+    /// Archive or restore a workspace together with its sessions (desktop `set_workspace_archived`).
+    #[serde(rename = "workspace.archive")]
+    WorkspaceArchive {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "workspaceId")]
+        workspace_id: String,
+        archived: bool,
+    },
+    /// Archived workspaces (desktop `list_archived_workspaces`).
+    #[serde(rename = "workspace.listArchived")]
+    WorkspaceListArchived {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
+    /// Image-mode choices: current image model / provider, configured image providers'
+    /// models, and style templates (built-ins live in the clients).
+    #[serde(rename = "imageGen.options")]
+    ImageGenOptions {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
+    /// Switch the desktop's image model (Settings → Image) from the phone.
+    #[serde(rename = "imageGen.setModel")]
+    ImageGenSetModel {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        provider: String,
+        model: String,
+    },
+    /// Roll a session back to the checkpoint taken before user turn `turn`.
+    #[serde(rename = "session.rewind")]
+    SessionRewind {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        turn: usize,
+        /// `code` | `conversation` | `both` (default).
+        #[serde(default)]
+        restore: Option<String>,
+    },
     #[serde(rename = "chat.send")]
     ChatSend {
         #[serde(rename = "requestId")]
@@ -55,6 +132,10 @@ pub enum ClientMessage {
         chat_model: Option<String>,
         #[serde(rename = "chatModelProvider", default)]
         chat_model_provider: Option<String>,
+        /// Image-mode toolbar choices (`size`, `quality`, `n`, `stylePrompt`, `styleId`);
+        /// ignored in other modes.
+        #[serde(rename = "imageGen", default)]
+        image_gen: Option<RemoteImageGenOptions>,
     },
     #[serde(rename = "session.compose.get")]
     SessionComposeGet {
@@ -81,6 +162,57 @@ pub enum ClientMessage {
         chat_model_label: Option<String>,
         #[serde(rename = "reasoningEffort", default)]
         reasoning_effort: Option<String>,
+    },
+    /// Read the mid-turn staged message queue for a session.
+    #[serde(rename = "session.staged.get")]
+    SessionStagedGet {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
+    /// Append a message to the staged queue (Companion / desktop while busy).
+    #[serde(rename = "session.staged.push")]
+    SessionStagedPush {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        message: String,
+    },
+    /// Remove one staged message by index.
+    #[serde(rename = "session.staged.remove")]
+    SessionStagedRemove {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        index: usize,
+    },
+    /// Soft-inject one staged message into the running turn immediately.
+    #[serde(rename = "session.staged.guide")]
+    SessionStagedGuide {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        index: usize,
+    },
+    /// Pop the front staged message for post-turn auto-send (atomic vs desktop).
+    #[serde(rename = "session.staged.pop")]
+    SessionStagedPop {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
+    /// Clear the staged queue for a session.
+    #[serde(rename = "session.staged.clear")]
+    SessionStagedClear {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
     },
     #[serde(rename = "context.usage")]
     ContextUsage {

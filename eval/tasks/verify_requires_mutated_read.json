@@ -1,0 +1,65 @@
+{
+  "id": "verify_requires_mutated_read",
+  "prompt": "Write src/a.txt to alpha.",
+  "script": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "src/a.txt",
+            "content": "alpha"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "noise.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/a.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "任务完成",
+      "tool_calls": []
+    }
+  ],
+  "setupFiles": [
+    {
+      "path": "noise.txt",
+      "content": "ignore"
+    }
+  ],
+  "assertions": [
+    {
+      "type": "statusSeen",
+      "kind": "verify_completion"
+    },
+    {
+      "type": "fileContains",
+      "path": "src/a.txt",
+      "text": "alpha"
+    }
+  ]
+}

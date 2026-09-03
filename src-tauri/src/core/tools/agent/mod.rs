@@ -49,6 +49,16 @@ pub async fn run_subagent(
     read_only: bool,
     model: Option<&str>,
 ) -> Result<String, ToolError> {
+    run_subagent_with_scope(ctx, prompt, read_only, model, None).await
+}
+
+async fn run_subagent_with_scope(
+    ctx: &ToolContext,
+    prompt: &str,
+    read_only: bool,
+    model: Option<&str>,
+    in_scope_paths: Option<&[String]>,
+) -> Result<String, ToolError> {
     if !ctx.can_spawn_subagent() {
         return Err(ToolError::new("subagent depth limit reached"));
     }
@@ -58,7 +68,7 @@ pub async fn run_subagent(
         .clone()
         .ok_or_else(|| ToolError::new("registry unavailable"))?;
     let child = ctx.child_subagent(prompt);
-    let full_prompt = format!("{SUBAGENT_PROMPT}\n\n## Assignment\n{prompt}");
+    let full_prompt = build_subagent_prompt(ctx, prompt, in_scope_paths);
     execute_child(
         provider,
         ctx.provider.clone(),
@@ -183,12 +193,21 @@ pub async fn run_parallel_subagents(
         }
         let prompt = task["prompt"].as_str().unwrap_or("").to_string();
         let model = model_token(&task);
+        let in_scope = task
+            .get("in_scope_paths")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            });
         let child = ctx.child_subagent(&prompt);
         // Keep the real resolve error — do not collapse to "runtime unavailable".
         let provider = resolve_subagent_provider(ctx, model.as_deref());
         let fallback = ctx.provider.clone();
         let registry = Arc::clone(&registry);
         let parent_subagent_id = parent_subagent_id.clone();
+        let handoff_ctx = ctx.clone();
         // Concurrent shared-gateway backends (e.g. Console Go) can 500 when hit
         // with a burst of simultaneous streams. Stagger job starts so they do
         // not all open a connection in the same instant.
@@ -199,7 +218,7 @@ pub async fn run_parallel_subagents(
             }
             let result = match provider {
                 Ok(provider) => {
-                    let full = format!("{SUBAGENT_PROMPT}\n\n## Assignment\n{prompt}");
+                    let full = build_subagent_prompt(&handoff_ctx, &prompt, in_scope.as_deref());
                     execute_child(
                         provider,
                         fallback,
@@ -346,14 +365,7 @@ fn format_subagent_return(
     subagent_id: &str,
     answer: &str,
 ) -> String {
-    let trimmed = answer.trim();
-    let body = if trimmed.is_empty() {
-        "### Conclusion\n(empty — no result produced)\n\n### Evidence\n- (none)".to_string()
-    } else if trimmed.contains("### Conclusion") {
-        trimmed.to_string()
-    } else {
-        format!("### Conclusion\n{trimmed}\n\n### Evidence\n- (see conclusion)")
-    };
+    let body = normalize_subagent_markdown(answer);
 
     if body.chars().count() <= SUBAGENT_RETURN_MAX_CHARS {
         return body;
@@ -368,6 +380,96 @@ fn format_subagent_return(
         "{preview}…\n\n[subagent full result spilled to {}]",
         path.display()
     )
+}
+
+fn build_subagent_prompt(
+    ctx: &ToolContext,
+    prompt: &str,
+    in_scope_paths: Option<&[String]>,
+) -> String {
+    let mut parts = vec![SUBAGENT_PROMPT.to_string(), String::new()];
+    parts.push(build_parent_handoff(ctx, in_scope_paths));
+    parts.push(format!("## Assignment\n{prompt}"));
+    parts.join("\n")
+}
+
+fn build_parent_handoff(ctx: &ToolContext, in_scope_paths: Option<&[String]>) -> String {
+    let mut lines = vec!["## Parent handoff".to_string()];
+    if let Ok(guard) = ctx.tasks.lock() {
+        let open: Vec<_> = guard
+            .iter()
+            .filter(|task| crate::core::tools::plan_mode::task_status_is_open(&task.status))
+            .collect();
+        if !open.is_empty() {
+            lines.push("Open tasks:".to_string());
+            for task in open.into_iter().take(12) {
+                lines.push(format!("- [{}] {}", task.status, task.content.trim()));
+            }
+        }
+    }
+    if let Some(paths) = in_scope_paths {
+        if !paths.is_empty() {
+            lines.push("In-scope paths:".to_string());
+            for path in paths.iter().take(24) {
+                lines.push(format!("- {path}"));
+            }
+        }
+    }
+    if lines.len() == 1 {
+        lines.push("- (no extra parent context)".to_string());
+    }
+    lines.join("\n")
+}
+
+fn normalize_subagent_markdown(answer: &str) -> String {
+    let trimmed = answer.trim();
+    let mut body = if trimmed.is_empty() {
+        "### Conclusion\n(empty — no result produced)\n\n### Evidence\n- (none)".to_string()
+    } else if trimmed.contains("### Conclusion") {
+        trimmed.to_string()
+    } else {
+        format!("### Conclusion\n{trimmed}\n\n### Evidence\n- (see conclusion)")
+    };
+    for (heading, fallback) in [
+        ("### Touched paths", "- (none)"),
+        ("### Unfinished", "- (none)"),
+        ("### Recommended parent next", "Continue from Conclusion."),
+    ] {
+        if !body.contains(heading) {
+            body.push_str(&format!("\n\n{heading}\n{fallback}"));
+        }
+    }
+    body
+}
+
+/// Paths listed under `### Touched paths` in a sub-agent return body.
+pub fn extract_touched_paths_from_subagent_result(body: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut in_section = false;
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("### Touched paths") {
+            in_section = true;
+            continue;
+        }
+        if trimmed.starts_with("### ") {
+            in_section = false;
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        let item = trimmed
+            .trim_start_matches('-')
+            .trim()
+            .trim_matches('`')
+            .trim();
+        if item.is_empty() || item.eq_ignore_ascii_case("(none)") {
+            continue;
+        }
+        paths.push(item.to_string());
+    }
+    paths
 }
 
 fn truncate_debug_text(value: &str, max_chars: usize) -> String {
@@ -398,7 +500,22 @@ pub async fn execute_async_tool(
             let prompt = args["prompt"].as_str().unwrap_or("");
             let read_only = args["read_only"].as_bool().unwrap_or(false);
             let model = model_token(&args);
-            run_subagent(ctx, prompt, read_only, model.as_deref()).await
+            let in_scope = args
+                .get("in_scope_paths")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                });
+            run_subagent_with_scope(
+                ctx,
+                prompt,
+                read_only,
+                model.as_deref(),
+                in_scope.as_deref(),
+            )
+            .await
         }
         "run_parallel_subagents" => {
             let tasks = args["tasks"].as_array().cloned().unwrap_or_default();
@@ -503,7 +620,12 @@ Usage:
                 "description": { "type": "string" },
                 "prompt": { "type": "string" },
                 "model": { "type": "string", "description": "Coordinator-selected exact model ID. Required by policy when multi-model collaboration is enabled; otherwise optional." },
-                "read_only": { "type": "boolean", "default": false, "description": "Restrict the child agent to read-only tools" }
+                "read_only": { "type": "boolean", "default": false, "description": "Restrict the child agent to read-only tools" },
+                "in_scope_paths": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional paths the child should stay within"
+                }
             },
             "required": ["prompt"]
         })
@@ -662,5 +784,21 @@ mod tests {
         assert!(super::is_unservable_model_error(&ToolError::new(
             r#"DeepSeek API 401 Unauthorized: {"type":"error","error":{"type":"ModelError","message":"Model minimax-m3 is not supported for format openai"}}"#
         )));
+    }
+
+    #[test]
+    fn normalize_subagent_markdown_adds_structured_sections() {
+        let body = normalize_subagent_markdown("looked fine");
+        assert!(body.contains("### Conclusion"));
+        assert!(body.contains("### Touched paths"));
+        assert!(body.contains("### Unfinished"));
+        assert!(body.contains("### Recommended parent next"));
+    }
+
+    #[test]
+    fn extracts_touched_paths_from_subagent_result() {
+        let body = "### Conclusion\nok\n\n### Touched paths\n- notes/x.txt\n- `src/a.rs`\n\n### Unfinished\n- (none)";
+        let paths = extract_touched_paths_from_subagent_result(body);
+        assert_eq!(paths, vec!["notes/x.txt".to_string(), "src/a.rs".to_string()]);
     }
 }

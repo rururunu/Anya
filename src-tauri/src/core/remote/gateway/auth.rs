@@ -58,6 +58,7 @@ where
                     protocol_version,
                     device_id,
                     credential,
+                    device_name,
                     ..
                 } = parsed
                 else {
@@ -76,7 +77,7 @@ where
                     return Err("protocol mismatch".into());
                 }
 
-                match state.authorize(&device_id, &credential) {
+                match state.authorize(&device_id, &credential, device_name) {
                     Ok(_) => {
                         tracing::info!(%peer, %device_id, "companion hello accepted");
                         let version = app_version();
