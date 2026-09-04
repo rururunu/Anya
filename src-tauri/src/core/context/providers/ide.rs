@@ -1,3 +1,4 @@
-//! IDE context provider — re-exports the shared local API store.
+//! IDE context provider — pull from extension bridges, fall back to push cache.
 
-pub use super::local_api::latest;
+pub use super::ide_bridge::latest;
+pub use super::local_api::is_fresh;

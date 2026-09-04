@@ -1,6 +1,8 @@
+use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
+use chrono::{SecondsFormat, Utc};
 use tracing::{info, warn};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -170,6 +172,7 @@ impl TurnSpan {
 pub fn init_logging(config_dir: &Path) {
     let logs_dir = config_dir.join("logs");
     let _ = std::fs::create_dir_all(&logs_dir);
+    install_panic_hook(&logs_dir);
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(
@@ -194,6 +197,43 @@ pub fn init_logging(config_dir: &Path) {
         .with(stdout_layer)
         .with(file_layer)
         .try_init();
+}
+
+/// Crash 现场落盘：panic 走同步 append 写到当天日志文件，不依赖可能丢数据的异步 writer。
+fn install_panic_hook(logs_dir: &Path) {
+    let logs_dir = logs_dir.to_path_buf();
+    std::panic::set_hook(Box::new(move |info| {
+        let now = Utc::now();
+        let message = format!(
+            "{} PANIC {}{}",
+            now.to_rfc3339_opts(SecondsFormat::Millis, true),
+            panic_message(info),
+            info.location()
+                .map(|loc| format!(" at {}:{}", loc.file(), loc.line()))
+                .unwrap_or_default()
+        );
+        // 保留默认行为：console/debug 构建在终端仍可见。
+        eprintln!("{message}");
+        let file_name = format!("peek.log.{}", now.format("%Y-%m-%d"));
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(logs_dir.join(file_name))
+        {
+            let _ = writeln!(file, "{message}");
+        }
+    }));
+}
+
+fn panic_message(info: &std::panic::PanicHookInfo<'_>) -> String {
+    let payload = info.payload();
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        format!("{payload:?}")
+    }
 }
 
 #[cfg(test)]

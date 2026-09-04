@@ -1,8 +1,10 @@
 //! Local HTTP API on 127.0.0.1:18480
 //!
 //! Routes:
-//! - POST /api/context/ide   — IDE context push (VS Code / JetBrains)
+//! - POST /api/context/ide   — legacy IDE context push (VS Code / JetBrains)
 //! - POST /api/ask/image     — open Anya overlay with an attached image
+//!
+//! Preferred IDE context path is on-demand pull via [`super::ide_bridge`].
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -71,7 +73,8 @@ fn context_store() -> &'static RwLock<Option<StoredIDEContext>> {
     LATEST_IDE_CONTEXT.get_or_init(|| RwLock::new(None))
 }
 
-pub fn latest_ide_context() -> Option<IDEContext> {
+/// Legacy push-cache lookup (TTL). Prefer [`super::ide_bridge::latest`].
+pub fn latest_cached() -> Option<IDEContext> {
     match context_store().read() {
         Ok(stored) => stored
             .as_ref()
@@ -84,9 +87,61 @@ pub fn latest_ide_context() -> Option<IDEContext> {
     }
 }
 
-/// Back-compat alias used by the IDE context resolver.
-pub fn latest() -> Option<IDEContext> {
-    latest_ide_context()
+/// Whether the stored IDE context was received within `max_age` (pull or push).
+pub fn is_fresh(max_age: Duration) -> bool {
+    match context_store().read() {
+        Ok(stored) => stored
+            .as_ref()
+            .is_some_and(|stored| stored.received_at.elapsed() <= max_age),
+        Err(_) => false,
+    }
+}
+
+/// Persist an IDE context from pull or push.
+pub fn store_ide_context(context: IDEContext) {
+    if let Ok(mut stored) = context_store().write() {
+        *stored = Some(StoredIDEContext {
+            received_at: Instant::now(),
+            context,
+        });
+    }
+}
+
+/// Drop the cached IDE context (e.g. bridge reported an empty selection).
+pub fn clear_ide_context() {
+    if let Ok(mut stored) = context_store().write() {
+        *stored = None;
+    }
+}
+
+/// Parse a push/pull IDE JSON body into context. `Ok(None)` means empty selection.
+pub fn parse_ide_context_payload(body: &[u8]) -> Result<Option<IDEContext>, String> {
+    let payload: IDEContextPayload = serde_json::from_slice(body)
+        .map_err(|error| format!("invalid IDE context JSON: {error}"))?;
+    if payload.provider != "ide" {
+        return Err("provider must be ide".to_string());
+    }
+    let ide = payload.ide.trim();
+    if ide.is_empty() {
+        return Err("ide must not be empty".to_string());
+    }
+
+    let selection = payload
+        .selection
+        .and_then(|selection| non_empty(Some(selection.text)))
+        .map(|selection| truncate_chars(&selection, MAX_SELECTION_CHARS));
+    if selection.is_none() {
+        return Ok(None);
+    }
+
+    Ok(Some(IDEContext {
+        ide: ide.to_string(),
+        active_file: absolute_path(payload.active_file),
+        workspace: absolute_path(payload.workspace),
+        language: non_empty(payload.language),
+        selection,
+        cursor: payload.cursor,
+    }))
 }
 
 pub fn start_server(app: AppHandle) {
@@ -227,31 +282,8 @@ fn read_request(stream: &TcpStream) -> Result<HttpRequest, String> {
 }
 
 fn receive_ide_payload(body: &[u8]) -> Result<(), String> {
-    let payload: IDEContextPayload = serde_json::from_slice(body)
-        .map_err(|error| format!("invalid IDE context JSON: {error}"))?;
-    if payload.provider != "ide" {
-        return Err("provider must be ide".to_string());
-    }
-    let ide = payload.ide.trim();
-    if ide.is_empty() {
-        return Err("ide must not be empty".to_string());
-    }
-
-    let selection = payload
-        .selection
-        .and_then(|selection| non_empty(Some(selection.text)))
-        .map(|selection| truncate_chars(&selection, MAX_SELECTION_CHARS));
-    if selection.is_none() {
+    let Some(context) = parse_ide_context_payload(body)? else {
         return Ok(());
-    }
-
-    let context = IDEContext {
-        ide: ide.to_string(),
-        active_file: absolute_path(payload.active_file),
-        workspace: absolute_path(payload.workspace),
-        language: non_empty(payload.language),
-        selection,
-        cursor: payload.cursor,
     };
     tracing::debug!(
         provider = "ide",
@@ -261,15 +293,7 @@ fn receive_ide_payload(body: &[u8]) -> Result<(), String> {
         selection_length = context.selection.as_ref().map_or(0, |text| text.chars().count()),
         "ide context received"
     );
-
-    let mut stored = context_store()
-        .write()
-        .map_err(|error| format!("IDE context store is unavailable: {error}"))?;
-    *stored = Some(StoredIDEContext {
-        received_at: Instant::now(),
-        context,
-    });
-    drop(stored);
+    store_ide_context(context);
     Ok(())
 }
 

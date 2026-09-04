@@ -35,28 +35,50 @@ impl ContextResolver {
         current_workspace: Option<&Workspace>,
         known_workspaces: &[Workspace],
     ) -> RequestContext {
-        let ide_context =
-            crate::core::context::providers::ide::latest().or_else(|| context.ide_context.clone());
-        self.resolve_request_with_ide(context, current_workspace, known_workspaces, ide_context)
+        let from_provider = crate::core::context::providers::ide::latest();
+        let provider_fresh =
+            crate::core::context::providers::ide::is_fresh(std::time::Duration::from_secs(2));
+        let ide_context = match from_provider {
+            Some(ide)
+                if provider_fresh
+                    || ide_context_matches_active_window(
+                        &ide,
+                        context.active_window.as_deref(),
+                    ) =>
+            {
+                Some(ide)
+            }
+            Some(_) => None,
+            None => context.ide_context.clone().filter(|ide| {
+                ide_context_matches_active_window(ide, context.active_window.as_deref())
+            }),
+        };
+        self.merge_ide_context(context, current_workspace, known_workspaces, ide_context)
     }
 
+    #[allow(dead_code)]
     fn resolve_request_with_ide(
+        &self,
+        context: RequestContext,
+        current_workspace: Option<&Workspace>,
+        known_workspaces: &[Workspace],
+        ide_context: Option<IDEContext>,
+    ) -> RequestContext {
+        // Direct callers (tests / legacy) still require the foreground window
+        // to look like the IDE before trusting a cached push payload.
+        let ide_context = ide_context.filter(|ide| {
+            ide_context_matches_active_window(ide, context.active_window.as_deref())
+        });
+        self.merge_ide_context(context, current_workspace, known_workspaces, ide_context)
+    }
+
+    fn merge_ide_context(
         &self,
         mut context: RequestContext,
         current_workspace: Option<&Workspace>,
         known_workspaces: &[Workspace],
         ide_context: Option<IDEContext>,
     ) -> RequestContext {
-        // The IDE push has a multi-minute cache TTL (see local_api.rs), so it
-        // can still be "latest" long after the user has switched away from the
-        // IDE entirely. Only trust it — for workspace binding, active file,
-        // and selection — when the window that's actually in the foreground
-        // right now plausibly belongs to that IDE; otherwise a quick-ask
-        // triggered from the desktop would silently inherit (and bind chat
-        // history to) a stale workspace.
-        let ide_context = ide_context
-            .filter(|ide| ide_context_matches_active_window(ide, context.active_window.as_deref()));
-
         let active_file = ide_context
             .as_ref()
             .and_then(|ide| ide.active_file.clone())
@@ -329,11 +351,9 @@ mod tests {
 
     #[test]
     fn stale_ide_context_is_ignored_when_ide_is_not_foreground() {
-        // The IDE-pushed context is cached for minutes (see local_api.rs's
-        // IDE_CONTEXT_TTL), so it can still be "latest" long after the user
-        // switched away from the editor. If the foreground window at capture
-        // time is unrelated (e.g. Explorer/desktop), it must not be used to
-        // silently bind a quick-ask to that stale workspace.
+        // Cached IDE push can outlive the editor session (see local_api TTL).
+        // resolve_request_with_ide still requires a matching foreground window;
+        // fresh bridge pulls bypass that check in resolve_request instead.
         let ide_workspace = workspace("Project B", r"C:\code\project-b");
         let ide = IDEContext {
             ide: "vscode".to_string(),

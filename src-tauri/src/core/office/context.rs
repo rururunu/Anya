@@ -117,7 +117,10 @@ fn try_collect_app(app: &str, is_foreground: bool) -> Result<Option<OfficeContex
                 ..OfficeContext::default()
             })),
             Err(WordError::Com(error))
-                if matches!(error, super::com::ComError::NotRunning(_, _)) =>
+                if matches!(
+                    error,
+                    super::com::ComError::NotRunning(_, _) | super::com::ComError::ProgId(_, _)
+                ) =>
             {
                 Ok(None)
             }
@@ -139,7 +142,10 @@ fn try_collect_app(app: &str, is_foreground: bool) -> Result<Option<OfficeContex
                 ..OfficeContext::default()
             })),
             Err(ExcelError::Com(error))
-                if matches!(error, super::com::ComError::NotRunning(_, _)) =>
+                if matches!(
+                    error,
+                    super::com::ComError::NotRunning(_, _) | super::com::ComError::ProgId(_, _)
+                ) =>
             {
                 Ok(None)
             }
@@ -161,7 +167,10 @@ fn try_collect_app(app: &str, is_foreground: bool) -> Result<Option<OfficeContex
                 ..OfficeContext::default()
             })),
             Err(PowerPointError::Com(error))
-                if matches!(error, super::com::ComError::NotRunning(_, _)) =>
+                if matches!(
+                    error,
+                    super::com::ComError::NotRunning(_, _) | super::com::ComError::ProgId(_, _)
+                ) =>
             {
                 Ok(None)
             }
