@@ -103,6 +103,7 @@ import {
 } from "@/services/chat/toolActivityDisplay";
 import { activityMatchesQuery, textIncludesQuery } from "@/services/chat/conversationFind";
 import { conversationFindKey } from "@/composables/chat/useConversationFind";
+import { isImageGenActivity } from "@/services/chat/toolActivityEnrichment";
 import { tr } from "@/services/i18n";
 
 const props = withDefaults(
@@ -171,7 +172,7 @@ const hasRunningSubagent = computed(() =>
 
 /** Task lists + finished images + (in detailed mode) shell/file edits stay in the open stream. */
 function isInlineActivity(activity: ToolActivity): boolean {
-  if (activity.kind === "image") return activity.status !== "running";
+  if (isImageGenActivity(activity)) return activity.status !== "running";
   if (TASK_LIST_TOOLS.has(activity.toolName)) return true;
   if (props.displayMode === "compact") return false;
   return SHOWCASE_KINDS.has(activity.kind);
@@ -190,8 +191,8 @@ function segmentKind(activity: ToolActivity): "inline" | "process" {
 function canMergeActivities(last: ToolActivity, next: ToolActivity): boolean {
   // Keep image cards in their own segment so the completed fold can leave
   // them visible without also un-collapsing adjacent shell/file work.
-  if (last.kind === "image" || next.kind === "image") {
-    return last.kind === "image" && next.kind === "image";
+  if (isImageGenActivity(last) || isImageGenActivity(next)) {
+    return isImageGenActivity(last) && isImageGenActivity(next);
   }
   return isOperationsActivity(last) === isOperationsActivity(next);
 }
@@ -479,7 +480,7 @@ function isGeneratedImageSegment(segment: TimelineSegment): boolean {
   return (
     (segment.type === "inline" || segment.type === "process") &&
     segment.activities.length > 0 &&
-    segment.activities.every((activity) => activity.kind === "image")
+    segment.activities.every((activity) => isImageGenActivity(activity))
   );
 }
 

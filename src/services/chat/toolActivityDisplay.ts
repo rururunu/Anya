@@ -2,6 +2,7 @@ import type { ToolActivity, WorkTimelineItem } from "@/types/chat";
 import type { AppLanguage } from "@/types/setting";
 import { tr } from "@/services/i18n";
 import { SUBAGENT_TOOLS } from "@/services/chat/subagentTools";
+import { isImageGenActivity } from "@/services/chat/toolActivityEnrichment";
 
 const HIDE_RESULT_TOOLS = new Set([
   "read_file",
@@ -154,7 +155,7 @@ export function toolVariantLabel(activity: ToolActivity, language: AppLanguage):
   if (activity.kind === "shell" || activity.toolName === "run_command") {
     return tr(language, "toolVariantShell");
   }
-  if (activity.kind === "image" || activity.toolName === "generate_image") {
+  if (isImageGenActivity(activity)) {
     return tr(language, "toolVariantImage");
   }
   if (SEARCH_TOOLS.has(activity.toolName) || activity.kind === "search") {

@@ -12,7 +12,7 @@
       />
 
       <GeneratedImageCard
-        v-else-if="item.activity.kind === 'image' && item.activity.status !== 'running'"
+        v-else-if="isImageGenActivity(item.activity) && item.activity.status !== 'running'"
         :activity="item.activity"
         @preview-image="emit('previewImage', $event)"
         @edit-from-image="emit('editFromImage', $event)"

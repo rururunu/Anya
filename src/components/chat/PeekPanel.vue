@@ -108,7 +108,6 @@
               :session-id="activeSessionId"
               :workspace-name="workspaceDisplayName"
               :checkpoints="checkpoints"
-              :sticky-turn-head="false"
               @rewound="handleRewound"
               @branch="handleBranchMessage"
               @review-changes="openDiffSidebar"
@@ -1822,6 +1821,18 @@ onUnmounted(() => {
   z-index: 2;
   padding: 42px 16px calc(var(--composer-overlap, 12px) + var(--composer-clearance, 90px));
   scroll-padding-top: 42px;
+}
+.peek-panel.chat :deep(.chat-turn-head) {
+  position: static;
+  top: auto;
+  z-index: auto;
+}
+.peek-panel.chat :deep(.chat-turn-head.is-stuck::before),
+.peek-panel.chat :deep(.chat-turn-head.is-stuck::after) {
+  content: none;
+}
+.peek-panel.chat :deep(.chat-turn:has(.chat-turn-head)) {
+  --code-block-sticky-top: 0;
 }
 
 .thread-header {

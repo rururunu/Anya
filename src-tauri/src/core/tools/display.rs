@@ -172,7 +172,6 @@ fn activity_kind(tool_name: &str) -> String {
         | "ppt_insert_text"
         | "ppt_save_presentation" => "edit".into(),
         "generate_image" => "image".into(),
-        other if other.ends_with("__screenshot") => "image".into(),
         _ => "other".into(),
     }
 }
@@ -767,5 +766,15 @@ mod tests {
         assert_eq!(view.title, "Unknown tool");
         assert_eq!(view.kind, "other");
         assert_eq!(view.detail.as_deref(), Some("tool error: unknown tool: "));
+    }
+
+    #[test]
+    fn plugin_screenshot_is_not_generated_image() {
+        let view = build_activity_view(
+            "plugin_computer-use__screenshot",
+            &json!({}),
+            Some("Screenshot 1280x720\n![image](path:C:/tmp/shot.jpg)"),
+        );
+        assert_eq!(view.kind, "other");
     }
 }

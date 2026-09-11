@@ -92,6 +92,9 @@ export function collectActivityHunks(activity: ToolActivity): DiffHunk[] {
   return [];
 }
 
-export function isImageGenActivity(activity: ToolActivity) {
-  return activity.kind === "image" || activity.toolName === "generate_image";
+/** True for `generate_image` cards — not computer-use screenshots. */
+export function isImageGenActivity(activity: Pick<ToolActivity, "kind" | "toolName">) {
+  if (activity.toolName === "generate_image") return true;
+  if (activity.toolName.includes("screenshot")) return false;
+  return activity.kind === "image";
 }

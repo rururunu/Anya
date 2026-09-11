@@ -91,7 +91,6 @@
     <div
       ref="listRef"
       class="message-list peek-scrollbar"
-      :class="{ 'no-sticky-turn-head': !stickyTurnHeadEnabled }"
       data-tauri-drag-region="false"
       @scroll="handleScroll"
       @wheel.passive="handleWheel"
@@ -106,7 +105,7 @@
         class="chat-turn"
         :class="{ 'is-first-turn': turnIndex === 0 }"
         v-memo="turnMemoDeps(turn, turnIndex)"
-        :ref="(el) => stickyTurnHeadEnabled && bindTurnHead(turn.key, el)"
+        :ref="(el) => bindTurnHead(turn.key, el)"
       >
         <div
           v-if="turn.user || turnBuildHost(turn)"
@@ -116,7 +115,7 @@
         <div
           v-if="turn.user || turnBuildHost(turn)"
           class="chat-turn-head"
-          :class="{ 'is-stuck': stickyTurnHeadEnabled && isTurnHeadStuck(turn.key) }"
+          :class="{ 'is-stuck': isTurnHeadStuck(turn.key) }"
         >
           <article
             v-if="turn.user"
@@ -370,6 +369,7 @@ import { provideConversationFind } from "@/composables/chat/useConversationFind"
 import { useMessagePreviewRail } from "@/composables/chat/useMessagePreviewRail";
 import { useMessageScroll } from "@/composables/chat/useMessageScroll";
 import { useTurnHeadSticky } from "@/composables/chat/useTurnHeadSticky";
+import { isImageGenActivity } from "@/services/chat/toolActivityEnrichment";
 import { useAppStore } from "@/stores/app";
 import { storeToRefs } from "pinia";
 
@@ -391,9 +391,7 @@ const props = defineProps<{
   sessionId?: string;
   workspaceName?: string;
   checkpoints?: CheckpointInfo[];
-  stickyTurnHead?: boolean;
 }>();
-const stickyTurnHeadEnabled = computed(() => props.stickyTurnHead !== false);
 const workspaceName = computed(() => props.workspaceName?.trim() || "");
 const emptyThreadPrompt = computed(() =>
   workspaceName.value
@@ -757,7 +755,7 @@ function turnMemoDeps(turn: DisplayTurn, turnIndex = 0) {
   return [
     turn.key,
     turnIndex === 0 ? 1 : 0,
-    isTurnHeadStuck(turn.key) && stickyTurnHeadEnabled.value ? 1 : 0,
+    isTurnHeadStuck(turn.key) ? 1 : 0,
     ...(turn.user ? messageMemoDeps(turn.user) : []),
     ...turn.assistants.flatMap((item) => messageMemoDeps(item)),
   ];
@@ -1238,7 +1236,7 @@ function activityIcon(message: ChatMessage): Component | undefined {
   const running = [...(message.toolActivities ?? [])]
     .reverse()
     .find((activity) => activity.status === "running");
-  if (running?.kind === "image" || running?.toolName === "generate_image") {
+  if (running && isImageGenActivity(running)) {
     return Paintbrush;
   }
   return undefined;
@@ -1552,14 +1550,6 @@ defineExpose({ openFind, closeFind });
   background: transparent;
   box-shadow: none;
   pointer-events: none;
-}
-.message-list.no-sticky-turn-head .chat-turn-head {
-  position: static;
-  top: auto;
-  z-index: auto;
-}
-.message-list.no-sticky-turn-head .chat-turn:has(.chat-turn-head) {
-  --code-block-sticky-top: 0;
 }
 .chat-turn-head.is-stuck::before {
   content: "";
