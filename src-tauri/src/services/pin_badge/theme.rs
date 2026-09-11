@@ -35,7 +35,7 @@ pub fn configure_from_settings(settings: &AppSettings) {
 }
 
 fn resolve_accent(settings: &AppSettings) -> u32 {
-    if settings.color_scheme.is_dark() {
+    if settings.is_dark_mode() {
         DARK_ACCENT
     } else {
         LIGHT_ACCENT

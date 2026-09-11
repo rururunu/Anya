@@ -10,14 +10,7 @@ use walkdir::{DirEntry, WalkDir};
 
 fn strip_ui_path_prefix(path: &str) -> &str {
     let trimmed = path.trim();
-    for prefix in [
-        "Write ",
-        "write ",
-        "Edit ",
-        "Read ",
-        "Delete ",
-        "Move ",
-    ] {
+    for prefix in ["Write ", "write ", "Edit ", "Read ", "Delete ", "Move "] {
         if let Some(rest) = trimmed.strip_prefix(prefix) {
             return rest.trim();
         }

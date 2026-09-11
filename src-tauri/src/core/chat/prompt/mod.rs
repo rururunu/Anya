@@ -112,7 +112,7 @@ impl PromptBuilder {
         inject_system_block(&mut messages, session_id, "rules", project_rules);
         inject_memories(&mut messages, session_id, recalled_memories);
 
-        // [4] Per-turn resource preferences from `#skill:` / `#mcp:` chips.
+        // [4] Per-turn resource preferences from `#skill:` / `#mcp:` / `#plugin:` chips.
         inject_system_block(
             &mut messages,
             session_id,
@@ -129,6 +129,17 @@ impl PromptBuilder {
             preferences.plan_mode,
             preferences.companion_origin,
             preferences.image_mode.as_ref(),
+        );
+        let plugin_prompts = if cfg!(test) {
+            None
+        } else {
+            crate::core::plugins::shared_runtime().plugin_prompt_suffix()
+        };
+        inject_system_block(
+            &mut messages,
+            session_id,
+            "plugin-prompts",
+            plugin_prompts.as_deref(),
         );
 
         // [5..] History（排除 pending 的空 assistant）

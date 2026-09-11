@@ -11,7 +11,9 @@ describe("inlineTokenMarks", () => {
   });
 
   it("splits file and hash tokens", () => {
-    const parts = splitInlineTokenParts('see @src/a.ts and #skill:docx #mcp:gmail @"my file.ts"');
+    const parts = splitInlineTokenParts(
+      'see @src/a.ts and #skill:docx #mcp:gmail #plugin:computer-use @"my file.ts"',
+    );
     expect(parts.map((part) => part.kind)).toEqual([
       "text",
       "mention",
@@ -19,6 +21,8 @@ describe("inlineTokenMarks", () => {
       "skill",
       "text",
       "mcp",
+      "text",
+      "plugin",
       "text",
       "mention",
     ]);

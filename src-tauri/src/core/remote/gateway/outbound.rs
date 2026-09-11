@@ -10,16 +10,25 @@ pub(in crate::core::remote::gateway) struct Outbound {
 }
 
 impl Outbound {
-    pub(in crate::core::remote::gateway) async fn send(&self, msg: &ServerMessage) -> Result<(), String> {
+    pub(in crate::core::remote::gateway) async fn send(
+        &self,
+        msg: &ServerMessage,
+    ) -> Result<(), String> {
         let text = serde_json::to_string(msg).map_err(|e| e.to_string())?;
         self.send_text(text).await
     }
 
-    pub(in crate::core::remote::gateway) async fn send_text(&self, text: String) -> Result<(), String> {
+    pub(in crate::core::remote::gateway) async fn send_text(
+        &self,
+        text: String,
+    ) -> Result<(), String> {
         self.send_raw(Message::Text(text.into())).await
     }
 
-    pub(in crate::core::remote::gateway) async fn send_raw(&self, msg: Message) -> Result<(), String> {
+    pub(in crate::core::remote::gateway) async fn send_raw(
+        &self,
+        msg: Message,
+    ) -> Result<(), String> {
         self.tx
             .send(msg)
             .await
@@ -27,7 +36,10 @@ impl Outbound {
     }
 
     /// Non-blocking send for keep-alives. A full queue must not stall the read/ping loop.
-    pub(in crate::core::remote::gateway) fn try_send(&self, msg: &ServerMessage) -> Result<(), String> {
+    pub(in crate::core::remote::gateway) fn try_send(
+        &self,
+        msg: &ServerMessage,
+    ) -> Result<(), String> {
         let text = serde_json::to_string(msg).map_err(|e| e.to_string())?;
         self.tx
             .try_send(Message::Text(text.into()))

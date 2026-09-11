@@ -151,7 +151,7 @@ impl ChatService {
             policy_suffix_tokens += compact::estimate_tokens(IMAGE_MODE_PROMPT);
         }
 
-        let (tool_definition_tokens, mut skills_tokens, mut mcp_tokens, subagent_tokens) =
+        let (mut tool_definition_tokens, mut skills_tokens, mut mcp_tokens, subagent_tokens) =
             estimate_tool_schema_groups(self.tools.registry().as_ref());
         let preferred = compact::estimate_prompt_block(
             task_rules.preferred_resources.as_deref(),
@@ -161,8 +161,10 @@ impl ChatService {
             let block = task_rules.preferred_resources.as_deref().unwrap_or("");
             if block.contains("skill:") {
                 skills_tokens += preferred;
-            } else {
+            } else if block.contains("mcp:") {
                 mcp_tokens += preferred;
+            } else {
+                tool_definition_tokens += preferred;
             }
         }
 

@@ -54,8 +54,13 @@ impl ToolRegistry {
     }
 
     pub fn register_dynamic(&self, tool: Arc<dyn Tool>) {
+        let name = tool.name().to_string();
+        if self.tools.contains_key(&name) {
+            tracing::warn!("refusing to overlay builtin tool `{name}`");
+            return;
+        }
         if let Ok(mut guard) = self.dynamic.write() {
-            guard.insert(tool.name().to_string(), tool);
+            guard.insert(name, tool);
         }
         self.invalidate_schema_cache();
     }
@@ -69,12 +74,15 @@ impl ToolRegistry {
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
         let name = normalize_tool_name(name);
+        if let Some(tool) = self.tools.get(name) {
+            return Some(Arc::clone(tool));
+        }
         if let Ok(guard) = self.dynamic.read() {
             if let Some(tool) = guard.get(name) {
                 return Some(Arc::clone(tool));
             }
         }
-        self.tools.get(name).cloned()
+        None
     }
 
     pub fn schemas(&self) -> Vec<Value> {
@@ -206,7 +214,10 @@ impl ToolRegistry {
         for name in self.names() {
             if let Some(tool) = self.get(&name) {
                 if tool.read_only()
-                    || matches!(name.as_str(), "update_tasks" | "ask_user" | "todo_write")
+                    || matches!(
+                        name.as_str(),
+                        "update_tasks" | "ask_user" | "todo_write" | "manage_plugin"
+                    )
                 {
                     filtered.register(tool);
                 }
@@ -222,10 +233,28 @@ impl ToolRegistry {
             if crate::core::tools::agent::is_async_runtime_tool(&name) {
                 continue;
             }
+            if name == "save_plan" {
+                continue;
+            }
             if let Some(tool) = self.get(&name) {
                 if !read_only || tool.read_only() {
                     filtered.register(tool);
                 }
+            }
+        }
+        filtered
+    }
+
+    /// Writer turns after plan approval: keep the full toolset except `save_plan`,
+    /// so execution cannot open a second proposal.
+    pub fn filter_without_save_plan(&self) -> ToolRegistry {
+        let mut filtered = ToolRegistry::new();
+        for name in self.names() {
+            if name == "save_plan" {
+                continue;
+            }
+            if let Some(tool) = self.get(&name) {
+                filtered.register(tool);
             }
         }
         filtered
@@ -250,7 +279,14 @@ impl ToolRegistry {
                 if tool.read_only()
                     || matches!(
                         name.as_str(),
-                        "update_tasks" | "ask_user" | "complete_plan_step" | "todo_write"
+                        "save_plan"
+                            | "update_tasks"
+                            | "ask_user"
+                            | "complete_plan_step"
+                            | "todo_write"
+                            | "share_to_companion"
+                            | "share_preview_url"
+                            | "manage_plugin"
                     )
                 {
                     filtered.register(tool);
@@ -407,6 +443,45 @@ mod tests {
 
         let names = registry.filter_for_image_mode().names();
         assert_eq!(names, vec!["generate_image"]);
+    }
+
+    #[test]
+    fn filter_for_plan_mode_keeps_manage_plugin() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(StubTool {
+            name: "manage_plugin",
+            read_only: false,
+        }));
+        registry.register(Arc::new(StubTool {
+            name: "write_file",
+            read_only: false,
+        }));
+        registry.register(Arc::new(StubTool {
+            name: "read_file",
+            read_only: true,
+        }));
+
+        let names = registry.filter_for_plan_mode().names();
+        assert!(names.contains(&"manage_plugin".to_string()));
+        assert!(names.contains(&"read_file".to_string()));
+        assert!(!names.contains(&"write_file".to_string()));
+    }
+
+    #[test]
+    fn filter_without_save_plan_drops_proposal_tool() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(StubTool {
+            name: "save_plan",
+            read_only: false,
+        }));
+        registry.register(Arc::new(StubTool {
+            name: "write_file",
+            read_only: false,
+        }));
+
+        let names = registry.filter_without_save_plan().names();
+        assert!(names.contains(&"write_file".to_string()));
+        assert!(!names.contains(&"save_plan".to_string()));
     }
 
     struct HiddenTool;

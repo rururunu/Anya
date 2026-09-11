@@ -10,6 +10,7 @@ export type ComposerSegment =
   | { kind: "mention"; path: string; isDir?: boolean }
   | { kind: "skill"; id: string }
   | { kind: "mcp"; id: string }
+  | { kind: "plugin"; id: string }
   | { kind: "paste"; text: string }
   | { kind: "selection"; lines: number };
 
@@ -46,10 +47,11 @@ export function mentionBasename(path: string): string {
 }
 
 /**
- * Match `@file`, `#skill:id`, and `#mcp:id` tokens in a serialized composer message.
+ * Match `@file`, `#skill:id`, `#mcp:id`, and `#plugin:id` tokens in a serialized composer message.
  * Keep in sync with MessageList inline chip parsing.
  */
-export const COMPOSER_INLINE_TOKEN_RE = /@(?:"([^"]+)"|([^\s@#]+))|#(skill|mcp):([A-Za-z0-9_.-]+)/g;
+export const COMPOSER_INLINE_TOKEN_RE =
+  /@(?:"([^"]+)"|([^\s@#]+))|#(skill|mcp|plugin):([A-Za-z0-9_.-]+)/g;
 
 /**
  * Restore composer chips from serialized message text (e.g. after rewind).
@@ -79,7 +81,7 @@ export function parseComposerTextToSegments(text: string): {
     }
     if (match[3] && match[4]) {
       sawChip = true;
-      segments.push({ kind: match[3] as "skill" | "mcp", id: match[4] });
+      segments.push({ kind: match[3] as "skill" | "mcp" | "plugin", id: match[4] });
     } else {
       const path = match[1] || match[2] || "";
       if (path) {
@@ -138,8 +140,8 @@ export function formatMentionPath(path: string, isDir?: boolean): string {
   return /\s/.test(storage) ? `@"${storage}"` : `@${storage}`;
 }
 
-/** Serialize a skill/MCP chip as a `#kind:id` token. */
-export function formatResourceMention(kind: "skill" | "mcp", id: string): string {
+/** Serialize a skill/MCP/plugin chip as a `#kind:id` token. */
+export function formatResourceMention(kind: "skill" | "mcp" | "plugin", id: string): string {
   return `#${kind}:${id.trim()}`;
 }
 
@@ -182,6 +184,8 @@ export function serializeComposerSegments(
       parts.push(formatResourceMention("skill", seg.id));
     } else if (seg.kind === "mcp") {
       parts.push(formatResourceMention("mcp", seg.id));
+    } else if (seg.kind === "plugin") {
+      parts.push(formatResourceMention("plugin", seg.id));
     } else if (seg.kind === "paste") {
       parts.push(seg.text);
     }

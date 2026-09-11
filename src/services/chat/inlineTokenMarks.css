@@ -1,4 +1,4 @@
-/* Markdown-like inline marks for @file / #skill / #mcp (not chip chrome). */
+/* Markdown-like inline marks for @file / #skill / #mcp / #plugin (not chip chrome). */
 
 .inline-token {
   font-weight: 650;
@@ -17,6 +17,10 @@
 
 .inline-token-mcp {
   color: color-mix(in srgb, #2563eb 68%, var(--peek-text));
+}
+
+.inline-token-plugin {
+  color: color-mix(in srgb, #7c3aed 68%, var(--peek-text));
 }
 
 /* Message bubbles: tiny logo sits in the text run, no pill / border / bg. */

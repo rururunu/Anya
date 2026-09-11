@@ -2,7 +2,53 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+/// User-defined background configuration (image, opacity, blur, fit).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeBackgroundConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blur: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit: Option<String>,
+}
+
+impl PartialEq for ThemeBackgroundConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.image == other.image
+            && self.blur == other.blur
+            && self.fit == other.fit
+            && match (self.opacity, other.opacity) {
+                (Some(a), Some(b)) => (a - b).abs() < 1e-6,
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+impl Eq for ThemeBackgroundConfig {}
+
+/// User-defined or Agent-crafted theme configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomThemeConfig {
+    pub id: String,
+    pub name: String,
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub tokens: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<ThemeBackgroundConfig>,
+    #[serde(default)]
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ColorScheme {
     #[default]
@@ -12,23 +58,37 @@ pub enum ColorScheme {
         alias = "system",
         alias = "auto",
         alias = "default",
-        alias = "midnight",
         alias = "blue-black",
+        alias = "ghost-pastel",
+        alias = "graphite",
+        alias = "nocturne",
+        alias = "teal",
+        alias = "midnight",
         alias = "ocean",
         alias = "forest",
         alias = "rose",
-        alias = "ghost-pastel",
-        alias = "graphite",
-        alias = "ember",
-        alias = "nocturne",
-        alias = "teal"
+        alias = "ember"
     )]
     Dark,
+    #[serde(untagged)]
+    Custom(String),
 }
 
 impl ColorScheme {
-    pub fn is_dark(self) -> bool {
-        matches!(self, Self::Dark)
+    pub fn is_dark(&self) -> bool {
+        match self {
+            Self::Dark => true,
+            Self::Light => false,
+            Self::Custom(s) => s.contains("dark") || s.contains("night"),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Light => "light",
+            Self::Dark => "dark",
+            Self::Custom(s) => s.as_str(),
+        }
     }
 }
 
@@ -237,55 +297,6 @@ pub struct ImageStyleTemplate {
     pub example_image: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct GeminiOAuthSettings {
-    #[serde(default = "default_gemini_oauth_client_id")]
-    pub client_id: String,
-    #[serde(default = "default_gemini_oauth_client_secret")]
-    pub client_secret: String,
-    #[serde(default)]
-    pub access_token: String,
-    #[serde(default)]
-    pub refresh_token: String,
-    /// Unix timestamp (seconds) when `access_token` expires.
-    #[serde(default)]
-    pub expires_at: i64,
-    #[serde(default)]
-    pub email: String,
-    /// Cloud Code companion project from `loadCodeAssist`.
-    #[serde(default)]
-    pub project_id: String,
-}
-
-impl Default for GeminiOAuthSettings {
-    fn default() -> Self {
-        Self {
-            client_id: default_gemini_oauth_client_id(),
-            client_secret: default_gemini_oauth_client_secret(),
-            access_token: String::new(),
-            refresh_token: String::new(),
-            expires_at: 0,
-            email: String::new(),
-            project_id: String::new(),
-        }
-    }
-}
-
-impl GeminiOAuthSettings {
-    pub fn is_logged_in(&self) -> bool {
-        !self.access_token.trim().is_empty() || !self.refresh_token.trim().is_empty()
-    }
-}
-
-fn default_gemini_oauth_client_id() -> String {
-    String::new()
-}
-
-fn default_gemini_oauth_client_secret() -> String {
-    String::new()
-}
-
 /// Local embedding model used for optional semantic workspace search.
 /// The model is downloaded lazily on first enable (never bundled).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -314,6 +325,47 @@ pub enum SemanticSearchBackend {
     Local,
 }
 
+/// A model entry on the built-in DeepSeek provider, combining id, enabled
+/// state, and origin in one record (previously three parallel strings).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModelEntry {
+    pub id: String,
+    /// Switched off by the user; hidden from pickers and refused at send time.
+    #[serde(default)]
+    pub disabled: bool,
+    /// Added manually by the user rather than fetched from `/models`; survives refetches.
+    #[serde(default)]
+    pub custom: bool,
+}
+
+/// Accepts both the current array form and the legacy newline/comma-separated string.
+fn deserialize_deepseek_models<'de, D>(deserializer: D) -> Result<Vec<ProviderModelEntry>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Repr {
+        Entries(Vec<ProviderModelEntry>),
+        Legacy(String),
+    }
+
+    Ok(match Repr::deserialize(deserializer)? {
+        Repr::Entries(entries) => entries,
+        Repr::Legacy(raw) => raw
+            .split([',', '\n'])
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(|id| ProviderModelEntry {
+                id: id.to_string(),
+                disabled: false,
+                custom: false,
+            })
+            .collect(),
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -321,8 +373,14 @@ pub struct AppSettings {
     pub language: AppLanguage,
     #[serde(default)]
     pub deepseek_api_key: String,
-    #[serde(default)]
-    pub gemini_oauth: GeminiOAuthSettings,
+    #[serde(default, deserialize_with = "deserialize_deepseek_models")]
+    pub deepseek_models: Vec<ProviderModelEntry>,
+    /// Legacy comma/newline-separated disabled ids; only read to migrate into `deepseek_models`.
+    #[serde(default, skip_serializing)]
+    pub deepseek_disabled_models: String,
+    /// Legacy comma/newline-separated user-added ids; only read to migrate into `deepseek_models`.
+    #[serde(default, skip_serializing)]
+    pub deepseek_custom_models: String,
     #[serde(default = "default_memory_enabled")]
     pub memory_enabled: bool,
     #[serde(default)]
@@ -480,6 +538,12 @@ pub struct AppSettings {
     /// First-run welcome wizard. Missing from older settings files → treat as done.
     #[serde(default = "default_onboarding_completed_existing")]
     pub onboarding_completed: bool,
+    /// User-defined or Agent-created custom themes.
+    #[serde(default)]
+    pub custom_themes: Vec<CustomThemeConfig>,
+    /// User custom background (global / fallback for default themes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_background: Option<ThemeBackgroundConfig>,
 }
 
 fn default_onboarding_completed_existing() -> bool {
@@ -539,7 +603,7 @@ pub struct AppSettingsPatch {
     pub color_scheme: Option<ColorScheme>,
     pub language: Option<AppLanguage>,
     pub deepseek_api_key: Option<String>,
-    pub gemini_oauth: Option<GeminiOAuthSettings>,
+    pub deepseek_models: Option<Vec<ProviderModelEntry>>,
     pub memory_enabled: Option<bool>,
     pub mem0_api_key: Option<String>,
     pub mem0_user_id: Option<String>,
@@ -598,6 +662,9 @@ pub struct AppSettingsPatch {
     pub semantic_search_api_key: Option<String>,
     pub semantic_search_api_model: Option<String>,
     pub onboarding_completed: Option<bool>,
+    pub custom_themes: Option<Vec<CustomThemeConfig>>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub custom_background: Option<Option<ThemeBackgroundConfig>>,
 }
 
 impl Default for AppSettings {
@@ -606,7 +673,9 @@ impl Default for AppSettings {
             color_scheme: ColorScheme::Light,
             language: AppLanguage::ZhCn,
             deepseek_api_key: String::new(),
-            gemini_oauth: GeminiOAuthSettings::default(),
+            deepseek_models: Vec::new(),
+            deepseek_disabled_models: String::new(),
+            deepseek_custom_models: String::new(),
             memory_enabled: default_memory_enabled(),
             mem0_api_key: String::new(),
             mem0_user_id: default_mem0_user_id(),
@@ -665,8 +734,18 @@ impl Default for AppSettings {
             semantic_search_api_key: String::new(),
             semantic_search_api_model: String::new(),
             onboarding_completed: false,
+            custom_themes: Vec::new(),
+            custom_background: None,
         }
     }
+}
+
+fn deserialize_double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
 }
 
 fn default_lsp_servers() -> Vec<LspServerConfig> {
@@ -694,16 +773,49 @@ fn default_lsp_servers() -> Vec<LspServerConfig> {
 }
 
 impl AppSettings {
+    /// Fold legacy `deepseek_disabled_models` / `deepseek_custom_models` strings into the
+    /// structured entries, then clear them so the next persist drops the legacy keys.
+    pub fn migrate_legacy_deepseek_models(&mut self) {
+        if self.deepseek_disabled_models.trim().is_empty()
+            && self.deepseek_custom_models.trim().is_empty()
+        {
+            return;
+        }
+        let to_set = |raw: &str| -> std::collections::HashSet<String> {
+            raw.split([',', '\n'])
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .collect()
+        };
+        let disabled = to_set(&self.deepseek_disabled_models);
+        let custom = to_set(&self.deepseek_custom_models);
+        for entry in &mut self.deepseek_models {
+            if disabled.contains(&entry.id) {
+                entry.disabled = true;
+            }
+            if custom.contains(&entry.id) {
+                entry.custom = true;
+            }
+        }
+        self.deepseek_disabled_models.clear();
+        self.deepseek_custom_models.clear();
+    }
+
     pub fn merge(&self, patch: AppSettingsPatch) -> Self {
         Self {
-            color_scheme: patch.color_scheme.unwrap_or(self.color_scheme),
+            color_scheme: patch
+                .color_scheme
+                .unwrap_or_else(|| self.color_scheme.clone()),
             language: patch.language.unwrap_or(self.language),
             deepseek_api_key: patch
                 .deepseek_api_key
                 .unwrap_or_else(|| self.deepseek_api_key.clone()),
-            gemini_oauth: patch
-                .gemini_oauth
-                .unwrap_or_else(|| self.gemini_oauth.clone()),
+            deepseek_models: patch
+                .deepseek_models
+                .unwrap_or_else(|| self.deepseek_models.clone()),
+            deepseek_disabled_models: self.deepseek_disabled_models.clone(),
+            deepseek_custom_models: self.deepseek_custom_models.clone(),
             memory_enabled: patch.memory_enabled.unwrap_or(self.memory_enabled),
             mem0_api_key: patch
                 .mem0_api_key
@@ -854,7 +966,23 @@ impl AppSettings {
             onboarding_completed: patch
                 .onboarding_completed
                 .unwrap_or(self.onboarding_completed),
+            custom_themes: patch
+                .custom_themes
+                .unwrap_or_else(|| self.custom_themes.clone()),
+            custom_background: match patch.custom_background {
+                Some(bg) => bg,
+                None => self.custom_background.clone(),
+            },
         }
+    }
+
+    pub fn is_dark_mode(&self) -> bool {
+        if let ColorScheme::Custom(id) = &self.color_scheme {
+            if let Some(custom) = self.custom_themes.iter().find(|t| &t.id == id) {
+                return custom.mode == "dark";
+            }
+        }
+        self.color_scheme.is_dark()
     }
 }
 
@@ -903,6 +1031,98 @@ mod tests {
         let serialized = serde_json::to_value(settings).expect("settings should serialize");
         assert_eq!(serialized["colorScheme"], "light");
         assert!(serialized.get("customAccentColor").is_none());
+    }
+
+    #[test]
+    fn custom_theme_round_trip_and_dark_mode_resolution() {
+        let raw = serde_json::json!({
+            "colorScheme": "custom-eva-01",
+            "language": "zh-CN",
+            "customThemes": [{
+                "id": "custom-eva-01",
+                "name": "EVA-01",
+                "mode": "dark",
+                "tokens": {
+                    "--peek-bg": "#120d1c",
+                    "--peek-accent": "#39ff14"
+                },
+                "updatedAt": 1720000000
+            }]
+        });
+
+        let settings: AppSettings =
+            serde_json::from_value(raw).expect("custom theme should deserialize");
+        assert_eq!(
+            settings.color_scheme,
+            ColorScheme::Custom("custom-eva-01".to_string())
+        );
+        assert!(settings.is_dark_mode());
+        assert_eq!(settings.custom_themes.len(), 1);
+        assert_eq!(settings.custom_themes[0].name, "EVA-01");
+        assert_eq!(
+            settings.custom_themes[0]
+                .tokens
+                .get("--peek-accent")
+                .unwrap(),
+            "#39ff14"
+        );
+
+        let serialized = serde_json::to_value(&settings).expect("settings should serialize");
+        assert_eq!(serialized["colorScheme"], "custom-eva-01");
+        assert_eq!(serialized["customThemes"][0]["id"], "custom-eva-01");
+    }
+
+    #[test]
+    fn custom_theme_with_background_round_trip() {
+        let raw = serde_json::json!({
+            "colorScheme": "custom-neon",
+            "language": "zh-CN",
+            "customBackground": {
+                "image": "path:C:/global-bg.png",
+                "opacity": 0.15,
+                "blur": 5,
+                "fit": "cover"
+            },
+            "customThemes": [{
+                "id": "custom-neon",
+                "name": "Neon",
+                "mode": "dark",
+                "tokens": {
+                    "--peek-bg": "#120d1c"
+                },
+                "background": {
+                    "image": "path:C:/theme-bg.png",
+                    "opacity": 0.25,
+                    "blur": 2,
+                    "fit": "cover"
+                },
+                "updatedAt": 1720000000
+            }]
+        });
+
+        let settings: AppSettings = serde_json::from_value(raw).expect("should deserialize");
+        assert!(settings.custom_background.is_some());
+        let global_bg = settings.custom_background.as_ref().unwrap();
+        assert_eq!(global_bg.image.as_deref(), Some("path:C:/global-bg.png"));
+        assert_eq!(global_bg.opacity, Some(0.15));
+
+        let theme = &settings.custom_themes[0];
+        assert!(theme.background.is_some());
+        let theme_bg = theme.background.as_ref().unwrap();
+        assert_eq!(theme_bg.image.as_deref(), Some("path:C:/theme-bg.png"));
+        assert_eq!(theme_bg.opacity, Some(0.25));
+        assert_eq!(theme_bg.blur, Some(2));
+        assert_eq!(theme_bg.fit.as_deref(), Some("cover"));
+
+        let serialized = serde_json::to_value(&settings).expect("should serialize");
+        assert_eq!(
+            serialized["customBackground"]["image"],
+            "path:C:/global-bg.png"
+        );
+        assert_eq!(
+            serialized["customThemes"][0]["background"]["image"],
+            "path:C:/theme-bg.png"
+        );
     }
 
     #[test]
@@ -996,5 +1216,70 @@ mod tests {
             restored_provider.api_protocol,
             super::ProviderApiProtocol::AnthropicMessages
         );
+    }
+
+    #[test]
+    fn deepseek_models_round_trip_and_defaults() {
+        let settings = AppSettings::default();
+        assert!(settings.deepseek_models.is_empty());
+
+        let patch = AppSettingsPatch {
+            deepseek_models: Some(vec![
+                super::ProviderModelEntry {
+                    id: "deepseek-chat".into(),
+                    disabled: false,
+                    custom: false,
+                },
+                super::ProviderModelEntry {
+                    id: "my-finetune".into(),
+                    disabled: true,
+                    custom: true,
+                },
+            ]),
+            ..AppSettingsPatch::default()
+        };
+        let merged = settings.merge(patch);
+        assert_eq!(merged.deepseek_models.len(), 2);
+        assert!(merged.deepseek_models[1].disabled);
+        assert!(merged.deepseek_models[1].custom);
+
+        // Deserialization with missing deepseek fields defaults properly
+        let json = r#"{"colorScheme":"light","language":"zh-CN"}"#;
+        let deserialized: AppSettings = serde_json::from_str(json).expect("deserialize minimal");
+        assert!(deserialized.deepseek_models.is_empty());
+    }
+
+    #[test]
+    fn deepseek_models_migrate_from_legacy_strings() {
+        let json = r#"{
+            "colorScheme":"light",
+            "language":"zh-CN",
+            "deepseekModels":"deepseek-chat\nmy-finetune",
+            "deepseekDisabledModels":"my-finetune, deepseek-chat",
+            "deepseekCustomModels":"my-finetune"
+        }"#;
+        let mut settings: AppSettings = serde_json::from_str(json).expect("deserialize legacy");
+        assert_eq!(settings.deepseek_models.len(), 2);
+        assert!(settings
+            .deepseek_models
+            .iter()
+            .all(|entry| !entry.disabled && !entry.custom));
+
+        settings.migrate_legacy_deepseek_models();
+        let chat = &settings.deepseek_models[0];
+        assert_eq!(chat.id, "deepseek-chat");
+        assert!(chat.disabled);
+        assert!(!chat.custom);
+        let finetune = &settings.deepseek_models[1];
+        assert_eq!(finetune.id, "my-finetune");
+        assert!(finetune.disabled);
+        assert!(finetune.custom);
+
+        // Legacy keys are cleared and no longer serialized.
+        let persisted = serde_json::to_value(&settings).expect("serialize");
+        assert!(persisted.get("deepseekDisabledModels").is_none());
+        assert!(persisted.get("deepseekCustomModels").is_none());
+        assert_eq!(persisted["deepseekModels"][1]["id"], "my-finetune");
+        assert_eq!(persisted["deepseekModels"][1]["custom"], true);
     }
 }

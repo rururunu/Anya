@@ -1,0 +1,22 @@
+{
+  "id": "terminal",
+  "name": "Terminal",
+  "version": "0.3.0",
+  "role": "ui",
+  "description": "Official workbench terminal. 官方侧栏终端（ConPTY + xterm）。",
+  "entry": "ui/index.html",
+  "icon": "ui/icon.svg",
+  "about": "ui/about.md",
+  "ui": { "entry": "ui/src/activate.js" },
+  "host": { "entry": "host/main.ts" },
+  "contributes": {
+    "sidebar": true,
+    "window": false,
+    "agent": {
+      "tools": true,
+      "hooks": ["on_turn_end"],
+      "prompt": "The terminal plugin exposes plugin_terminal__run to execute a command in a short-lived shell and return stdout/stderr."
+    }
+  },
+  "permissions": ["pty", "run", "ui.workbench", "agent.tools", "agent.prompt", "storage"]
+}

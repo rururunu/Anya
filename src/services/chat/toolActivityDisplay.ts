@@ -8,8 +8,10 @@ const HIDE_RESULT_TOOLS = new Set([
   "list_folder",
   "find_files",
   "search_files",
+  "Grep",
   "list_symbols",
   "fetch_url",
+  "ask_user",
 ]);
 
 const FILE_TOOLS = new Set([
@@ -24,6 +26,7 @@ const FILE_TOOLS = new Set([
 
 const SEARCH_TOOLS = new Set([
   "search_files",
+  "Grep",
   "grep",
   "list_symbols",
   "fetch_url",

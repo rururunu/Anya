@@ -166,6 +166,7 @@ import {
   parentSessionId,
   rootSessionId,
 } from "@/services/chat/subagentSession";
+import { isPluginAgentSessionId } from "@/services/chat/pluginSession";
 import { tr } from "@/services/i18n";
 import type { ChatSessionSummary } from "@/types/chat";
 import type { AppLanguage } from "@/types/setting";
@@ -269,7 +270,10 @@ onBeforeUnmount(() => {
 const sessionPool = computed(() => props.allSessions ?? props.sessions);
 
 const rootSessions = computed(() =>
-  props.sessions.filter((session) => !isSubagentSessionId(session.sessionId)),
+  props.sessions.filter(
+    (session) =>
+      !isSubagentSessionId(session.sessionId) && !isPluginAgentSessionId(session.sessionId),
+  ),
 );
 
 function archiveVisual(sessionId: string) {

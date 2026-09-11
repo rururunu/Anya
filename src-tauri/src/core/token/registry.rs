@@ -48,7 +48,6 @@ impl Default for TokenizerRegistry {
         registry.register_provider("openai", Arc::clone(&openai));
         registry.register_provider("deepseek", deepseek);
         registry.register_prefix("gemini-", Arc::clone(&estimated));
-        registry.register_provider("antigravity", estimated);
         registry
     }
 }

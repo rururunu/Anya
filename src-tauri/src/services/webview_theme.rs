@@ -5,7 +5,13 @@ use crate::models::settings::AppSettings;
 /// Keep WebView2 on the light color-scheme so native paints are not inverted.
 /// Dark appearance comes from CSS tokens on `html[data-theme="dark"]`.
 pub fn apply_webview_theme(app: &AppHandle, _settings: &AppSettings) {
-    for (_, window) in app.webview_windows() {
+    for (label, window) in app.webview_windows() {
+        if label == "workbench" {
+            // Workbench manages its own DWM backdrop & dark mode in workbench_glass.
+            // Calling window.set_theme() here resets DWMWA_SYSTEMBACKDROP_TYPE, causing
+            // the acrylic blur to flash and revert to opaque.
+            continue;
+        }
         if let Err(error) = window.set_theme(Some(Theme::Light)) {
             tracing::warn!(
                 label = %window.label(),

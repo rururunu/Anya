@@ -7,7 +7,7 @@
         <SettingsPageHeader :title="t('settings.provider.title')" />
 
         <div class="settings-nav-list">
-          <button type="button" class="settings-nav-row" @click="currentView = 'deepseek'">
+          <button type="button" class="settings-nav-row" @click="startEditDeepSeek">
             <div class="settings-nav-row-left">
               <div class="settings-nav-row-icon">
                 <DeepSeekIcon :size="18" />
@@ -23,24 +23,6 @@
                 :class="{ 'is-configured': isDeepSeekConfigured }"
               >
                 {{ statusLabel(isDeepSeekConfigured) }}
-              </span>
-              <ChevronRight class="size-4 text-muted-foreground arrow-icon" />
-            </div>
-          </button>
-
-          <button type="button" class="settings-nav-row" @click="openGemini">
-            <div class="settings-nav-row-left">
-              <div class="settings-nav-row-icon">
-                <GeminiIcon :size="18" />
-              </div>
-              <div class="settings-nav-row-copy">
-                <h3>{{ t("settings.provider.gemini") }}</h3>
-                <p>{{ geminiSubtitle }}</p>
-              </div>
-            </div>
-            <div class="settings-nav-row-right">
-              <span class="settings-status-badge" :class="{ 'is-configured': isGeminiConfigured }">
-                {{ statusLabel(isGeminiConfigured) }}
               </span>
               <ChevronRight class="size-4 text-muted-foreground arrow-icon" />
             </div>
@@ -129,7 +111,7 @@
         <div class="edit-form border-t border-border pt-4">
           <div class="field-row">
             <label>{{ t("settings.provider.apiKey") }}</label>
-            <SecretInput v-model="deepseekKey" placeholder="sk-..." @blur="saveDeepSeek" />
+            <SecretInput v-model="deepseekKey" placeholder="sk-..." @blur="onDeepSeekKeyBlur" />
             <p class="field-hint">
               {{ t("settings.provider.getApiKey") }}
               <button
@@ -142,81 +124,22 @@
             </p>
           </div>
 
+          <ProviderModelList
+            :models="deepseekModelIds"
+            :disabled-models="deepseekDisabledIds"
+            :fetching="fetchingDeepSeekModels"
+            :can-fetch="canFetchDeepSeekModels"
+            :fetch-error="fetchDeepSeekModelsError"
+            @fetch="fetchDeepSeekRemoteModels"
+            @add="addDeepSeekModel"
+            @remove="removeDeepSeekModel"
+            @toggle-disabled="toggleDeepSeekModelDisabled"
+          />
+
           <div class="form-actions">
             <Button size="sm" class="h-8 w-full gap-1.5" @click="saveDeepSeekAndGoBack">
               <Save class="size-3.5" />
               {{ t("settings.provider.save") }}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div v-else-if="currentView === 'gemini'" key="gemini" class="view-container">
-        <div class="back-btn-row">
-          <Button
-            variant="ghost"
-            size="sm"
-            class="h-8 gap-1.5 pl-1.5 text-muted-foreground hover:text-foreground back-btn"
-            @click="currentView = 'list'"
-          >
-            <ChevronLeft class="size-4" />
-            {{ t("settings.provider.back") }}
-          </Button>
-        </div>
-        <header class="view-header edit-header">
-          <div class="header-details">
-            <div class="edit-title-row">
-              <GeminiIcon :size="18" class="edit-title-icon" />
-              <h2>{{ t("settings.provider.gemini") }}</h2>
-            </div>
-            <p>{{ t("settings.provider.geminiDescription") }}</p>
-          </div>
-        </header>
-
-        <div class="edit-form border-t border-border pt-4">
-          <div class="oauth-status">
-            <p class="oauth-status-label">{{ t("settings.provider.geminiAccount") }}</p>
-            <p class="oauth-status-value">
-              {{
-                isGeminiConfigured
-                  ? settingStore.geminiOauth.email || t("settings.provider.configured")
-                  : t("settings.provider.notConfigured")
-              }}
-            </p>
-            <p v-if="geminiError" class="oauth-error">{{ geminiError }}</p>
-          </div>
-
-          <div class="form-actions">
-            <Button
-              v-if="!isGeminiConfigured && !geminiBusy"
-              size="sm"
-              class="h-8 w-full gap-1.5"
-              @click="loginGemini"
-            >
-              {{ t("settings.provider.geminiLogin") }}
-            </Button>
-            <template v-else-if="!isGeminiConfigured && geminiBusy">
-              <Button size="sm" class="h-8 flex-1 gap-1.5" disabled>
-                {{ t("settings.provider.geminiLoggingIn") }}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                class="h-8 flex-1 gap-1.5"
-                @click="cancelGeminiLogin"
-              >
-                {{ t("settings.provider.geminiCancelLogin") }}
-              </Button>
-            </template>
-            <Button
-              v-else
-              variant="outline"
-              size="sm"
-              class="h-8 w-full gap-1.5"
-              :disabled="geminiBusy"
-              @click="logoutGemini"
-            >
-              {{ t("settings.provider.geminiLogout") }}
             </Button>
           </div>
         </div>
@@ -314,118 +237,20 @@
             <SecretInput v-model="customKey" placeholder="sk-..." @blur="saveCustom" />
           </div>
 
-          <div class="field-row">
-            <div class="models-header-row">
-              <label>{{ t("settings.provider.modelsList") }}</label>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                class="h-7 gap-1 text-xs"
-                :disabled="fetchingModels || !canFetchModels"
-                @click="fetchRemoteModels"
-              >
-                <RefreshCw class="size-3.5" :class="{ spinning: fetchingModels }" />
-                {{
-                  fetchingModels
-                    ? t("settings.provider.fetchingModels")
-                    : t("settings.provider.fetchModels")
-                }}
-              </Button>
-            </div>
-            <p class="field-hint">{{ t("settings.provider.modelsHint") }}</p>
-            <p v-if="fetchModelsError" class="oauth-error">{{ fetchModelsError }}</p>
-            <div class="models-editor">
-              <div class="models-add-row">
-                <Input
-                  ref="modelDraftInputRef"
-                  v-model="customModelDraft"
-                  :placeholder="t('settings.provider.modelsPlaceholder')"
-                  class="h-8 min-w-0 flex-1 text-xs font-mono"
-                  @keydown.enter.exact.prevent="addCustomModel"
-                />
-                <Button type="button" size="sm" class="h-8 gap-1 shrink-0" @click="addCustomModel">
-                  <Plus class="size-3.5" />
-                  {{ t("settings.provider.addModel") }}
-                </Button>
-              </div>
-
-              <ul
-                v-if="customModelList.length > 0"
-                class="models-list"
-                :aria-label="t('settings.provider.modelsList')"
-              >
-                <li
-                  v-for="(model, index) in customModelList"
-                  :key="`${model}-${index}`"
-                  class="model-item"
-                  :class="{ 'is-disabled': isModelDisabled(model) }"
-                >
-                  <component
-                    :is="modelBrandIcon(model)"
-                    v-if="modelBrandIcon(model)"
-                    :size="14"
-                    class="model-row-icon"
-                    aria-hidden="true"
-                  />
-                  <span v-else class="model-row-icon-dot" aria-hidden="true" />
-                  <code class="model-id">{{ model }}</code>
-                  <Select
-                    :model-value="modelProtocolValue(model)"
-                    @update:model-value="(value) => onModelProtocolChange(model, value)"
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      class="model-protocol-select w-[8.75rem]"
-                      :aria-label="t('settings.provider.modelProtocol')"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="inherit">
-                        {{ t("settings.provider.modelProtocolUnset") }}
-                      </SelectItem>
-                      <SelectItem value="chatCompletions">
-                        {{ t("settings.provider.modelProtocolChatCompletions") }}
-                      </SelectItem>
-                      <SelectItem value="responses">
-                        {{ t("settings.provider.modelProtocolResponses") }}
-                      </SelectItem>
-                      <SelectItem value="anthropicMessages">
-                        {{ t("settings.provider.modelProtocolAnthropic") }}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <div class="model-item-actions">
-                    <SettingsToggle
-                      compact
-                      :model-value="!isModelDisabled(model)"
-                      :aria-label="
-                        isModelDisabled(model)
-                          ? t('settings.provider.enableModel')
-                          : t('settings.provider.disableModel')
-                      "
-                      :title="
-                        isModelDisabled(model)
-                          ? t('settings.provider.enableModel')
-                          : t('settings.provider.disableModel')
-                      "
-                      @update:model-value="() => toggleModelDisabled(model)"
-                    />
-                    <button
-                      type="button"
-                      class="model-remove"
-                      :aria-label="t('settings.provider.removeModel')"
-                      @click="removeCustomModel(index)"
-                    >
-                      <X class="size-3.5" />
-                    </button>
-                  </div>
-                </li>
-              </ul>
-              <p v-else class="models-empty">{{ t("settings.provider.modelsEmpty") }}</p>
-            </div>
-          </div>
+          <ProviderModelList
+            :models="customModelList"
+            :disabled-models="customDisabledModels"
+            :fetching="fetchingModels"
+            :can-fetch="canFetchModels"
+            :fetch-error="fetchModelsError"
+            :supports-protocol-select="true"
+            :model-protocols="customModelProtocols"
+            @fetch="fetchRemoteModels"
+            @add="addCustomModel"
+            @remove="removeCustomModel"
+            @toggle-disabled="toggleModelDisabled"
+            @protocol-change="onModelProtocolChange"
+          />
 
           <div class="form-actions">
             <Button size="sm" class="h-8 w-full gap-1.5" @click="saveCustomAndGoBack">
@@ -441,11 +266,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
-import { Globe2, ChevronLeft, ChevronRight, Plus, Trash2, Save, X, RefreshCw } from "@lucide/vue";
+import { computed, ref, watch } from "vue";
+import { Globe2, ChevronLeft, ChevronRight, Plus, Trash2, Save } from "@lucide/vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
-import GeminiIcon from "@/components/icons/GeminiIcon.vue";
+import ProviderModelList from "@/components/settings/ProviderModelList.vue";
 import { useSettingStore } from "@/stores/setting";
 import { useChatModelStore } from "@/stores/chatModel";
 import { Button } from "@/components/ui/button";
@@ -453,27 +278,26 @@ import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
-import SettingsToggle from "@/components/settings/SettingsToggle.vue";
-import {
-  geminiOauthCancelLogin,
-  geminiOauthLogin,
-  geminiOauthLogout,
-  listCustomProviderModels,
-} from "@/services/ipc";
+import { listCustomProviderModels, listDeepSeekModels } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import type { SettingsI18nKey } from "@/services/locales/settings";
-import type { CustomProviderConfig, ModelWireProtocol, ProviderApiProtocol } from "@/types/setting";
+import type {
+  CustomProviderConfig,
+  ModelWireProtocol,
+  ProviderApiProtocol,
+  ProviderModelEntry,
+} from "@/types/setting";
 import {
   DEFAULT_PROVIDER_API_PROTOCOL,
   normalizeModelProtocol,
   normalizeProviderApiProtocol,
 } from "@/types/setting";
-import { getModelIcon } from "@/lib/providerIcons";
 import {
   isCustomProviderConfigured,
   looksLikeHttpUrl,
   parseProviderModels,
   serializeProviderModels,
+  syncRemoteModels,
 } from "@/lib/providerPresets";
 import {
   ensureProviderFavicon,
@@ -507,15 +331,24 @@ async function openExternalUrl(url: string) {
 }
 
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
-const modelDraftInputRef = ref<{ $el?: HTMLElement } | null>(null);
 
-const currentView = ref<"list" | "deepseek" | "gemini" | "custom">("list");
+const currentView = ref<"list" | "deepseek" | "custom">("list");
 const editingProviderId = ref<string | null>(null);
 const customPresetId = ref<string | undefined>(undefined);
 
 const deepseekKey = ref(settingStore.deepseekApiKey);
-const geminiBusy = ref(false);
-const geminiError = ref("");
+const deepseekModels = ref<ProviderModelEntry[]>(cloneModelEntries(settingStore.deepseekModels));
+const deepseekModelIds = computed(() => deepseekModels.value.map((entry) => entry.id));
+const deepseekDisabledIds = computed(
+  () => new Set(deepseekModels.value.filter((entry) => entry.disabled).map((entry) => entry.id)),
+);
+const fetchingDeepSeekModels = ref(false);
+const fetchDeepSeekModelsError = ref("");
+
+function cloneModelEntries(entries: ProviderModelEntry[]): ProviderModelEntry[] {
+  return entries.map((entry) => ({ ...entry }));
+}
+
 const fetchingModels = ref(false);
 const fetchModelsError = ref("");
 
@@ -524,7 +357,6 @@ const customUrl = ref("");
 const customKey = ref("");
 const customApiProtocol = ref<ProviderApiProtocol>(DEFAULT_PROVIDER_API_PROTOCOL);
 const customModelList = ref<string[]>([]);
-const customModelDraft = ref("");
 const customDisabledModels = ref<Set<string>>(new Set());
 const customModelProtocols = ref<Record<string, ModelWireProtocol>>({});
 
@@ -559,20 +391,10 @@ const canFetchModels = computed(
   () => looksLikeHttpUrl(customUrl.value) && !!customKey.value.trim(),
 );
 
+const canFetchDeepSeekModels = computed(() => !!deepseekKey.value.trim());
+
 const isDeepSeekConfigured = computed(() => {
   return !!settingStore.deepseekApiKey.trim();
-});
-
-const isGeminiConfigured = computed(() => {
-  const oauth = settingStore.geminiOauth;
-  return !!(oauth?.accessToken?.trim() || oauth?.refreshToken?.trim());
-});
-
-const geminiSubtitle = computed(() => {
-  if (isGeminiConfigured.value && settingStore.geminiOauth.email) {
-    return settingStore.geminiOauth.email;
-  }
-  return "Antigravity";
 });
 
 const isNewProvider = computed(() => {
@@ -588,16 +410,8 @@ function statusLabel(configured: boolean) {
   return configured ? t("settings.provider.configured") : t("settings.provider.notConfigured");
 }
 
-function modelBrandIcon(modelId: string) {
-  return getModelIcon({ id: modelId, displayName: undefined });
-}
-
 function isCustomConfigured(provider: CustomProviderConfig) {
   return isCustomProviderConfigured(provider);
-}
-
-function isModelDisabled(model: string): boolean {
-  return customDisabledModels.value.has(model);
 }
 
 function toggleModelDisabled(model: string) {
@@ -621,55 +435,92 @@ function customProviderSubtitle(provider: CustomProviderConfig) {
   return t("settings.provider.urlPlaceholder");
 }
 
-function openGemini() {
-  geminiError.value = "";
-  currentView.value = "gemini";
+function startEditDeepSeek() {
+  deepseekKey.value = settingStore.deepseekApiKey;
+  deepseekModels.value = cloneModelEntries(settingStore.deepseekModels);
+  fetchDeepSeekModelsError.value = "";
+  currentView.value = "deepseek";
+
+  // If no saved models, auto-fetch once from online if API key is configured.
+  if (deepseekModels.value.length === 0 && canFetchDeepSeekModels.value) {
+    void fetchDeepSeekRemoteModels();
+  }
 }
 
-async function loginGemini() {
-  geminiError.value = "";
-  geminiBusy.value = true;
-  try {
-    await geminiOauthLogin();
-    await settingStore.load();
-    await chatModelStore.refresh();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/sign-in was cancelled|sign-in was canceled|access_denied/i.test(message)) {
-      geminiError.value = message;
+async function onDeepSeekKeyBlur() {
+  await saveDeepSeek();
+  if (deepseekModels.value.length === 0 && canFetchDeepSeekModels.value) {
+    void fetchDeepSeekRemoteModels();
+  }
+}
+
+function toggleDeepSeekModelDisabled(model: string) {
+  const entry = deepseekModels.value.find((item) => item.id === model);
+  if (!entry) return;
+  entry.disabled = !entry.disabled;
+  void saveDeepSeek();
+}
+
+async function addDeepSeekModel(modelId: string) {
+  const ids = parseProviderModels(modelId);
+  if (ids.length === 0) return;
+  for (const id of ids) {
+    const existing = deepseekModels.value.find((entry) => entry.id === id);
+    if (existing) {
+      // Re-adding an existing id marks it as user-added and re-enables it.
+      existing.custom = true;
+      existing.disabled = false;
+    } else {
+      // User-added models start enabled.
+      deepseekModels.value.push({ id, disabled: false, custom: true });
     }
-  } finally {
-    geminiBusy.value = false;
   }
+  await saveDeepSeek();
 }
 
-async function cancelGeminiLogin() {
-  try {
-    await geminiOauthCancelLogin();
-  } catch {
-    // Login await will surface the cancel/timeout result.
-  }
+async function removeDeepSeekModel(index: number) {
+  deepseekModels.value.splice(index, 1);
+  await saveDeepSeek();
 }
 
-async function logoutGemini() {
-  geminiError.value = "";
-  geminiBusy.value = true;
+async function fetchDeepSeekRemoteModels() {
+  fetchDeepSeekModelsError.value = "";
+  if (!canFetchDeepSeekModels.value) {
+    fetchDeepSeekModelsError.value = t("settings.provider.fetchModelsFailed");
+    return;
+  }
+  fetchingDeepSeekModels.value = true;
   try {
-    await geminiOauthLogout();
-    await settingStore.load();
-    await chatModelStore.refresh();
+    const remoteIds = await listDeepSeekModels(deepseekKey.value.trim());
+    if (remoteIds.length === 0) {
+      fetchDeepSeekModelsError.value = t("settings.provider.fetchModelsFailed");
+      return;
+    }
+    deepseekModels.value = syncRemoteModels(deepseekModels.value, remoteIds);
+    await saveDeepSeek();
   } catch (error) {
-    geminiError.value = error instanceof Error ? error.message : String(error);
+    fetchDeepSeekModelsError.value =
+      error instanceof Error ? error.message : t("settings.provider.fetchModelsFailed");
   } finally {
-    geminiBusy.value = false;
+    fetchingDeepSeekModels.value = false;
   }
 }
 
 async function saveDeepSeek() {
-  if (deepseekKey.value.trim() === settingStore.deepseekApiKey) {
+  const nextKey = deepseekKey.value.trim();
+  const nextModels = cloneModelEntries(deepseekModels.value);
+
+  if (
+    nextKey === settingStore.deepseekApiKey &&
+    JSON.stringify(nextModels) === JSON.stringify(settingStore.deepseekModels)
+  ) {
     return;
   }
-  await settingStore.update({ deepseekApiKey: deepseekKey.value.trim() });
+
+  await settingStore.update({
+    deepseekApiKey: nextKey,
+    deepseekModels: nextModels,
+  });
   await chatModelStore.refresh();
 }
 
@@ -688,7 +539,6 @@ function startEditCustom(id: string) {
     customKey.value = provider.apiKey;
     customApiProtocol.value = normalizeProviderApiProtocol(provider.apiProtocol);
     customModelList.value = parseProviderModels(provider.models);
-    customModelDraft.value = "";
     customDisabledModels.value = new Set(parseProviderModels(provider.disabledModels ?? ""));
     customModelProtocols.value = cloneModelProtocols(provider.modelProtocols);
     fetchModelsError.value = "";
@@ -708,27 +558,15 @@ function addBlankCustomProvider() {
   customKey.value = "";
   customApiProtocol.value = DEFAULT_PROVIDER_API_PROTOCOL;
   customModelList.value = [];
-  customModelDraft.value = "";
   customDisabledModels.value = new Set();
   customModelProtocols.value = {};
   fetchModelsError.value = "";
   currentView.value = "custom";
 }
 
-async function focusModelDraft() {
-  await nextTick();
-  const instance = modelDraftInputRef.value as { $el?: HTMLElement } | null | undefined;
-  const root = instance?.$el;
-  const input = root instanceof HTMLInputElement ? root : root?.querySelector?.("input");
-  input?.focus();
-}
-
-async function addCustomModel() {
-  const ids = parseProviderModels(customModelDraft.value);
-  if (ids.length === 0) {
-    await focusModelDraft();
-    return;
-  }
+async function addCustomModel(modelId: string) {
+  const ids = parseProviderModels(modelId);
+  if (ids.length === 0) return;
   const next = [...customModelList.value];
   const nextDisabled = new Set(customDisabledModels.value);
   for (const id of ids) {
@@ -740,9 +578,7 @@ async function addCustomModel() {
   }
   customModelList.value = next;
   customDisabledModels.value = nextDisabled;
-  customModelDraft.value = "";
   await saveCustom();
-  await focusModelDraft();
 }
 
 async function removeCustomModel(index: number) {
@@ -855,10 +691,6 @@ async function saveCustomAndGoBack() {
 function onProtocolChange(value: unknown) {
   customApiProtocol.value = normalizeProviderApiProtocol(value);
   void saveCustom();
-}
-
-function modelProtocolValue(model: string): string {
-  return customModelProtocols.value[model] ?? "inherit";
 }
 
 function onModelProtocolChange(model: string, value: unknown) {
@@ -974,23 +806,6 @@ header.view-header p {
   flex-direction: column;
   gap: 8px;
   padding-top: 4px;
-}
-
-.models-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.spinning {
-  animation: provider-spin 0.8s linear infinite;
-}
-
-@keyframes provider-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .arrow-icon {
@@ -1112,124 +927,6 @@ header.view-header.edit-header {
   margin: 0;
   font-size: 12px;
   font-weight: 500;
-}
-
-.oauth-error {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--destructive, #ef4444);
-  line-height: 1.4;
-}
-
-.models-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.models-empty {
-  margin: 0;
-  padding: 10px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--muted-foreground);
-  text-align: center;
-}
-
-.models-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.model-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--sidebar) 55%, transparent);
-}
-
-.model-row-icon {
-  flex: none;
-  color: var(--foreground);
-  opacity: 0.9;
-}
-
-.model-row-icon-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex: none;
-  background: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
-}
-
-.model-item.is-disabled {
-  opacity: 0.55;
-}
-
-.model-id {
-  min-width: 0;
-  flex: 1;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  color: var(--foreground);
-  overflow-wrap: anywhere;
-}
-
-.model-item.is-disabled .model-id {
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, var(--muted-foreground) 60%, transparent);
-}
-
-.model-item-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.model-protocol-select {
-  width: 8.75rem;
-  flex: none;
-  font-size: 11px;
-}
-
-.model-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background-color 0.15s,
-    color 0.15s;
-}
-
-.model-remove:hover {
-  background: color-mix(in srgb, var(--destructive, #ef4444) 12%, transparent);
-  color: var(--destructive, #ef4444);
-}
-
-.models-add-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
 }
 
 .form-actions {

@@ -8,9 +8,9 @@ use crate::core::event::{BusEvent, EventBus};
 use crate::core::tools::context::{AskQuestion, TaskItem, Tool, ToolContext};
 use crate::core::tools::error::ToolError;
 
-const PLAN_MIN_STEPS: usize = 3;
-const PLAN_MAX_STEPS: usize = 8;
-const PLAN_MIN_STEP_CHARS: usize = 8;
+const PLAN_MIN_STEPS: usize = 1;
+const PLAN_MAX_STEPS: usize = 12;
+const PLAN_MIN_STEP_CHARS: usize = 4;
 
 pub(super) struct UpdateTasksTool {
     pub tasks: Arc<Mutex<Vec<TaskItem>>>,
@@ -22,7 +22,7 @@ impl Tool for UpdateTasksTool {
         "update_tasks"
     }
     fn description(&self) -> &str {
-        "Maintain the in-session task checklist. Call before multi-step work. Each item needs content + status (pending|in_progress|completed|cancelled). Keep exactly one in_progress; mark completed as you finish; skip for trivial one-step work. In plan mode, submit 3–8 pending steps only."
+        "Maintain the in-session task checklist. Call before multi-step work. Each item needs content + status (pending|in_progress|completed|cancelled). Keep exactly one in_progress; mark completed as you finish; skip for trivial one-step work. In plan mode, submit 1–12 pending steps only."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -47,10 +47,15 @@ impl Tool for UpdateTasksTool {
     }
     fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
         let parsed: Vec<TaskItem> = serde_json::from_value(args["tasks"].clone())?;
-        let plan_active = crate::core::tools::plan_mode::shared_plan_mode_store()
-            .is_active(ctx.root_session_id());
+        let plan_store = crate::core::tools::plan_mode::shared_plan_mode_store();
+        let plan_active = plan_store.is_active(ctx.root_session_id());
         if plan_active {
             validate_plan_tasks(&parsed)?;
+            if !plan_store.has_saved_plan(ctx.root_session_id()) {
+                return Err(ToolError::new(
+                    crate::core::tools::plan_mode::PLAN_TASKS_WITHOUT_SAVED_PLAN,
+                ));
+            }
         }
         {
             let mut guard = self.tasks.lock().map_err(|_| ToolError::new("task lock"))?;
@@ -91,7 +96,7 @@ fn validate_plan_tasks(tasks: &[TaskItem]) -> Result<(), ToolError> {
         let content = task.content.trim();
         if content.chars().count() < PLAN_MIN_STEP_CHARS {
             return Err(ToolError::new(
-                "each plan step must be concrete (at least 8 characters with an action and target)",
+                "each plan step must be concrete (at least 4 characters with an action and target)",
             ));
         }
         if !step_looks_concrete(content) {
@@ -107,11 +112,22 @@ fn step_looks_concrete(content: &str) -> bool {
     let lower = content.to_ascii_lowercase();
     let has_path = content.contains('/')
         || content.contains('\\')
-        || content.contains('.')
-            && content.chars().any(|c| c.is_ascii_alphanumeric());
+        || content.contains('.') && content.chars().any(|c| c.is_ascii_alphanumeric());
     let has_check = [
-        "test", "check", "verify", "typecheck", "lint", "build", "cargo", "pytest", "pnpm", "npm",
-        "验证", "测试", "检查", "构建",
+        "test",
+        "check",
+        "verify",
+        "typecheck",
+        "lint",
+        "build",
+        "cargo",
+        "pytest",
+        "pnpm",
+        "npm",
+        "验证",
+        "测试",
+        "检查",
+        "构建",
     ]
     .iter()
     .any(|marker| lower.contains(marker) || content.contains(marker));
@@ -143,11 +159,23 @@ fn step_looks_concrete(content: &str) -> bool {
         "删除",
         "检查",
         "更新",
+        "优化",
+        "重构",
+        "调整",
+        "配置",
+        "排查",
+        "设计",
+        "分析",
+        "处理",
+        "引入",
     ]
     .iter()
     .any(|marker| lower.contains(marker) || content.contains(marker));
-    (has_action && (has_path || has_check || content.split_whitespace().count() >= 3))
-        || (has_path && content.split_whitespace().count() >= 2)
+    let char_count = content.chars().count();
+    (has_action
+        && (has_path || has_check || content.split_whitespace().count() >= 3 || char_count >= 6))
+        || (has_path && (content.split_whitespace().count() >= 2 || char_count >= 6))
+        || char_count >= 12
 }
 
 pub(super) struct AskUserTool {
@@ -217,6 +245,155 @@ impl Tool for AskUserTool {
                 Err(_) => return Err(ToolError::new("ask_user timed out or disconnected")),
             }
         }
+    }
+}
+
+fn extract_plan_title(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(heading) = trimmed.strip_prefix('#') {
+            let title = heading.trim_start_matches('#').trim();
+            if !title.is_empty() {
+                return Some(title.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn slugify_plan_title(title: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for c in title.chars() {
+        if c.is_alphanumeric() {
+            slug.push(c);
+            prev_dash = false;
+        } else if (c == ' ' || c == '-' || c == '_' || c == '/') && !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    let trimmed = slug.trim_matches('-');
+    if trimmed.is_empty() {
+        "plan".to_string()
+    } else {
+        let chars: Vec<char> = trimmed.chars().take(40).collect();
+        chars.into_iter().collect()
+    }
+}
+
+pub(super) struct SavePlanTool {
+    pub event_bus: Arc<dyn EventBus>,
+}
+
+impl Tool for SavePlanTool {
+    fn name(&self) -> &str {
+        "save_plan"
+    }
+
+    fn description(&self) -> &str {
+        "Save a temporary markdown plan proposal before submitting task checklist. In plan mode, you must write the comprehensive implementation plan proposal here first. Provide a short semantic title summarizing the plan. The user will be able to review and preview this proposal in the sidebar before approving execution."
+    }
+
+    fn parameters_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short semantic title or slug for the plan (e.g. 'fix-scroll-position' or '用户登录鉴权'). Used to name the plan file."
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Full Markdown content of the implementation proposal, including background, risks/decisions, proposed changes grouped by component, and verification plan."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optional explicit relative path for the plan file. Defaults to .anya/plans/<timestamp>-<slug>.md."
+                }
+            },
+            "required": ["content"]
+        })
+    }
+
+    fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
+        let session_id = ctx.root_session_id();
+        if !crate::core::tools::plan_mode::shared_plan_mode_store().is_active(session_id) {
+            return Err(ToolError::new(
+                crate::core::tools::plan_mode::SAVE_PLAN_REQUIRES_PLAN_MODE,
+            ));
+        }
+
+        let content = args["content"]
+            .as_str()
+            .ok_or_else(|| ToolError::new("`content` must be a string"))?
+            .trim();
+
+        if content.is_empty() {
+            return Err(ToolError::new("plan content cannot be empty"));
+        }
+
+        let custom_path = args["path"]
+            .as_str()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+
+        let (clean_path, is_default_derived) = if let Some(p) = custom_path {
+            let clean = p.trim_start_matches(['/', '\\']);
+            if clean.contains("..") {
+                return Err(ToolError::new("path cannot contain `..`"));
+            }
+            (clean.to_string(), false)
+        } else {
+            let title = args["title"]
+                .as_str()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .or_else(|| extract_plan_title(content))
+                .unwrap_or_else(|| "plan".to_string());
+            let slug = slugify_plan_title(&title);
+            let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            (format!(".anya/plans/{timestamp}-{slug}.md"), true)
+        };
+
+        let full_path = if !ctx.workspace_root.as_os_str().is_empty() {
+            ctx.workspace_root.join(&clean_path)
+        } else {
+            std::env::temp_dir().join(&clean_path)
+        };
+
+        if let Some(parent) = full_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ToolError::new(format!("failed to create plan directory: {e}")))?;
+        }
+
+        std::fs::write(&full_path, content)
+            .map_err(|e| ToolError::new(format!("failed to write plan file: {e}")))?;
+
+        if is_default_derived {
+            let active_ptr = if !ctx.workspace_root.as_os_str().is_empty() {
+                ctx.workspace_root.join(".anya").join("plan.md")
+            } else {
+                std::env::temp_dir().join(".anya").join("plan.md")
+            };
+            if let Some(parent) = active_ptr.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&active_ptr, content);
+        }
+
+        crate::core::tools::plan_mode::shared_plan_mode_store().mark_plan_saved(session_id);
+        self.event_bus.emit(BusEvent::PlanUpdated {
+            session_id: session_id.to_string(),
+            path: clean_path.clone(),
+            content: content.to_string(),
+        });
+
+        Ok(format!(
+            "Saved plan proposal to `{clean_path}` ({} bytes). You may now call `update_tasks` with pending execution steps.",
+            content.len()
+        ))
     }
 }
 
@@ -325,14 +502,17 @@ mod tests {
 
     #[test]
     fn plan_tasks_reject_completed_and_shallow() {
-        let too_few = validate_plan_tasks(&[TaskItem {
-            content: "do it now please".into(),
+        let too_few = validate_plan_tasks(&[]).unwrap_err();
+        assert!(too_few.to_string().contains("1–12"));
+
+        let too_short = validate_plan_tasks(&[TaskItem {
+            content: "ok".into(),
             status: "pending".into(),
             active_form: None,
             level: 0,
         }])
         .unwrap_err();
-        assert!(too_few.to_string().contains("3–8"));
+        assert!(too_short.to_string().contains("at least 4 characters"));
 
         let completed = validate_plan_tasks(&[
             TaskItem {
@@ -368,7 +548,7 @@ mod tests {
                 level: 0,
             },
             TaskItem {
-                content: "Edit src/main.rs timeout".into(),
+                content: "优化滚动定位逻辑".into(),
                 status: "pending".into(),
                 active_form: None,
                 level: 0,
@@ -388,5 +568,151 @@ mod tests {
         assert!(evidence_looks_valid("src/main.rs"));
         assert!(evidence_looks_valid("cargo check -q"));
         assert!(!evidence_looks_valid("ok"));
+    }
+
+    fn make_test_ctx(root: std::path::PathBuf) -> ToolContext {
+        use crate::core::chat::conversation_manager::ConversationManager;
+        use std::sync::atomic::AtomicBool;
+        let db_path = std::env::temp_dir().join(format!("peek-test-{}.db", uuid::Uuid::new_v4()));
+        struct NullBus;
+        impl EventBus for NullBus {
+            fn emit(&self, _event: BusEvent) {}
+        }
+        ToolContext {
+            workspace_root: root,
+            request_context: Default::default(),
+            session_id: "test-session".into(),
+            assistant_message_id: "asst-1".into(),
+            conversation: Arc::new(ConversationManager::new(db_path)),
+            event_bus: Arc::new(NullBus),
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            ask_store: Arc::new(crate::core::tools::context::AskStore::new()),
+            path_permission_store: Arc::new(crate::core::tools::context::PathPermissionStore::new()),
+            registry: None,
+            provider: None,
+            subagent_depth: 0,
+            max_subagent_depth: 1,
+            subagent_id: None,
+            parent_activity_id: None,
+            app_handle: None,
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    #[test]
+    fn save_plan_validates_input_and_writes_file() {
+        struct MockBus;
+        impl EventBus for MockBus {
+            fn emit(&self, _event: BusEvent) {}
+        }
+        let tool = SavePlanTool {
+            event_bus: Arc::new(MockBus),
+        };
+        let tmp = std::env::temp_dir().join(format!("save-plan-test-{}", uuid::Uuid::new_v4()));
+        let mut ctx = make_test_ctx(tmp.clone());
+        ctx.session_id = format!("save-plan-ok-{}", uuid::Uuid::new_v4());
+        crate::core::tools::plan_mode::shared_plan_mode_store().set_active(&ctx.session_id, true);
+
+        let empty_args = json!({ "content": "   " });
+        let err = tool.execute(&ctx, empty_args).unwrap_err();
+        assert!(err.to_string().contains("cannot be empty"));
+
+        let traversal_args = json!({
+            "content": "# Test Plan",
+            "path": "../evil.md"
+        });
+        let err2 = tool.execute(&ctx, traversal_args).unwrap_err();
+        assert!(err2.to_string().contains("cannot contain `..`"));
+
+        let ok_args = json!({
+            "content": "# Implementation Plan\n\n- Step 1: Do something\n"
+        });
+        let res = tool.execute(&ctx, ok_args).unwrap();
+        assert!(res.contains(".anya/plans/"));
+        assert!(res.contains("Implementation-Plan.md"));
+        assert!(tmp.join(".anya").join("plan.md").exists());
+
+        let custom_title_args = json!({
+            "title": "用户登录鉴权改造",
+            "content": "实现登录鉴权\n"
+        });
+        let res2 = tool.execute(&ctx, custom_title_args).unwrap();
+        assert!(res2.contains("用户登录鉴权改造.md"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        crate::core::tools::plan_mode::shared_plan_mode_store().set_active(&ctx.session_id, false);
+    }
+
+    #[test]
+    fn save_plan_blocked_when_plan_mode_is_off() {
+        struct MockBus;
+        impl EventBus for MockBus {
+            fn emit(&self, _event: BusEvent) {}
+        }
+        let tool = SavePlanTool {
+            event_bus: Arc::new(MockBus),
+        };
+        let tmp = std::env::temp_dir().join(format!("save-plan-exec-{}", uuid::Uuid::new_v4()));
+        let mut ctx = make_test_ctx(tmp.clone());
+        ctx.session_id = format!("save-plan-exec-{}", uuid::Uuid::new_v4());
+        crate::core::tools::plan_mode::shared_plan_mode_store().set_active(&ctx.session_id, false);
+
+        let err = tool
+            .execute(
+                &ctx,
+                json!({ "content": "# Should not write during execution\n" }),
+            )
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("only available while plan mode is active"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn update_tasks_in_plan_mode_requires_prior_save_plan() {
+        struct NullBus;
+        impl EventBus for NullBus {
+            fn emit(&self, _event: BusEvent) {}
+        }
+
+        let session_id = format!("test-session-{}", uuid::Uuid::new_v4());
+        let tmp = std::env::temp_dir().join(format!("update-tasks-test-{}", uuid::Uuid::new_v4()));
+        let mut ctx = make_test_ctx(tmp.clone());
+        ctx.session_id = session_id.clone();
+
+        let plan_store = crate::core::tools::plan_mode::shared_plan_mode_store();
+        plan_store.set_active(&session_id, true);
+
+        let tool = UpdateTasksTool {
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            event_bus: Arc::new(NullBus),
+        };
+        let args = json!({
+            "tasks": [
+                { "content": "Read src/main.rs for entry", "status": "pending" },
+                { "content": "Run cargo check to verify", "status": "pending" }
+            ]
+        });
+
+        let err = tool.execute(&ctx, args.clone()).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("plan mode requires save_plan before update_tasks"));
+
+        let save_tool = SavePlanTool {
+            event_bus: Arc::new(NullBus),
+        };
+        save_tool
+            .execute(
+                &ctx,
+                json!({ "content": "# Implementation Plan\n\n- step" }),
+            )
+            .unwrap();
+
+        assert!(tool.execute(&ctx, args).is_ok());
+
+        plan_store.set_active(&session_id, false);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

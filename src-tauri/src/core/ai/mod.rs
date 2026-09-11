@@ -1,4 +1,3 @@
-pub mod antigravity;
 pub mod deepseek;
 pub mod embed;
 pub mod image_analysis;

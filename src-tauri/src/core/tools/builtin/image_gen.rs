@@ -234,7 +234,8 @@ Requires a provider configured under Settings → Image whose Base URL is the Im
         });
         lines.push(format!(
             "```anya-images\n{}\n```",
-            serde_json::to_string(&structured).unwrap_or_else(|_| "{\"version\":1,\"images\":[]}".into())
+            serde_json::to_string(&structured)
+                .unwrap_or_else(|_| "{\"version\":1,\"images\":[]}".into())
         ));
         Ok(lines.join("\n"))
     }
@@ -249,6 +250,9 @@ fn durable_output_dir(app: &tauri::AppHandle) -> Result<PathBuf, ToolError> {
 }
 
 fn workspace_output_dir(ctx: &ToolContext) -> Option<PathBuf> {
+    if ctx.request_context.workspace.is_none() {
+        return None;
+    }
     let root = &ctx.workspace_root;
     if root.as_os_str().is_empty() || !root.is_dir() {
         return None;
@@ -260,4 +264,79 @@ fn unique_stem(index: usize) -> String {
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
     let id = uuid::Uuid::new_v4().simple().to_string();
     format!("{stamp}-{}-{index}", &id[..8])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::tools::context::ToolContext;
+    use crate::runtime::conversation::ConversationManager;
+
+    struct NullEventBus;
+    impl crate::core::event::EventBus for NullEventBus {
+        fn emit(&self, _: crate::core::event::BusEvent) {}
+    }
+
+    #[test]
+    fn quick_ask_without_workspace_does_not_output_to_workspace_dir() {
+        let ctx = ToolContext {
+            workspace_root: std::env::temp_dir(),
+            request_context: Default::default(),
+            session_id: "quick-ask-session".into(),
+            assistant_message_id: "assistant".into(),
+            conversation: std::sync::Arc::new(ConversationManager::new(
+                std::env::temp_dir().join("test-chat.db"),
+            )),
+            event_bus: std::sync::Arc::new(NullEventBus),
+            tasks: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            ask_store: std::sync::Arc::new(crate::core::tools::context::AskStore::new()),
+            path_permission_store: std::sync::Arc::new(
+                crate::core::tools::context::PathPermissionStore::new(),
+            ),
+            registry: None,
+            provider: None,
+            subagent_depth: 0,
+            max_subagent_depth: 1,
+            subagent_id: None,
+            parent_activity_id: None,
+            app_handle: None,
+            cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        assert!(workspace_output_dir(&ctx).is_none());
+    }
+
+    #[test]
+    fn bound_workspace_outputs_to_anya_generated() {
+        let temp_dir = std::env::temp_dir();
+        let mut request_context: crate::core::runtime::RequestContext = Default::default();
+        request_context.set_workspace("test-ws".into(), &temp_dir);
+
+        let ctx = ToolContext {
+            workspace_root: temp_dir.clone(),
+            request_context,
+            session_id: "bound-session".into(),
+            assistant_message_id: "assistant".into(),
+            conversation: std::sync::Arc::new(ConversationManager::new(
+                temp_dir.join("test-chat-2.db"),
+            )),
+            event_bus: std::sync::Arc::new(NullEventBus),
+            tasks: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            ask_store: std::sync::Arc::new(crate::core::tools::context::AskStore::new()),
+            path_permission_store: std::sync::Arc::new(
+                crate::core::tools::context::PathPermissionStore::new(),
+            ),
+            registry: None,
+            provider: None,
+            subagent_depth: 0,
+            max_subagent_depth: 1,
+            subagent_id: None,
+            parent_activity_id: None,
+            app_handle: None,
+            cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        assert_eq!(
+            workspace_output_dir(&ctx),
+            Some(temp_dir.join(".anya").join("generated"))
+        );
+    }
 }

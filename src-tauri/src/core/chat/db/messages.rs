@@ -1,4 +1,6 @@
-use super::tool_activity::{serialize_tool_activities, serialize_tool_calls, serialize_work_timeline};
+use super::tool_activity::{
+    serialize_tool_activities, serialize_tool_calls, serialize_work_timeline,
+};
 use crate::core::runtime::stream::ToolCallPayload;
 use crate::core::runtime::{ChatMessage, MessageStatus, Role, ToolActivity};
 use crate::core::token::TokenUsage;

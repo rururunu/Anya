@@ -16,8 +16,10 @@
           var isPeek =
             hash.indexOf("#/overlay") === 0 ||
             hash.indexOf("#/image-preview") === 0 ||
+            hash.indexOf("#/desktop-pet") === 0 ||
             /\/#\/overlay(?:\b|\/|\?|$)/.test(href) ||
-            /\/#\/image-preview(?:\b|\/|\?|$)/.test(href);
+            /\/#\/image-preview(?:\b|\/|\?|$)/.test(href) ||
+            /\/#\/desktop-pet(?:\b|\/|\?|$)/.test(href);
           var root = document.documentElement;
           if (isPeek) {
             root.classList.add("peek-window", "peek-boot");
@@ -68,7 +70,9 @@
 
       /* Alt+Alt / peek: transparent shell, no workbench boot animation. */
       html.peek-boot,
-      html.peek-boot body {
+      html.peek-boot body,
+      html.peek-window,
+      html.peek-window body {
         background: transparent !important;
       }
 

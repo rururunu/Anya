@@ -1,15 +1,15 @@
 use super::constants::*;
 use super::output::{
-    append_bounded, format_job_status, format_job_status_with_output,
-    spawn_output_reader, take_tail_chars,
+    append_bounded, format_job_status, format_job_status_with_output, spawn_output_reader,
+    take_tail_chars,
 };
 use super::process::terminate_process_tree;
 use crate::core::tools::context::ToolContext;
 use crate::core::tools::error::ToolError;
-use crate::core::tools::shell_judge::{judge_shell_completion, CompletionVerdict};
-use crate::runtime::terminal::prepare_powershell;
 #[cfg(windows)]
 use crate::core::tools::sandbox::restricted_process;
+use crate::core::tools::shell_judge::{judge_shell_completion, CompletionVerdict};
+use crate::runtime::terminal::prepare_powershell;
 use std::collections::HashMap;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};

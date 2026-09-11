@@ -42,6 +42,7 @@ pub fn build_activity_view(
         | "list_folder"
         | "find_files"
         | "search_files"
+        | "Grep"
         | "list_symbols"
         | "search_codebase"
         | "fetch_url"
@@ -87,6 +88,7 @@ fn should_hide_result_detail(tool_name: &str, result: &str) -> bool {
             | "list_folder"
             | "find_files"
             | "search_files"
+            | "Grep"
             | "list_symbols"
             | "search_codebase"
             | "fetch_url"
@@ -138,6 +140,7 @@ fn activity_kind(tool_name: &str) -> String {
         | "list_folder"
         | "find_files"
         | "search_files"
+        | "Grep"
         | "list_symbols"
         | "search_codebase"
         | "lsp"
@@ -169,6 +172,7 @@ fn activity_kind(tool_name: &str) -> String {
         | "ppt_insert_text"
         | "ppt_save_presentation" => "edit".into(),
         "generate_image" => "image".into(),
+        other if other.ends_with("__screenshot") => "image".into(),
         _ => "other".into(),
     }
 }
@@ -205,9 +209,15 @@ fn build_title(tool_name: &str, args: &Value) -> String {
             "Find {}",
             truncate(args["pattern"].as_str().unwrap_or("*"), 80)
         ),
-        "search_files" => format!(
+        "search_files" | "Grep" => format!(
             "Search {}",
-            truncate(args["pattern"].as_str().unwrap_or(""), 80)
+            truncate(
+                args["pattern"]
+                    .as_str()
+                    .or_else(|| args["query"].as_str())
+                    .unwrap_or(""),
+                80
+            )
         ),
         "list_symbols" => format!("Symbols {}", display_path(path_arg(args))),
         "search_codebase" => {
@@ -307,6 +317,15 @@ fn build_title(tool_name: &str, args: &Value) -> String {
                 "Generate image".into()
             } else {
                 format!("Generate {prompt}")
+            }
+        }
+        "manage_plugin" => {
+            let action = args["action"].as_str().unwrap_or("plugin");
+            let id = args["id"].as_str().unwrap_or("");
+            if id.is_empty() {
+                format!("Plugin {action}")
+            } else {
+                format!("Plugin {action} {id}")
             }
         }
         "update_tasks" | "todo_write" => "Update tasks".into(),
@@ -559,7 +578,7 @@ fn line_range(args: &Value) -> Option<String> {
     if let Some(end) = end_line {
         return Some(format!("L{offset}-{}", end.max(offset)));
     }
-    let limit = args["limit"].as_u64().unwrap_or(200).max(1);
+    let limit = args["limit"].as_u64().unwrap_or(500).max(1);
     let end = offset.saturating_add(limit).saturating_sub(1);
     Some(format!("L{offset}-{end}"))
 }
@@ -729,12 +748,16 @@ mod tests {
         let view = build_activity_view(
             "generate_image",
             &json!({ "prompt": "a cat" }),
-            Some("tool error: Image API returned 401 from https://api.example/v1/images/generations"),
+            Some(
+                "tool error: Image API returned 401 from https://api.example/v1/images/generations",
+            ),
         );
         assert_eq!(view.kind, "image");
         assert_eq!(
             view.detail.as_deref(),
-            Some("tool error: Image API returned 401 from https://api.example/v1/images/generations")
+            Some(
+                "tool error: Image API returned 401 from https://api.example/v1/images/generations"
+            )
         );
     }
 

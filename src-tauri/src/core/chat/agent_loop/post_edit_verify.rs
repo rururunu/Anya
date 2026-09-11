@@ -176,6 +176,8 @@ mod tests {
         assert!(shell_exit_code_ok("exit_code: 0\nok"));
         assert!(!shell_exit_code_ok("exit_code: 1\nerror"));
         assert!(!shell_exit_code_ok("no exit line here"));
-        assert!(shell_exit_code_ok("status: done\nexit_code: Some(0)\nelapsed: 1s"));
+        assert!(shell_exit_code_ok(
+            "status: done\nexit_code: Some(0)\nelapsed: 1s"
+        ));
     }
 }

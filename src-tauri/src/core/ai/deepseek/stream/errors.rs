@@ -17,7 +17,11 @@ pub(crate) fn user_facing_stream_error(error: &ProviderError) -> String {
     match error {
         ProviderError::Cancelled => "Request cancelled".to_string(),
         ProviderError::Message(message) => {
-            if message.starts_with("DeepSeek API") {
+            if extract_http_status(message).is_some()
+                || message.contains(" API ")
+                || message.starts_with("API ")
+                || message.starts_with("DeepSeek API")
+            {
                 return message.clone();
             }
             if message.contains("API Key") {
@@ -80,9 +84,22 @@ pub(super) fn is_retryable_stream_error(error: &ProviderError) -> bool {
     }
 }
 
+pub(super) fn extract_http_status(message: &str) -> Option<u16> {
+    let rest = if let Some((_prefix, after)) = message.split_once(" API ") {
+        after
+    } else if let Some(after) = message.strip_prefix("API ") {
+        after
+    } else if let Some(after) = message.strip_prefix("DeepSeek API ") {
+        after
+    } else {
+        return None;
+    };
+    let token = rest.split_whitespace().next()?;
+    token.trim_end_matches(':').parse().ok()
+}
+
 pub(super) fn deepseek_http_status(message: &str) -> Option<u16> {
-    let rest = message.strip_prefix("DeepSeek API ")?;
-    rest.split_whitespace().next()?.parse().ok()
+    extract_http_status(message)
 }
 
 pub(super) fn map_read_error(message: String, emitted: bool) -> ProviderError {

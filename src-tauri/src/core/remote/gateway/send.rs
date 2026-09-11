@@ -11,7 +11,10 @@ pub(super) fn app_version() -> Option<String> {
 }
 
 /// 认证阶段（读写分离前）直接写 WS；之后统一走 `Outbound` 队列。
-pub(super) async fn send_ws_msg<S>(ws: &mut WebSocketStream<S>, msg: &ServerMessage) -> Result<(), String>
+pub(super) async fn send_ws_msg<S>(
+    ws: &mut WebSocketStream<S>,
+    msg: &ServerMessage,
+) -> Result<(), String>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {

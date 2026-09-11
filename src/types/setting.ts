@@ -1,9 +1,33 @@
 export type AppLanguage = "zh-CN" | "en-US" | "ja-JP" | "ru-RU" | "de-DE" | "fr-FR" | "ko-KR";
 
-/** Built-in color scheme id (matches html[data-theme] and Rust ColorScheme). */
-export type ThemeId = "light" | "dark";
+/** Built-in presets available out of the box. */
+export type BuiltinThemeId = "light" | "dark";
+
+/** Color scheme or custom theme identifier. */
+export type ThemeId = BuiltinThemeId | (string & {});
 
 export type ColorScheme = ThemeId;
+
+export interface ThemeBackgroundConfig {
+  /** Local file path, path: URI, or URL to background image */
+  image?: string;
+  /** Background opacity (0.05 to 1.0, default 0.2) */
+  opacity?: number;
+  /** Blur radius in px (0 to 30, default 0) */
+  blur?: number;
+  /** Sizing fit: cover, contain, fill, or center */
+  fit?: "cover" | "contain" | "fill" | "center";
+}
+
+export interface CustomThemeConfig {
+  id: string;
+  name: string;
+  mode: "light" | "dark";
+  description?: string;
+  tokens: Record<string, string>;
+  background?: ThemeBackgroundConfig;
+  updatedAt: number;
+}
 
 export type ReasoningEffort =
   "disabled" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -80,7 +104,8 @@ export type CategoryId =
   | "agent"
   | "mcp"
   | "skills"
-  | "plugins"
+  | "pinTools"
+  | "pet"
   | "workspace"
   | "history"
   | "archive"
@@ -165,44 +190,20 @@ export interface ImageStyleTemplate {
   exampleImage?: string;
 }
 
-export interface GeminiOAuthSettings {
-  clientId: string;
-  clientSecret: string;
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number;
-  email: string;
-  projectId: string;
-}
-
-export interface GeminiAuthStatus {
-  loggedIn: boolean;
-  email: string;
-  hasClientSecret: boolean;
-  clientId: string;
-}
-
-export const DEFAULT_GEMINI_OAUTH_CLIENT_ID = "";
-
-export const DEFAULT_GEMINI_OAUTH_CLIENT_SECRET = "";
-
-export function defaultGeminiOAuthSettings(): GeminiOAuthSettings {
-  return {
-    clientId: DEFAULT_GEMINI_OAUTH_CLIENT_ID,
-    clientSecret: DEFAULT_GEMINI_OAUTH_CLIENT_SECRET,
-    accessToken: "",
-    refreshToken: "",
-    expiresAt: 0,
-    email: "",
-    projectId: "",
-  };
+/** A model entry on the built-in DeepSeek provider (id + enabled state + origin). */
+export interface ProviderModelEntry {
+  id: string;
+  /** Switched off by the user; hidden from pickers and refused at send time. */
+  disabled: boolean;
+  /** Added manually by the user rather than fetched from `/models`; survives refetches. */
+  custom: boolean;
 }
 
 export interface AppSettings {
   colorScheme: ColorScheme;
   language: AppLanguage;
   deepseekApiKey: string;
-  geminiOauth: GeminiOAuthSettings;
+  deepseekModels: ProviderModelEntry[];
   memoryEnabled: boolean;
   mem0ApiKey: string;
   mem0UserId: string;
@@ -273,13 +274,17 @@ export interface AppSettings {
   semanticSearchApiModel: string;
   /** First-run welcome wizard completed. */
   onboardingCompleted: boolean;
+  /** User-defined or Agent-created custom themes. */
+  customThemes: CustomThemeConfig[];
+  /** User custom background (global / fallback for default themes). */
+  customBackground?: ThemeBackgroundConfig;
 }
 
 export interface AppSettingsPatch {
   colorScheme?: ColorScheme;
   language?: AppLanguage;
   deepseekApiKey?: string;
-  geminiOauth?: GeminiOAuthSettings;
+  deepseekModels?: ProviderModelEntry[];
   memoryEnabled?: boolean;
   mem0ApiKey?: string;
   mem0UserId?: string;
@@ -316,6 +321,12 @@ export interface AppSettingsPatch {
   multiModelCollaboration?: boolean;
   collaborationModels?: string[];
   minimalCoding?: boolean;
+  allowOutsideWorkspaceWrites?: boolean;
+  restrictedShell?: boolean;
+  shellTimeoutSecs?: number;
+  shellStallTimeoutSecs?: number;
+  autoVerifyAfterEdits?: boolean;
+  pendingRestrictedShellUpgradeNotice?: boolean;
   zoom?: number;
   hardwareAccelerationEnabled?: boolean;
   primaryHotkey?: string;
@@ -332,6 +343,8 @@ export interface AppSettingsPatch {
   semanticSearchApiKey?: string;
   semanticSearchApiModel?: string;
   onboardingCompleted?: boolean;
+  customThemes?: CustomThemeConfig[];
+  customBackground?: ThemeBackgroundConfig | null;
 }
 
 export interface ModelSelection {
@@ -556,7 +569,7 @@ export const toolApprovalModeOptions: SelectOption<ToolApprovalMode>[] = [
   },
   {
     value: "alwaysAllow",
-    label: { "zh-CN": "一律允许", "en-US": "Always allow" },
+    label: { "zh-CN": "全开", "en-US": "Always" },
   },
 ];
 

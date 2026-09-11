@@ -6,7 +6,10 @@ use crate::app_state::AppState;
 
 use crate::core::remote::upload::{MAX_CHUNK_BYTES, MAX_UPLOAD_BYTES};
 
-pub(super) fn workspace_snapshot_payload(app: &AppHandle, session_id: Option<&str>) -> serde_json::Value {
+pub(super) fn workspace_snapshot_payload(
+    app: &AppHandle,
+    session_id: Option<&str>,
+) -> serde_json::Value {
     let Some(workspace) = resolve_workspace(app, session_id, None) else {
         return json!({
             "workspaceId": null,
@@ -157,7 +160,9 @@ fn resolve_shared_asset(app: &AppHandle, raw_path: &str) -> Option<std::path::Pa
     }
     let canonical = std::fs::canonicalize(candidate).ok()?;
     for root in shared_asset_roots(app) {
-        let Ok(root) = std::fs::canonicalize(&root) else { continue };
+        let Ok(root) = std::fs::canonicalize(&root) else {
+            continue;
+        };
         if canonical.starts_with(&root) {
             return Some(canonical);
         }

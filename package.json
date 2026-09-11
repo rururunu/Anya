@@ -1,7 +1,7 @@
 {
   "name": "Anya",
   "private": true,
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "Hand your work & questions to Anya anytime.",
   "type": "module",
   "scripts": {
@@ -11,7 +11,9 @@
     "tauri": "tauri",
     "posttauri": "node scripts/rename-msi.mjs",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build && node scripts/rename-msi.mjs",
+    "tauri:build": "node scripts/tauri-build.mjs",
+    "fetch-rg": "node scripts/fetch-rg.mjs",
+    "fetch-deno": "node scripts/fetch-deno.mjs",
     "release:json": "node scripts/generate-latest-json.mjs",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint .",

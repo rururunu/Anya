@@ -119,7 +119,9 @@ pub fn resolve_image_url_for_api(raw: &str) -> Result<String, String> {
     if value.is_empty() {
         return Err("empty image ref".into());
     }
-    if value.starts_with("data:image/") || value.starts_with("http://") || value.starts_with("https://")
+    if value.starts_with("data:image/")
+        || value.starts_with("http://")
+        || value.starts_with("https://")
     {
         return Ok(value.to_string());
     }
@@ -275,9 +277,11 @@ pub fn generate_images_blocking(
             .map(|_| scope.spawn(|| generate_one_blocking(settings, request)))
             .collect();
         for handle in handles {
-            results.push(handle.join().unwrap_or_else(|_| {
-                Err("image request thread panicked".into())
-            }));
+            results.push(
+                handle
+                    .join()
+                    .unwrap_or_else(|_| Err("image request thread panicked".into())),
+            );
         }
     });
     collect_image_results(results)
@@ -342,9 +346,10 @@ fn collect_image_results(
         }
     }
     if images.is_empty() {
-        return Err(errors.into_iter().next().unwrap_or_else(|| {
-            "image provider returned no images".into()
-        }));
+        return Err(errors
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| "image provider returned no images".into()));
     }
     if !errors.is_empty() {
         tracing::warn!(
@@ -534,7 +539,10 @@ fn images_transport_error(url: &str, error: &reqwest::Error) -> String {
     let lower = detail.to_ascii_lowercase();
     let reason = if lower.contains("timed out") || lower.contains("timeout") {
         "Connection timed out: the image provider did not respond in time. Image generation can take over a minute."
-    } else if lower.contains("dns") || lower.contains("no such host") || lower.contains("name resolution") {
+    } else if lower.contains("dns")
+        || lower.contains("no such host")
+        || lower.contains("name resolution")
+    {
         "DNS resolution failed: could not resolve the image provider host."
     } else if lower.contains("connection refused") {
         "Connection refused: the image provider address is unreachable."
@@ -727,7 +735,8 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(images.len(), 2);
-        let error = collect_image_results(vec![Err("boom".into()), Err("nope".into())]).unwrap_err();
+        let error =
+            collect_image_results(vec![Err("boom".into()), Err("nope".into())]).unwrap_err();
         assert_eq!(error, "boom");
     }
 
@@ -756,11 +765,9 @@ mod tests {
         assert!(message.contains("https://api.example/v1/images/generations"));
         assert!(message.contains("api.openai.com"));
         assert!(message.contains("invalid api key"));
-        assert!(
-            !message
-                .to_ascii_lowercase()
-                .contains("organization verification")
-        );
+        assert!(!message
+            .to_ascii_lowercase()
+            .contains("organization verification"));
     }
 
     #[test]

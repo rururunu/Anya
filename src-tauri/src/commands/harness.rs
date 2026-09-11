@@ -177,6 +177,10 @@ pub async fn perform_rewind(
             .await
             .map_err(|e| e.to_string())?;
         truncated_messages = true;
+        state
+            .core
+            .chat()
+            .restore_progress_after_rewind(&request.session_id);
         // Drop later checkpoints for this session after rewind turn
         let _ = shared_checkpoint_store().drop_from_turn(&request.session_id, request.turn);
     }

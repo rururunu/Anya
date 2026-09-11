@@ -379,6 +379,20 @@ impl EventBus for TauriEventBus {
                     TaskListUpdatedEvent { session_id, tasks },
                 );
             }
+            BusEvent::PlanUpdated {
+                session_id,
+                path,
+                content,
+            } => {
+                let _ = self.app.emit(
+                    "plan-updated",
+                    serde_json::json!({
+                        "sessionId": session_id,
+                        "path": path,
+                        "content": content,
+                    }),
+                );
+            }
             BusEvent::SlashCommand {
                 session_id,
                 command,

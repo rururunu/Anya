@@ -91,7 +91,7 @@
           class="attach-chip"
           :class="{ active: selectedIndex === index }"
           :title="chipTitle(item)"
-          @mouseenter="$emit('hover', { kind: item.kind, index })"
+          @mouseenter="$emit('hover', { kind: tab === 'mcp' ? 'mcp' : 'skill', index })"
           @mousedown.prevent="$emit('select', item)"
         >
           <span class="attach-icon" aria-hidden="true">

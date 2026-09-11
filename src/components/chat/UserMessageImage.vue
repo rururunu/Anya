@@ -41,28 +41,26 @@ const { resolvedSource } = useResolvedChatImageSrc(toRef(props, "source"));
   padding: 0;
   border: none;
   background: transparent;
-  border-radius: var(--peek-user-bubble-radius, 18px);
+  border-radius: 10px;
   overflow: hidden;
   cursor: zoom-in;
-  max-width: min(280px, 72vw);
+  max-width: min(200px, 72vw);
   line-height: 0;
-  box-shadow: var(--peek-user-bubble-shadow, none);
+  border: 1px solid var(--peek-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
   transform: translateZ(0);
   transition: box-shadow 140ms ease;
 }
 
 .user-image-btn:hover {
-  box-shadow:
-    var(--peek-user-bubble-shadow, none),
-    0 0 0 1px color-mix(in srgb, var(--peek-accent) 35%, transparent);
+  border-color: color-mix(in srgb, var(--peek-accent) 55%, var(--peek-border, transparent));
 }
 
 .user-image {
   display: block;
   width: auto;
   height: auto;
-  max-width: min(280px, 72vw);
-  max-height: 360px;
+  max-width: min(200px, 72vw);
+  max-height: 120px;
   object-fit: contain;
   border-radius: inherit;
   user-select: none;

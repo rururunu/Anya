@@ -80,7 +80,7 @@ defineEmits<{
   border: 1px solid color-mix(in srgb, var(--peek-text) 16%, transparent);
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
-  background: color-mix(in srgb, var(--peek-text) 7%, var(--peek-surface));
+  background: var(--peek-interaction-fill, var(--peek-composer-fill, var(--peek-surface)));
   box-shadow: none;
 }
 

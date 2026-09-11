@@ -11,7 +11,8 @@ import {
   type AppSettings,
   type AppSettingsPatch,
   type ColorScheme,
-  defaultGeminiOAuthSettings,
+  type CustomThemeConfig,
+  type ThemeBackgroundConfig,
 } from "@/types/setting";
 import { normalizeColorScheme, readCachedColorScheme } from "@/services/theme/catalog";
 import { applyThemeAppearance } from "@/services/theme";
@@ -23,7 +24,7 @@ const defaultSettings: AppSettings = {
   colorScheme: "light",
   language: "zh-CN",
   deepseekApiKey: "",
-  geminiOauth: defaultGeminiOAuthSettings(),
+  deepseekModels: [],
   memoryEnabled: true,
   mem0ApiKey: "",
   mem0UserId: "peek-user",
@@ -76,13 +77,21 @@ const defaultSettings: AppSettings = {
   semanticSearchApiKey: "",
   semanticSearchApiModel: "",
   onboardingCompleted: false,
+  customThemes: [],
+  customBackground: undefined,
 };
 
-/** Apply light/dark via ThemeService (`html[data-theme]`). */
-export function applyTheme(settings: Pick<AppSettings, "colorScheme" | "language">) {
+/** Apply light/dark/custom theme via ThemeService (`html[data-theme]`). */
+export function applyTheme(
+  settings: Pick<AppSettings, "colorScheme" | "language" | "chromeFrostedGlass"> & {
+    customThemes?: CustomThemeConfig[];
+  },
+) {
   applyThemeAppearance({
     colorScheme: settings.colorScheme,
     language: settings.language,
+    customThemes: settings.customThemes,
+    chromeFrostedGlass: settings.chromeFrostedGlass,
   });
 }
 
@@ -92,20 +101,42 @@ export function bootstrapThemeHint(language: AppLanguage = "zh-CN") {
 }
 
 export function applyZoom(zoom: number) {
-  const normalized = Math.max(zoom, 1) / 100;
+  let isWorkbench = false;
+  let isDesktopPet = false;
+  try {
+    const label = getCurrentWebviewWindow().label;
+    isWorkbench = label === "workbench";
+    isDesktopPet = label === "desktop-pet";
+  } catch {
+    if (typeof window !== "undefined") {
+      isDesktopPet =
+        window.location.hash.includes("/desktop-pet") ||
+        window.location.href.includes("/desktop-pet");
+    }
+  }
+  if (!isDesktopPet && typeof window !== "undefined") {
+    isDesktopPet =
+      window.location.hash.includes("/desktop-pet") ||
+      window.location.href.includes("/desktop-pet");
+  }
+
   const root = document.documentElement;
+
+  // Desktop pet is explicitly independent of the UI zoom setting
+  if (isDesktopPet) {
+    root.style.removeProperty("zoom");
+    root.style.setProperty("--ui-zoom", "1");
+    root.dataset.uiZoomed = "false";
+    root.dataset.zoomShell = "pet";
+    return;
+  }
+
+  const normalized = Math.max(zoom, 1) / 100;
   root.style.setProperty("--ui-zoom", String(normalized));
   root.dataset.uiZoomed = normalized === 1 ? "false" : "true";
 
   // Workbench uses transform:scale on `.workbench` (see Main.vue).
   // Overlay/Settings keep document zoom paired with window resize.
-  let isWorkbench = false;
-  try {
-    isWorkbench = getCurrentWebviewWindow().label === "workbench";
-  } catch {
-    isWorkbench = false;
-  }
-
   if (isWorkbench) {
     root.style.removeProperty("zoom");
     root.dataset.zoomShell = "workbench";
@@ -134,66 +165,44 @@ function normalizeZoomValue(settings: AppSettings): number {
   return zoomVal ?? 100;
 }
 
+const SECRET_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set([
+  "deepseekApiKey",
+  "mem0ApiKey",
+  "serperApiKey",
+  "tavilyApiKey",
+  "smitheryApiKey",
+]);
+
+/** Keys needing normalization or legacy fallback instead of a plain `?? default` copy. */
+const SPECIAL_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set([
+  "colorScheme",
+  "opacity",
+  "zoom",
+  "reasoningEffort",
+  "chatMode",
+  "agentWorkDisplay",
+  "onboardingCompleted",
+]);
+
 function applyCommonSettings(target: AppSettings, settings: AppSettings) {
+  for (const key of Object.keys(defaultSettings) as (keyof AppSettings)[]) {
+    if (SECRET_SETTING_KEYS.has(key) || SPECIAL_SETTING_KEYS.has(key)) continue;
+    (target as Record<keyof AppSettings, unknown>)[key] = settings[key] ?? defaultSettings[key];
+  }
+
   target.colorScheme = normalizeColorScheme(settings.colorScheme);
-  target.language = settings.language;
   target.opacity = normalizeOpacityValue(settings);
-  target.chromeFrostedGlass = settings.chromeFrostedGlass ?? false;
-  target.chatModel = settings.chatModel ?? DEFAULT_CHAT_MODEL;
-  target.chatModelProvider = settings.chatModelProvider ?? "";
-  target.multimodalModel = settings.multimodalModel ?? "gpt-4o";
-  target.multimodalModelProvider = settings.multimodalModelProvider ?? "";
-  target.imageModel = settings.imageModel ?? "gpt-image-2";
-  target.imageModelProvider = settings.imageModelProvider ?? "";
-  target.imageProviders = settings.imageProviders ?? [];
-  target.imageStyleTemplates = settings.imageStyleTemplates ?? [];
-  target.multimodalSplitAnalysis = settings.multimodalSplitAnalysis ?? true;
-  target.largeContextEnabled = settings.largeContextEnabled ?? true;
-  target.reasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
-  target.reasoningLanguage = settings.reasoningLanguage ?? "auto";
-  target.passToolReasoning = settings.passToolReasoning ?? true;
-  target.continueThinkingAfterTools = settings.continueThinkingAfterTools ?? true;
-  target.showReasoning = settings.showReasoning ?? true;
-  target.agentWorkDisplay = settings.agentWorkDisplay === "compact" ? "compact" : "detailed";
-  target.multiModelCollaboration = settings.multiModelCollaboration ?? false;
-  target.collaborationModels = settings.collaborationModels ?? [];
-  target.minimalCoding = settings.minimalCoding ?? false;
-  target.memoryEnabled = settings.memoryEnabled ?? true;
-  target.mem0UserId = settings.mem0UserId ?? "peek-user";
-  target.mem0BaseUrl = settings.mem0BaseUrl ?? "https://api.mem0.ai/v1";
-  target.webSearchEnabled = settings.webSearchEnabled ?? false;
-  target.webSearchProvider = settings.webSearchProvider ?? "serper";
-  target.toolApprovalMode = settings.toolApprovalMode ?? "ask";
-  target.chatMode = normalizeChatMode(settings.chatMode);
-  target.lspEnabled = settings.lspEnabled ?? false;
-  target.lspServers = settings.lspServers ?? [];
-  target.mcpServers = settings.mcpServers ?? [];
-  target.enabledBuiltinSkills = settings.enabledBuiltinSkills ?? [];
   target.zoom = normalizeZoomValue(settings);
-  target.hardwareAccelerationEnabled = settings.hardwareAccelerationEnabled ?? false;
-  target.primaryHotkey = settings.primaryHotkey ?? "Alt";
-  target.primaryHotkeyEnabled = settings.primaryHotkeyEnabled ?? true;
-  target.secondaryHotkey = settings.secondaryHotkey ?? "Ctrl+Alt+Space";
-  target.secondaryHotkeyEnabled = settings.secondaryHotkeyEnabled ?? true;
-  target.customProviders = settings.customProviders ?? [];
-  target.pixpinPinAiEnabled = settings.pixpinPinAiEnabled ?? true;
-  target.snipastePinAiEnabled = settings.snipastePinAiEnabled ?? true;
-  target.semanticSearchEnabled = settings.semanticSearchEnabled ?? false;
-  target.semanticSearchBackend = settings.semanticSearchBackend ?? "api";
-  target.semanticSearchModel = settings.semanticSearchModel ?? "multilingual-e5-small";
-  target.semanticSearchApiBaseUrl = settings.semanticSearchApiBaseUrl ?? "";
-  target.semanticSearchApiKey = settings.semanticSearchApiKey ?? "";
-  target.semanticSearchApiModel = settings.semanticSearchApiModel ?? "";
+  target.reasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
+  target.chatMode = normalizeChatMode(settings.chatMode);
+  target.agentWorkDisplay = settings.agentWorkDisplay === "compact" ? "compact" : "detailed";
   target.onboardingCompleted = settings.onboardingCompleted ?? true;
 }
 
 function applySecretSettings(target: AppSettings, settings: AppSettings) {
-  target.deepseekApiKey = settings.deepseekApiKey ?? "";
-  target.geminiOauth = settings.geminiOauth ?? defaultGeminiOAuthSettings();
-  target.mem0ApiKey = settings.mem0ApiKey ?? "";
-  target.serperApiKey = settings.serperApiKey ?? "";
-  target.tavilyApiKey = settings.tavilyApiKey ?? "";
-  target.smitheryApiKey = settings.smitheryApiKey ?? "";
+  for (const key of SECRET_SETTING_KEYS) {
+    (target as Record<keyof AppSettings, unknown>)[key] = settings[key] ?? defaultSettings[key];
+  }
 }
 
 export const useSettingStore = defineStore("setting", {
@@ -254,6 +263,41 @@ export const useSettingStore = defineStore("setting", {
           this.applySettings(previous);
         }
         throw error;
+      }
+    },
+    async saveCustomTheme(theme: CustomThemeConfig) {
+      const existingIndex = this.customThemes.findIndex((t) => t.id === theme.id);
+      const nextThemes = [...this.customThemes];
+      if (existingIndex >= 0) {
+        nextThemes[existingIndex] = theme;
+      } else {
+        nextThemes.push(theme);
+      }
+      await this.update({
+        customThemes: nextThemes,
+        colorScheme: theme.id,
+      });
+    },
+    async deleteCustomTheme(id: string) {
+      const nextThemes = this.customThemes.filter((t) => t.id !== id);
+      const nextScheme = this.colorScheme === id ? "dark" : this.colorScheme;
+      await this.update({
+        customThemes: nextThemes,
+        colorScheme: nextScheme,
+      });
+    },
+    async saveThemeBackground(themeId: string, background: ThemeBackgroundConfig | null) {
+      const existingIndex = this.customThemes.findIndex((t) => t.id === themeId);
+      if (existingIndex >= 0) {
+        const nextThemes = [...this.customThemes];
+        nextThemes[existingIndex] = {
+          ...nextThemes[existingIndex],
+          background: background ?? undefined,
+          updatedAt: Date.now(),
+        };
+        await this.update({ customThemes: nextThemes });
+      } else {
+        await this.update({ customBackground: background });
       }
     },
   },

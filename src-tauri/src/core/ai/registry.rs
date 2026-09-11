@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use super::antigravity::AntigravityProvider;
 use super::deepseek::DeepSeekProvider;
 use super::provider::AIProvider;
 use crate::models::settings::{
     AppSettings, CustomProviderConfig, ModelWireProtocol, ProviderApiProtocol, ReasoningEffort,
 };
-use crate::services::gemini_oauth;
 use crate::services::settings_store;
 
 /// Resolve the provider selected for the primary chat model.
@@ -38,6 +36,23 @@ pub fn provider_model_is_disabled(provider: &CustomProviderConfig, model: &str) 
         .split([',', '\n'])
         .map(str::trim)
         .any(|id| !id.is_empty() && id == model)
+}
+
+pub fn deepseek_model_is_disabled(settings: &AppSettings, model: &str) -> bool {
+    settings
+        .deepseek_models
+        .iter()
+        .any(|entry| entry.id == model && entry.disabled)
+}
+
+pub fn deepseek_has_model(settings: &AppSettings, model: &str) -> bool {
+    if settings.deepseek_models.is_empty() {
+        return matches!(model, "deepseek-chat" | "deepseek-reasoner");
+    }
+    settings
+        .deepseek_models
+        .iter()
+        .any(|entry| entry.id == model)
 }
 
 fn provider_is_configured(provider: &CustomProviderConfig) -> bool {
@@ -77,8 +92,8 @@ pub(crate) fn looks_like_deepseek_model(model: &str) -> bool {
     model.trim().to_ascii_lowercase().contains("deepseek")
 }
 
-/// Whether this model can be POSTed to a dedicated endpoint (custom provider,
-/// Gemini, or DeepSeek). MiniMax on an aggregator is served via Anthropic
+/// Whether this model can be POSTed to a dedicated endpoint (custom provider
+/// or DeepSeek). MiniMax on an aggregator is served via Anthropic
 /// Messages, not by falling through to official DeepSeek.
 pub(crate) fn can_serve_chat_model(
     settings: &AppSettings,
@@ -87,16 +102,10 @@ pub(crate) fn can_serve_chat_model(
 ) -> bool {
     let model = model.trim();
     let hint = provider_hint.trim();
-    if (hint.is_empty() || hint == "gemini")
-        && gemini_oauth::is_gemini_model(model)
-        && settings.gemini_oauth.is_logged_in()
-    {
-        return true;
-    }
     if custom_provider_for_selection(settings, model, hint).is_some() {
         return true;
     }
-    looks_like_deepseek_model(model)
+    looks_like_deepseek_model(model) || deepseek_has_model(settings, model)
 }
 
 /// Drop collaboration entries the current endpoints cannot actually host.
@@ -140,16 +149,9 @@ pub(crate) fn resolve_provider_for_selection(
     model: String,
     provider_hint: String,
 ) -> Arc<dyn AIProvider> {
-    let settings = settings_store::get_settings(&app).unwrap_or_default();
     let model = model.trim().to_string();
     let provider_hint = provider_hint.trim().to_string();
 
-    if (provider_hint.is_empty() || provider_hint == "gemini")
-        && gemini_oauth::is_gemini_model(&model)
-        && settings.gemini_oauth.is_logged_in()
-    {
-        return Arc::new(AntigravityProvider::for_model(app, model));
-    }
     let resolve_api_key = {
         let app = app.clone();
         let selected_model = model.clone();
@@ -227,17 +229,24 @@ pub(crate) fn resolve_provider_for_selection(
         let selected_provider = provider_hint.clone();
         Arc::new(move || -> Option<String> {
             let settings = settings_store::get_settings(&app).unwrap_or_default();
-            let provider = if selected_provider.is_empty() {
-                custom_provider_for_selection(&settings, &selected_model, "")
+            let disabled = if selected_provider == "deepseek"
+                || (selected_provider.is_empty()
+                    && custom_provider_for_selection(&settings, &selected_model, "").is_none())
+            {
+                deepseek_model_is_disabled(&settings, &selected_model)
             } else {
-                settings
-                    .custom_providers
-                    .iter()
-                    .find(|provider| provider.id == selected_provider)
+                let provider = if selected_provider.is_empty() {
+                    custom_provider_for_selection(&settings, &selected_model, "")
+                } else {
+                    settings
+                        .custom_providers
+                        .iter()
+                        .find(|provider| provider.id == selected_provider)
+                };
+                provider
+                    .map(|provider| provider_model_is_disabled(provider, &selected_model))
+                    .unwrap_or(false)
             };
-            let disabled = provider
-                .map(|provider| provider_model_is_disabled(provider, &selected_model))
-                .unwrap_or(false);
             disabled.then(|| {
                 format!(
                     "模型 “{selected_model}” 已在设置中被禁用，请先在供应商设置里重新启用后再使用。"
@@ -414,5 +423,52 @@ mod tests {
             None
         );
         assert_eq!(super::cached_model_protocol(&settings, "", "unknown"), None);
+    }
+
+    #[test]
+    fn deepseek_disabled_model_is_flagged_and_has_model_works() {
+        let mut settings = AppSettings::default();
+        assert!(super::deepseek_has_model(&settings, "deepseek-chat"));
+        assert!(super::deepseek_has_model(&settings, "deepseek-reasoner"));
+        assert!(!super::deepseek_has_model(&settings, "my-custom-model"));
+        assert!(!super::deepseek_model_is_disabled(
+            &settings,
+            "deepseek-chat"
+        ));
+
+        settings.deepseek_models = vec![
+            crate::models::settings::ProviderModelEntry {
+                id: "deepseek-chat".into(),
+                disabled: false,
+                custom: false,
+            },
+            crate::models::settings::ProviderModelEntry {
+                id: "deepseek-reasoner".into(),
+                disabled: true,
+                custom: false,
+            },
+        ];
+        assert!(super::deepseek_model_is_disabled(
+            &settings,
+            "deepseek-reasoner"
+        ));
+        assert!(!super::deepseek_model_is_disabled(
+            &settings,
+            "deepseek-chat"
+        ));
+
+        settings
+            .deepseek_models
+            .push(crate::models::settings::ProviderModelEntry {
+                id: "my-custom-model".into(),
+                disabled: false,
+                custom: true,
+            });
+        assert!(super::deepseek_has_model(&settings, "my-custom-model"));
+        assert!(super::can_serve_chat_model(
+            &settings,
+            "my-custom-model",
+            "deepseek"
+        ));
     }
 }

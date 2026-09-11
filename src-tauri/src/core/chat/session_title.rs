@@ -1,7 +1,6 @@
-//! Session title normalization, deterministic fallback, and async LLM titles.
+//! Clean, concise conversation title generation and normalization.
 
 use std::sync::Arc;
-
 use tauri::async_runtime;
 use tokio::sync::mpsc;
 
@@ -9,85 +8,22 @@ use crate::core::ai::provider::AIProvider;
 use crate::core::chat::conversation_manager::ConversationManager;
 use crate::core::chat::limits::truncate_chars;
 use crate::core::event::{BusEvent, EventBus};
-use crate::core::runtime::{
-    ChatMessage, ChatRequest, MessageStatus, Role, StreamEvent,
-};
+use crate::core::runtime::{ChatMessage, ChatRequest, MessageStatus, Role, StreamEvent};
 
-pub const FALLBACK_MAX_WORDS: usize = 8;
-pub const FALLBACK_MAX_BYTES: usize = 80;
-pub const MAX_TITLE_BYTES: usize = 80;
-pub const AI_TITLE_MAX_CHARS: usize = 24;
+pub const FALLBACK_MAX_WORDS: usize = 10;
+pub const FALLBACK_MAX_BYTES: usize = 160;
+pub const MAX_TITLE_BYTES: usize = 160;
+pub const AI_TITLE_MAX_CHARS: usize = 48;
 
-const CJK_SOFT_BREAKS: &[char] = &['和', '与', '及', '、', '或'];
-
-const CLAUSE_SEPARATORS: &[char] = &['，', ',', '。', '.', '；', ';', '\n'];
-
-const DELIVERABLE_MARKERS: &[&str] = &[
-    "请给我",
-    "请帮我",
-    "给我",
-    "帮我",
-    "想要",
-    "需要",
-    "输出",
-    "生成",
-    "总结",
-    "分析",
-    "could you ",
-    "can you ",
-    "help me ",
-    "give me ",
-    "i need ",
-    "i want ",
-    "output ",
-    "generate ",
-    "summarize ",
-    "analyze ",
-];
-
-const PROCEDURAL_PREFIXES: &[&str] = &[
-    "请帮我",
-    "请给我",
-    "请",
-    "帮我",
-    "给我",
-    "麻烦",
-    "能否",
-    "可以",
-    "想要",
-    "需要",
-    "please ",
-    "please",
-    "could you ",
-    "can you ",
-    "help me ",
-    "give me ",
-];
-
-const METHODOLOGY_HINTS: &[&str] = &[
-    "使用子agent",
-    "使用子 agent",
-    "用子agent",
-    "用子 agent",
-    "subagent",
-    "sub-agent",
-    "sub agent",
-    "阅读代码",
-    "读代码",
-    "阅读这个项目的代码",
-    "read the code",
-    "read codebase",
-    "read the codebase",
-    "并行探索",
-    "并行阅读",
-    "use subagent",
-    "using subagent",
-];
-
-const TITLE_SYSTEM_PROMPT: &str = "You create a very short conversation title that names the user's desired outcome (topic, deliverable, or task result)—NOT the method they use to get there.\n\
-Reply with ONLY the title: plain text, no quotes, no trailing punctuation, no explanation, no emoji.\n\
-Never title with process words alone (e.g. \"use subagent\", \"read code\", \"使用子agent\", \"阅读代码\").\n\
-Keep it to 2-6 words (under 24 characters). If the conversation is not in English, reply in the same language as the user's message.";
+const TITLE_SYSTEM_PROMPT: &str = "\
+You are an expert conversation title generator. Your only job is to create a concise, accurate title summarizing the user's primary goal or task in the conversation.\n\
+\n\
+RULES:\n\
+1. Focus strictly on what the user wants to accomplish (e.g., feature to build, bug to fix, or topic asked). Never title after side tasks, debug steps, or minor follow-up questions.\n\
+2. Reply with ONLY the title in plain text. Absolutely NO quotes, NO markdown formatting (no bold/backticks/headers), NO emoji, and NO trailing punctuation.\n\
+3. Never include conversational filler or prefixes (e.g., never say 'Title:', '标题：', '好的', 'Here is', etc.).\n\
+4. If the conversation is in Chinese, generate a concise Chinese title of 4 to 10 characters (e.g. 'Vite配置优化', '用户登录模块重构', 'Docker端口冲突排查'). If in English or another language, use 3 to 6 words.\n\
+5. Avoid vague generic labels (e.g. do not output '代码修改', 'Bug修复', '问题咨询', '查看报错').";
 
 /// How a session title was produced. `User` pins the title against automatic updates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,20 +55,9 @@ impl SessionTitleSource {
 fn is_control_char(ch: char) -> bool {
     matches!(
         ch,
-        '\u{0000}'..='\u{0008}'
-            | '\u{000B}'
-            | '\u{000C}'
-            | '\u{000E}'..='\u{001F}'
-            | '\u{007F}'..='\u{009F}'
-    ) || matches!(
-        ch,
-        '\u{200B}'
-            | '\u{200E}'
-            | '\u{200F}'
-            | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{206F}'
-            | '\u{FEFF}'
+        '\u{0000}'..='\u{0008}' | '\u{000B}' | '\u{000C}' | '\u{000E}'..='\u{001F}' | '\u{007F}'..='\u{009F}'
+            | '\u{200B}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206F}' | '\u{FEFF}'
     )
 }
 
@@ -140,21 +65,11 @@ fn clean_title_text(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut prev_space = true;
     for ch in input.chars() {
-        if ch == '\n' || ch == '\t' || ch == '\r' {
+        if ch.is_whitespace() || is_control_char(ch) {
             if !prev_space {
                 out.push(' ');
                 prev_space = true;
             }
-            continue;
-        }
-        if ch.is_whitespace() {
-            if !prev_space {
-                out.push(' ');
-                prev_space = true;
-            }
-            continue;
-        }
-        if is_control_char(ch) {
             continue;
         }
         out.push(ch);
@@ -186,253 +101,267 @@ pub fn truncate_title_utf8(input: &str, max_bytes: usize) -> String {
 
 /// Normalize accepted title text and enforce the UTF-8 byte budget.
 pub fn normalize_session_title(input: &str, max_bytes: usize) -> String {
-    truncate_title_utf8(&clean_title_text(input), max_bytes).trim_end().to_string()
+    truncate_title_utf8(&clean_title_text(input), max_bytes)
+        .trim_end()
+        .to_string()
 }
 
-fn contains_cjk(text: &str) -> bool {
-    text.chars().any(|ch| {
-        matches!(
-            ch,
-            '\u{4E00}'..='\u{9FFF}'
-                | '\u{3400}'..='\u{4DBF}'
-                | '\u{3040}'..='\u{30FF}'
-                | '\u{AC00}'..='\u{D7AF}'
-        )
-    })
-}
+/// Clean up and extract title from raw AI output.
+pub fn clean_ai_title(value: &str) -> String {
+    let mut text = value.trim();
 
-fn is_methodology_text(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    METHODOLOGY_HINTS
+    // Strip code fence if enclosed
+    if text.starts_with("```") {
+        if let Some(end) = text[3..].find("```") {
+            text = text[3..3 + end].trim();
+        }
+    }
+
+    // Strip markdown headers (#, ##)
+    while text.starts_with('#') {
+        text = text.trim_start_matches('#').trim_start();
+    }
+
+    // Strip list markers ("- ", "* ", "1. ")
+    if let Some(rest) = text.strip_prefix("- ").or_else(|| text.strip_prefix("* ")) {
+        text = rest.trim_start();
+    } else if let Some(idx) = text.find(". ") {
+        if idx <= 3 && text[..idx].chars().all(|c| c.is_ascii_digit()) {
+            text = text[idx + 2..].trim_start();
+        }
+    }
+
+    // Strip conversational prefixes
+    let prefixes = [
+        "title:",
+        "title：",
+        "标题:",
+        "标题：",
+        "会话标题:",
+        "会话标题：",
+        "topic:",
+        "topic：",
+        "主题:",
+        "主题：",
+        "好的，为您生成的标题是：",
+        "好的，为你生成的标题是：",
+        "为您生成的标题是：",
+        "为你生成的标题是：",
+        "建议标题：",
+        "建议标题:",
+        "here is the title:",
+        "suggested title:",
+        "title is:",
+    ];
+    while let Some(prefix) = prefixes
         .iter()
-        .any(|hint| lower.contains(&hint.to_lowercase()))
-}
-
-fn split_clauses(text: &str) -> Vec<String> {
-    let mut clauses = Vec::new();
-    let mut current = String::new();
-    for ch in text.chars() {
-        if CLAUSE_SEPARATORS.contains(&ch) {
-            let trimmed = current.trim().to_string();
-            if !trimmed.is_empty() {
-                clauses.push(trimmed);
-            }
-            current.clear();
-        } else {
-            current.push(ch);
-        }
-    }
-    let trimmed = current.trim().to_string();
-    if !trimmed.is_empty() {
-        clauses.push(trimmed);
-    }
-    if clauses.is_empty() {
-        clauses.push(text.to_string());
-    }
-    clauses
-}
-
-fn strip_deliverable_marker(text: &str) -> Option<String> {
-    let trimmed = text.trim();
-    for marker in DELIVERABLE_MARKERS {
-        if let Some(rest) = trimmed.strip_prefix(marker) {
-            let rest = rest.trim_start();
-            if !rest.is_empty() {
-                return Some(rest.to_string());
-            }
-        }
-    }
-    None
-}
-
-fn strip_procedural_prefix(text: &str) -> String {
-    let mut subject = text.trim().to_string();
-    loop {
-        let mut changed = false;
-        for prefix in PROCEDURAL_PREFIXES {
-            if let Some(rest) = subject.strip_prefix(prefix) {
-                subject = rest.trim_start().to_string();
-                changed = true;
-                break;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    for prefix in ["这个", "该", "the ", "this ", "a ", "an "] {
-        if let Some(rest) = subject.strip_prefix(prefix) {
-            subject = rest.trim_start().to_string();
-            break;
-        }
-    }
-    subject
-}
-
-/// Pull a deliverable-focused subject from user text (skip leading process clauses).
-fn extract_title_subject(input: &str) -> String {
-    let cleaned = clean_title_text(input);
-    if cleaned.is_empty() {
-        return cleaned;
+        .find(|p| text.to_lowercase().starts_with(**p))
+    {
+        text = text[prefix.len()..].trim_start();
     }
 
-    let clauses = split_clauses(&cleaned);
-    for clause in clauses.iter().rev() {
-        if is_methodology_text(clause) {
-            continue;
-        }
-        if let Some(after_marker) = strip_deliverable_marker(clause) {
-            let subject = strip_procedural_prefix(&after_marker);
-            if !subject.is_empty() && !is_methodology_text(&subject) {
-                return subject;
-            }
-        }
-        let subject = strip_procedural_prefix(clause);
-        if !subject.is_empty() && !is_methodology_text(&subject) {
-            return subject;
+    // Strip inline backticks and markdown delimiters
+    let mut s = text.replace('`', "");
+    for delim in ["**", "*", "__", "_"] {
+        if s.starts_with(delim) && s.ends_with(delim) && s.len() >= delim.len() * 2 {
+            s = s[delim.len()..s.len() - delim.len()].trim().to_string();
         }
     }
 
-    let subject = strip_procedural_prefix(&cleaned);
-    if !subject.is_empty() && !is_methodology_text(&subject) {
-        return subject;
-    }
-
-    cleaned
-}
-
-fn truncate_cjk_at_soft_break(subject: &str, max_chars: usize, max_bytes: usize) -> Option<String> {
-    let chars: Vec<char> = subject.chars().collect();
-    if chars.len() <= max_chars {
-        return None;
-    }
-
-    let mut best: Option<String> = None;
-    for (index, ch) in chars.iter().enumerate() {
-        if index >= max_chars {
-            break;
-        }
-        if CJK_SOFT_BREAKS.contains(ch) && index >= 3 {
-            let candidate: String = chars[..=index].iter().collect();
-            let trimmed = truncate_title_utf8(&candidate, max_bytes);
-            if trimmed.chars().count() >= 4 {
-                best = Some(trimmed);
-            }
-        }
-    }
-    best
-}
-
-fn truncate_subject_cjk(subject: &str, max_chars: usize, max_bytes: usize) -> String {
-    if subject.chars().count() <= max_chars && subject.len() <= max_bytes {
-        return subject.to_string();
-    }
-    if let Some(at_break) = truncate_cjk_at_soft_break(subject, max_chars, max_bytes) {
-        return at_break;
-    }
-    let title: String = subject.chars().take(max_chars).collect();
-    truncate_title_utf8(&title, max_bytes).trim_end().to_string()
-}
-
-fn truncate_subject_to_budget(subject: &str, max_words: usize, max_bytes: usize) -> String {
-    if subject.is_empty() {
-        return String::new();
-    }
-    let title = if contains_cjk(subject) {
-        let max_chars = if max_words <= FALLBACK_MAX_WORDS {
-            // Tight budget (unit tests): honor max_words as a char cap.
-            max_words.max(4)
-        } else {
-            AI_TITLE_MAX_CHARS
-        };
-        return truncate_subject_cjk(subject, max_chars, max_bytes);
-    } else {
-        subject
-            .split(' ')
-            .filter(|word| !word.is_empty())
-            .take(max_words)
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    truncate_title_utf8(&title, max_bytes).trim_end().to_string()
-}
-
-/// Deterministic first-prompt fallback from visible user text.
-pub fn fallback_session_title(
-    input: &str,
-    max_words: usize,
-    max_bytes: usize,
-) -> String {
-    let subject = extract_title_subject(input);
-    if contains_cjk(&subject) {
-        let max_chars = AI_TITLE_MAX_CHARS;
-        return truncate_subject_cjk(&subject, max_chars, max_bytes);
-    }
-    truncate_subject_to_budget(&subject, max_words, max_bytes)
-}
-
-fn clean_ai_title(value: &str) -> String {
-    let mut cleaned = value.trim().to_string();
+    // Strip outer quotes
     for prefix in ['"', '\'', '「', '『', '《', '“', '‘'] {
-        if let Some(rest) = cleaned.strip_prefix(prefix) {
-            cleaned = rest.trim_start().to_string();
+        if let Some(rest) = s.strip_prefix(prefix) {
+            s = rest.trim_start().to_string();
             break;
         }
     }
-    for suffix in [
-        '"', '\'', '」', '』', '》', '”', '’', '.', '。', '!', '！', '?', '？', ':',
-    ] {
-        if let Some(rest) = cleaned.strip_suffix(suffix) {
-            cleaned = rest.trim_end().to_string();
+    const TRAILING: &[char] = &[
+        '"', '\'', '」', '』', '》', '”', '’', '.', '。', '!', '！', '?', '？', ':', '：', ';',
+        '；',
+    ];
+    for suffix in TRAILING {
+        if let Some(rest) = s.strip_suffix(*suffix) {
+            s = rest.trim_end().to_string();
             break;
         }
     }
-    clean_title_text(&cleaned)
+
+    clean_title_text(&s)
+}
+
+fn is_conversational_filler(line: &str) -> bool {
+    let lower = line.trim().to_lowercase();
+    const FILLERS: &[&str] = &[
+        "好的",
+        "为你生成",
+        "为您生成",
+        "建议标题",
+        "根据对话",
+        "here is",
+        "sure,",
+        "sure!",
+        "certainly",
+        "the title",
+        "i suggest",
+    ];
+    FILLERS.iter().any(|f| lower.starts_with(f))
+}
+
+fn is_vague_title(title: &str) -> bool {
+    let cleaned = clean_title_text(title);
+    let compact: String = cleaned
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .collect();
+    const VAGUE_TITLES: &[&str] = &[
+        "代码修改",
+        "修改代码",
+        "bug修复",
+        "修复bug",
+        "问题咨询",
+        "查看报错",
+        "解决报错",
+        "排查报错",
+        "日常问候",
+        "感谢交流",
+        "技术支持",
+        "代码分析",
+        "fixbug",
+        "fixissue",
+        "codereview",
+        "generalquestion",
+        "使用子agent",
+        "阅读代码",
+        "readcode",
+        "readcodebase",
+    ];
+    VAGUE_TITLES
+        .iter()
+        .any(|vague| compact.eq_ignore_ascii_case(vague))
 }
 
 fn pick_generated_title(content: &str, reasoning: &str) -> String {
-    let from_content = clean_ai_title(content);
-    if !from_content.is_empty() {
-        return from_content;
-    }
+    let check_line = |line: &str| -> Option<String> {
+        if is_conversational_filler(line) {
+            return None;
+        }
+        let cleaned = clean_ai_title(line);
+        if !cleaned.is_empty()
+            && cleaned.chars().count() <= AI_TITLE_MAX_CHARS * 2
+            && !is_vague_title(&cleaned)
+        {
+            Some(cleaned)
+        } else {
+            None
+        }
+    };
 
-    if reasoning.trim().is_empty() {
-        return String::new();
-    }
-
-    let lines: Vec<String> = reasoning
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(clean_ai_title)
-        .filter(|line| !line.is_empty())
-        .collect();
-    for line in lines.iter().rev() {
-        if line.chars().count() <= AI_TITLE_MAX_CHARS * 2 {
-            return line.clone();
+    for line in content.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if let Some(title) = check_line(line) {
+            return title;
         }
     }
 
-    let from_reasoning = clean_ai_title(reasoning);
-    if from_reasoning.is_empty() {
-        return String::new();
+    let from_content = clean_ai_title(content);
+    if !from_content.is_empty() && !is_vague_title(&from_content) {
+        return from_content;
     }
 
-    if from_reasoning.chars().count() <= AI_TITLE_MAX_CHARS * 2 {
-        return from_reasoning;
+    for line in reasoning
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .rev()
+    {
+        if let Some(title) = check_line(line) {
+            return title;
+        }
     }
 
     String::new()
 }
 
+/// Fallback title extracted cleanly from the user's primary prompt.
+pub fn fallback_session_title(input: &str, max_words: usize, max_bytes: usize) -> String {
+    let cleaned = clean_title_text(input);
+    if cleaned.is_empty() {
+        return String::new();
+    }
+
+    let mut subject = cleaned.as_str();
+    for prefix in [
+        "请帮我",
+        "请问",
+        "麻烦帮我",
+        "帮我",
+        "麻烦",
+        "请",
+        "could you please ",
+        "please ",
+        "help me ",
+    ] {
+        if let Some(rest) = subject.strip_prefix(prefix) {
+            subject = rest.trim_start();
+            break;
+        }
+    }
+
+    let first_sentence = subject
+        .split(&['。', '！', '？', '!', '?', '\n'][..])
+        .next()
+        .unwrap_or(subject)
+        .trim();
+
+    let title: String = if first_sentence
+        .chars()
+        .any(|c| c >= '\u{4E00}' && c <= '\u{9FFF}')
+    {
+        let first_clause = first_sentence
+            .split(&['，', ',', '；', ';'][..])
+            .next()
+            .unwrap_or(first_sentence)
+            .trim();
+        if first_clause.chars().count() >= 4 && first_clause.chars().count() <= 28 {
+            first_clause.to_string()
+        } else {
+            first_sentence.chars().take(28).collect()
+        }
+    } else {
+        first_sentence
+            .split_whitespace()
+            .take(max_words)
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+
+    truncate_title_utf8(&title, max_bytes)
+        .trim_end()
+        .to_string()
+}
+
+fn smart_truncate_title(title: &str, max_chars: usize) -> String {
+    if title.chars().count() <= max_chars {
+        return title.to_string();
+    }
+    let truncated = truncate_chars(title, max_chars);
+    if truncated.contains(' ') {
+        if let Some((head, _)) = truncated.rsplit_once(' ') {
+            if head.chars().count() >= max_chars / 2 {
+                return head.trim_end().to_string();
+            }
+        }
+    }
+    truncated
+}
+
 fn finalize_generated_title(
     content: &str,
     reasoning: &str,
-    user_text: &str,
+    fallback_prompt: &str,
 ) -> Result<String, String> {
     let mut title = pick_generated_title(content, reasoning);
-    if title.is_empty() || is_methodology_text(&title) {
-        title = fallback_session_title(user_text, FALLBACK_MAX_WORDS, FALLBACK_MAX_BYTES);
+    if title.is_empty() || is_vague_title(&title) {
+        title = fallback_session_title(fallback_prompt, FALLBACK_MAX_WORDS, FALLBACK_MAX_BYTES);
     }
     if title.is_empty() {
         return Err("empty title".into());
@@ -441,7 +370,7 @@ fn finalize_generated_title(
     if normalized.is_empty() {
         return Err("empty title".into());
     }
-    Ok(truncate_chars(&normalized, AI_TITLE_MAX_CHARS))
+    Ok(smart_truncate_title(&normalized, AI_TITLE_MAX_CHARS))
 }
 
 fn now_millis() -> u64 {
@@ -451,7 +380,7 @@ fn now_millis() -> u64 {
         .unwrap_or(0)
 }
 
-/// Schedule asynchronous LLM title generation (first-prompt only unless `force`).
+/// Schedule asynchronous LLM title generation on first turn.
 pub fn spawn_auto_session_title(
     conversation: Arc<ConversationManager>,
     event_bus: Arc<dyn EventBus>,
@@ -476,9 +405,13 @@ pub fn spawn_auto_session_title(
     }
 
     async_runtime::spawn(async move {
-        match generate_session_title(provider, &trimmed).await {
+        match generate_session_title(provider, &trimmed, &trimmed).await {
             Ok(title) => {
-                conversation.set_session_title(&session_id, title.clone(), SessionTitleSource::Auto);
+                conversation.set_session_title(
+                    &session_id,
+                    title.clone(),
+                    SessionTitleSource::Auto,
+                );
                 event_bus.emit(BusEvent::ChatSessionTitleUpdated { session_id, title });
             }
             Err(error) => eprintln!("failed to generate session title: {error}"),
@@ -486,55 +419,50 @@ pub fn spawn_auto_session_title(
     });
 }
 
-/// Generate a short title from the first user message (awaits the provider stream).
+fn simple_chat_message(role: Role, content: String) -> ChatMessage {
+    ChatMessage {
+        id: format!("title-{role:?}"),
+        session_id: "title".into(),
+        role,
+        content,
+        reasoning: None,
+        work_timeline: None,
+        tool_activities: None,
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        status: MessageStatus::Done,
+        timestamp: 0,
+        estimated_tokens: None,
+    }
+}
+
+/// Generate a short, accurate title from conversation context (awaits provider stream).
 pub async fn generate_session_title(
     provider: Arc<dyn AIProvider>,
-    first_user: &str,
+    context_text: &str,
+    fallback_prompt: &str,
 ) -> Result<String, String> {
-    let material = format!("User: {}", truncate_chars(first_user, 600));
+    let prompt_content = format!(
+        "<conversation>\n{}\n</conversation>\n\n\
+        Generate a concise title summarizing the PRIMARY GOAL of the above conversation. Plain text only, no quotes, no punctuation.",
+        truncate_chars(context_text.trim(), 1200)
+    );
 
     let (tx, mut rx) = mpsc::channel::<StreamEvent>(16);
     let request = ChatRequest {
         request_id: format!("title-{}", now_millis()),
         session_id: "title".to_string(),
         messages: vec![
-            ChatMessage {
-                id: "title-system".into(),
-                session_id: "title".into(),
-                role: Role::System,
-                content: TITLE_SYSTEM_PROMPT.into(),
-                reasoning: None,
-                work_timeline: None,
-                tool_activities: None,
-                tool_calls: None,
-                tool_call_id: None,
-                name: None,
-                status: MessageStatus::Done,
-                timestamp: 0,
-                estimated_tokens: None,
-            },
-            ChatMessage {
-                id: "title-user".into(),
-                session_id: "title".into(),
-                role: Role::User,
-                content: material,
-                reasoning: None,
-                work_timeline: None,
-                tool_activities: None,
-                tool_calls: None,
-                tool_call_id: None,
-                name: None,
-                status: MessageStatus::Done,
-                timestamp: 0,
-                estimated_tokens: None,
-            },
+            simple_chat_message(Role::System, TITLE_SYSTEM_PROMPT.into()),
+            simple_chat_message(Role::User, prompt_content),
         ],
         context: Default::default(),
         provider: Some(provider.id().to_string()),
         stream: true,
         tools: std::sync::Arc::from([]),
         temperature: Some(0.2),
-        max_tokens: Some(64),
+        max_tokens: Some(256),
     };
 
     let provider_task = async_runtime::spawn(async move { provider.stream(request, tx).await });
@@ -566,7 +494,7 @@ pub async fn generate_session_title(
         .map_err(|error| format!("title task failed: {error}"))?
         .map_err(|error| error.to_string())?;
 
-    finalize_generated_title(&content, &reasoning, first_user)
+    finalize_generated_title(&content, &reasoning, fallback_prompt)
 }
 
 #[cfg(test)]
@@ -591,67 +519,69 @@ mod tests {
     }
 
     #[test]
-    fn fallback_prefers_deliverable_over_method_clause() {
+    fn fallback_strips_polite_prefixes() {
         assert_eq!(
-            fallback_session_title(
-                "使用子agent阅读这个项目的代码，给我这个项目设计思路和架构图",
-                FALLBACK_MAX_WORDS,
-                FALLBACK_MAX_BYTES,
-            ),
-            "项目设计思路和架构图"
+            fallback_session_title("请帮我实现一个登录界面", 5, 80),
+            "实现一个登录界面"
         );
     }
 
     #[test]
-    fn fallback_cjk_soft_break_avoids_mid_word_cut() {
-        let subject = "项目设计思路和架构图以及部署方案说明";
-        let truncated = truncate_subject_cjk(subject, 8, FALLBACK_MAX_BYTES);
-        assert_eq!(truncated, "项目设计思路和");
-        assert!(!truncated.ends_with('架'));
-    }
-
-    #[test]
-    fn extract_title_subject_skips_methodology_clause() {
+    fn clean_ai_title_strips_markdown_and_prefixes() {
         assert_eq!(
-            extract_title_subject(
-                "Use subagents to read the codebase, give me project architecture diagram"
-            ),
-            "project architecture diagram"
+            clean_ai_title("**Vite 热更新失效排查**"),
+            "Vite 热更新失效排查"
+        );
+        assert_eq!(
+            clean_ai_title("Title: Docker 端口冲突解决."),
+            "Docker 端口冲突解决"
+        );
+        assert_eq!(
+            clean_ai_title("标题：工作区重命名实现！"),
+            "工作区重命名实现"
+        );
+        assert_eq!(
+            clean_ai_title("好的，为您生成的标题是：**用户登录逻辑重构**"),
+            "用户登录逻辑重构"
+        );
+        assert_eq!(
+            clean_ai_title("# `useWorkbenchSessions` 重构"),
+            "useWorkbenchSessions 重构"
         );
     }
 
     #[test]
-    fn finalize_rejects_methodology_llm_title() {
+    fn pick_and_finalize_titles() {
+        let content = "好的，为你推荐以下会话标题：\n\n**Vue3 路由守卫配置**";
+        assert_eq!(pick_generated_title(content, ""), "Vue3 路由守卫配置");
         assert_eq!(
-            finalize_generated_title("使用子agent", "", "如何修复登录崩溃问题").unwrap(),
-            "如何修复登录崩溃问题"
+            finalize_generated_title("代码修改", "", "修复登录按钮点击无效").unwrap(),
+            "修复登录按钮点击无效"
+        );
+    }
+
+    #[test]
+    fn smart_truncate_and_clause_fallback() {
+        assert_eq!(
+            smart_truncate_title("Configure automated GitHub Actions workflow", 30),
+            "Configure automated GitHub"
+        );
+        assert_eq!(
+            fallback_session_title("实现用户登录功能，并且加上记住密码选项", 8, 160),
+            "实现用户登录功能"
         );
     }
 
     #[test]
     fn source_round_trip() {
-        assert_eq!(SessionTitleSource::parse("user"), Some(SessionTitleSource::User));
-        assert_eq!(SessionTitleSource::parse("AUTO"), Some(SessionTitleSource::Auto));
+        assert_eq!(
+            SessionTitleSource::parse("user"),
+            Some(SessionTitleSource::User)
+        );
+        assert_eq!(
+            SessionTitleSource::parse("AUTO"),
+            Some(SessionTitleSource::Auto)
+        );
         assert_eq!(SessionTitleSource::parse("nope"), None);
-    }
-
-    #[test]
-    fn pick_generated_title_prefers_content_then_reasoning() {
-        assert_eq!(
-            pick_generated_title("Fix login bug", "long internal reasoning"),
-            "Fix login bug"
-        );
-        assert_eq!(
-            pick_generated_title("", "First line\nFix login bug"),
-            "Fix login bug"
-        );
-    }
-
-    #[test]
-    fn finalize_generated_title_falls_back_to_user_text() {
-        assert_eq!(
-            finalize_generated_title("", "", "如何修复登录崩溃问题").unwrap(),
-            "如何修复登录崩溃问题"
-        );
     }
 }

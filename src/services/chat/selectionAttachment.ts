@@ -95,3 +95,20 @@ export function parseSelectionAttachment(content: string | undefined | null): Se
     attachedFiles: extracted.attachedFiles.length > 0 ? extracted.attachedFiles : undefined,
   };
 }
+
+/** Swap the human-visible prompt, keeping images, file chips, and selection tags. */
+export function replaceUserVisibleText(content: string, nextMessage: string): string {
+  const parsed = parseSelectionAttachment(content);
+  const next = nextMessage.trim();
+  const previous = parsed.message;
+  if (!previous) {
+    if (!next) return content;
+    return [next, content.trim()].filter(Boolean).join("\n\n");
+  }
+  const idx = content.indexOf(previous);
+  if (idx < 0) {
+    if (!next) return content;
+    return [next, content].join("\n\n");
+  }
+  return `${content.slice(0, idx)}${next}${content.slice(idx + previous.length)}`;
+}

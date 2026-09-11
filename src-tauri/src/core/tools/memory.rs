@@ -624,6 +624,14 @@ pub fn skills_dir() -> PathBuf {
     dirs_path().join("skills")
 }
 
+pub fn user_data_dir() -> PathBuf {
+    dirs_path()
+}
+
+pub fn plugins_dir() -> PathBuf {
+    dirs_path().join("plugins")
+}
+
 pub fn shared_memory_store() -> Arc<MemoryStore> {
     static STORE: std::sync::OnceLock<Arc<MemoryStore>> = std::sync::OnceLock::new();
     Arc::clone(STORE.get_or_init(|| Arc::new(MemoryStore::new(default_memory_path()))))

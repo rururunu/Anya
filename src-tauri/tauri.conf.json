@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Anya",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "identifier": "ai.anya.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "node scripts/fetch-rg.mjs && node scripts/fetch-deno.mjs && pnpm dev",
     "devUrl": "http://localhost:13330",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "node scripts/fetch-rg.mjs && node scripts/fetch-deno.mjs && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -34,8 +34,8 @@
         "label": "workbench",
         "title": "Anya",
         "url": "/#/workbench",
-        "width": 1280,
-        "height": 820,
+        "width": 2170,
+        "height": 1210,
         "minWidth": 960,
         "minHeight": 640,
         "decorations": false,
@@ -48,6 +48,25 @@
         "focus": true,
         "resizable": true,
         "maximizable": true
+      },
+      {
+        "label": "desktop-pet",
+        "title": "Anya Pet",
+        "url": "/#/desktop-pet",
+        "width": 215,
+        "height": 215,
+        "minWidth": 150,
+        "minHeight": 150,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "visible": false,
+        "skipTaskbar": true,
+        "center": false,
+        "focus": false,
+        "resizable": false,
+        "maximizable": false
       }
     ],
     "security": {
@@ -74,7 +93,8 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": ["binaries/rg", "binaries/deno"]
   },
   "plugins": {
     "updater": {

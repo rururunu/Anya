@@ -17,7 +17,7 @@ const PROJECT_RULE_CANDIDATES: &[&str] = &["agent.md", "Agent.md", "AGENTS.md", 
 pub struct TaskRules {
     pub recalled_memories: Option<String>,
     pub project_rules: Option<String>,
-    /// Explicit `#skill:` / `#mcp:` selections from the user message.
+    /// Explicit `#skill:` / `#mcp:` / `#plugin:` selections from the user message.
     pub preferred_resources: Option<String>,
     pub memory_decision: MemoryDecision,
 }
@@ -153,10 +153,11 @@ fn load_project_rules(root: &Path) -> Option<String> {
     })
 }
 
-/// Parse `#skill:name` / `#mcp:id` tokens into a system hint block.
+/// Parse `#skill:name` / `#mcp:id` / `#plugin:id` tokens into a system hint block.
 fn format_preferred_resources(user_message: &str) -> Option<String> {
     let mut skills = Vec::new();
     let mut mcps = Vec::new();
+    let mut plugins = Vec::new();
     let mut rest = user_message;
     while let Some(hash) = rest.find('#') {
         rest = &rest[hash + 1..];
@@ -164,6 +165,8 @@ fn format_preferred_resources(user_message: &str) -> Option<String> {
             ("skill", rest_skill)
         } else if let Some(rest_mcp) = rest.strip_prefix("mcp:") {
             ("mcp", rest_mcp)
+        } else if let Some(rest_plugin) = rest.strip_prefix("plugin:") {
+            ("plugin", rest_plugin)
         } else {
             continue;
         };
@@ -186,11 +189,16 @@ fn format_preferred_resources(user_message: &str) -> Option<String> {
                     mcps.push(id);
                 }
             }
+            "plugin" => {
+                if !plugins.iter().any(|existing: &String| existing == &id) {
+                    plugins.push(id);
+                }
+            }
             _ => {}
         }
         rest = &after_kind[id_len.min(after_kind.len())..];
     }
-    if skills.is_empty() && mcps.is_empty() {
+    if skills.is_empty() && mcps.is_empty() && plugins.is_empty() {
         return None;
     }
     let mut lines = vec![
@@ -200,6 +208,11 @@ fn format_preferred_resources(user_message: &str) -> Option<String> {
     for name in &skills {
         lines.push(format!(
             "- Skill `{name}`: load with `load_skill` / `run_skill`, or call the dedicated skill tool when available."
+        ));
+    }
+    for id in &plugins {
+        lines.push(format!(
+            "- Plugin `{id}`: prefer tools whose names start with `plugin_{id}__`. Use them for this task; do not say Anya cannot."
         ));
     }
     for id in &mcps {
@@ -335,6 +348,14 @@ mod tests {
                 .unwrap();
         assert!(block.contains("generate_word"));
         assert!(block.contains("mcp__filesystem__"));
+        assert!(block.contains("<preferred-resources>"));
+    }
+
+    #[test]
+    fn formats_preferred_plugin_tokens() {
+        let block = format_preferred_resources("#plugin:computer-use 看一下屏幕").unwrap();
+        assert!(block.contains("computer-use"));
+        assert!(block.contains("plugin_computer-use__"));
         assert!(block.contains("<preferred-resources>"));
     }
 

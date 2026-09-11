@@ -1,7 +1,11 @@
 <template>
   <div
     class="settings-workbench"
-    :class="{ embedded: props.embedded, 'is-glass': settingStore.chromeFrostedGlass }"
+    :class="{
+      embedded: props.embedded,
+      'is-glass': settingStore.chromeFrostedGlass,
+      'has-custom-bg': hasCustomBg,
+    }"
   >
     <div v-if="!props.embedded" class="glass-chrome" aria-hidden="true" />
     <header v-if="!props.embedded" class="titlebar">
@@ -50,7 +54,7 @@
                     class="settings-nav-item"
                     :is-active="activeCategory === navItem.id"
                     :title="navItem.label"
-                    @click="activeCategory = navItem.id"
+                    @click="activeCategory = navItem.id as CategoryId"
                   >
                     <component :is="navItem.icon" class="size-4 shrink-0" />
                     <span class="settings-nav-label">{{ navItem.label }}</span>
@@ -83,6 +87,7 @@
                 :version="appVersion"
                 :identifier="appIdentifier"
               />
+              <PetSettings v-else-if="activeCategory === 'pet'" />
               <SettingFieldList
                 v-else
                 :items="visibleItems"
@@ -111,7 +116,11 @@
                 @save-api-key="saveApiKey"
                 @save-memory-settings="saveMemorySettings"
                 @save-web-search-settings="saveWebSearchSettings"
-              />
+              >
+                <template #after-first-group>
+                  <CustomThemeManager v-if="activeCategory === 'appearance'" />
+                </template>
+              </SettingFieldList>
             </div>
           </div>
         </SidebarInset>
@@ -121,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from "vue";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -140,6 +149,7 @@ import {
   Search,
   Server,
   Settings2,
+  Sparkles,
   X,
   BarChart3,
 } from "@lucide/vue";
@@ -150,10 +160,12 @@ import TokenUsageSettings from "@/components/settings/TokenUsageSettings.vue";
 import AboutSettings from "@/components/settings/AboutSettings.vue";
 import ProviderSettings from "@/components/settings/ProviderSettings.vue";
 import RagSettings from "@/components/settings/RagSettings.vue";
+import PetSettings from "@/components/settings/PetSettings.vue";
 import ImageSettings from "@/components/settings/ImageSettings.vue";
 import SettingFieldList from "@/components/settings/SettingFieldList.vue";
+import CustomThemeManager from "@/components/settings/CustomThemeManager.vue";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
-import { reloadAppearanceWindow } from "@/services/overlay/appearance";
+import { applyOpacity, reloadAppearanceWindow } from "@/services/overlay/appearance";
 import { gsapSettingsNavMount, gsapSettingsNavUnmount } from "@/services/motion/gsapPresets";
 import { getAppInfo, relaunchApp, webviewGpuDisabled } from "@/services/ipc";
 import {
@@ -201,6 +213,12 @@ const props = withDefaults(
     embedded: false,
   },
 );
+
+const hasCustomBg = computed(() => {
+  const currentThemeId = settingStore.colorScheme;
+  const customTheme = settingStore.customThemes.find((t) => t.id === currentThemeId);
+  return Boolean(customTheme?.background?.image || settingStore.customBackground?.image);
+});
 
 const SETTINGS_BASE_WIDTH = 880;
 const SETTINGS_BASE_HEIGHT = 620;
@@ -266,7 +284,7 @@ const t = computed(() => {
       memory: tr(language, "settings.categories.memory"),
       search: tr(language, "settings.categories.search"),
       agent: tr(language, "settings.categories.agent"),
-      plugins: tr(language, "settings.categories.plugins"),
+      pinTools: tr(language, "settings.categories.pinTools"),
       workspace: tr(language, "settings.categories.workspace"),
       history: tr(language, "settings.categories.history"),
       archive: tr(language, "settings.categories.archive"),
@@ -274,6 +292,7 @@ const t = computed(() => {
       about: tr(language, "settings.categories.about"),
       provider: tr(language, "settings.categories.provider"),
       rag: tr(language, "settings.categories.rag"),
+      pet: tr(language, "settings.categories.pet"),
     },
   };
 });
@@ -287,11 +306,16 @@ const categories = computed(() => [
     label: t.value.categories.workspace,
     icon: Folders,
   },
+  {
+    id: "pet" as const,
+    label: t.value.categories.pet,
+    icon: Sparkles,
+  },
   { id: "agent" as const, label: t.value.categories.agent, icon: Shield },
   { id: "history" as const, label: t.value.categories.history, icon: History },
   { id: "archive" as const, label: t.value.categories.archive, icon: Archive },
   { id: "usage" as const, label: t.value.categories.usage, icon: BarChart3 },
-  { id: "plugins" as const, label: t.value.categories.plugins, icon: Pin },
+  { id: "pinTools" as const, label: t.value.categories.pinTools, icon: Pin },
   {
     id: "memory" as const,
     label: t.value.categories.memory,
@@ -307,10 +331,16 @@ const categories = computed(() => [
   { id: "about" as const, label: t.value.categories.about, icon: Info },
 ]);
 
+type SettingsNavItem = { id: string; label: string; icon?: Component };
+
 const categorySections = computed(() => {
   const byId = new Map(categories.value.map((category) => [category.id, category]));
   type SettingsNavId = (typeof categories.value)[number]["id"];
-  const section = (id: string, label: string, ids: SettingsNavId[]) => ({
+  const section = (
+    id: string,
+    label: string,
+    ids: SettingsNavId[],
+  ): { id: string; label: string; categories: SettingsNavItem[] } => ({
     id,
     label,
     categories: ids.flatMap((categoryId) => {
@@ -320,17 +350,21 @@ const categorySections = computed(() => {
   });
   const language = settingStore.language;
   return [
-    section("general", tr(language, "settings.sections.general"), ["appearance", "workspace"]),
+    section("general", tr(language, "settings.sections.general"), [
+      "appearance",
+      "pet",
+      "workspace",
+    ]),
     section("intelligence", tr(language, "settings.sections.intelligence"), [
       "provider",
       "ai",
       "image",
+      "pinTools",
       "agent",
       "memory",
       "search",
       "rag",
     ]),
-    section("extensions", tr(language, "settings.sections.extensions"), ["plugins"]),
     section("data", tr(language, "settings.sections.data"), ["history", "archive", "usage"]),
     section("system", tr(language, "settings.sections.system"), ["about"]),
   ];
@@ -359,7 +393,7 @@ const FIELD_LIST_PAGE_DESC_KEYS = new Set([
   "agent",
   "memory",
   "search",
-  "plugins",
+  "pinTools",
 ]);
 
 const fieldPageDescription = computed(() => {
@@ -380,11 +414,12 @@ function onColorSchemeChange(value: unknown) {
   if (typeof value !== "string") {
     return;
   }
-  const scheme = value.slice("builtin:".length);
-  if (scheme !== "dark" && scheme !== "light") {
-    return;
-  }
-  if (scheme === settingStore.colorScheme) {
+  const scheme = value.startsWith("builtin:")
+    ? value.slice("builtin:".length)
+    : value.startsWith("custom:")
+      ? value.slice("custom:".length)
+      : value;
+  if (!scheme || scheme === settingStore.colorScheme) {
     return;
   }
   void (async () => {
@@ -427,9 +462,15 @@ function onReasoningLanguageChange(value: unknown) {
   void settingStore.update({ reasoningLanguage: value as ReasoningLanguage });
 }
 
+let opacityDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 function onSliderChange(id: string, value: number) {
   if (id === "opacity") {
-    void settingStore.update({ opacity: value });
+    void applyOpacity(value);
+    if (opacityDebounceTimer) clearTimeout(opacityDebounceTimer);
+    opacityDebounceTimer = setTimeout(() => {
+      void settingStore.update({ opacity: value });
+    }, 120);
   }
 }
 
@@ -599,6 +640,10 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  if (opacityDebounceTimer) {
+    clearTimeout(opacityDebounceTimer);
+    opacityDebounceTimer = null;
+  }
   gsapSettingsNavUnmount(settingsNavEl);
   settingsNavEl = null;
 });
@@ -714,8 +759,17 @@ watch(
 .settings-workbench.is-glass .settings-body,
 .settings-workbench.is-glass .titlebar,
 .settings-workbench.is-glass .settings-nav,
+.settings-workbench.is-glass .settings-content-pane,
 .settings-workbench.is-glass :deep([data-slot="sidebar"]),
-.settings-workbench.is-glass :deep([data-slot="sidebar-wrapper"]) {
+.settings-workbench.is-glass :deep([data-slot="sidebar-wrapper"]),
+.settings-workbench.has-custom-bg,
+.settings-workbench.has-custom-bg.embedded,
+.settings-workbench.has-custom-bg .settings-body,
+.settings-workbench.has-custom-bg .titlebar,
+.settings-workbench.has-custom-bg .settings-nav,
+.settings-workbench.has-custom-bg .settings-content-pane,
+.settings-workbench.has-custom-bg :deep([data-slot="sidebar"]),
+.settings-workbench.has-custom-bg :deep([data-slot="sidebar-wrapper"]) {
   background: transparent !important;
   box-shadow: none;
 }
@@ -737,6 +791,8 @@ watch(
   z-index: 0;
   pointer-events: none;
   background: var(--workbench-glass-fill);
+  backdrop-filter: blur(20px) saturate(1.25);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
 }
 
 .settings-workbench.is-glass:not(.embedded) .titlebar,

@@ -13,12 +13,14 @@ import {
   listenToolFinished,
   listenToolStarted,
   listenTaskListUpdated,
+  listenPlanUpdated,
   listenPlanModeChanged,
   listenFileOffer,
   listenUrlOffer,
 } from "@/services/ipc";
 import { normalizeToolActivityEvent, resolveSessionId } from "@/services/chat/normalize";
 import { parseContextCompactedStatus } from "@/services/chat/compactMarker";
+import { isPluginAgentSessionId } from "@/services/chat/pluginSession";
 import { createRafBatch } from "@/services/chat/rafBatch";
 import { recordToolActivityUsage } from "@/services/usage/resourceUsage";
 import { createLogger } from "@/services/logger";
@@ -59,7 +61,11 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
   const sessionsStore = useChatSessionsStore();
   const overlayDraftSessionId = () => sessionsStore.overlayDraftSessionId;
   const sessionKnown = (sessionId: string) =>
-    Boolean(sessionsStore.sessions[sessionId] || sessionId === overlayDraftSessionId());
+    Boolean(
+      sessionsStore.sessions[sessionId] ||
+      sessionId === overlayDraftSessionId() ||
+      isPluginAgentSessionId(sessionId),
+    );
 
   // Coalesce high-frequency stream deltas onto animation frames.
   const streamBatch = createRafBatch<StreamBatchUpdate>((batch) => {
@@ -306,6 +312,15 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
     chatStore.setSessionTasks(sessionId, payload.tasks ?? []);
   });
 
+  await listenPlanUpdated((payload) => {
+    const sessionId = resolveSessionId(payload.sessionId, overlayDraftSessionId());
+    if (!sessionId) return;
+    chatStore.setSessionPlan(sessionId, {
+      path: payload.path,
+      content: payload.content,
+    });
+  });
+
   await listenPlanModeChanged((payload) => {
     const sessionId = resolveSessionId(payload.sessionId, overlayDraftSessionId());
     if (!sessionId) return;
@@ -363,6 +378,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
         return;
       }
       // Companion rolled the turn back; mirror the desktop rewind's history reload.
+      chatStore.clearSending(sessionId);
       void chatStore.loadHistory(sessionId);
     });
     await listen<{ sessionId?: string }>("remote-plan-approve", (event) => {

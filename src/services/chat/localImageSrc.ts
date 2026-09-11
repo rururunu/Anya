@@ -17,6 +17,37 @@ export function unwrapLocalImagePath(source: string): string {
   return value.startsWith("path:") ? value.slice(5) : value;
 }
 
+function mimeFromPath(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  if (ext === "png") return "image/png";
+  return "image/jpeg";
+}
+
+/**
+ * Load a local image via plugin-fs as a blob URL.
+ * Use this for wallpapers and other paths outside assetProtocol scope
+ * (`convertFileSrc` would log `asset protocol not configured to allow the path`).
+ */
+export async function loadLocalImageObjectUrl(source: string): Promise<string> {
+  const value = source.trim();
+  if (!value) throw new Error("empty image source");
+  if (value.startsWith("data:") || value.startsWith("blob:") || /^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (!isLocalImagePath(value)) {
+    return value;
+  }
+  const path = unwrapLocalImagePath(value);
+  const { readFile } = await import("@tauri-apps/plugin-fs");
+  const bytes = await readFile(path);
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return URL.createObjectURL(new Blob([copy], { type: mimeFromPath(path) }));
+}
+
 /** Convert a chat image source into something `<img src>` can load in WebView. */
 export function resolveChatImageSrc(source: string): string {
   const value = source.trim();

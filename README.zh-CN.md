@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.19-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.20-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -36,16 +36,17 @@
 
 ## 一览
 
-|               |                                                                                                |
-| ------------- | ---------------------------------------------------------------------------------------------- |
-| **工作台**    | 完整桌面界面：置顶会话、项目工作区、归档 / 恢复、变更审查与内嵌设置。                          |
-| **悬浮窗**    | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                                          |
-| **Agent**     | Ask / Agent / Plan / Image；工具、Skills、MCP、Office；复杂任务可自动进入带写操作门禁的计划。  |
-| **Companion** | [安卓远程](https://github.com/rururunu/AnyaAndroid) — 扫码后即可在手机上对话、审批、收发文件。 |
-| **RAG**       | 可选语义工作区检索（API 或本地嵌入）。启用前不下载模型、不发请求。                             |
-| **本地优先**  | 密钥、历史与设置默认保存在本机。                                                               |
+|               |                                                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **工作台**    | 完整桌面界面：置顶会话、项目工作区、归档 / 恢复、变更审查与内嵌设置。                                                         |
+| **悬浮窗**    | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                                                                         |
+| **Agent**     | Ask / Agent / Plan / Image；工具、Skills、MCP、Office；复杂任务可自动进入带写操作门禁的计划。                                 |
+| **电脑操控**  | 官方 `computer-use` **Agent** 插件（默认关闭）：先 `launch`/快捷键/UIA 控件，像素点击只作兜底。截图同时带控件树。仅 Windows。 |
+| **Companion** | [安卓远程](https://github.com/rururunu/AnyaAndroid) — 扫码后即可在手机上对话、审批、收发文件。                                |
+| **RAG**       | 可选语义工作区检索（API 或本地嵌入）。启用前不下载模型、不发请求。                                                            |
+| **本地优先**  | 密钥、历史与设置默认保存在本机。                                                                                              |
 
-**文档：** [架构](./docs/architecture-overview.zh-CN.md) · [发布](./docs/release.zh-CN.md) · [索引](./docs/README.zh-CN.md)
+**文档：** [架构](./docs/architecture-overview.zh-CN.md) · [插件系统](./docs/plugin-system.zh-CN.md) · [电脑操控](./docs/computer-use.zh-CN.md) · [发布](./docs/release.zh-CN.md) · [索引](./docs/README.zh-CN.md)
 
 ---
 
@@ -299,7 +300,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.19_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.20_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 

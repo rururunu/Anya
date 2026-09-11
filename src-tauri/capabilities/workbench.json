@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:event:default",
+    "core:event:allow-emit",
     "core:window:allow-hide",
     "core:window:allow-show",
     "core:window:allow-set-focus",
@@ -32,6 +33,7 @@
     "allow-app-commands",
     "allow-chat-commands",
     "allow-remote-commands",
+    "allow-plugin-host-commands",
     "updater:default",
     "process:default"
   ]

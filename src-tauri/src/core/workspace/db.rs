@@ -110,7 +110,9 @@ pub(super) async fn init_schema(pool: &SqlitePool) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) async fn load_state(pool: &SqlitePool) -> Result<(Vec<Workspace>, Option<Workspace>), String> {
+pub(super) async fn load_state(
+    pool: &SqlitePool,
+) -> Result<(Vec<Workspace>, Option<Workspace>), String> {
     let rows = sqlx::query(
         "SELECT id, name, root, description, source, created_at, last_used_at, pinned, archived, sort_order
              FROM workspace

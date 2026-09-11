@@ -9,8 +9,8 @@ pub use types::{Workspace, WorkspaceManager};
 
 #[cfg(test)]
 mod tests {
-    use super::helpers::workspace_name;
     use super::db::{init_schema, load_state};
+    use super::helpers::workspace_name;
     use super::types::WorkspaceManager;
     use sqlx::{Row, SqlitePool};
     use std::sync::{Arc, RwLock};

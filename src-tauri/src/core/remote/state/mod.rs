@@ -5,12 +5,12 @@ mod persist;
 mod types;
 
 pub use lifecycle::{
-    build_pairing_info, gateway_status, list_paired_devices, new_pairing_token, now_ms, pairing_ttl,
-    remote_state, restore_gateway_if_enabled, revoke_device, stop_gateway,
+    build_pairing_info, gateway_status, list_paired_devices, new_pairing_token, now_ms,
+    pairing_ttl, remote_state, restore_gateway_if_enabled, revoke_device, stop_gateway,
 };
 pub use types::{
-    ActivePairing, GatewayStatus, PairedDevice, PairingSessionInfo, PreviewOrigin, RemoteGatewayState,
-    TunnelPrefs, TunnelPublicInfo,
+    ActivePairing, GatewayStatus, PairedDevice, PairingSessionInfo, PreviewOrigin,
+    RemoteGatewayState, TunnelPrefs, TunnelPublicInfo,
 };
 pub(crate) use types::{TunnelChildHealth, TunnelRuntime};
 
@@ -25,7 +25,7 @@ use tokio::sync::oneshot;
 
 use super::protocol::DEFAULT_PORT;
 use persist::{load_devices, load_prefs, save_devices, save_prefs};
-use types::{GatewayPrefs, MAX_PREVIEWS, RuntimeInner};
+use types::{GatewayPrefs, RuntimeInner, MAX_PREVIEWS};
 
 impl RemoteGatewayState {
     pub(super) fn new(devices_path: PathBuf) -> Self {

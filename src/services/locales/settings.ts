@@ -62,7 +62,8 @@ type CategoryKey =
   | "agent"
   | "mcp"
   | "skills"
-  | "plugins"
+  | "pinTools"
+  | "pet"
   | "workspace"
   | "history"
   | "archive"
@@ -85,9 +86,9 @@ type GroupKey =
   | "agentSafety"
   | "agentDisplay"
   | "agentCapabilities"
-  | "plugins"
+  | "pinBadges"
   | "about";
-type PageDescKey = "appearance" | "ai" | "image" | "agent" | "memory" | "search" | "plugins";
+type PageDescKey = "appearance" | "ai" | "image" | "agent" | "memory" | "search" | "pinTools";
 type HistoryKey =
   | "search"
   | "title"
@@ -193,6 +194,16 @@ type ArchiveKey =
   | "deleteSelectedWorkspaces"
   | "deleteSelectedMixed";
 
+type PetKey =
+  | "intro"
+  | "visibilityTitle"
+  | "visibilityHint"
+  | "sizeTitle"
+  | "sizeHint"
+  | "sizeSmall"
+  | "sizeMedium"
+  | "sizeLarge";
+
 export type SettingsI18nKey =
   | "settings.title"
   | "settings.minimize"
@@ -208,19 +219,6 @@ export type SettingsI18nKey =
   | "settings.hotkey.listenOff"
   | "settings.hotkey.toggleListen"
   | "settings.provider.deepseek"
-  | "settings.provider.gemini"
-  | "settings.provider.geminiDescription"
-  | "settings.provider.geminiClientId"
-  | "settings.provider.geminiClientSecret"
-  | "settings.provider.geminiClientSecretHint"
-  | "settings.provider.geminiAccount"
-  | "settings.provider.geminiLogin"
-  | "settings.provider.geminiLogout"
-  | "settings.provider.geminiLoggingIn"
-  | "settings.provider.geminiCancelLogin"
-  | "settings.provider.geminiSignedIn"
-  | "settings.provider.geminiSignedOut"
-  | "settings.provider.geminiImportCredentials"
   | "settings.provider.custom"
   | "settings.provider.title"
   | "settings.provider.description"
@@ -273,7 +271,8 @@ export type SettingsI18nKey =
   | `settings.historyConfirm.${HistoryConfirmKey}`
   | `settings.archive.${ArchiveKey}`
   | `settings.rag.${RagKey}`
-  | `settings.image.${ImageKey}`;
+  | `settings.image.${ImageKey}`
+  | `settings.pet.${PetKey}`;
 
 export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.title": "Settings",
@@ -291,25 +290,10 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.hotkey.toggleListen": "Toggle global shortcut listening",
 
   "settings.provider.deepseek": "DeepSeek Provider",
-  "settings.provider.gemini": "Gemini Provider",
-  "settings.provider.geminiDescription":
-    "Sign in with Google via Antigravity to use Gemini models (Cloud Code).",
-  "settings.provider.geminiClientId": "OAuth Client ID",
-  "settings.provider.geminiClientSecret": "OAuth Client Secret",
-  "settings.provider.geminiClientSecretHint":
-    "From Google Cloud → Credentials → your Desktop OAuth client. Kept on this device only.",
-  "settings.provider.geminiAccount": "Google account",
-  "settings.provider.geminiLogin": "Sign in with Google",
-  "settings.provider.geminiLogout": "Sign out",
-  "settings.provider.geminiLoggingIn": "Waiting for browser…",
-  "settings.provider.geminiCancelLogin": "Cancel",
-  "settings.provider.geminiSignedIn": "Signed in",
-  "settings.provider.geminiSignedOut": "Not signed in",
-  "settings.provider.geminiImportCredentials": "Import client_secret JSON",
   "settings.provider.custom": "Custom Provider",
   "settings.provider.title": "Provider Configurations",
   "settings.provider.description":
-    "Configure DeepSeek, Gemini, or OpenAI-compatible vendors (MiMo, Kimi, GLM, MiniMax, Ark).",
+    "Configure DeepSeek or OpenAI-compatible vendors (MiMo, Kimi, GLM, MiniMax, Ark).",
   "settings.provider.apiKey": "API Key",
   "settings.provider.getApiKey": "Get a key:",
   "settings.provider.baseUrl": "Base URL",
@@ -362,12 +346,22 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.categories.agent": "Agent",
   "settings.categories.mcp": "MCP",
   "settings.categories.skills": "Skills",
-  "settings.categories.plugins": "Pin tools",
+  "settings.categories.pinTools": "Pin tools",
   "settings.categories.workspace": "Workspace",
   "settings.categories.history": "History",
   "settings.categories.archive": "Archive",
   "settings.categories.about": "About",
   "settings.categories.provider": "Provider",
+  "settings.categories.pet": "Desktop pet",
+  "settings.pet.intro": "Place an always-present Anya pet on your desktop for companionship.",
+  "settings.pet.visibilityTitle": "Show desktop pet",
+  "settings.pet.visibilityHint":
+    "When enabled, the pet appears in a screen corner and can be dismissed at any time.",
+  "settings.pet.sizeTitle": "Pet size",
+  "settings.pet.sizeHint": "Adjust the pet's display size.",
+  "settings.pet.sizeSmall": "Small",
+  "settings.pet.sizeMedium": "Medium",
+  "settings.pet.sizeLarge": "Large",
   "settings.categories.rag": "RAG Search",
 
   "settings.rag.title": "RAG Search",
@@ -418,7 +412,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.groups.agentSafety": "Safety",
   "settings.groups.agentDisplay": "Display",
   "settings.groups.agentCapabilities": "Capabilities",
-  "settings.groups.plugins": "Badges",
+  "settings.groups.pinBadges": "Badges",
   "settings.groups.about": "Application",
 
   "settings.pages.appearance.description": "Theme, window, and the shortcuts that wake Anya.",
@@ -431,7 +425,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Long-term preferences and project conventions. Leave the API key empty to use local memory.",
   "settings.pages.search.description":
     "Give the model web_search. Use RAG Search for workspace semantics.",
-  "settings.pages.plugins.description":
+  "settings.pages.pinTools.description":
     "Show an AI badge on PixPin / Snipaste pins to attach the image to a message.",
 
   "settings.image.title": "Image generation",
@@ -511,7 +505,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Raise the compaction / turn budget ceiling to 1,000,000 tokens. The effective window is still capped by the selected model's native limit (unknown models stay at 256k).",
   "settings.fields.reasoningEffort.title": "Reasoning Effort",
   "settings.fields.reasoningEffort.description":
-    "Preferred thinking depth. The input bar shows each model's official levels and names (DeepSeek: off/low/high/max; GPT: none/minimal/low/…; Grok: low/medium/high/xhigh). Unsupported values are mapped.",
+    "Preferred thinking depth. The input bar shows each model's official levels and names (DeepSeek: off/low/high/max; GPT: none/minimal/low…; Grok: low/medium/high/xhigh). Unsupported values are mapped.",
   "settings.fields.reasoningLanguage.title": "Reasoning Language",
   "settings.fields.reasoningLanguage.description":
     "Preferences for visible reasoning and final answer language (transient injection).",
@@ -663,12 +657,21 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.agent": "代理",
     "settings.categories.mcp": "MCP",
     "settings.categories.skills": "技能",
-    "settings.categories.plugins": "贴图工具",
+    "settings.categories.pinTools": "贴图工具",
     "settings.categories.workspace": "工作区",
     "settings.categories.history": "历史",
     "settings.categories.archive": "归档",
     "settings.categories.about": "关于",
     "settings.categories.provider": "提供商",
+    "settings.categories.pet": "宠物",
+    "settings.pet.intro": "在桌面上放置一个常驻陪伴的 Anya 宠物。",
+    "settings.pet.visibilityTitle": "显示桌面宠物",
+    "settings.pet.visibilityHint": "打开后宠物会出现在屏幕角落，可随时关闭。",
+    "settings.pet.sizeTitle": "宠物大小",
+    "settings.pet.sizeHint": "调整宠物的显示尺寸。",
+    "settings.pet.sizeSmall": "小",
+    "settings.pet.sizeMedium": "中",
+    "settings.pet.sizeLarge": "大",
     "settings.categories.rag": "RAG 检索",
 
     "settings.rag.title": "RAG 检索",
@@ -705,21 +708,6 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.rag.incomplete": "请填写 API 地址、API Key 与模型。",
 
     "settings.provider.deepseek": "DeepSeek 提供商",
-    "settings.provider.gemini": "Gemini 提供商",
-    "settings.provider.geminiDescription":
-      "通过 Antigravity 使用 Google 账号登录后即可调用 Gemini（Cloud Code）。",
-    "settings.provider.geminiClientId": "OAuth Client ID",
-    "settings.provider.geminiClientSecret": "OAuth Client Secret",
-    "settings.provider.geminiClientSecretHint":
-      "来自 Google Cloud → 凭据 → Desktop OAuth 客户端，仅保存在本机。",
-    "settings.provider.geminiAccount": "Google 账号",
-    "settings.provider.geminiLogin": "使用 Google 登录",
-    "settings.provider.geminiLogout": "退出登录",
-    "settings.provider.geminiLoggingIn": "等待浏览器授权…",
-    "settings.provider.geminiCancelLogin": "取消",
-    "settings.provider.geminiSignedIn": "已登录",
-    "settings.provider.geminiSignedOut": "未登录",
-    "settings.provider.geminiImportCredentials": "导入 client_secret JSON",
     "settings.provider.custom": "自定义提供商",
     "settings.provider.title": "模型提供商配置",
     "settings.provider.description":
@@ -781,7 +769,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.agentSafety": "安全",
     "settings.groups.agentDisplay": "显示",
     "settings.groups.agentCapabilities": "能力",
-    "settings.groups.plugins": "角标",
+    "settings.groups.pinBadges": "角标",
     "settings.groups.about": "应用信息",
 
     "settings.pages.appearance.description": "主题、窗口与唤起快捷键。",
@@ -792,7 +780,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.pages.agent.description": "工具审批、过程展示与编码行为。",
     "settings.pages.memory.description": "长期偏好与项目约定。留空 API Key 时使用本地记忆。",
     "settings.pages.search.description": "给模型提供 web_search。工作区语义检索请到「RAG 检索」。",
-    "settings.pages.plugins.description":
+    "settings.pages.pinTools.description":
       "在 PixPin / Snipaste 贴图右下角显示 AI 角标，点击后把图片附加到消息。",
 
     "settings.image.title": "生图",
@@ -905,7 +893,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.semanticSearchModel.description":
       "用于语义排序的模型。更大的模型更准确，但下载与推理更慢。",
     "settings.fields.toolApprovalMode.title": "工具审批模式",
-    "settings.fields.toolApprovalMode.description": "一律允许仍会拦截危险 shell。",
+    "settings.fields.toolApprovalMode.description": "全开仍会拦截危险 shell。",
     "settings.fields.agentWorkDisplay.title": "工作过程显示",
     "settings.fields.agentWorkDisplay.description":
       "详细显示：命令与代码 diff 直接穿插在对话时间线中。轻量显示：收入过程详情并默认折叠；读取类工具始终在过程详情中。",
@@ -1003,6 +991,16 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "アーカイブ",
     "settings.categories.about": "情報",
     "settings.categories.provider": "プロバイダー",
+    "settings.categories.pet": "ペット",
+    "settings.pet.intro": "デスクトップにいつでも寄り添うAnyaペットを配置します。",
+    "settings.pet.visibilityTitle": "デスクトップペットを表示",
+    "settings.pet.visibilityHint":
+      "オンにすると画面の隅にペットが表示され、いつでも閉じることができます。",
+    "settings.pet.sizeTitle": "ペットのサイズ",
+    "settings.pet.sizeHint": "ペットの表示サイズを調整します。",
+    "settings.pet.sizeSmall": "小",
+    "settings.pet.sizeMedium": "中",
+    "settings.pet.sizeLarge": "大",
     "settings.provider.deepseek": "DeepSeek プロバイダー",
     "settings.provider.custom": "カスタムプロバイダー",
     "settings.provider.title": "プロバイダー設定",
@@ -1050,7 +1048,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.agentSafety": "安全",
     "settings.groups.agentDisplay": "表示",
     "settings.groups.agentCapabilities": "機能",
-    "settings.groups.plugins": "バッジ",
+    "settings.groups.pinBadges": "バッジ",
     "settings.groups.about": "アプリケーション",
 
     "settings.fields.colorScheme.title": "カラーテーマ",
@@ -1165,6 +1163,17 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "Архив",
     "settings.categories.about": "О программе",
     "settings.categories.provider": "Провайдер",
+    "settings.categories.pet": "Питомец",
+    "settings.pet.intro":
+      "Поместите питомца Anya на рабочий стол для постоянного присутствия и общения.",
+    "settings.pet.visibilityTitle": "Показывать питомца на рабочем столе",
+    "settings.pet.visibilityHint":
+      "При включении питомец появится в углу экрана; его можно скрыть в любое время.",
+    "settings.pet.sizeTitle": "Размер питомца",
+    "settings.pet.sizeHint": "Настройка размера отображения питомца.",
+    "settings.pet.sizeSmall": "Маленький",
+    "settings.pet.sizeMedium": "Средний",
+    "settings.pet.sizeLarge": "Большой",
     "settings.provider.deepseek": "Провайдер DeepSeek",
     "settings.provider.custom": "Пользовательский провайдер",
     "settings.provider.title": "Настройки провайдеров",
@@ -1213,7 +1222,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.agentSafety": "Безопасность",
     "settings.groups.agentDisplay": "Отображение",
     "settings.groups.agentCapabilities": "Возможности",
-    "settings.groups.plugins": "Значки",
+    "settings.groups.pinBadges": "Значки",
     "settings.groups.about": "Приложение",
 
     "settings.fields.colorScheme.title": "Цветовая схема",
@@ -1330,6 +1339,17 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "Archiv",
     "settings.categories.about": "Info",
     "settings.categories.provider": "Anbieter",
+    "settings.categories.pet": "Haustier",
+    "settings.pet.intro":
+      "Platziere ein ständiges Anya-Haustier zur Begleitung auf deinem Desktop.",
+    "settings.pet.visibilityTitle": "Desktop-Haustier anzeigen",
+    "settings.pet.visibilityHint":
+      "Wenn aktiviert, erscheint das Haustier in einer Bildschirmecke und kann jederzeit geschlossen werden.",
+    "settings.pet.sizeTitle": "Haustiergröße",
+    "settings.pet.sizeHint": "Passe die Anzeigegröße des Haustiers an.",
+    "settings.pet.sizeSmall": "Klein",
+    "settings.pet.sizeMedium": "Mittel",
+    "settings.pet.sizeLarge": "Groß",
     "settings.provider.deepseek": "DeepSeek-Anbieter",
     "settings.provider.custom": "Benutzerdefinierter Anbieter",
     "settings.provider.title": "Anbieterkonfigurationen",
@@ -1377,7 +1397,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.agentSafety": "Sicherheit",
     "settings.groups.agentDisplay": "Anzeige",
     "settings.groups.agentCapabilities": "Funktionen",
-    "settings.groups.plugins": "Badges",
+    "settings.groups.pinBadges": "Badges",
     "settings.groups.about": "Anwendung",
 
     "settings.fields.colorScheme.title": "Farbschema",
@@ -1497,6 +1517,16 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "Archive",
     "settings.categories.about": "À propos",
     "settings.categories.provider": "Fournisseur",
+    "settings.categories.pet": "Animal",
+    "settings.pet.intro": "Placez un animal de bureau Anya pour vous accompagner en permanence.",
+    "settings.pet.visibilityTitle": "Afficher l'animal de bureau",
+    "settings.pet.visibilityHint":
+      "Une fois activé, l'animal apparaît dans un coin de l'écran et peut être masqué à tout moment.",
+    "settings.pet.sizeTitle": "Taille de l'animal",
+    "settings.pet.sizeHint": "Ajustez la taille d'affichage de l'animal.",
+    "settings.pet.sizeSmall": "Petit",
+    "settings.pet.sizeMedium": "Moyen",
+    "settings.pet.sizeLarge": "Grand",
     "settings.provider.deepseek": "Fournisseur DeepSeek",
     "settings.provider.custom": "Fournisseur personnalisé",
     "settings.provider.title": "Configurations du fournisseur",
@@ -1544,7 +1574,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.agentSafety": "Sécurité",
     "settings.groups.agentDisplay": "Affichage",
     "settings.groups.agentCapabilities": "Capacités",
-    "settings.groups.plugins": "Badges",
+    "settings.groups.pinBadges": "Badges",
     "settings.groups.about": "Application",
 
     "settings.fields.colorScheme.title": "Thème de couleurs",
@@ -1666,6 +1696,16 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "보관함",
     "settings.categories.about": "정보",
     "settings.categories.provider": "제공자",
+    "settings.categories.pet": "펫",
+    "settings.pet.intro": "바탕화면에 항상 함께하는 Anya 펫을 배치합니다.",
+    "settings.pet.visibilityTitle": "데스크톱 펫 표시",
+    "settings.pet.visibilityHint":
+      "활성화하면 화면 구석에 펫이 나타나며 언제든지 닫을 수 있습니다.",
+    "settings.pet.sizeTitle": "펫 크기",
+    "settings.pet.sizeHint": "펫의 표시 크기를 조정합니다.",
+    "settings.pet.sizeSmall": "작게",
+    "settings.pet.sizeMedium": "보통",
+    "settings.pet.sizeLarge": "크게",
     "settings.provider.deepseek": "DeepSeek 제공자",
     "settings.provider.custom": "사용자 정의 제공자",
     "settings.provider.title": "모델 제공자 설정",
@@ -1713,7 +1753,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.agentSafety": "보안",
     "settings.groups.agentDisplay": "표시",
     "settings.groups.agentCapabilities": "기능",
-    "settings.groups.plugins": "배지",
+    "settings.groups.pinBadges": "배지",
     "settings.groups.about": "애플리케이션",
 
     "settings.fields.colorScheme.title": "색상 테마",
@@ -1996,7 +2036,7 @@ const settingsFieldKeywords: Record<
     tavilyApiKey: ["联网", "搜索", "tavily", "api", "key", "密钥"],
     semanticSearchEnabled: ["语义", "检索", "工作区", "embedding", "rag", "search"],
     semanticSearchModel: ["语义", "模型", "嵌入", "embedding", "bge", "e5"],
-    toolApprovalMode: ["审批", "ask", "auto", "一律允许", "approval"],
+    toolApprovalMode: ["审批", "ask", "auto", "一律允许", "全开", "approval"],
     agentWorkDisplay: [
       "详细",
       "轻量",

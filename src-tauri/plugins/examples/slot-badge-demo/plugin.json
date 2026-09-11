@@ -1,0 +1,14 @@
+{
+  "id": "slot-badge-demo",
+  "name": "Slot Badge Demo",
+  "version": "0.1.0",
+  "apiVersion": "1.0",
+  "description": "Reference plugin: composer accessory via ctx.slots, mascot override via ctx.assets, cross-plugin ping via ctx.bus, localized label via ctx.i18n.",
+  "entry": "ui/index.html",
+  "icon": "ui/icon.svg",
+  "about": "ui/about.md",
+  "ui": { "entry": "ui/src/activate.js" },
+  "contributes": { "composer": true },
+  "permissions": ["ui.workbench"],
+  "capabilities": []
+}

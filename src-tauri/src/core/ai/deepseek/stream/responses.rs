@@ -10,7 +10,8 @@ use tokio::sync::mpsc::Sender;
 use super::errors::map_read_error;
 use super::sse::next_sse_line;
 use super::types::{
-    StreamReadOutcome, ToolCallBuilder, STREAM_IDLE_TIMEOUT, USER_STREAM_INTERRUPTED, USER_STREAM_STALLED,
+    StreamReadOutcome, ToolCallBuilder, STREAM_IDLE_TIMEOUT, USER_STREAM_INTERRUPTED,
+    USER_STREAM_STALLED,
 };
 
 pub(super) async fn read_responses_sse_stream(
@@ -359,7 +360,9 @@ pub(super) fn json_index(value: &Value, key: &str) -> usize {
         .unwrap_or(0) as usize
 }
 
-pub(super) fn responses_usage(response: &Value) -> Option<(usize, usize, Option<usize>, Option<usize>)> {
+pub(super) fn responses_usage(
+    response: &Value,
+) -> Option<(usize, usize, Option<usize>, Option<usize>)> {
     let usage = response.get("usage")?;
     let input = usage
         .get("input_tokens")

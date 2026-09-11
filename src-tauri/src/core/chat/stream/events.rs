@@ -261,9 +261,9 @@ pub(crate) fn handle_stream_event(
                 // Round committed — later retries keep this prefix.
                 *ctx.stable_content_len = ctx.content.len();
                 *ctx.stable_reasoning_len = ctx.reasoning.len();
-                *ctx.stable_timeline_len =
-                    ctx.conversation
-                        .work_timeline_len(ctx.session_id, ctx.assistant_message_id);
+                *ctx.stable_timeline_len = ctx
+                    .conversation
+                    .work_timeline_len(ctx.session_id, ctx.assistant_message_id);
             }
             ctx.event_bus.emit(BusEvent::ChatStatus {
                 session_id: ctx.session_id.to_string(),
@@ -272,7 +272,10 @@ pub(crate) fn handle_stream_event(
             });
             StreamEventOutcome::Continue
         }
-        StreamEvent::UserContentPatch { message_id, content } => {
+        StreamEvent::UserContentPatch {
+            message_id,
+            content,
+        } => {
             let status = ctx
                 .conversation
                 .find_message(&message_id)

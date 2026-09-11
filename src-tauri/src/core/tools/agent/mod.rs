@@ -160,11 +160,7 @@ fn resolve_subagent_provider(
             provider_hint,
         )
     };
-    Ok(Arc::new(AccountingProvider::new(
-        provider,
-        model_id,
-        Some(app),
-    )))
+    Ok(Arc::new(AccountingProvider::new(provider, model_id)))
 }
 
 pub async fn run_parallel_subagents(
@@ -765,10 +761,19 @@ mod tests {
             r#"subagent failed: DeepSeek API 500 Internal Server Error: {"type":"error","error":{"type":"error","message":"Internal server error"}}"#,
         )));
         assert!(super::is_transient_provider_error(&ToolError::new(
+            r#"subagent failed: gpt-4o API 500 Internal Server Error: {"type":"error"}"#,
+        )));
+        assert!(super::is_transient_provider_error(&ToolError::new(
             "DeepSeek API 429 Too Many Requests: rate limited"
+        )));
+        assert!(super::is_transient_provider_error(&ToolError::new(
+            "claude-3-5-sonnet API 429 Too Many Requests: rate limited"
         )));
         assert!(!super::is_transient_provider_error(&ToolError::new(
             r#"DeepSeek API 400 Bad Request: {"error":{"message":"Unsupported model mimo-v2-omni"}}"#
+        )));
+        assert!(!super::is_transient_provider_error(&ToolError::new(
+            r#"mimo-v2-omni API 400 Bad Request: {"error":{"message":"Unsupported model mimo-v2-omni"}}"#
         )));
     }
 
@@ -778,11 +783,21 @@ mod tests {
             r#"subagent failed: DeepSeek API 400 Bad Request: {"error":{"message":"Unsupported model mimo-v2-omni"}}"#,
         );
         assert!(super::is_unservable_model_error(&error));
+        let error_with_model = ToolError::new(
+            r#"subagent failed: mimo-v2-omni API 400 Bad Request: {"error":{"message":"Unsupported model mimo-v2-omni"}}"#,
+        );
+        assert!(super::is_unservable_model_error(&error_with_model));
         assert!(!super::is_unservable_model_error(&ToolError::new(
             "DeepSeek API 500 Internal Server Error: Internal server error"
         )));
+        assert!(!super::is_unservable_model_error(&ToolError::new(
+            "gpt-4o API 500 Internal Server Error: Internal server error"
+        )));
         assert!(super::is_unservable_model_error(&ToolError::new(
             r#"DeepSeek API 401 Unauthorized: {"type":"error","error":{"type":"ModelError","message":"Model minimax-m3 is not supported for format openai"}}"#
+        )));
+        assert!(super::is_unservable_model_error(&ToolError::new(
+            r#"minimax-m3 API 401 Unauthorized: {"type":"error","error":{"type":"ModelError","message":"Model minimax-m3 is not supported for format openai"}}"#
         )));
     }
 
@@ -799,6 +814,9 @@ mod tests {
     fn extracts_touched_paths_from_subagent_result() {
         let body = "### Conclusion\nok\n\n### Touched paths\n- notes/x.txt\n- `src/a.rs`\n\n### Unfinished\n- (none)";
         let paths = extract_touched_paths_from_subagent_result(body);
-        assert_eq!(paths, vec!["notes/x.txt".to_string(), "src/a.rs".to_string()]);
+        assert_eq!(
+            paths,
+            vec!["notes/x.txt".to_string(), "src/a.rs".to_string()]
+        );
     }
 }

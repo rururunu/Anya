@@ -18,9 +18,12 @@ import type { InlineTokenPart } from "@/services/chat/inlineTokenMarks";
 import {
   mcpMentionIconUrl,
   mcpMentionLabel,
+  pluginMentionIconUrl,
+  pluginMentionLabel,
   skillMentionIconUrl,
   skillMentionLabel,
 } from "@/services/chat/hashMentionDisplay";
+import { shouldAttachPasteAsFile } from "@/services/chat/longText";
 import type { McpServerConfig } from "@/types/setting";
 import "@/services/chat/composerEditable.css";
 
@@ -39,6 +42,7 @@ const props = withDefaults(
       qualifiedName?: string | null;
       iconUrl?: string | null;
     }[];
+    plugins?: readonly { id: string; name?: string; icon?: string | null }[];
     /** Workspace-relative paths used to disambiguate file labels. */
     fileCatalog?: readonly string[];
   }>(),
@@ -50,6 +54,7 @@ const props = withDefaults(
     ariaExpanded: false,
     mcpServers: () => [],
     skills: () => [],
+    plugins: () => [],
     fileCatalog: () => [],
   },
 );
@@ -60,6 +65,8 @@ const emit = defineEmits<{
   input: [];
   keydown: [event: KeyboardEvent];
   paste: [event: ClipboardEvent];
+  /** Long plain-text paste — parent should attach as a .txt file instead. */
+  oversizedPaste: [text: string];
   focus: [event: FocusEvent];
   blur: [event: FocusEvent];
 }>();
@@ -99,6 +106,17 @@ function resolveTokenMeta(part: Exclude<InlineTokenPart, { kind: "text" }>): Com
       iconUrl: skillMentionIconUrl(part.id, props.skills),
       fallback: "zap",
       className: "ce-token-skill",
+    };
+  }
+  if (part.kind === "plugin") {
+    return {
+      kind: "plugin",
+      token: part.raw || formatResourceMention("plugin", part.id),
+      label: pluginMentionLabel(part.id, props.plugins),
+      title: part.id,
+      iconUrl: pluginMentionIconUrl(part.id, props.plugins),
+      fallback: "puzzle",
+      className: "ce-token-plugin",
     };
   }
   return {
@@ -174,6 +192,11 @@ function onPaste(event: ClipboardEvent) {
     return;
   }
   const normalized = plain.replace(/\r\n|\r/g, "\n");
+  if (shouldAttachPasteAsFile(normalized)) {
+    emit("oversizedPaste", normalized);
+    emit("paste", event);
+    return;
+  }
   const root = rootRef.value;
   if (!root) return;
   const { start, end } = getComposerSelectionOffsets(root);

@@ -52,7 +52,7 @@ impl ToolManager {
         if is_question_only_request(request) {
             return self.ask_mode().schemas_arc();
         }
-        self.schemas_arc()
+        self.registry.filter_without_save_plan().schemas_arc()
     }
 
     pub fn preview(

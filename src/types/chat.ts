@@ -152,6 +152,7 @@ export type AgentDebugEvent =
 
 export interface AskUserAnswerItem {
   header?: string;
+  question?: string;
   selected: string[];
   userSupplement?: boolean;
 }
@@ -643,6 +644,18 @@ export interface TaskItem {
 export interface TaskListUpdatedEvent {
   sessionId: string;
   tasks: TaskItem[];
+}
+
+export interface PlanUpdatedEvent {
+  sessionId: string;
+  path: string;
+  content: string;
+}
+
+export interface PlanProposal {
+  path: string;
+  content: string;
+  updatedAt: number;
 }
 
 /** @deprecated 使用 ChatMessage */

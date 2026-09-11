@@ -46,7 +46,10 @@ pub fn set_image_mode(session_id: &str, options: Option<ImageModeOptions>) {
 }
 
 pub fn image_mode_options(session_id: &str) -> Option<ImageModeOptions> {
-    shared_store().lock().ok().and_then(|store| store.get(session_id))
+    shared_store()
+        .lock()
+        .ok()
+        .and_then(|store| store.get(session_id))
 }
 
 pub fn is_image_mode(session_id: &str) -> bool {

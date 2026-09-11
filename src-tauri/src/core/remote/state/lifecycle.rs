@@ -101,7 +101,9 @@ pub fn build_pairing_info(
     // Public pairing: Cloudflare tunnel provides a stable wss:// host.
     let tunnel_enabled = state.tunnel_prefs().cloudflared_enabled;
     if tunnel_enabled {
-        if let Some(public) = crate::core::remote::tunnel::resolve_tunnel_public(app, local_port, ensure_tunnel) {
+        if let Some(public) =
+            crate::core::remote::tunnel::resolve_tunnel_public(app, local_port, ensure_tunnel)
+        {
             host = public.host.clone();
             hosts = vec![public.host.clone()];
             port = public.port;

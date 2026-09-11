@@ -51,17 +51,20 @@ export function useComposerSubmit(options: {
   resetWorkspaceFilesCache: () => void;
 }) {
   function resolveSendWorkspaceOptions(): { workspaceId?: string; quickAsk?: boolean } {
-    const active = options.overlayWorkspaceOverride.value ?? options.currentWorkspace.value;
-    if (active) {
-      return { workspaceId: active.id, quickAsk: false };
-    }
     if (options.appearance() === "overlay") {
+      if (options.overlayWorkspaceOverride.value) {
+        return { workspaceId: options.overlayWorkspaceOverride.value.id, quickAsk: false };
+      }
       const contextRoot = options.overlayContextWorkspaceRoot();
       const matched = contextRoot ? options.matchKnownWorkspace(contextRoot) : null;
       if (matched) {
         return { workspaceId: matched.id, quickAsk: false };
       }
       return { quickAsk: true };
+    }
+    const active = options.currentWorkspace.value;
+    if (active) {
+      return { workspaceId: active.id, quickAsk: false };
     }
     const contextRoot = options.capturedContext()?.workspace?.root;
     if (contextRoot) {

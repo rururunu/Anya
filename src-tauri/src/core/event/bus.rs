@@ -175,6 +175,11 @@ pub enum BusEvent {
         session_id: String,
         tasks: Vec<TaskItem>,
     },
+    PlanUpdated {
+        session_id: String,
+        path: String,
+        content: String,
+    },
     /// Frontend should handle navigation / UI slash commands.
     SlashCommand {
         session_id: String,

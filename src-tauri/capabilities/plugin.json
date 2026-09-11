@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "user-plugin",
+  "description": "Isolated windows for user plugins (anya-plugin://). No workspace filesystem.",
+  "windows": ["plugin-*"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-start-dragging",
+    "allow-plugin-host-commands"
+  ]
+}

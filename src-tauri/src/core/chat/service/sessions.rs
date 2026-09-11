@@ -47,11 +47,7 @@ impl ChatService {
     }
 
     /// Renames a session and emits a title-updated event.
-    pub fn set_session_title(
-        &self,
-        session_id: &str,
-        title: &str,
-    ) -> Result<String, String> {
+    pub fn set_session_title(&self, session_id: &str, title: &str) -> Result<String, String> {
         let title = self.conversation.rename_session_title(session_id, title)?;
         self.event_bus.emit(BusEvent::ChatSessionTitleUpdated {
             session_id: session_id.to_string(),
@@ -60,15 +56,33 @@ impl ChatService {
         Ok(title)
     }
 
-    /// Regenerates a session title from visible user context via the active provider.
-    pub async fn regenerate_session_title(&self, session_id: &str) -> Result<String, String> {
-        let user_text = self
+    /// Regenerates a session title from conversation context via the active provider.
+    pub async fn regenerate_session_title(
+        &self,
+        session_id: &str,
+        model_id: Option<&str>,
+        model_provider: Option<&str>,
+    ) -> Result<String, String> {
+        let context_text = self
             .conversation
-            .user_visible_context_for_title(session_id)
-            .ok_or_else(|| "当前对话没有可用于生成标题的用户消息".to_string())?;
-        let provider = self.resolve_provider(&Default::default());
-        let title =
-            super::super::session_title::generate_session_title(provider, &user_text).await?;
+            .session_context_for_title(session_id)
+            .ok_or_else(|| "当前对话没有可用于生成标题的消息".to_string())?;
+        let overrides = crate::models::chat::ChatSendOverrides {
+            model_id: model_id.map(str::to_string),
+            model_provider: model_provider.map(str::to_string),
+            ..Default::default()
+        };
+        let provider = self.resolve_provider(&overrides);
+        let primary_user = self
+            .conversation
+            .primary_user_text_for_title(session_id)
+            .unwrap_or_else(|| context_text.clone());
+        let title = super::super::session_title::generate_session_title(
+            provider,
+            &context_text,
+            &primary_user,
+        )
+        .await?;
         self.conversation.set_session_title(
             session_id,
             title.clone(),

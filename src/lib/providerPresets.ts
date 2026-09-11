@@ -1,3 +1,5 @@
+import type { ProviderModelEntry } from "@/types/setting";
+
 export function looksLikeHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value.trim());
 }
@@ -41,4 +43,18 @@ export function parseProviderModels(raw: string): string[] {
 
 export function serializeProviderModels(models: string[]): string {
   return models.join("\n");
+}
+
+/** 将线上拉取的模型列表合并进当前条目：保留自定义条目，丢弃消失的非自定义条目，新远程模型默认启用。 */
+export function syncRemoteModels(
+  entries: ProviderModelEntry[],
+  remoteIds: string[],
+): ProviderModelEntry[] {
+  const remoteSet = new Set(remoteIds);
+  const kept = entries.filter((entry) => entry.custom || remoteSet.has(entry.id));
+  const keptIds = new Set(kept.map((entry) => entry.id));
+  const added = remoteIds
+    .filter((id) => !keptIds.has(id))
+    .map((id) => ({ id, disabled: false, custom: false }));
+  return [...kept, ...added];
 }

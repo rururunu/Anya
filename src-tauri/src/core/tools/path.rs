@@ -67,6 +67,8 @@ pub fn resolve_tool_path(
         return Ok(normalized);
     }
 
+    deny_user_plugin_hunt(&normalized)?;
+
     // Outside-workspace writes are denied by default (sandbox). Opt-in via settings.
     if access == PathAccess::Write && !super::sandbox::allow_outside_workspace_writes() {
         return Err(ToolError::new(format!(
@@ -89,6 +91,56 @@ pub fn resolve_tool_path(
         access,
         tool_name,
     )
+}
+
+const PLUGIN_HUNT_HINT: &str = "User plugins live outside the workspace. Do not read_file/list_folder/find_files/Grep AppData, LocalAppData, $HOME, or guessed plugin.json paths — that waits up to 10 minutes on a path-permission prompt (looks stuck, not slow I/O). Call manage_plugin action=list, then list_files/get_file. Those read actions are available in plan mode. Never guess %APPDATA% plugin paths.";
+
+fn path_key(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('/', "\\")
+        .to_ascii_lowercase()
+}
+
+fn is_under(path: &Path, root: &Path) -> bool {
+    let path = normalize_path(path);
+    let root = normalize_path(root);
+    path == root || path.starts_with(&root)
+}
+
+/// True for Anya's user plugin/data dirs, guessed AppData plugin paths, or listing the whole profile.
+pub fn is_user_plugin_hunt(path: &Path) -> bool {
+    let n = normalize_path(path);
+    if is_under(&n, &super::memory::plugins_dir()) {
+        return true;
+    }
+    let key = path_key(&n);
+    if key.contains(r"\anya\plugins") || key.contains(r"\com.anya.app\plugins") {
+        return true;
+    }
+    is_profile_root(&n)
+}
+
+fn is_profile_root(path: &Path) -> bool {
+    let n = normalize_path(path);
+    for key in ["USERPROFILE", "HOME", "APPDATA", "LOCALAPPDATA"] {
+        if let Ok(value) = std::env::var(key) {
+            let root = normalize_path(Path::new(&value));
+            if !value.trim().is_empty() && n == root {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn deny_user_plugin_hunt(path: &Path) -> Result<(), ToolError> {
+    if is_user_plugin_hunt(path) {
+        return Err(ToolError::new(format!(
+            "{PLUGIN_HUNT_HINT} Blocked path: {}",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -146,5 +198,25 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.message.contains("write outside workspace denied"));
+    }
+
+    #[test]
+    fn guessed_appdata_plugin_json_is_rejected_without_permission_wait() {
+        let path = PathBuf::from(
+            r"C:\Users\demo\AppData\Roaming\Anya\plugins\video-background\plugin.json",
+        );
+        assert!(is_user_plugin_hunt(&path));
+        let err = deny_user_plugin_hunt(&path).unwrap_err();
+        assert!(err.message.contains("manage_plugin"));
+        assert!(err.message.contains("Blocked path"));
+    }
+
+    #[test]
+    fn workspace_plugin_examples_are_not_a_hunt() {
+        let ws = PathBuf::from(r"C:\code\AltAltAi");
+        let example = ws.join("src-tauri").join("plugins").join("terminal");
+        assert!(!is_user_plugin_hunt(&example));
+        let key = path_key(&example);
+        assert!(!key.contains(r"\anya\plugins"));
     }
 }

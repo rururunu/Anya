@@ -9,8 +9,8 @@ use tokio::sync::mpsc::Sender;
 use super::errors::map_read_error;
 use super::sse::next_sse_line;
 use super::types::{
-    ApiStreamResponse, ApiStreamDelta, StreamReadOutcome, ToolCallBuilder, STREAM_IDLE_TIMEOUT, USER_STREAM_INTERRUPTED,
-    USER_STREAM_STALLED,
+    ApiStreamDelta, ApiStreamResponse, StreamReadOutcome, ToolCallBuilder, STREAM_IDLE_TIMEOUT,
+    USER_STREAM_INTERRUPTED, USER_STREAM_STALLED,
 };
 
 pub(super) async fn read_sse_stream(

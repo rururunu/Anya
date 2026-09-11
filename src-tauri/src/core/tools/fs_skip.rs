@@ -34,10 +34,7 @@ pub fn should_skip_walk_entry(entry: &DirEntry) -> bool {
         return false;
     }
     // Skip list is ASCII-only; non-UTF8 names are never in it.
-    entry
-        .file_name()
-        .to_str()
-        .is_some_and(should_skip_dir_name)
+    entry.file_name().to_str().is_some_and(should_skip_dir_name)
 }
 
 /// ripgrep `--glob` excludes so a search still skips build trees without gitignore.

@@ -4,10 +4,13 @@ use crate::core::chat::limits::estimate_message_tokens;
 use crate::core::runtime::Role;
 use crate::models::chat::ChatSessionSummary;
 
-use super::helpers::{block_on_compat, session_preview};
 use super::super::session_title::{
-    fallback_session_title, normalize_session_title, SessionTitleSource,
-    FALLBACK_MAX_BYTES, FALLBACK_MAX_WORDS, MAX_TITLE_BYTES,
+    fallback_session_title, normalize_session_title, SessionTitleSource, FALLBACK_MAX_BYTES,
+    FALLBACK_MAX_WORDS, MAX_TITLE_BYTES,
+};
+use super::helpers::{
+    block_on_compat, clean_assistant_summary, is_plugin_agent_session_id, is_trivial_user_text,
+    session_preview,
 };
 use super::ConversationManager;
 
@@ -68,12 +71,7 @@ impl ConversationManager {
             .and_then(|workspaces| workspaces.get(session_id).cloned())
     }
 
-    pub fn set_session_title(
-        &self,
-        session_id: &str,
-        title: String,
-        source: SessionTitleSource,
-    ) {
+    pub fn set_session_title(&self, session_id: &str, title: String, source: SessionTitleSource) {
         let title = normalize_session_title(&title, MAX_TITLE_BYTES);
         if title.is_empty() {
             return;
@@ -143,18 +141,82 @@ impl ConversationManager {
         Ok(normalized)
     }
 
-    pub fn user_visible_context_for_title(&self, session_id: &str) -> Option<String> {
-        let parts: Vec<String> = self
-            .messages(session_id)
+    /// Returns the primary substantive user message for title fallback and topic anchoring.
+    pub fn primary_user_text_for_title(&self, session_id: &str) -> Option<String> {
+        let messages = self.messages(session_id);
+        let user_texts: Vec<String> = messages
             .iter()
-            .filter(|message| message.role == Role::User)
-            .map(|message| super::super::selection::visible_user_text(&message.content).to_string())
+            .filter(|m| m.role == Role::User)
+            .map(|m| super::super::selection::user_text_for_title_context(&m.content))
             .filter(|text| !text.trim().is_empty())
             .collect();
-        if parts.is_empty() {
+
+        for text in &user_texts {
+            if !is_trivial_user_text(text) {
+                return Some(text.clone());
+            }
+        }
+        user_texts.into_iter().next()
+    }
+
+    /// Extracts structured conversation context designed to prevent off-topic title generation.
+    pub fn session_context_for_title(&self, session_id: &str) -> Option<String> {
+        let messages = self.messages(session_id);
+        if messages.is_empty() {
+            return None;
+        }
+
+        let primary_goal = self.primary_user_text_for_title(session_id);
+        let mut lines = Vec::new();
+        if let Some(goal) = &primary_goal {
+            let truncated_goal = super::super::limits::truncate_chars(goal, 300);
+            lines.push(format!(
+                "Primary Goal:\n{truncated_goal}\n\nConversation Flow:"
+            ));
+        }
+
+        let mut turns: Vec<(&'static str, String)> = Vec::new();
+        for msg in &messages {
+            match msg.role {
+                Role::User => {
+                    let text = super::super::selection::user_text_for_title_context(&msg.content);
+                    if !text.trim().is_empty() && !is_trivial_user_text(&text) {
+                        turns.push(("User", super::super::limits::truncate_chars(&text, 250)));
+                    }
+                }
+                Role::Assistant => {
+                    let summary = clean_assistant_summary(&msg.content, 120);
+                    if !summary.trim().is_empty() {
+                        turns.push(("Assistant", summary));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if turns.is_empty() {
+            return primary_goal.map(|goal| format!("User: {goal}"));
+        }
+
+        let slice: Vec<&(&'static str, String)> = if turns.len() <= 6 {
+            turns.iter().collect()
+        } else {
+            turns
+                .iter()
+                .take(2)
+                .chain(turns.iter().skip(turns.len() - 4))
+                .collect()
+        };
+
+        for (prefix, text) in slice {
+            lines.push(format!("{prefix}: {text}"));
+        }
+
+        let full_text = lines.join("\n");
+        if full_text.trim().is_empty() {
             None
         } else {
-            Some(parts.join("\n"))
+            Some(super::super::limits::truncate_chars(&full_text, 1200))
         }
     }
 
@@ -264,7 +326,9 @@ impl ConversationManager {
             }
         }
 
-        summaries.retain(|summary| summary.archived == archived);
+        summaries.retain(|summary| {
+            summary.archived == archived && !is_plugin_agent_session_id(&summary.session_id)
+        });
         summaries.sort_by_key(|summary| std::cmp::Reverse(summary.updated_at));
         summaries
     }
@@ -280,7 +344,8 @@ impl ConversationManager {
         let pool = self.db_pool.clone();
         let sid = session_id.to_string();
         tauri::async_runtime::spawn(async move {
-            if let Err(error) = super::super::db::set_session_archived(&pool, &sid, archived).await {
+            if let Err(error) = super::super::db::set_session_archived(&pool, &sid, archived).await
+            {
                 eprintln!("Failed to persist session archive state for {sid}: {error}");
             }
         });
@@ -316,9 +381,7 @@ impl ConversationManager {
             if let Err(error) =
                 super::super::db::set_sessions_archived_batch(&pool, &session_ids, archived).await
             {
-                eprintln!(
-                    "Failed to persist workspace archive state for {workspace_id}: {error}"
-                );
+                eprintln!("Failed to persist workspace archive state for {workspace_id}: {error}");
             }
         });
     }

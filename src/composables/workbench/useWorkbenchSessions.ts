@@ -14,6 +14,7 @@ import {
 import { estimateMessageTokens } from "@/services/chat/tokenEstimate";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import { isSubagentSessionId, rootSessionId } from "@/services/chat/subagentSession";
+import { isPluginAgentSessionId } from "@/services/chat/pluginSession";
 import { findSubagentEntry } from "@/services/chat/subagentPanel";
 import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore } from "@/stores/setting";
@@ -25,6 +26,7 @@ import {
   trySwitchWorkspace,
   type Workspace,
 } from "@/commands/workspace";
+import type { AttachedFileChip } from "@/services/chat/attachFiles";
 import type { CheckpointInfo, ChatMessage, ChatSessionSummary } from "@/types/chat";
 import type { WorkbenchLabels } from "./useWorkbenchLabels";
 
@@ -69,7 +71,9 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   const sessionsStore = useChatSessionsStore();
   const subagentSessionStore = useSubagentSessionStore();
   const settingStore = useSettingStore();
-  const sessions = computed(() => sessionsStore.summaries);
+  const sessions = computed(() =>
+    sessionsStore.summaries.filter((session) => !isPluginAgentSessionId(session.sessionId)),
+  );
 
   const checkpoints = ref<CheckpointInfo[]>([]);
   const pendingStagedEdit = ref<{ sessionId: string; index: number; original: string } | null>(
@@ -523,10 +527,25 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     void chatStore.flushStaged(sessionId);
   }
 
-  async function handleRewound(payload: { text: string }) {
-    await chatStore.loadHistory(activeSessionId.value);
+  async function handleRewound(payload: {
+    text: string;
+    images?: string[];
+    attachedFiles?: AttachedFileChip[];
+    resend?: boolean;
+  }) {
+    const sessionId = activeSessionId.value;
+    if (sessionId) chatStore.clearSending(sessionId);
+    await chatStore.loadHistory(sessionId);
     await refreshCheckpoints();
+    if (payload.resend && payload.text) {
+      if (activeSessionId.value) chatStore.clearSending(activeSessionId.value);
+      await submitMessage(payload.text);
+      return;
+    }
     if (payload.text) inputRef.value?.setMessage(payload.text);
+    if (payload.images?.length || payload.attachedFiles?.length) {
+      inputRef.value?.restoreAttachments(payload.images, payload.attachedFiles);
+    }
   }
 
   watch(

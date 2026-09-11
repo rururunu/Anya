@@ -16,7 +16,10 @@ pub(super) fn load_devices(path: &PathBuf) -> HashMap<String, PairedDevice> {
         .collect()
 }
 
-pub(super) fn save_devices(path: &PathBuf, devices: &HashMap<String, PairedDevice>) -> Result<(), String> {
+pub(super) fn save_devices(
+    path: &PathBuf,
+    devices: &HashMap<String, PairedDevice>,
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

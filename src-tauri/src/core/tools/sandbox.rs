@@ -215,16 +215,84 @@ pub fn reject_workspace_escape_writes(
     Ok(())
 }
 
+const SOURCE_CODE_EXTS: &[&str] = &[
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".rs", ".py", ".go", ".java",
+    ".kt", ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".cs", ".rb", ".php", ".swift",
+];
+
+/// Reject shell commands that directly write to or overwrite project source code files.
+pub fn reject_source_file_shell_writes(command: &str) -> Result<(), ToolError> {
+    let lower = command.to_ascii_lowercase();
+    for path in escape_write_path_candidates(command) {
+        let clean = path.trim_matches(['\'', '"']);
+        for ext in SOURCE_CODE_EXTS {
+            if clean.ends_with(ext) {
+                return Err(ToolError::new(format!(
+                    "Direct shell write to source code file '{clean}' is blocked. Shell redirection circumvents safety guards and destroys diff history. You MUST use dedicated editing tools (`replace_in_file` or `apply_patch` for existing files, or `write_file` for new files)."
+                )));
+            }
+        }
+    }
+    if (lower.contains("python")
+        && lower.contains("-c")
+        && lower.contains("open(")
+        && (lower.contains("'w'")
+            || lower.contains("\"w\"")
+            || lower.contains("'a'")
+            || lower.contains("\"a\"")))
+        || (lower.contains("node")
+            && lower.contains("-e")
+            && (lower.contains("writefilesync") || lower.contains("writefile")))
+    {
+        for ext in SOURCE_CODE_EXTS {
+            if lower.contains(ext) {
+                return Err(ToolError::new(format!(
+                    "Inline script write targeting '{ext}' source files is blocked. You MUST use dedicated editing tools."
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reject shell crawls of AppData / guessed Anya plugin paths. Those stall on
+/// path permission or walk multi-GB trees; `manage_plugin` reads plugins directly.
+pub fn reject_user_plugin_hunt(command: &str) -> Result<(), ToolError> {
+    let lower = command.to_ascii_lowercase().replace('/', "\\");
+    let plugin_tree = lower.contains(r"\anya\plugins")
+        || lower.contains(r"\com.anya.app\plugins")
+        || (lower.contains("plugin.json")
+            && (lower.contains("appdata")
+                || lower.contains("%appdata%")
+                || lower.contains("$env:appdata")));
+    let recurse_profile = (lower.contains("-recurse") || lower.contains("get-childitem"))
+        && (lower.contains("appdata")
+            || lower.contains("%appdata%")
+            || lower.contains("%localappdata%")
+            || lower.contains("$env:appdata")
+            || lower.contains("$env:localappdata")
+            || lower.contains("$home")
+            || lower.contains("%userprofile%"));
+    if plugin_tree || recurse_profile {
+        return Err(ToolError::new(
+            "Do not Get-Content / Get-ChildItem / rg under %APPDATA%, %LOCALAPPDATA%, or guessed plugin.json paths. Use manage_plugin action=list, then list_files/get_file (available in plan mode).",
+        ));
+    }
+    Ok(())
+}
+
 fn escape_write_path_candidates(command: &str) -> Vec<String> {
     let mut out = Vec::new();
     // Out-file / Set-Content / > / >> style targets.
     let markers = [
-        ">",
         ">>",
+        ">",
         "| out-file",
         "| set-content",
+        "| add-content",
         "out-file ",
         "set-content ",
+        "add-content ",
         "copy-item ",
         "move-item ",
         "ni ",
@@ -243,20 +311,28 @@ fn escape_write_path_candidates(command: &str) -> Vec<String> {
 }
 
 fn first_path_token(s: &str) -> Option<String> {
-    let trimmed = s.trim_start_matches([' ', '=', ':']);
-    if trimmed.is_empty() {
+    let mut rest = s.trim();
+    while rest.starts_with('-') {
+        let after_flag = match rest.find(|c: char| c.is_whitespace() || c == ':' || c == '=') {
+            Some(idx) => &rest[idx..],
+            None => return None,
+        };
+        rest = after_flag.trim_start_matches([' ', ':', '=']).trim();
+    }
+    if rest.is_empty() {
         return None;
     }
-    if trimmed.starts_with('"') {
-        let rest = &trimmed[1..];
-        let end = rest.find('"')?;
-        return Some(rest[..end].to_string());
+    if rest.starts_with('"') || rest.starts_with('\'') {
+        let quote = rest.chars().next().unwrap();
+        let inner = &rest[1..];
+        let end = inner.find(quote)?;
+        return Some(inner[..end].to_string());
     }
-    let end = trimmed
+    let end = rest
         .find(|c: char| c.is_whitespace() || c == '|' || c == ';')
-        .unwrap_or(trimmed.len());
-    let token = trimmed[..end].trim();
-    if token.is_empty() || token.starts_with('-') {
+        .unwrap_or(rest.len());
+    let token = rest[..end].trim();
+    if token.is_empty() {
         None
     } else {
         Some(token.to_string())
@@ -393,6 +469,16 @@ mod tests {
     }
 
     #[test]
+    fn rejects_appdata_plugin_shell_hunt() {
+        assert!(reject_user_plugin_hunt(
+            r"Get-Content $env:APPDATA\Anya\plugins\video-background\plugin.json"
+        )
+        .is_err());
+        assert!(reject_user_plugin_hunt("Get-ChildItem -Recurse $env:APPDATA").is_err());
+        assert!(reject_user_plugin_hunt("git status").is_ok());
+    }
+
+    #[test]
     fn blocks_encodedcommand_payload() {
         // PowerShell -EncodedCommand typically uses UTF-16LE base64.
         // Payload: "git reset --hard HEAD~1"
@@ -415,6 +501,21 @@ mod tests {
                 .is_err()
         );
         assert!(reject_workspace_escape_writes(r#"echo hi > .\out.txt"#, Some(&ws)).is_ok());
+    }
+
+    #[test]
+    fn rejects_shell_writes_to_source_code_files() {
+        assert!(reject_source_file_shell_writes(r#"echo "hi" > src\main.rs"#).is_err());
+        assert!(
+            reject_source_file_shell_writes(r#"Set-Content -Path src\App.vue -Value "test""#)
+                .is_err()
+        );
+        assert!(
+            reject_source_file_shell_writes(r#"python -c "open('test.py', 'w').write('x')""#)
+                .is_err()
+        );
+        assert!(reject_source_file_shell_writes(r#"echo "log" > build.log"#).is_ok());
+        assert!(reject_source_file_shell_writes(r#"echo "data" > temp.txt"#).is_ok());
     }
 
     #[cfg(windows)]

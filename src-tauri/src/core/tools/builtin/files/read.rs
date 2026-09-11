@@ -1,21 +1,19 @@
 //! File read and search builtin tools.
 
 use std::fs;
-use std::io::{BufRead, BufReader};
-use std::process::Command;
+use std::io::{BufRead, BufReader, Read};
+use std::path::Path;
 
 use glob::Pattern;
 use regex::Regex;
 use serde_json::{json, Value};
 use walkdir::WalkDir;
 
-use crate::runtime::terminal::prepare_command;
-
 use crate::core::tools::context::{Tool, ToolContext};
 use crate::core::tools::error::ToolError;
 use crate::core::tools::fs_skip;
 
-use super::{office, resolve_read, run_command_cancellable};
+use super::{office, resolve_read};
 
 /// Recursive listing without a cap walks huge trees (and still emits
 /// `node_modules`-adjacent leftovers) — that stalls both the tool and the
@@ -23,16 +21,20 @@ use super::{office, resolve_read, run_command_cancellable};
 const LIST_FOLDER_MAX_ENTRIES: usize = 400;
 const LIST_FOLDER_MAX_DEPTH: usize = 6;
 const FIND_FILES_MAX_HITS: usize = 200;
-const SEARCH_FILES_MAX_HITS: usize = 200;
-const SEARCH_MAX_FILE_BYTES: u64 = 512 * 1024;
-const DEFAULT_READ_LIMIT: usize = 200;
+/// One call should cover a spec-compliant Anya module (Vue/TS ≤ 400, Rust ≤ 500).
+const DEFAULT_READ_LIMIT: usize = 500;
+const MAX_READ_LIMIT: usize = 500;
 const DEFAULT_AROUND_CONTEXT: usize = 40;
 const MAX_AROUND_CONTEXT: usize = 80;
+const LARGE_FILE_PREVIEW_LINES: usize = 60;
+const MAX_LINE_CHARS: usize = 400;
+const MAX_READ_CONTENT_BYTES: usize = 48 * 1024;
+const LARGE_FILE_BYTES: u64 = 512 * 1024;
+const BINARY_PROBE_BYTES: usize = 8 * 1024;
 
 pub struct ReadFileTool;
 pub struct ListFolderTool;
 pub struct FindFilesTool;
-pub struct SearchFilesTool;
 pub struct ListSymbolsTool;
 
 impl Tool for ReadFileTool {
@@ -40,7 +42,7 @@ impl Tool for ReadFileTool {
         "read_file"
     }
     fn description(&self) -> &str {
-        "Read a file by path (relative to workspace root). Prefer this over shell cat/Get-Content/type. Text files return numbered lines. When you already have a line number (search_files hit, list_symbols, compiler error), pass around_line to read that neighborhood — never omit it and start at line 1. Paginate with start_line/offset and limit or end_line. Default without a range is the first 200 lines. .docx/.xlsx/.pptx are extracted to plain text automatically — do not ask the user to open Word, and do not use Word COM just to read an on-disk Office file. For unknown paths, find_files or search_files first; for directory structure use list_folder."
+        "Read a file by path (relative to workspace root). Prefer this over shell cat/Get-Content/type. Unknown location: Grep first. A symbol/call-site hit: around_line. A key source file you must understand or edit: read from the start (default window, hard-capped per call); if truncated, continue with offset. Do not open a file from line 1 to hunt for a symbol. Large dumps (HTML flamegraphs, JSON, logs, CSV) must not be paginated: extract with a short run_shell script that prints a compact aggregate. .docx/.xlsx/.pptx are extracted to plain text automatically."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -49,7 +51,7 @@ impl Tool for ReadFileTool {
                 "path": { "type": "string", "description": "File path relative to workspace root" },
                 "around_line": {
                     "type": "integer",
-                    "description": "1-based line from search_files / an error. Reads context lines before and after (default 40). Prefer this over reading from line 1."
+                    "description": "1-based line from Grep / an error. Reads context before and after (default 40). Use for a pinpoint hit; for a key file you need to understand, omit this and read from the start."
                 },
                 "context": {
                     "type": "integer",
@@ -64,7 +66,7 @@ impl Tool for ReadFileTool {
                     "description": "1-based last line inclusive; used with start_line/offset"
                 },
                 "offset": { "type": "integer", "description": "1-based first line (default 1)" },
-                "limit": { "type": "integer", "description": "Max lines to return (default 200)" }
+                "limit": { "type": "integer", "description": "Max lines to return (default 500, hard max 500)" }
             },
             "required": ["path"]
         })
@@ -74,15 +76,35 @@ impl Tool for ReadFileTool {
     }
     fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
         let path = args["path"].as_str().unwrap_or("");
-        let window = parse_line_window(&args);
+        let mut window = parse_line_window(&args);
         let resolved = resolve_read(ctx, self.name(), path)?;
         if office::is_office_document(&resolved) {
             let extracted = office::extract_office_plain_text(&resolved)?;
-            return Ok(numbered_slice(&extracted, &window));
+            let size = extracted.len() as u64;
+            shrink_window_for_large_file(&mut window, size);
+            let slice = numbered_slice(&extracted, &window);
+            return Ok(format_read_result(
+                path,
+                size,
+                &window,
+                &slice.body,
+                slice.last_seen,
+                slice.truncated,
+                looks_like_dump(Path::new(path), size),
+            ));
         }
+        let size = fs::metadata(&resolved)?.len();
+        if probe_binary(&resolved)? {
+            return Ok(format!(
+                "[file] {path} size={}\nThis file looks binary (NUL in the first {BINARY_PROBE_BYTES} bytes). Do not dump it with read_file or shell cat. Parse it with a format-aware script and print a compact summary.\n",
+                format_bytes(size)
+            ));
+        }
+        shrink_window_for_large_file(&mut window, size);
         let file = fs::File::open(&resolved)?;
         let reader = BufReader::new(file);
-        let mut out = String::new();
+        let mut body = String::new();
+        let mut used_bytes = 0usize;
         let mut last_seen = 0usize;
         let mut truncated = false;
         for (idx, line) in reader.lines().enumerate() {
@@ -95,10 +117,23 @@ impl Tool for ReadFileTool {
                 truncated = true;
                 break;
             }
-            out.push_str(&format!("{last_seen:>6}|{}\n", line?));
+            let row = format_numbered_line(last_seen, &line?);
+            if used_bytes + row.len() > MAX_READ_CONTENT_BYTES && !body.is_empty() {
+                truncated = true;
+                break;
+            }
+            body.push_str(&row);
+            used_bytes += row.len();
         }
-        out.push_str(&window_footer(&window, last_seen, truncated));
-        Ok(out)
+        Ok(format_read_result(
+            path,
+            size,
+            &window,
+            &body,
+            last_seen,
+            truncated,
+            looks_like_dump(Path::new(path), size),
+        ))
     }
 }
 
@@ -125,6 +160,12 @@ struct LineWindow {
     around_line: Option<usize>,
 }
 
+struct NumberedSlice {
+    body: String,
+    last_seen: usize,
+    truncated: bool,
+}
+
 fn positive_usize(args: &Value, key: &str) -> Option<usize> {
     args.get(key)?.as_u64().map(|n| n.max(1) as usize)
 }
@@ -149,22 +190,104 @@ fn parse_line_window(args: &Value) -> LineWindow {
         let end = end.max(offset);
         return LineWindow {
             offset,
-            limit: end.saturating_sub(offset).saturating_add(1),
+            limit: end
+                .saturating_sub(offset)
+                .saturating_add(1)
+                .min(MAX_READ_LIMIT),
             around_line: None,
         };
     }
     LineWindow {
         offset,
-        limit: positive_usize(args, "limit").unwrap_or(DEFAULT_READ_LIMIT),
+        limit: positive_usize(args, "limit")
+            .unwrap_or(DEFAULT_READ_LIMIT)
+            .min(MAX_READ_LIMIT),
         around_line: None,
     }
 }
 
-fn window_footer(window: &LineWindow, last_seen: usize, truncated: bool) -> String {
+fn shrink_window_for_large_file(window: &mut LineWindow, size: u64) {
+    if size >= LARGE_FILE_BYTES && window.around_line.is_none() {
+        window.limit = window.limit.min(LARGE_FILE_PREVIEW_LINES);
+    }
+}
+
+fn probe_binary(path: &Path) -> Result<bool, ToolError> {
+    let mut file = fs::File::open(path)?;
+    let mut buf = vec![0u8; BINARY_PROBE_BYTES];
+    let n = file.read(&mut buf)?;
+    Ok(buf[..n].contains(&0))
+}
+
+fn looks_like_dump(path: &Path, size: u64) -> bool {
+    if size >= 2 * 1024 * 1024 {
+        return true;
+    }
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some(
+            "html"
+                | "htm"
+                | "svg"
+                | "json"
+                | "jsonl"
+                | "ndjson"
+                | "log"
+                | "csv"
+                | "xml"
+                | "prof"
+                | "folded"
+        )
+    ) && size >= LARGE_FILE_BYTES
+}
+
+fn format_bytes(n: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    if n as f64 >= MB {
+        format!("{:.1}MB", n as f64 / MB)
+    } else if n as f64 >= KB {
+        format!("{:.1}KB", n as f64 / KB)
+    } else {
+        format!("{n}B")
+    }
+}
+
+fn clamp_line(line: &str) -> String {
+    let count = line.chars().count();
+    if count <= MAX_LINE_CHARS {
+        return line.to_string();
+    }
+    let head: String = line.chars().take(MAX_LINE_CHARS).collect();
+    format!("{head}…[{} chars truncated]", count - MAX_LINE_CHARS)
+}
+
+fn format_numbered_line(line_no: usize, line: &str) -> String {
+    format!("{line_no:>6}|{}\n", clamp_line(line))
+}
+
+fn window_footer(
+    window: &LineWindow,
+    last_seen: usize,
+    truncated: bool,
+    large_dump: bool,
+) -> String {
     if let Some(around) = window.around_line {
         if around > last_seen && !truncated {
             return format!("… around_line={around} is past end of file ({last_seen} lines)\n");
         }
+    }
+    if truncated && large_dump {
+        return concat!(
+            "… truncated. This file is too large to read in full. ",
+            "Do not paginate with offset. Write a short run_shell script that extracts ",
+            "the needed structure and prints a compact aggregate (counts, top-N, totals), ",
+            "or call Grep for a specific pattern.\n"
+        )
+        .to_string();
     }
     if truncated {
         let next = window.offset.saturating_add(window.limit);
@@ -173,23 +296,48 @@ fn window_footer(window: &LineWindow, last_seen: usize, truncated: bool) -> Stri
     String::new()
 }
 
-fn numbered_slice(text: &str, window: &LineWindow) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-    let total = lines.len();
-    let mut out = String::new();
-    for (idx, line) in lines.iter().enumerate() {
-        let line_no = idx + 1;
-        if line_no < window.offset {
+fn format_read_result(
+    path: &str,
+    size: u64,
+    window: &LineWindow,
+    body: &str,
+    last_seen: usize,
+    truncated: bool,
+    large_dump: bool,
+) -> String {
+    let mut out = format!("[file] {path} size={}\n", format_bytes(size));
+    out.push_str(body);
+    out.push_str(&window_footer(window, last_seen, truncated, large_dump));
+    out
+}
+
+fn numbered_slice(text: &str, window: &LineWindow) -> NumberedSlice {
+    let mut body = String::new();
+    let mut used_bytes = 0usize;
+    let mut last_seen = 0usize;
+    let mut truncated = false;
+    for (idx, line) in text.lines().enumerate() {
+        last_seen = idx + 1;
+        if last_seen < window.offset {
             continue;
         }
-        if line_no >= window.offset + window.limit {
+        if last_seen >= window.offset + window.limit {
+            truncated = true;
             break;
         }
-        out.push_str(&format!("{line_no:>6}|{line}\n"));
+        let row = format_numbered_line(last_seen, line);
+        if used_bytes + row.len() > MAX_READ_CONTENT_BYTES && !body.is_empty() {
+            truncated = true;
+            break;
+        }
+        body.push_str(&row);
+        used_bytes += row.len();
     }
-    let truncated = window.offset.saturating_add(window.limit) <= total;
-    out.push_str(&window_footer(window, total, truncated));
-    out
+    NumberedSlice {
+        body,
+        last_seen,
+        truncated,
+    }
 }
 
 impl Tool for ListFolderTool {
@@ -197,7 +345,7 @@ impl Tool for ListFolderTool {
         "list_folder"
     }
     fn description(&self) -> &str {
-        "List files and directories under a path (relative to workspace root). Use for structure/orientation. Prefer find_files for glob patterns and search_files for content; do not recursively dump large trees when a narrower search works."
+        "List files and directories under a path (relative to workspace root). Use for structure/orientation. Prefer find_files for glob patterns and Grep for content; do not recursively dump large trees when a narrower search works."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -281,7 +429,7 @@ impl Tool for FindFilesTool {
         "find_files"
     }
     fn description(&self) -> &str {
-        "Find files by glob pattern (relative to workspace root). Prefer this over shell find/rg --files/Get-ChildItem for locating paths. For content inside files use search_files; for a single known path use read_file."
+        "Find files by glob pattern (relative to workspace root). Prefer this over shell find/rg --files/Get-ChildItem for locating paths. For content inside files use Grep; for a single known path use read_file."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -341,88 +489,12 @@ impl Tool for FindFilesTool {
     }
 }
 
-impl Tool for SearchFilesTool {
-    fn name(&self) -> &str {
-        "search_files"
-    }
-    fn description(&self) -> &str {
-        "Preferred content-search tool: regex search in files (ripgrep when available, internal fallback otherwise). Prefer this over shell rg/grep/findstr. Hits are path:line:text — follow a hit with read_file around_line=<line>, do not read the file from line 1. Path is relative to workspace root. Exclude generated and dependency dirs unless they are in scope. For path-only discovery use find_files; for a known file use read_file."
-    }
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "pattern": { "type": "string" },
-                "path": { "type": "string", "description": "Search directory relative to workspace root (default: workspace root)" }
-            },
-            "required": ["pattern"]
-        })
-    }
-    fn read_only(&self) -> bool {
-        true
-    }
-    fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
-        let pattern = args["pattern"].as_str().unwrap_or("");
-        let base = args["path"].as_str().unwrap_or(".");
-        let resolved = resolve_read(ctx, self.name(), base)?;
-        let mut rg = Command::new("rg");
-        rg.args(["--no-heading", "--line-number", "--max-filesize", "512K"]);
-        for glob in fs_skip::rg_exclude_globs() {
-            rg.arg("-g").arg(glob);
-        }
-        rg.arg(pattern);
-        rg.arg(resolved.to_str().unwrap_or(""));
-        prepare_command(&mut rg);
-        if let Some(output) = run_command_cancellable(ctx, &mut rg)? {
-            if output.status.success() || !output.stdout.is_empty() {
-                let text = crate::runtime::encoding::decode_process_bytes(&output.stdout);
-                let lines: Vec<_> = text.lines().take(SEARCH_FILES_MAX_HITS).collect();
-                return Ok(lines.join("\n"));
-            }
-        }
-        let re = Regex::new(pattern).map_err(|e| ToolError::new(e.to_string()))?;
-        let mut hits = Vec::new();
-        for (index, entry) in WalkDir::new(&resolved)
-            .follow_links(false)
-            .into_iter()
-            .filter_entry(|e| !fs_skip::should_skip_walk_entry(e))
-            .enumerate()
-        {
-            if index % 32 == 0 {
-                ctx.ensure_not_cancelled()?;
-            }
-            let entry = entry.map_err(|error| ToolError::new(error.to_string()))?;
-            if !entry.file_type().is_file() {
-                continue;
-            }
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            if meta.len() > SEARCH_MAX_FILE_BYTES {
-                continue;
-            }
-            let Ok(content) = fs::read_to_string(entry.path()) else {
-                continue;
-            };
-            for (idx, line) in content.lines().enumerate() {
-                if re.is_match(line) {
-                    hits.push(format!("{}:{}:{}", entry.path().display(), idx + 1, line));
-                    if hits.len() >= SEARCH_FILES_MAX_HITS {
-                        return Ok(hits.join("\n"));
-                    }
-                }
-            }
-        }
-        Ok(hits.join("\n"))
-    }
-}
-
 impl Tool for ListSymbolsTool {
     fn name(&self) -> &str {
         "list_symbols"
     }
     fn description(&self) -> &str {
-        "Lightweight symbol outline for a source file (relative to workspace root). Use before a deep read when you need structure (functions/types) quickly; use lsp for precise go-to-definition/hover/diagnostics when available."
+        "Lightweight symbol outline for a source file (relative to workspace root). Use after you already know the path and need structure (functions/types) quickly; do not use this to discover which file to open — call Grep first. Use lsp for go-to-definition/hover when available."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -617,6 +689,31 @@ mod tests {
         let default = parse_line_window(&json!({ "path": "x" }));
         assert_eq!(default.offset, 1);
         assert_eq!(default.limit, DEFAULT_READ_LIMIT);
+
+        let huge = parse_line_window(&json!({ "limit": 999_999 }));
+        assert_eq!(huge.limit, MAX_READ_LIMIT);
+        let huge_end = parse_line_window(&json!({ "start_line": 1, "end_line": 50_000 }));
+        assert_eq!(huge_end.limit, MAX_READ_LIMIT);
+    }
+
+    #[test]
+    fn read_file_covers_a_medium_source_module_in_one_call() {
+        let root = std::env::temp_dir().join(format!("peek-read-mod-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let body: String = (1..=360).map(|n| format!("line-{n}\n")).collect();
+        std::fs::write(root.join("win.rs"), &body).unwrap();
+
+        let (ctx, db) = make_ctx(root.clone());
+        let out = ReadFileTool
+            .execute(&ctx, json!({ "path": "win.rs" }))
+            .unwrap();
+        assert!(out.contains("line-1"), "{out}");
+        assert!(out.contains("line-360"), "{out}");
+        assert!(!out.contains("more lines follow"), "{out}");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(db);
     }
 
     #[test]
@@ -656,6 +753,73 @@ mod tests {
             .execute(&ctx, json!({ "path": "notes.txt", "around_line": 500 }))
             .unwrap();
         assert!(past.contains("past end of file"), "{past}");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(db);
+    }
+
+    #[test]
+    fn read_file_reports_size_and_rejects_binary() {
+        let root = std::env::temp_dir().join(format!("peek-read-bin-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("notes.txt"), "hello\nworld\n").unwrap();
+        std::fs::write(root.join("blob.bin"), [0u8, 1, 2, 3]).unwrap();
+
+        let (ctx, db) = make_ctx(root.clone());
+        let text = ReadFileTool
+            .execute(&ctx, json!({ "path": "notes.txt" }))
+            .unwrap();
+        assert!(text.contains("[file] notes.txt size="), "{text}");
+        assert!(text.contains("hello"), "{text}");
+
+        let binary = ReadFileTool
+            .execute(&ctx, json!({ "path": "blob.bin" }))
+            .unwrap();
+        assert!(binary.contains("looks binary"), "{binary}");
+        assert!(!binary.contains('\0'), "{binary}");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(db);
+    }
+
+    #[test]
+    fn read_file_large_dump_asks_for_script_not_pagination() {
+        let root = std::env::temp_dir().join(format!("peek-read-dump-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let chunk = "<div class=\"frame\">fn;main;work 12</div>\n".repeat(40_000);
+        std::fs::write(root.join("cpu.html"), chunk.as_bytes()).unwrap();
+
+        let (ctx, db) = make_ctx(root.clone());
+        let out = ReadFileTool
+            .execute(&ctx, json!({ "path": "cpu.html", "limit": 999_999 }))
+            .unwrap();
+        assert!(out.contains("[file] cpu.html size="), "{out}");
+        assert!(out.contains("too large to read in full"), "{out}");
+        assert!(out.contains("run_shell script"), "{out}");
+        assert!(!out.contains("pass offset="), "{out}");
+        let data_lines = out.lines().filter(|line| line.contains('|')).count();
+        assert!(data_lines <= LARGE_FILE_PREVIEW_LINES + 2, "{data_lines}");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(db);
+    }
+
+    #[test]
+    fn read_file_clamps_very_long_lines() {
+        let root = std::env::temp_dir().join(format!("peek-read-long-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let long = "x".repeat(2_000);
+        std::fs::write(root.join("one.json"), format!("{long}\n")).unwrap();
+
+        let (ctx, db) = make_ctx(root.clone());
+        let out = ReadFileTool
+            .execute(&ctx, json!({ "path": "one.json" }))
+            .unwrap();
+        assert!(out.contains("chars truncated"), "{out}");
+        assert!(out.len() < 2_000, "{}", out.len());
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_file(db);

@@ -10,7 +10,7 @@
     <template v-else>
       <template v-for="section in sections" :key="section.kind">
         <li v-if="showSectionHeaders" class="hash-section-head" role="presentation">
-          {{ section.kind === "skill" ? skillLabel : mcpLabel }}
+          {{ kindLabel(section.kind) }}
         </li>
         <li
           v-for="row in section.rows"
@@ -57,6 +57,7 @@ const props = defineProps<{
   ariaLabel: string;
   skillLabel: string;
   mcpLabel: string;
+  pluginLabel: string;
 }>();
 
 defineEmits<{
@@ -68,20 +69,22 @@ const brokenIcons = reactive<Record<string, boolean>>({});
 
 const showSectionHeaders = computed(() => {
   const kinds = new Set(props.items.map((item) => item.kind));
-  return kinds.has("skill") && kinds.has("mcp");
+  return kinds.size > 1;
 });
 
 const sections = computed(() => {
-  const skillRows: Array<{ item: HashMentionItem; index: number }> = [];
-  const mcpRows: Array<{ item: HashMentionItem; index: number }> = [];
+  const byKind: Record<HashResourceKind, Array<{ item: HashMentionItem; index: number }>> = {
+    skill: [],
+    plugin: [],
+    mcp: [],
+  };
   props.items.forEach((item, index) => {
-    const row = { item, index };
-    if (item.kind === "mcp") mcpRows.push(row);
-    else skillRows.push(row);
+    byKind[item.kind].push({ item, index });
   });
-  const out: Array<{ kind: HashResourceKind; rows: typeof skillRows }> = [];
-  if (skillRows.length) out.push({ kind: "skill", rows: skillRows });
-  if (mcpRows.length) out.push({ kind: "mcp", rows: mcpRows });
+  const out: Array<{ kind: HashResourceKind; rows: (typeof byKind)["skill"] }> = [];
+  for (const kind of ["skill", "plugin", "mcp"] as const) {
+    if (byKind[kind].length) out.push({ kind, rows: byKind[kind] });
+  }
   return out;
 });
 
@@ -103,7 +106,9 @@ function markBroken(item: HashMentionItem) {
 }
 
 function kindLabel(kind: HashResourceKind): string {
-  return kind === "skill" ? props.skillLabel : props.mcpLabel;
+  if (kind === "skill") return props.skillLabel;
+  if (kind === "plugin") return props.pluginLabel;
+  return props.mcpLabel;
 }
 
 function fallbackLetter(item: HashMentionItem): string {
@@ -238,6 +243,11 @@ function rowTitle(item: HashMentionItem): string {
 .hash-kind-pill[data-kind="mcp"] {
   background: color-mix(in srgb, #3b82f6 18%, transparent);
   color: #60a5fa;
+}
+
+.hash-kind-pill[data-kind="plugin"] {
+  background: color-mix(in srgb, #7c3aed 18%, transparent);
+  color: #a78bfa;
 }
 
 .picker-meta {

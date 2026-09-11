@@ -14,10 +14,12 @@ pub mod plan_mode;
 pub mod preview;
 pub mod process_stats;
 pub mod registry;
+pub mod rg;
 pub mod sandbox;
 pub mod shell_jobs;
 pub mod shell_judge;
 pub mod skills;
+pub mod task_list;
 pub mod tool_approval;
 pub mod workspace_index;
 

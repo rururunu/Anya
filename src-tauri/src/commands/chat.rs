@@ -10,7 +10,6 @@ use crate::models::chat::{
     ChatSendRequest, ChatSendResponse, ContextUsageRequest, ContextUsageResponse,
     ListChatSessionsResponse,
 };
-use crate::services::gemini_oauth;
 use crate::services::settings_store::{apply_chat_request_settings, get_settings};
 
 #[tauri::command]
@@ -195,22 +194,50 @@ pub async fn set_chat_session_workspace(
 pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, String> {
     let settings = get_settings(&app)?;
     let mut all_models: Vec<ChatModelInfo> = Vec::new();
+    let mut deepseek_err = None;
 
     if !settings.deepseek_api_key.trim().is_empty() {
-        match deepseek::list_models(&settings.deepseek_api_key).await {
-            Ok(models) => all_models.extend(models),
-            Err(e) => {
-                // Partial failure — log but don't abort if custom provider has models.
-                eprintln!("DeepSeek list_models error: {e}");
-            }
-        }
-    }
+        let is_disabled =
+            |id: &str| crate::core::ai::registry::deepseek_model_is_disabled(&settings, id);
 
-    if settings.gemini_oauth.is_logged_in() {
-        match gemini_oauth::list_models(&app).await {
-            Ok(models) => all_models.extend(models),
-            Err(error) => {
-                eprintln!("Gemini fetchAvailableModels error: {error}");
+        if !settings.deepseek_models.is_empty() {
+            for entry in &settings.deepseek_models {
+                if !entry.disabled {
+                    all_models.push(ChatModelInfo {
+                        id: entry.id.clone(),
+                        owned_by: "deepseek".to_string(),
+                        provider: "deepseek".to_string(),
+                        display_name: None,
+                        thinking_variants: None,
+                        reasoning: None,
+                    });
+                }
+            }
+        } else {
+            match deepseek::list_models(&settings.deepseek_api_key).await {
+                Ok(models) => {
+                    for m in models {
+                        if !is_disabled(&m.id) {
+                            all_models.push(m);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("DeepSeek list_models error: {e}");
+                    deepseek_err = Some(e.to_string());
+                    for id in ["deepseek-chat", "deepseek-reasoner"] {
+                        if !is_disabled(id) {
+                            all_models.push(ChatModelInfo {
+                                id: id.to_string(),
+                                owned_by: "deepseek".to_string(),
+                                provider: "deepseek".to_string(),
+                                display_name: None,
+                                thinking_variants: None,
+                                reasoning: None,
+                            });
+                        }
+                    }
+                }
             }
         }
     }
@@ -268,13 +295,24 @@ pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, Stri
     }
 
     if all_models.is_empty() && !settings.deepseek_api_key.trim().is_empty() {
-        // Re-run DeepSeek to surface its error properly.
-        return deepseek::list_models(&settings.deepseek_api_key)
-            .await
-            .map_err(|e| e.to_string());
+        if let Some(err) = deepseek_err {
+            return Err(err);
+        }
     }
 
     Ok(all_models)
+}
+
+#[tauri::command]
+pub async fn list_deepseek_models(api_key: String) -> Result<Vec<String>, String> {
+    let key = api_key.trim();
+    if key.is_empty() {
+        return Err("API Key is required".into());
+    }
+    let models = deepseek::list_models(key)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(models.into_iter().map(|m| m.id).collect())
 }
 
 #[tauri::command]
@@ -354,6 +392,8 @@ pub fn set_chat_session_title(
 pub async fn regenerate_chat_session_title(
     state: State<'_, AppState>,
     session_id: String,
+    model_id: Option<String>,
+    model_provider: Option<String>,
 ) -> Result<String, String> {
     if session_id.trim().is_empty() {
         return Err("Session id is required".into());
@@ -361,7 +401,7 @@ pub async fn regenerate_chat_session_title(
     state
         .core
         .chat()
-        .regenerate_session_title(&session_id)
+        .regenerate_session_title(&session_id, model_id.as_deref(), model_provider.as_deref())
         .await
 }
 

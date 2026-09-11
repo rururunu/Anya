@@ -30,7 +30,6 @@ import { IPC_COMMANDS } from "@/types/ipc";
 import type {
   AppSettings,
   AppSettingsPatch,
-  GeminiAuthStatus,
   SemanticSearchConfig,
   SemanticSearchState,
 } from "@/types/setting";
@@ -131,28 +130,6 @@ export function fetchSemanticSearchModels(baseUrl: string, apiKey: string) {
   return ipcInvoke<string[]>("fetch_semantic_search_models", { baseUrl, apiKey });
 }
 
-export function geminiAuthStatus() {
-  return ipcInvoke<GeminiAuthStatus>(IPC_COMMANDS.geminiAuthStatus);
-}
-
-export function geminiOauthLogin() {
-  return ipcInvoke<GeminiAuthStatus>(IPC_COMMANDS.geminiOauthLogin);
-}
-
-export function geminiOauthCancelLogin() {
-  return ipcInvoke<void>(IPC_COMMANDS.geminiOauthCancelLogin);
-}
-
-export function geminiOauthLogout() {
-  return ipcInvoke<GeminiAuthStatus>(IPC_COMMANDS.geminiOauthLogout);
-}
-
-export function geminiImportClientSecrets(path: string) {
-  return ipcInvoke<GeminiAuthStatus>(IPC_COMMANDS.geminiImportClientSecrets, {
-    path,
-  });
-}
-
 export function getAppInfo() {
   return ipcInvoke<AppInfo>(IPC_COMMANDS.getAppInfo);
 }
@@ -191,6 +168,12 @@ export function listArchivedChatSessions() {
 
 export function listChatModels() {
   return ipcInvoke<ChatModelInfo[]>(IPC_COMMANDS.listChatModels);
+}
+
+export function listDeepSeekModels(apiKey: string) {
+  return ipcInvoke<string[]>(IPC_COMMANDS.listDeepSeekModels, {
+    apiKey,
+  });
 }
 
 export function listCustomProviderModels(baseUrl: string, apiKey: string) {
@@ -241,10 +224,18 @@ export function setChatSessionTitle(sessionId: string, title: string) {
   });
 }
 
-export function regenerateChatSessionTitle(sessionId: string) {
+export function regenerateChatSessionTitle(
+  sessionId: string,
+  modelId?: string,
+  modelProvider?: string,
+) {
   return ipcInvoke<string>(IPC_COMMANDS.regenerateChatSessionTitle, {
     sessionId,
     session_id: sessionId,
+    modelId,
+    model_id: modelId,
+    modelProvider,
+    model_provider: modelProvider,
   });
 }
 
@@ -331,6 +322,29 @@ export function revealInExplorer(path: string) {
 
 export function openInDefaultApp(path: string) {
   return ipcInvoke<void>(IPC_COMMANDS.openInDefaultApp, { path });
+}
+
+/** 切换桌面宠物的显示或隐藏状态。 */
+export function toggleDesktopPet(visible?: boolean) {
+  return ipcInvoke<boolean>(
+    IPC_COMMANDS.toggleDesktopPet,
+    visible !== undefined ? { visible } : undefined,
+  );
+}
+
+/** 查询桌面宠物当前是否处于可见状态。 */
+export function getDesktopPetVisible() {
+  return ipcInvoke<boolean>(IPC_COMMANDS.getDesktopPetVisible);
+}
+
+/** 显示并激活 Anya 主工作台窗口。 */
+export function showWorkbench() {
+  return ipcInvoke<void>(IPC_COMMANDS.showWorkbench);
+}
+
+/** 从桌面宠物呼出 Overlay 快捷提问栏。 */
+export function toggleOverlayFromPet() {
+  return ipcInvoke<void>(IPC_COMMANDS.toggleOverlayFromPet);
 }
 
 export type {

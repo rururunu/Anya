@@ -27,7 +27,8 @@ const isWorkbench = windowLabel === "workbench";
 const isPeek =
   windowLabel === "overlay" ||
   windowLabel.startsWith("overlay-") ||
-  windowLabel.startsWith("overlay-preview-");
+  windowLabel.startsWith("overlay-preview-") ||
+  windowLabel === "desktop-pet";
 </script>
 
 <style scoped>

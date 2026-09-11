@@ -1,5 +1,5 @@
-use std::io::BufReader;
 use std::io::BufRead;
+use std::io::BufReader;
 use std::thread;
 
 use crate::core::tools::error::ToolError;
@@ -8,9 +8,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use super::remote_auth;
-use super::runtime::{
-    file_exists, find_node_exe, find_npm_js_cli, look_for_command, search_dirs,
-};
+use super::runtime::{file_exists, find_node_exe, find_npm_js_cli, look_for_command, search_dirs};
 
 fn resolve_mcp_program(command: &str) -> PathBuf {
     let as_path = PathBuf::from(command);
@@ -185,7 +183,11 @@ fn extract_urls(line: &str) -> Vec<String> {
     out
 }
 
-pub(super) fn forward_mcp_stderr(stderr: std::process::ChildStderr, server_id: String, open_oauth_urls: bool) {
+pub(super) fn forward_mcp_stderr(
+    stderr: std::process::ChildStderr,
+    server_id: String,
+    open_oauth_urls: bool,
+) {
     thread::spawn(move || {
         let reader = BufReader::new(stderr);
         let mut expect_auth_url = false;

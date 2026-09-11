@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.19                                            |
+| **Version** | v0.2.20                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -348,6 +348,7 @@ sequenceDiagram
 | MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                                                   |
 | Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                                             |
 | Event bus           | `core/event/`                              | Domain events                                                                                                |
+| Plugins             | `core/plugins/`                            | Manifest, grants, Deno host, official bundles; **computer-use** in `computer/` (UIA, capture, launch)        |
 | Remote gateway      | `core/remote/`                             | WS `/remote/v1`; `gateway/`, `state/`, `bridge/`, pairing, tunnel, upload, **download `/f/`**, preview `/p/` |
 
 ### 5.2 Naming: three “runtime” modules
@@ -367,7 +368,7 @@ sequenceDiagram
 | Chat composables            | `composables/chat/`                                            | `wireChatIpc`, `useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`, `useMessage{Scroll,PreviewRail}`, `useConversationFind`, attachments, ask-user flow |
 | Chat store                  | `stores/chat.ts`, `stores/chatSessions.ts`                     | Pinia façade; session list/archive/title in `chatSessions`; compose/stream helpers in sibling modules                                                                   |
 | Workbench composables       | `composables/workbench/`                                       | `useWorkbenchNavigation`, `useNavigationSidebar`, sessions/workspaces/review lifecycle                                                                                  |
-| Other stores                | `stores/setting.ts`, `chatModel.ts`                            | Settings, model catalog                                                                                                                                                 |
+| Other stores                | `stores/setting.ts`, `chatModel.ts`, `plugins.ts`              | Settings, model catalog, user plugins                                                                                                                                   |
 | Theme                       | `services/theme/`                                              | Catalog (light/dark), `ThemeService` apply path, `themes.css` tokens                                                                                                    |
 | Chat services               | `services/chat/`                                               | Image gen mode, local image src, save image, composer segments, token estimate                                                                                          |
 | IPC                         | `services/ipc/`                                                | Typed invoke + event subscription                                                                                                                                       |
@@ -739,6 +740,17 @@ flowchart LR
 The API path sends **query + candidate snippets** to the configured embeddings
 host. The local path stays on disk after the first download.
 
+### 11.3 Computer use
+
+Official plugin `computer-use` (`core/plugins/computer/`, Windows, off until
+Enable). Actions run in Rust; the Deno host only declares schemas. Pipeline:
+`launch` → `key` → UIA `click_control` / `set_value` → pixel `click`/`drag`.
+`screenshot` returns a JPEG **and** an interactive control list. JPEG `x,y` map
+through capture scale + window origin (physical pixels). Bundled playbook:
+`src-tauri/plugins/computer-use/skills/windows.md` via `contributes.agent.skills`.
+
+See [Computer use](./computer-use.md).
+
 ---
 
 ## 12. Event contract (domain → UI)
@@ -798,16 +810,17 @@ Details: [release.md](./release.md).
 
 ## 15. Extension points
 
-| Intent                  | Preferred hook                                          |
-| ----------------------- | ------------------------------------------------------- |
-| New model vendor        | `core/ai` `AIProvider` impl + settings wiring           |
-| New built-in tool       | `core/tools` registry + optional `runtime/` adapter     |
-| New turn policy         | `core/chat/agent_loop` module called from `AgentRunner` |
-| New window surface      | Tauri window label + `src/main.ts` bootstrap branch     |
-| External context source | `core/context` provider                                 |
-| New skill               | `src-tauri/prompts/skills/*.md` (+ assets if needed)    |
-| Companion RPC / event   | `core/remote/protocol.rs` + phone client in AnyaAndroid |
-| RAG embedding backend   | `core/ai/embed.rs` + Settings RAG page                  |
+| Intent                  | Preferred hook                                                              |
+| ----------------------- | --------------------------------------------------------------------------- |
+| New model vendor        | `core/ai` `AIProvider` impl + settings wiring                               |
+| New built-in tool       | `core/tools` registry + optional `runtime/` adapter                         |
+| New turn policy         | `core/chat/agent_loop` module called from `AgentRunner`                     |
+| New window surface      | Tauri window label + `src/main.ts` bootstrap branch                         |
+| External context source | `core/context` provider                                                     |
+| New skill               | `src-tauri/prompts/skills/*.md` (+ assets if needed)                        |
+| Agent plugin playbook   | `contributes.agent.skills` markdown (see [Computer use](./computer-use.md)) |
+| Companion RPC / event   | `core/remote/protocol.rs` + phone client in AnyaAndroid                     |
+| RAG embedding backend   | `core/ai/embed.rs` + Settings RAG page                                      |
 
 Avoid introducing a parallel agent loop beside `AgentRunner`.
 Companion must not grow a second Agent runtime.
@@ -832,6 +845,7 @@ Companion must not grow a second Agent runtime.
 | Rust chat modules                | `core/chat/{db,service,stream}/` (facade `mod.rs` keeps command imports stable)           |
 | Remote gateway / pairing         | `core/remote/gateway/`, `pairing.rs`, `tunnel.rs`                                         |
 | Shell jobs / workspace / MCP     | `core/tools/shell_jobs/`, `core/workspace/`, `core/mcp/`                                  |
+| Plugins / computer use           | `core/plugins/`, `src-tauri/plugins/computer-use/`, [Computer use](./computer-use.md)     |
 | DeepSeek stream                  | `core/ai/deepseek/stream/`                                                                |
 | Gateway HTTP split               | `core/remote/http_proxy.rs` (`/remote/v1`, `/f/`, `/p/`)                                  |
 | Companion file transfer          | `core/remote/upload.rs`, `download.rs`                                                    |

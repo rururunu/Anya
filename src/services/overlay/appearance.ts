@@ -2,7 +2,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Effect, EffectState } from "@tauri-apps/api/window";
 
 function isPeekWindow(label: string) {
-  return label === "overlay" || label.startsWith("overlay-");
+  return label === "overlay" || label.startsWith("overlay-") || label === "desktop-pet";
 }
 
 export async function refreshOverlayWindowBackground() {
@@ -27,7 +27,10 @@ export async function refreshOverlayWindowBackground() {
 }
 
 export async function applyOpacity(opacity: number) {
-  document.documentElement.style.setProperty("--peek-opacity", String(opacity / 100));
+  const norm = Math.max(0.1, Math.min(1, opacity / 100));
+  document.documentElement.style.setProperty("--peek-opacity", String(norm));
+  const glassPercent = Math.round(25 + norm * 57);
+  document.documentElement.style.setProperty("--workbench-glass-opacity", `${glassPercent}%`);
   document.documentElement.classList.toggle("frosted-glass", opacity < 100);
   await refreshOverlayWindowBackground();
 }

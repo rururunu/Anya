@@ -62,6 +62,7 @@ pub struct TokenUsage {
 }
 
 impl TokenUsage {
+    #[cfg(test)]
     pub fn exact(input_tokens: usize, output_tokens: usize, source: impl Into<String>) -> Self {
         Self {
             input_tokens,

@@ -70,6 +70,9 @@ const INLINE_DESCRIPTION_IDS: ReadonlySet<SettingFieldId> = new Set([
   "passToolReasoning",
   "continueThinkingAfterTools",
   "toolApprovalMode",
+  "mem0ApiKey",
+  "serperApiKey",
+  "tavilyApiKey",
 ]);
 
 const SILENT_COPY_IDS: ReadonlySet<SettingFieldId> = new Set([
@@ -96,7 +99,7 @@ function splitFieldCopy(
   const extraHelp = isHelpFieldId(id)
     ? tr(language, `settings.fields.${id}.help` as SettingsI18nKey)
     : "";
-  if (INLINE_DESCRIPTION_IDS.has(id)) {
+  if (INLINE_DESCRIPTION_IDS.has(id) || /https?:\/\//.test(rawDescription)) {
     return { description: rawDescription, help: extraHelp };
   }
   return { description: "", help: extraHelp || rawDescription };
@@ -141,7 +144,7 @@ export function buildSettingDefinitions(
     agentSafety: tr(language, "settings.groups.agentSafety"),
     agentDisplay: tr(language, "settings.groups.agentDisplay"),
     agentCapabilities: tr(language, "settings.groups.agentCapabilities"),
-    plugins: tr(language, "settings.groups.plugins"),
+    pinBadges: tr(language, "settings.groups.pinBadges"),
     about: tr(language, "settings.groups.about"),
   };
 
@@ -492,8 +495,8 @@ export function buildSettingDefinitions(
     },
     {
       id: "pixpinPinAiEnabled",
-      category: "plugins",
-      group: groups.plugins,
+      category: "pinTools",
+      group: groups.pinBadges,
       path: m.pixpinPinAiEnabled.path,
       title: m.pixpinPinAiEnabled.title,
       description: m.pixpinPinAiEnabled.description,
@@ -503,8 +506,8 @@ export function buildSettingDefinitions(
     },
     {
       id: "snipastePinAiEnabled",
-      category: "plugins",
-      group: groups.plugins,
+      category: "pinTools",
+      group: groups.pinBadges,
       path: m.snipastePinAiEnabled.path,
       title: m.snipastePinAiEnabled.title,
       description: m.snipastePinAiEnabled.description,

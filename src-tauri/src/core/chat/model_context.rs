@@ -27,9 +27,8 @@ pub fn model_native_context_window(model_id: &str) -> Option<usize> {
         return Some(128_000);
     }
 
-    // Modern Gemini / long-context flash (incl. Antigravity "v4-flash" style ids).
+    // Modern Gemini / long-context flash (incl. "v4-flash" style ids).
     if id.contains("gemini")
-        || id.contains("antigravity")
         || ((id.contains("v4-flash") || id.contains("v3-flash")) && !id.contains("lite"))
     {
         if id.contains("1.0") || id.contains("pro-vision") {

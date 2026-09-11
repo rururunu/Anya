@@ -1,38 +1,55 @@
-import type { AppLanguage, SelectOption, ThemeId } from "@/types/setting";
+import type {
+  AppLanguage,
+  BuiltinThemeId,
+  CustomThemeConfig,
+  SelectOption,
+  ThemeId,
+} from "@/types/setting";
 
-export type { ThemeId };
+export type { ThemeId, BuiltinThemeId };
 export type { ColorScheme } from "@/types/setting";
 
 export const COLOR_SCHEME_CACHE_KEY = "anya-color-scheme";
+export const CUSTOM_THEMES_CACHE_KEY = "anya-custom-themes";
 
-export const THEME_IDS = ["light", "dark"] as const satisfies readonly ThemeId[];
+export const BUILTIN_THEME_IDS = ["light", "dark"] as const satisfies readonly BuiltinThemeId[];
 
-const LEGACY_ALIASES: Record<string, ThemeId> = {
+export const THEME_IDS = BUILTIN_THEME_IDS;
+
+const LEGACY_ALIASES: Record<string, BuiltinThemeId> = {
   system: "dark",
   auto: "dark",
   default: "dark",
+  "blue-black": "dark",
+  "ghost-pastel": "dark",
+  graphite: "dark",
+  nocturne: "dark",
+  teal: "dark",
   frost: "light",
   cream: "light",
   paper: "light",
   midnight: "dark",
-  "blue-black": "dark",
   ocean: "dark",
   forest: "dark",
   rose: "dark",
-  "ghost-pastel": "dark",
-  graphite: "dark",
   ember: "dark",
-  nocturne: "dark",
-  teal: "dark",
 };
 
 function themeLabel(en: string, zh: string): SelectOption<ThemeId>["label"] {
   return { "en-US": en, "zh-CN": zh };
 }
 
-export const colorSchemeOptions: SelectOption<ThemeId>[] = [
+export const lightBuiltinOptions: SelectOption<ThemeId>[] = [
   { value: "light", label: themeLabel("Light", "浅色") },
+];
+
+export const darkBuiltinOptions: SelectOption<ThemeId>[] = [
   { value: "dark", label: themeLabel("Dark", "深色") },
+];
+
+export const colorSchemeOptions: SelectOption<ThemeId>[] = [
+  ...lightBuiltinOptions,
+  ...darkBuiltinOptions,
 ];
 
 export const themeOptionGroups: Array<{
@@ -41,33 +58,85 @@ export const themeOptionGroups: Array<{
   options: SelectOption<ThemeId>[];
 }> = [
   {
-    id: "appearance",
-    label: themeLabel("Theme", "主题"),
+    id: "builtin-presets",
+    label: themeLabel("System Presets", "系统预设"),
     options: colorSchemeOptions,
   },
 ];
 
+export function buildFullThemeGroups(customThemes: CustomThemeConfig[] = []): Array<{
+  id: string;
+  label: Partial<Record<AppLanguage, string>> & Pick<Record<AppLanguage, string>, "en-US">;
+  options: SelectOption<ThemeId>[];
+}> {
+  const groups: Array<{
+    id: string;
+    label: Partial<Record<AppLanguage, string>> & Pick<Record<AppLanguage, string>, "en-US">;
+    options: SelectOption<ThemeId>[];
+  }> = [
+    {
+      id: "builtin-presets",
+      label: themeLabel("System Presets", "系统预设"),
+      options: colorSchemeOptions,
+    },
+  ];
+  if (customThemes.length > 0) {
+    groups.push({
+      id: "custom-themes",
+      label: themeLabel("Custom Themes", "自定义主题"),
+      options: customThemes.map((theme) => ({
+        value: theme.id,
+        label: { "en-US": theme.name, "zh-CN": theme.name },
+      })),
+    });
+  }
+  return groups;
+}
+
 /** Returns whether the scheme uses the dark palette. */
-export function isDarkTheme(scheme: ThemeId): boolean {
-  return scheme === "dark";
+export function isDarkTheme(scheme: ThemeId, customThemes?: CustomThemeConfig[]): boolean {
+  if (scheme === "dark") {
+    return true;
+  }
+  if (scheme === "light") {
+    return false;
+  }
+  if (LEGACY_ALIASES[scheme]) {
+    return LEGACY_ALIASES[scheme] === "dark";
+  }
+  if (customThemes) {
+    const found = customThemes.find((t) => t.id === scheme);
+    if (found) {
+      return found.mode === "dark";
+    }
+  }
+  return scheme.includes("dark") || scheme.includes("night");
 }
 
-export function isLightColorScheme(scheme: ThemeId): boolean {
-  return scheme === "light";
+export function isLightColorScheme(scheme: ThemeId, customThemes?: CustomThemeConfig[]): boolean {
+  return !isDarkTheme(scheme, customThemes);
 }
 
-export function isThemeId(value: string): value is ThemeId {
-  return (THEME_IDS as readonly string[]).includes(value);
+export function isBuiltinThemeId(value: string): value is BuiltinThemeId {
+  return (BUILTIN_THEME_IDS as readonly string[]).includes(value);
 }
 
-/** Coerce unknown / legacy palette ids to light or dark. */
+export const isThemeId = isBuiltinThemeId;
+
+/** Coerce unknown / legacy palette ids or return custom id. */
 export function normalizeThemeId(value: unknown): ThemeId {
   if (typeof value !== "string") {
     return "light";
   }
-  const trimmed = value.trim().toLowerCase();
-  const aliased = LEGACY_ALIASES[trimmed] ?? trimmed;
-  return isThemeId(aliased) ? aliased : "light";
+  const trimmed = value.trim();
+  const lower = trimmed.toLowerCase();
+  if (LEGACY_ALIASES[lower]) {
+    return LEGACY_ALIASES[lower];
+  }
+  if (isBuiltinThemeId(lower)) {
+    return lower;
+  }
+  return trimmed || "light";
 }
 
 export const normalizeColorScheme = normalizeThemeId;

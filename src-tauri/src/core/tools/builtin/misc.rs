@@ -149,7 +149,7 @@ impl Tool for LspTool {
         "lsp"
     }
     fn description(&self) -> &str {
-        "Language-aware navigation via LSP: hover, definition, diagnostics, references, workspace symbols, rename preview, and code actions. Prefer when available for precise symbol navigation; fall back to search_files / list_symbols / read_file when LSP is off or unavailable. Requires LSP enabled in Settings."
+        "Language-aware navigation via LSP: hover, definition, diagnostics, references, workspace symbols, rename preview, and code actions. Prefer when available for precise symbol navigation; fall back to Grep / list_symbols / read_file when LSP is off or unavailable. Requires LSP enabled in Settings."
     }
     fn parameters_schema(&self) -> Value {
         json!({

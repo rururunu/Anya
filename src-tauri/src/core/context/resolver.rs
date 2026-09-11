@@ -66,9 +66,8 @@ impl ContextResolver {
     ) -> RequestContext {
         // Direct callers (tests / legacy) still require the foreground window
         // to look like the IDE before trusting a cached push payload.
-        let ide_context = ide_context.filter(|ide| {
-            ide_context_matches_active_window(ide, context.active_window.as_deref())
-        });
+        let ide_context = ide_context
+            .filter(|ide| ide_context_matches_active_window(ide, context.active_window.as_deref()));
         self.merge_ide_context(context, current_workspace, known_workspaces, ide_context)
     }
 

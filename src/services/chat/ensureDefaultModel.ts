@@ -6,7 +6,7 @@ export const CONFIGURE_PROVIDER_MARKER = "<!--peek:configure-provider-->";
 export function isConfigureProviderError(content: string): boolean {
   if (!content.trim()) return false;
   if (content.includes(CONFIGURE_PROVIDER_MARKER)) return true;
-  return /No model selected|credentials are not configured|Model credentials are not configured|Sign in to Gemini in Settings/i.test(
+  return /No model selected|credentials are not configured|Model credentials are not configured/i.test(
     content,
   );
 }

@@ -21,7 +21,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.19-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.20-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -36,16 +36,17 @@
 
 ## At a glance
 
-|                 |                                                                                                                             |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Workbench**   | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                     |
-| **Overlay**     | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                    |
-| **Agent**       | Ask / Agent / Plan / Image; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                      |
-| **Companion**   | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone. |
-| **RAG**         | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.         |
-| **Local-first** | Keys, history, and settings stay on your machine by default.                                                                |
+|                  |                                                                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workbench**    | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                                                               |
+| **Overlay**      | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                                                              |
+| **Agent**        | Ask / Agent / Plan / Image; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                                                                |
+| **Computer use** | Official `computer-use` **agent** plugin (off until Enable): launch apps, keyboard, UIA controls, then pixel click/drag. Screenshot + control tree together. Windows. |
+| **Companion**    | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone.                                           |
+| **RAG**          | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.                                                   |
+| **Local-first**  | Keys, history, and settings stay on your machine by default.                                                                                                          |
 
-**Docs:** [Architecture](./docs/architecture-overview.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
+**Docs:** [Architecture](./docs/architecture-overview.md) · [Plugin system](./docs/plugin-system.md) · [Computer use](./docs/computer-use.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
 
 ---
 
@@ -299,7 +300,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.19_x64.msi`.
+The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.20_x64.msi`.
 
 For signing, `latest.json`, and GitHub Releases, see [Releases and remote updates](./docs/release.md).
 

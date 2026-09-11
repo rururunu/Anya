@@ -2,8 +2,9 @@
  * Image / file attachment chips for ChatInputBar.
  */
 
-import { ref, type Ref } from "vue";
+import { ref, watch, type Ref } from "vue";
 import { nextTick } from "vue";
+import { useDebounceFn } from "@vueuse/core";
 import {
   formatAttachedFilesForMessage,
   isImageFile,
@@ -19,9 +20,11 @@ import {
 import type { ComposerSnapshot } from "@/services/chat/composerUndo";
 import type { I18nKey } from "@/services/i18n";
 import { tr } from "@/services/i18n";
+import { useChatStore } from "@/stores/chat";
 import type { AppLanguage } from "@/types/setting";
 
 export function useComposerAttachments(options: {
+  sessionId: Ref<string>;
   language: Ref<AppLanguage>;
   emitLayoutChange: () => void;
   emitPreviewImage: (url: string) => void;
@@ -35,6 +38,7 @@ export function useComposerAttachments(options: {
   resizeComposerInput: () => void;
   focusInput: () => Promise<void> | void;
 }) {
+  const chatStore = useChatStore();
   const attachedImages = ref<string[]>([]);
   /**
    * Parallel to `attachedImages`: full-brightness edits references when the thumb
@@ -176,6 +180,58 @@ export function useComposerAttachments(options: {
     return formatAttachedFilesForMessage(attachedFiles.value);
   }
 
+  /** Persist unsent image/file chips for the given session; no-op when sessionId is empty. */
+  function persistAttachments(sessionId = options.sessionId.value, immediate = false) {
+    if (!sessionId) return;
+    chatStore.setComposeAttachments(
+      sessionId,
+      attachedImages.value,
+      attachedEditSources.value,
+      attachedFiles.value,
+      immediate ? { persistImmediate: true } : undefined,
+    );
+  }
+
+  /** Load unsent image/file chips from the session compose cache into the composer. */
+  function loadAttachments() {
+    if (!options.sessionId.value) {
+      clearAllAttachments();
+      return;
+    }
+    const compose = chatStore.ensureCompose(options.sessionId.value);
+    attachedImages.value = [...(compose.draftImages ?? [])];
+    attachedEditSources.value = [...(compose.draftEditSources ?? [])];
+    attachedFiles.value = (compose.draftFiles ?? []).map((file) => ({ ...file }));
+  }
+
+  /** Restore images/files onto the composer (e.g. after rewinding a sent message). */
+  function restoreAttachments(images?: string[], files?: AttachedFileChip[]) {
+    if (images?.length) {
+      attachedImages.value = [...images];
+      attachedEditSources.value = images.map(() => null);
+    }
+    if (files?.length) {
+      attachedFiles.value = files.map((file) => ({ ...file }));
+    }
+    if (images?.length || files?.length) {
+      options.emitLayoutChange();
+    }
+  }
+
+  const persistAttachmentsDebounced = useDebounceFn((sessionId: string) => {
+    if (!sessionId || sessionId !== options.sessionId.value) return;
+    persistAttachments(sessionId);
+  }, 1000);
+
+  watch(
+    [attachedImages, attachedEditSources, attachedFiles],
+    () => {
+      if (!options.sessionId.value) return;
+      persistAttachmentsDebounced(options.sessionId.value);
+    },
+    { deep: true },
+  );
+
   return {
     attachedImages,
     attachedEditSources,
@@ -195,5 +251,8 @@ export function useComposerAttachments(options: {
     clearAttachedFiles,
     clearAllAttachments,
     attachedFilesMessagePrefix,
+    persistAttachments,
+    loadAttachments,
+    restoreAttachments,
   };
 }

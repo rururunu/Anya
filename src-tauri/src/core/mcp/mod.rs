@@ -6,18 +6,18 @@ mod process;
 mod remote_auth;
 mod runtime;
 
+pub use manager::shared_mcp_manager;
 pub use remote_auth::{
     clear_saved_credentials, init_mcp_remote_config_dir, normalize_mcp_servers, uses_mcp_remote,
     McpServerRuntimeStatus,
 };
-pub use manager::shared_mcp_manager;
 pub use runtime::{runtime_support, McpRuntimeSupport};
 
 #[cfg(test)]
 mod tests {
-    use crate::models::settings::McpServerConfig;
     use super::command::build_mcp_command;
     use super::runtime::{file_exists, find_node_exe, find_npm_js_cli};
+    use crate::models::settings::McpServerConfig;
 
     #[test]
     fn finds_node_and_npx_cli() {

@@ -10,7 +10,6 @@ export type OnboardingI18nKey =
   | "onboarding.providerTitle"
   | "onboarding.providerSubtitle"
   | "onboarding.providerDeepSeekHint"
-  | "onboarding.providerGeminiHint"
   | "onboarding.providerCustomHint"
   | "onboarding.providerConfigured"
   | "onboarding.providerLater"
@@ -35,9 +34,8 @@ export const onboardingEn: Record<OnboardingI18nKey, string> = {
   "onboarding.back": "Back",
   "onboarding.providerTitle": "Connect a provider",
   "onboarding.providerSubtitle":
-    "Add a DeepSeek API key, sign in with Google for Gemini, or configure a custom OpenAI-compatible endpoint.",
+    "Add a DeepSeek API key or configure a custom OpenAI-compatible endpoint.",
   "onboarding.providerDeepSeekHint": "Paste your DeepSeek API key",
-  "onboarding.providerGeminiHint": "Sign in with Google via Antigravity",
   "onboarding.providerCustomHint": "MiMo, GLM, Ark, MiniMax, Kimi, or blank",
   "onboarding.providerConfigured": "Ready",
   "onboarding.providerLater": "You can change providers anytime in Settings.",
@@ -65,10 +63,8 @@ export const onboardingLocales: Record<AppLanguage, Partial<Record<OnboardingI18
     "onboarding.skipTour": "跳过引导",
     "onboarding.back": "返回",
     "onboarding.providerTitle": "配置模型提供商",
-    "onboarding.providerSubtitle":
-      "填写 DeepSeek API Key、使用 Google 登录 Gemini，或添加自定义 OpenAI 兼容接口。",
+    "onboarding.providerSubtitle": "填写 DeepSeek API Key，或添加自定义 OpenAI 兼容接口。",
     "onboarding.providerDeepSeekHint": "粘贴 DeepSeek API Key",
-    "onboarding.providerGeminiHint": "通过 Antigravity 使用 Google 登录",
     "onboarding.providerCustomHint": "MiMo、GLM、方舟、MiniMax、Kimi 或空白",
     "onboarding.providerConfigured": "已就绪",
     "onboarding.providerLater": "之后可随时在设置中修改提供商。",

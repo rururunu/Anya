@@ -526,6 +526,7 @@ pub fn show_workbench_window(app: &AppHandle) {
         let _ = window.unminimize();
     }
     let _ = window.set_always_on_top(false);
+    crate::services::workbench_window::apply_saved_workbench_size(&window);
     let _ = window.show();
     let _ = window.set_focus();
     if let Ok(settings) = crate::services::settings_store::get_settings(app) {

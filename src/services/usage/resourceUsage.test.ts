@@ -49,6 +49,7 @@ describe("resourceUsage", () => {
   it("sorts items by usage then id", () => {
     const store: ResourceUsageStore = {
       skill: {},
+      plugin: {},
       mcp: {
         gmail: { count: 5, lastUsedAt: 100 },
         github: { count: 1, lastUsedAt: 200 },
@@ -86,6 +87,10 @@ describe("resourceUsage", () => {
     expect(resourceFromToolActivity("review_security")).toEqual({
       kind: "skill",
       id: "security_review",
+    });
+    expect(resourceFromToolActivity("plugin_computer-use__screenshot")).toEqual({
+      kind: "plugin",
+      id: "computer-use",
     });
     expect(resourceFromToolActivity("read_file")).toBeNull();
   });

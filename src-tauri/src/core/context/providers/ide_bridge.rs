@@ -161,9 +161,8 @@ fn http_get_localhost(port: u16, path: &str, timeout: Duration) -> Result<Option
         .set_write_timeout(Some(timeout))
         .map_err(|error| error.to_string())?;
 
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
     stream
         .write_all(request.as_bytes())
         .map_err(|error| error.to_string())?;
@@ -179,7 +178,8 @@ fn http_get_localhost(port: u16, path: &str, timeout: Duration) -> Result<Option
 }
 
 fn parse_http_body(response: &[u8]) -> Result<Option<Vec<u8>>, String> {
-    let header_end = find_header_end(response).ok_or_else(|| "incomplete HTTP response".to_string())?;
+    let header_end =
+        find_header_end(response).ok_or_else(|| "incomplete HTTP response".to_string())?;
     let header = std::str::from_utf8(&response[..header_end])
         .map_err(|_| "invalid HTTP header encoding".to_string())?;
     let mut lines = header.split("\r\n");
@@ -212,7 +212,8 @@ fn find_header_end(response: &[u8]) -> Option<usize> {
 fn bridge_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        std::env::var_os("APPDATA").map(|app_data| PathBuf::from(app_data).join("Anya").join("ide-bridges"))
+        std::env::var_os("APPDATA")
+            .map(|app_data| PathBuf::from(app_data).join("Anya").join("ide-bridges"))
     }
     #[cfg(not(windows))]
     {

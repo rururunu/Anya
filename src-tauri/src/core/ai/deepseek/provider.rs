@@ -8,14 +8,16 @@ use tracing::Instrument;
 use crate::core::runtime::{ChatRequest, Role, StreamEvent};
 use crate::models::settings::{ProviderApiProtocol, ReasoningEffort};
 
-use crate::core::ai::provider::{AIProvider, ProviderError};
 use super::anthropic::{
     build_anthropic_body, resolve_wire_protocol, url_for_wire_protocol, WireProtocol,
 };
 use super::image_fallback::{apply_image_input_fallback, FallbackPlan};
 use super::messages::{build_api_body, build_responses_body};
 use super::models::endpoint_url_for_protocol;
-use super::stream::{emit_stream_error, run_anthropic_stream, run_chat_stream, run_responses_stream};
+use super::stream::{
+    emit_stream_error, run_anthropic_stream, run_chat_stream, run_responses_stream,
+};
+use crate::core::ai::provider::{AIProvider, ProviderError};
 
 const API_URL: &str = "https://api.deepseek.com/chat/completions";
 
@@ -66,9 +68,21 @@ impl DeepSeekProvider {
     fn api_key(&self) -> Result<String, ProviderError> {
         let api_key = (self.resolve_api_key)();
         if api_key.trim().is_empty() {
-            return Err(ProviderError::message(
-                "Model credentials are not configured. Sign in to Gemini (Antigravity) or enter an API Key in Settings.",
-            ));
+            let model = (self.resolve_model)();
+            let model_trimmed = model.trim();
+            if self.provider_id == "deepseek" {
+                return Err(ProviderError::message(
+                    "Model credentials are not configured. Enter a DeepSeek API Key or configure the provider in Settings.",
+                ));
+            }
+            let target = if !model_trimmed.is_empty() {
+                format!("for '{model_trimmed}'")
+            } else {
+                format!("for provider '{}'", self.provider_id)
+            };
+            return Err(ProviderError::message(format!(
+                "Model credentials are not configured. Enter an API Key {target} or configure the provider in Settings.",
+            )));
         }
         Ok(api_key.trim().to_string())
     }

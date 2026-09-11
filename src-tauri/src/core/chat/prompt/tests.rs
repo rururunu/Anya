@@ -100,7 +100,9 @@ fn image_mode_policy_is_injected_with_toolbar_values() {
     assert!(block.content.contains("anime illustration"));
     assert!(block.content.contains("Mandatory visual style"));
     assert!(block.content.contains("image-to-image"));
-    assert!(block.content.contains("A caption without a tool result is a lie"));
+    assert!(block
+        .content
+        .contains("A caption without a tool result is a lie"));
 }
 
 #[test]

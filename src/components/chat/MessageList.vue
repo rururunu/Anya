@@ -91,6 +91,7 @@
     <div
       ref="listRef"
       class="message-list peek-scrollbar"
+      :class="{ 'no-sticky-turn-head': !stickyTurnHeadEnabled }"
       data-tauri-drag-region="false"
       @scroll="handleScroll"
       @wheel.passive="handleWheel"
@@ -99,293 +100,206 @@
       <div v-if="displayItems.length === 0" class="empty-thread">
         {{ emptyThreadPrompt }}
       </div>
-      <article
-        v-for="item in displayItems"
-        :key="item.key"
-        class="message-item"
-        :class="item.kind"
-        :data-message-id="item.message.id"
-        v-memo="messageMemoDeps(item)"
+      <div
+        v-for="(turn, turnIndex) in displayTurns"
+        :key="turn.key"
+        class="chat-turn"
+        :class="{ 'is-first-turn': turnIndex === 0 }"
+        v-memo="turnMemoDeps(turn, turnIndex)"
+        :ref="(el) => stickyTurnHeadEnabled && bindTurnHead(turn.key, el)"
       >
-        <div v-if="item.kind === 'user'" class="user-turn">
-          <div
-            v-if="userContent(item.message).images?.length"
-            class="user-images"
-            data-tauri-drag-region="false"
+        <div
+          v-if="turn.user || turnBuildHost(turn)"
+          class="chat-turn-sticky-sentinel"
+          aria-hidden="true"
+        />
+        <div
+          v-if="turn.user || turnBuildHost(turn)"
+          class="chat-turn-head"
+          :class="{ 'is-stuck': stickyTurnHeadEnabled && isTurnHeadStuck(turn.key) }"
+        >
+          <article
+            v-if="turn.user"
+            class="message-item user"
+            :data-message-id="turn.user.message.id"
           >
-            <UserMessageImage
-              v-for="(img, idx) in userContent(item.message).images"
-              :key="idx"
-              :source="img"
+            <UserMessageCard
+              class="user-turn"
+              :message="turn.user.message"
+              :session-id="sessionId ?? ''"
+              :can-resend="Boolean(checkpointFor(turn.user.message))"
+              :busy="rewindBusy"
               @preview="previewImage"
+              @resend="
+                (text) => {
+                  const user = turn.user;
+                  if (user) void resendUserMessage(user.message, text);
+                }
+              "
+              @rewind="
+                () => {
+                  const user = turn.user;
+                  if (user) void confirmRewind(user.message);
+                }
+              "
             />
-          </div>
-          <div
-            v-if="userContent(item.message).attachedFiles?.length"
-            class="user-attached-files"
-            data-tauri-drag-region="false"
-          >
-            <div
-              v-for="(file, idx) in userContent(item.message).attachedFiles"
-              :key="`${file.path}-${idx}`"
-              class="user-file-chip"
-              :class="{ skipped: Boolean(file.skipped) }"
-              :title="file.skipped ? `${file.path} (${file.skipped})` : file.path"
-            >
-              <img
-                v-if="fileIconForPath(file.path)"
-                class="user-file-icon-img"
-                :src="fileIconForPath(file.path) || ''"
-                alt=""
-              />
-              <File v-else :size="12" :stroke-width="1.75" aria-hidden="true" />
-              <span class="user-file-name">{{ file.name }}</span>
-            </div>
-          </div>
-          <div
-            v-if="userContent(item.message).message || userContent(item.message).selection"
-            class="user-bubble"
-          >
-            <span v-if="userContent(item.message).message" class="user-message-text">
-              <template
-                v-for="(part, partIdx) in inlineMessageParts(userContent(item.message).message)"
-                :key="`${item.message.id}-part-${partIdx}`"
-              >
-                <span
-                  v-if="part.kind === 'mention'"
-                  class="inline-token inline-token-mark inline-token-file"
-                  :class="{ 'is-dir': part.isDir }"
-                  :title="normalizeMentionPath(part.path)"
-                >
-                  <Folder
-                    v-if="part.isDir"
-                    :size="12"
-                    class="inline-token-logo-fallback"
-                    aria-hidden="true"
-                  />
-                  <img
-                    v-else-if="fileIconForPath(part.path)"
-                    class="inline-token-logo"
-                    :src="fileIconForPath(part.path) || ''"
-                    alt=""
-                  />
-                  <File v-else :size="12" class="inline-token-logo-fallback" aria-hidden="true" />
-                  <span class="inline-token-label">@{{ part.name }}</span>
-                </span>
-                <span
-                  v-else-if="part.kind === 'skill'"
-                  class="inline-token inline-token-mark inline-token-skill"
-                  :title="hashChipTitle('skill', part.id)"
-                >
-                  <img
-                    v-if="hashChipIcon('skill', part.id)"
-                    class="inline-token-logo"
-                    :src="hashChipIcon('skill', part.id) || ''"
-                    alt=""
-                    referrerpolicy="no-referrer"
-                    @error="markHashIconBroken('skill', part.id)"
-                  />
-                  <Zap v-else :size="12" class="inline-token-logo-fallback" aria-hidden="true" />
-                  <span class="inline-token-label">{{ hashChipLabel("skill", part.id) }}</span>
-                </span>
-                <span
-                  v-else-if="part.kind === 'mcp'"
-                  class="inline-token inline-token-mark inline-token-mcp"
-                  :title="hashChipTitle('mcp', part.id)"
-                >
-                  <img
-                    v-if="hashChipIcon('mcp', part.id)"
-                    class="inline-token-logo"
-                    :src="hashChipIcon('mcp', part.id) || ''"
-                    alt=""
-                    referrerpolicy="no-referrer"
-                    @error="markHashIconBroken('mcp', part.id)"
-                  />
-                  <Bot v-else :size="12" class="inline-token-logo-fallback" aria-hidden="true" />
-                  <span class="inline-token-label">{{ hashChipLabel("mcp", part.id) }}</span>
-                </span>
-                <template v-else>{{ part.text }}</template>
-              </template>
-            </span>
-            <span v-if="userContent(item.message).selection" class="user-selection-quote">
-              {{ userContent(item.message).selection }}
-            </span>
-          </div>
-          <div
-            v-if="copyableUserText(item.message) || checkpointFor(item.message)"
-            class="message-actions user-message-actions"
-          >
-            <button
-              v-if="copyableUserText(item.message)"
-              type="button"
-              class="message-action-btn"
-              :class="copyButtonClass(item.message.id)"
-              :aria-label="copyButtonLabel(item.message.id)"
-              :title="copyButtonLabel(item.message.id)"
-              @click.stop="copyMessage(item.message, 'user')"
-            >
-              <Check
-                v-if="copyStatus?.id === item.message.id && copyStatus.state === 'copied'"
-                :size="14"
-                :stroke-width="2"
-                aria-hidden="true"
-              />
-              <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
-            </button>
-            <button
-              v-if="checkpointFor(item.message)"
-              type="button"
-              class="message-action-btn"
-              :disabled="rewindBusy"
-              :aria-label="tr(settingStore.language, 'rewind')"
-              :title="tr(settingStore.language, 'rewind')"
-              @click.stop="confirmRewind(item.message)"
-            >
-              <Undo2 :size="14" :stroke-width="2" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-        <div v-else class="assistant-bubble">
-          <AgentWorkDetails
-            :message="item.message"
-            :language="settingStore.language"
-            :show-reasoning="settingStore.showReasoning"
-            :display-mode="settingStore.agentWorkDisplay"
-            :suppress-content="needsProviderSetup(item.message)"
-            @inspect-subagent="emit('inspectSubagent', $event)"
-            @preview-image="emit('previewImage', $event)"
-            @edit-from-image="emit('editFromImage', $event)"
-          />
-          <AskUserAnswerCard
-            v-if="item.message.askUserAnswer?.length"
-            :items="item.message.askUserAnswer"
-          />
-          <ImageAnalysisDetails
-            v-for="(analysis, idx) in imageAnalysesForAssistant(item.message)"
-            :key="`${item.message.id}-analysis-${idx}`"
-            :model="analysis.model"
-            :text="analysis.text"
-          />
-          <EnvironmentContextCard
-            v-if="item.message.environmentContext"
-            :context="item.message.environmentContext"
-          />
-          <div v-else-if="needsProviderSetup(item.message)" class="provider-setup-card">
-            <p class="provider-setup-text">
-              {{ providerSetupText(item.message) }}
-            </p>
-            <button type="button" class="provider-setup-btn" @click="openProviderSettings">
-              {{ tr(settingStore.language, "configureProviderAction") }}
-            </button>
-          </div>
-          <div v-if="item.injects.length" class="soft-inject-list">
-            <div
-              v-for="inject in item.injects"
-              :key="inject.id"
-              class="soft-inject-chip"
-              :data-message-id="inject.id"
-            >
-              <span class="soft-inject-label">{{ tr(settingStore.language, "softInjected") }}</span>
-              <span class="soft-inject-text">{{ softInjectText(inject) }}</span>
-            </div>
-          </div>
-          <AssistantActivityIndicator
-            v-if="activityLabel(item.message)"
-            :label="activityLabel(item.message)!"
-            :icon="activityIcon(item.message)"
-          />
-          <CodeChangesSummary
-            v-if="item.message.status === 'done'"
-            :message="item.message"
-            :can-undo="Boolean(checkpointForAssistant(item.message))"
-            :busy="rewindBusy"
-            @undo="confirmAssistantRewind(item.message)"
-            @review="$emit('reviewChanges')"
-            @review-file="$emit('reviewFile', $event)"
-          />
+          </article>
           <PlanApprovalCard
-            v-if="showPlanCardFor(item.message)"
-            :tasks="planTasksForMessage(item.message, isApprovedPlan(item.message))"
-            :busy="planBusy || isSessionSending"
-            :executing="isApprovedPlan(item.message)"
-            :auto-countdown="isApprovedPlan(item.message) ? null : planCountdownInfo"
-            :allow-empty-approve="isPlanGateStopMessage(item.message)"
-            @approve="approvePlanMode"
-            @reject="rejectAutoExecute"
+            v-if="turnBuildHost(turn)"
+            class="turn-head-build"
+            variant="build"
+            v-bind="turnBuildCardBind(turn)"
+            @preview-plan="$emit('reviewPlan')"
           />
-          <div
-            v-if="
-              item.message.content.trim() ||
-              processingDuration(item.message) ||
-              turnTokenCount(item) ||
-              turnCacheHit(item) != null ||
-              canBranchMessage(item.message)
-            "
-            class="message-actions assistant-message-actions"
-          >
-            <template v-if="processingDuration(item.message)">
-              <span class="turn-mascot" :title="turnMascotTitle(item.message)" aria-hidden="true">
-                <MascotFace :state="turnMascotState(item.message)" :follow-pointer="false" />
-              </span>
-              <span v-if="turnMascotLabel(item.message)" class="turn-state">
-                {{ turnMascotLabel(item.message) }}
-              </span>
-            </template>
-            <span v-if="processingDuration(item.message)" class="processing-duration">
-              {{
-                tr(settingStore.language, "processedFor", {
-                  duration: processingDuration(item.message)!,
-                })
-              }}
-            </span>
-            <span
-              v-if="turnTokenCount(item)"
-              class="token-usage"
-              :title="tokenEstimateTitle(turnTokenCount(item))"
-            >
-              ≈ {{ formatTokenCount(turnTokenCount(item), settingStore.language) }} tokens
-            </span>
-            <span
-              v-if="turnCacheHit(item) != null"
-              class="cache-hit"
-              :title="turnCacheHitTitle(item)"
-            >
-              {{
-                tr(settingStore.language, "tokens.cacheHit", {
-                  percent: turnCacheHit(item) ?? 0,
-                })
-              }}
-            </span>
-            <button
-              v-if="item.message.content.trim()"
-              type="button"
-              class="message-action-btn"
-              :class="copyButtonClass(item.message.id)"
-              :aria-label="copyButtonLabel(item.message.id)"
-              :title="copyButtonLabel(item.message.id)"
-              @click.stop="copyMessage(item.message, 'assistant')"
-            >
-              <Check
-                v-if="copyStatus?.id === item.message.id && copyStatus.state === 'copied'"
-                :size="14"
-                :stroke-width="2"
-                aria-hidden="true"
-              />
-              <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
-            </button>
-            <button
-              v-if="canBranchMessage(item.message)"
-              type="button"
-              class="message-action-btn"
-              :aria-label="tr(settingStore.language, 'branchConversation')"
-              :title="tr(settingStore.language, 'branchConversation')"
-              @click.stop="branchFromMessage(item)"
-            >
-              <GitBranch :size="14" :stroke-width="2" aria-hidden="true" />
-            </button>
-          </div>
         </div>
-      </article>
+        <article
+          v-for="item in turn.assistants"
+          :key="item.key"
+          class="message-item assistant"
+          :data-message-id="item.message.id"
+        >
+          <div class="assistant-bubble">
+            <AgentWorkDetails
+              :message="item.message"
+              :language="settingStore.language"
+              :show-reasoning="settingStore.showReasoning"
+              :display-mode="settingStore.agentWorkDisplay"
+              :suppress-content="needsProviderSetup(item.message)"
+              @inspect-subagent="emit('inspectSubagent', $event)"
+              @preview-image="emit('previewImage', $event)"
+              @edit-from-image="emit('editFromImage', $event)"
+            />
+            <PlanApprovalCard
+              v-if="showCreatedPlanCard(item.message)"
+              variant="proposal"
+              :title="planCardTitle(item.message)"
+              :summary="planCardSummary(item.message)"
+              :busy="planBusy || isSessionSending"
+              :show-actions="canApprovePlan(item.message)"
+              @approve="approvePlanMode"
+              @reject="rejectPlanMode"
+              @preview-plan="$emit('reviewPlan')"
+            />
+            <ImageAnalysisDetails
+              v-for="(analysis, idx) in imageAnalysesForAssistant(item.message)"
+              :key="`${item.message.id}-analysis-${idx}`"
+              :model="analysis.model"
+              :text="analysis.text"
+            />
+            <EnvironmentContextCard
+              v-if="item.message.environmentContext"
+              :context="item.message.environmentContext"
+            />
+            <div v-else-if="needsProviderSetup(item.message)" class="provider-setup-card">
+              <p class="provider-setup-text">
+                {{ providerSetupText(item.message) }}
+              </p>
+              <button type="button" class="provider-setup-btn" @click="openProviderSettings">
+                {{ tr(settingStore.language, "configureProviderAction") }}
+              </button>
+            </div>
+            <div v-if="item.injects.length" class="soft-inject-list">
+              <div
+                v-for="inject in item.injects"
+                :key="inject.id"
+                class="soft-inject-chip"
+                :data-message-id="inject.id"
+              >
+                <span class="soft-inject-label">
+                  {{ tr(settingStore.language, "softInjected") }}
+                </span>
+                <span class="soft-inject-text">{{ softInjectText(inject) }}</span>
+              </div>
+            </div>
+            <AssistantActivityIndicator
+              v-if="activityLabel(item.message)"
+              :label="activityLabel(item.message)!"
+              :icon="activityIcon(item.message)"
+            />
+            <CodeChangesSummary
+              v-if="item.message.status === 'done'"
+              :message="item.message"
+              :can-undo="Boolean(checkpointForAssistant(item.message))"
+              :busy="rewindBusy"
+              @undo="confirmAssistantRewind(item.message)"
+              @review="$emit('reviewChanges')"
+              @review-file="$emit('reviewFile', $event)"
+            />
+            <div
+              v-if="
+                item.message.content.trim() ||
+                processingDuration(item.message) ||
+                turnTokenCount(item) ||
+                turnCacheHit(item) != null ||
+                canBranchMessage(item.message)
+              "
+              class="message-actions assistant-message-actions"
+            >
+              <template v-if="processingDuration(item.message)">
+                <span class="turn-mascot" :title="turnMascotTitle(item.message)" aria-hidden="true">
+                  <MascotFace :state="turnMascotState(item.message)" :follow-pointer="false" />
+                </span>
+                <span v-if="turnMascotLabel(item.message)" class="turn-state">
+                  {{ turnMascotLabel(item.message) }}
+                </span>
+              </template>
+              <span v-if="processingDuration(item.message)" class="processing-duration">
+                {{
+                  tr(settingStore.language, "processedFor", {
+                    duration: processingDuration(item.message)!,
+                  })
+                }}
+              </span>
+              <span
+                v-if="turnTokenCount(item)"
+                class="token-usage"
+                :title="tokenEstimateTitle(turnTokenCount(item))"
+              >
+                ≈ {{ formatTokenCount(turnTokenCount(item), settingStore.language) }} tokens
+              </span>
+              <span
+                v-if="turnCacheHit(item) != null"
+                class="cache-hit"
+                :title="turnCacheHitTitle(item)"
+              >
+                {{
+                  tr(settingStore.language, "tokens.cacheHit", {
+                    percent: turnCacheHit(item) ?? 0,
+                  })
+                }}
+              </span>
+              <button
+                v-if="item.message.content.trim()"
+                type="button"
+                class="message-action-btn"
+                :class="copyButtonClass(item.message.id)"
+                :aria-label="copyButtonLabel(item.message.id)"
+                :title="copyButtonLabel(item.message.id)"
+                @click.stop="copyMessage(item.message, 'assistant')"
+              >
+                <Check
+                  v-if="copyStatus?.id === item.message.id && copyStatus.state === 'copied'"
+                  :size="14"
+                  :stroke-width="2"
+                  aria-hidden="true"
+                />
+                <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
+              </button>
+              <button
+                v-if="canBranchMessage(item.message)"
+                type="button"
+                class="message-action-btn"
+                :aria-label="tr(settingStore.language, 'branchConversation')"
+                :title="tr(settingStore.language, 'branchConversation')"
+                @click.stop="branchFromMessage(item)"
+              >
+                <GitBranch :size="14" :stroke-width="2" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+      <div class="turn-spacer" aria-hidden="true" />
     </div>
 
     <AppConfirmDialog ref="confirmDialogRef" />
@@ -393,60 +307,50 @@
 </template>
 
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  reactive,
-  ref,
-  watch,
-  type Component,
-} from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from "vue";
 import {
   ArrowDown,
-  Bot,
   Check,
   ChevronDown,
   ChevronUp,
   Copy,
-  File,
-  Folder,
   GitBranch,
   Paintbrush,
-  Undo2,
   X,
-  Zap,
 } from "@lucide/vue";
-import { codeLanguageForPath } from "@/services/chat/codeLanguage";
-import { normalizeMentionPath } from "@/services/chat/composerSegments";
-import { splitInlineTokenParts } from "@/services/chat/inlineTokenMarks";
-import "@/services/chat/inlineTokenMarks.css";
-import {
-  mcpMentionIconUrl,
-  mcpMentionLabel,
-  prettyHashInstallId,
-  skillMentionIconUrl,
-  skillMentionLabel,
-} from "@/services/chat/hashMentionDisplay";
-import { lookupInstallIcon, peekInstallIcon, warmInstallIcons } from "@/services/iconCache";
 import AgentWorkDetails from "@/components/chat/AgentWorkDetails.vue";
 import CodeChangesSummary from "@/components/chat/CodeChangesSummary.vue";
 import PlanApprovalCard from "@/components/chat/PlanApprovalCard.vue";
 import AssistantActivityIndicator from "@/components/chat/AssistantActivityIndicator.vue";
 import MascotFace, { type MascotState } from "@/components/icons/MascotFace.vue";
-import AskUserAnswerCard from "@/components/chat/AskUserAnswerCard.vue";
 import ImageAnalysisDetails from "@/components/chat/ImageAnalysisDetails.vue";
 import EnvironmentContextCard from "@/components/chat/EnvironmentContextCard.vue";
-import UserMessageImage from "@/components/chat/UserMessageImage.vue";
+import UserMessageCard from "@/components/chat/UserMessageCard.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
-import { openSettings as ipcOpenSettings, rewindSession, setPlanMode } from "@/services/ipc";
+import {
+  chatCancel,
+  openSettings as ipcOpenSettings,
+  rewindSession,
+  setPlanMode,
+} from "@/services/ipc";
 import { useSettingStore } from "@/stores/setting";
 import { useChatStore } from "@/stores/chat";
 import type { ChatMessage, CheckpointInfo, TaskItem } from "@/types/chat";
-import { parseSelectionAttachment } from "@/services/chat/selectionAttachment";
+import {
+  parseSelectionAttachment,
+  replaceUserVisibleText,
+} from "@/services/chat/selectionAttachment";
+import { extractAttachedFileChips, type AttachedFileChip } from "@/services/chat/attachFiles";
 import { isSoftInjectContent, stripSoftInjectMarker } from "@/services/chat/softInject";
 import { isCompactionSummary } from "@/services/chat/compactMarker";
+import {
+  extractPlanTitle,
+  isCreatedPlanMessage,
+  isPlanExecutePrompt,
+  planCardCopy,
+  savePlanFromMessage,
+  tasksFromMessage,
+} from "@/services/chat/planProposal";
 import { tr, type I18nKey } from "@/services/i18n";
 import { createLogger } from "@/services/logger";
 import { copyText } from "@/services/clipboard";
@@ -465,12 +369,19 @@ import {
 import { provideConversationFind } from "@/composables/chat/useConversationFind";
 import { useMessagePreviewRail } from "@/composables/chat/useMessagePreviewRail";
 import { useMessageScroll } from "@/composables/chat/useMessageScroll";
+import { useTurnHeadSticky } from "@/composables/chat/useTurnHeadSticky";
 import { useAppStore } from "@/stores/app";
 import { storeToRefs } from "pinia";
 
 type DisplayItem =
   | { kind: "user"; key: string; message: ChatMessage }
   | { kind: "assistant"; key: string; message: ChatMessage; injects: ChatMessage[] };
+
+type DisplayTurn = {
+  key: string;
+  user: Extract<DisplayItem, { kind: "user" }> | null;
+  assistants: Array<Extract<DisplayItem, { kind: "assistant" }>>;
+};
 function previewImage(url: string) {
   emit("previewImage", url);
 }
@@ -480,7 +391,9 @@ const props = defineProps<{
   sessionId?: string;
   workspaceName?: string;
   checkpoints?: CheckpointInfo[];
+  stickyTurnHead?: boolean;
 }>();
+const stickyTurnHeadEnabled = computed(() => props.stickyTurnHead !== false);
 const workspaceName = computed(() => props.workspaceName?.trim() || "");
 const emptyThreadPrompt = computed(() =>
   workspaceName.value
@@ -488,10 +401,18 @@ const emptyThreadPrompt = computed(() =>
     : tr(settingStore.language, "emptyThreadGeneral"),
 );
 const emit = defineEmits<{
-  rewound: [payload: { text: string }];
+  rewound: [
+    payload: {
+      text: string;
+      images?: string[];
+      attachedFiles?: AttachedFileChip[];
+      resend?: boolean;
+    },
+  ];
   branch: [messageId: string];
   reviewChanges: [];
   reviewFile: [path: string];
+  reviewPlan: [];
   inspectSubagent: [activityId: string];
   previewImage: [source: string];
   editFromImage: [payload: import("@/services/chat/imageEditReference").ImageEditReferencePayload];
@@ -503,93 +424,22 @@ const log = createLogger("message-list");
 const { sending } = storeToRefs(chatStore);
 const planBusy = ref(false);
 
-/** Auto-execute window for auto-entered plans (agent-mode complexity detection). */
-const AUTO_EXECUTE_SECONDS = 30;
-const planCountdown = ref<number | null>(null);
-let planTimer: ReturnType<typeof setInterval> | null = null;
-function clearPlanTimer() {
-  if (planTimer) {
-    clearInterval(planTimer);
-    planTimer = null;
-  }
-}
 const isSessionSending = computed(() => Boolean(props.sessionId && sending.value[props.sessionId]));
 /** Plan message that was approved — keep the checklist visible while it runs. */
 const approvedPlanMessageId = ref<string | null>(null);
-/** Plan message whose auto-execute countdown was rejected — keep waiting for manual approve. */
-const rejectedAutoExecuteMessageId = ref<string | null>(null);
+/** Plan message rejected by user. */
+const rejectedPlanMessageId = ref<string | null>(null);
 
 watch(
   () => props.sessionId,
   () => {
     approvedPlanMessageId.value = null;
-    rejectedAutoExecuteMessageId.value = null;
+    rejectedPlanMessageId.value = null;
+    stickToBottom.value = true;
   },
 );
 
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
-const brokenHashIcons = reactive<Record<string, boolean>>({});
-const resolvedHashIcons = reactive<Record<string, string>>({});
-
-function hashChipKey(kind: "skill" | "mcp", id: string) {
-  return `${kind}:${id}`;
-}
-
-function hashChipLabel(kind: "skill" | "mcp", id: string): string {
-  if (kind === "mcp") return mcpMentionLabel(id, settingStore.mcpServers ?? []);
-  return skillMentionLabel(id);
-}
-
-function hashChipTitle(kind: "skill" | "mcp", id: string): string {
-  if (kind === "mcp") {
-    const server = (settingStore.mcpServers ?? []).find((item) => item.id === id);
-    return server?.qualifiedName?.trim() || prettyHashInstallId(id);
-  }
-  return prettyHashInstallId(id);
-}
-
-function hashChipIcon(kind: "skill" | "mcp", id: string): string | null {
-  const key = hashChipKey(kind, id);
-  if (brokenHashIcons[key]) return null;
-  if (resolvedHashIcons[key]) return resolvedHashIcons[key];
-  const sync =
-    kind === "mcp" ? mcpMentionIconUrl(id, settingStore.mcpServers ?? []) : skillMentionIconUrl(id);
-  if (sync) {
-    resolvedHashIcons[key] = sync;
-    return sync;
-  }
-  void lookupInstallIcon(kind, id).then((local) => {
-    if (local && !brokenHashIcons[key]) resolvedHashIcons[key] = local;
-  });
-  return null;
-}
-
-function markHashIconBroken(kind: "skill" | "mcp", id: string) {
-  brokenHashIcons[hashChipKey(kind, id)] = true;
-}
-
-function warmHashIcons() {
-  const servers = settingStore.mcpServers ?? [];
-  void warmInstallIcons(
-    servers.map((server) => ({
-      kind: "mcp" as const,
-      cacheKey: server.id,
-      url: server.iconUrl,
-    })),
-  ).then(() => {
-    for (const server of servers) {
-      const local = peekInstallIcon("mcp", server.id);
-      const key = hashChipKey("mcp", server.id);
-      if (local && !brokenHashIcons[key]) resolvedHashIcons[key] = local;
-    }
-  });
-}
-
-watch(
-  () => settingStore.mcpServers,
-  () => warmHashIcons(),
-  { deep: true, immediate: true },
-);
 
 function needsProviderSetup(message: ChatMessage): boolean {
   return message.status === "error" && isConfigureProviderError(message.content);
@@ -610,84 +460,6 @@ const planModeActive = computed(() =>
   Boolean(props.sessionId && chatStore.sessionPlanMode[props.sessionId]),
 );
 
-/** Stable plan identity: content + nesting only (ignore status churn). */
-function planStructureFingerprint(tasks: TaskItem[]): string {
-  return tasks
-    .map(
-      (task) =>
-        `${typeof task.level === "number" ? task.level : 0}\t${String(task.content ?? "").trim()}`,
-    )
-    .join("\n");
-}
-
-function pendingPlanFingerprint(message: ChatMessage | undefined): string | null {
-  if (!message || !looksLikePendingPlan(message)) return null;
-  const tasks = tasksFromMessage(message);
-  if (!tasks.length) return null;
-  return planStructureFingerprint(tasks);
-}
-
-function clearRejectedPlanIfUpdated(fingerprint: string | null) {
-  if (!props.sessionId || !fingerprint) return false;
-  const rejected = chatStore.rejectedPlanFingerprint(props.sessionId);
-  if (!rejected || rejected === fingerprint) return false;
-  // New or revised checklist — allow auto-execute countdown again.
-  chatStore.setSessionRejectedPlanFingerprint(props.sessionId, null);
-  rejectedAutoExecuteMessageId.value = null;
-  return true;
-}
-
-const planAutoActive = computed(() => {
-  if (!props.sessionId) return false;
-  if (!planModeActive.value) return false;
-  if (isSessionSending.value) return false;
-  // Explicit Plan mode always waits for the user.
-  if (chatStore.sessionCompose[props.sessionId]?.chatMode === "plan") return false;
-
-  const messageId = lastDoneAssistantId.value;
-  if (!messageId || messageId === approvedPlanMessageId.value) return false;
-  if (hasUserMessageAfter(messageId)) return false;
-  const message = props.messages.find((item) => item.id === messageId);
-  const fingerprint = pendingPlanFingerprint(message);
-  if (!fingerprint) return false;
-
-  const rejected = chatStore.rejectedPlanFingerprint(props.sessionId);
-  // Same rejected checklist: keep waiting for manual approve (no countdown).
-  if (rejected && rejected === fingerprint) return false;
-  if (messageId === rejectedAutoExecuteMessageId.value && rejected === fingerprint) return false;
-
-  // New/updated plan after a reject may still have trigger=manual until we re-arm.
-  if (chatStore.sessionPlanTrigger[props.sessionId] === "auto") return true;
-  return Boolean(rejected && rejected !== fingerprint);
-});
-
-const planCountdownInfo = computed<{ remaining: number; total: number } | null>(() =>
-  planCountdown.value === null
-    ? null
-    : { remaining: planCountdown.value, total: AUTO_EXECUTE_SECONDS },
-);
-
-watch(
-  planAutoActive,
-  (active) => {
-    clearPlanTimer();
-    if (active) {
-      planCountdown.value = AUTO_EXECUTE_SECONDS;
-      planTimer = setInterval(() => {
-        planCountdown.value = Math.max(0, (planCountdown.value ?? 0) - 0.1);
-        if ((planCountdown.value ?? 0) <= 0) {
-          clearPlanTimer();
-          void approvePlanMode();
-        }
-      }, 100);
-    } else {
-      planCountdown.value = null;
-    }
-  },
-  { immediate: true },
-);
-onUnmounted(clearPlanTimer);
-
 const lastDoneAssistantId = computed(() => {
   for (let i = props.messages.length - 1; i >= 0; i -= 1) {
     const message = props.messages[i];
@@ -699,47 +471,41 @@ const lastDoneAssistantId = computed(() => {
   return null;
 });
 
-function tasksFromMessage(message: ChatMessage): TaskItem[] {
-  const activities = message.toolActivities ?? [];
-  for (let i = activities.length - 1; i >= 0; i -= 1) {
-    const activity = activities[i];
-    if (!activity) continue;
-    if (activity.toolName !== "update_tasks" && activity.toolName !== "todo_write") continue;
-    const raw = activity.arguments?.tasks;
-    if (!Array.isArray(raw)) continue;
-    const tasks = raw.flatMap((value) => {
-      if (!value || typeof value !== "object") return [];
-      const item = value as Record<string, unknown>;
-      const content = String(item.content ?? "").trim();
-      if (!content) return [];
-      return [
-        {
-          content,
-          status: String(item.status ?? "pending"),
-          activeForm:
-            typeof item.activeForm === "string"
-              ? item.activeForm
-              : typeof item.active_form === "string"
-                ? item.active_form
-                : undefined,
-          level: typeof item.level === "number" ? item.level : undefined,
-        } satisfies TaskItem,
-      ];
-    });
-    if (tasks.length) return tasks;
+const lastAssistantId = computed(() => {
+  for (let i = props.messages.length - 1; i >= 0; i -= 1) {
+    const message = props.messages[i];
+    if (message && String(message.role).toLowerCase() === "assistant") return message.id;
   }
-  return [];
-}
+  return null;
+});
 
 function planTasksForMessage(message: ChatMessage, preferLive = false): TaskItem[] {
-  if (preferLive && props.sessionId) {
+  const fromMessage = tasksFromMessage(message);
+  if (preferLive && props.sessionId && shouldBindLiveTasks(message, fromMessage)) {
     const live = chatStore.sessionTasks[props.sessionId];
     if (live?.length) return live;
   }
-  const fromMessage = tasksFromMessage(message);
-  if (fromMessage.length) return fromMessage;
-  if (!props.sessionId) return [];
-  return chatStore.sessionTasks[props.sessionId] ?? [];
+  return fromMessage;
+}
+
+function shouldBindLiveTasks(message: ChatMessage, fromMessage: TaskItem[]): boolean {
+  if (fromMessage.length) return true;
+  const user = precedingUserMessage(message);
+  return Boolean(
+    user && isPlanExecutePrompt(userContent(user).message || String(user.content ?? "")),
+  );
+}
+
+function planCardTitle(message: ChatMessage) {
+  const fallback = tr(settingStore.language, "planProposalTitle");
+  if (savePlanFromMessage(message)) return planCardCopy(message, fallback).title;
+  const plan = props.sessionId ? chatStore.sessionPlans[props.sessionId] : undefined;
+  if (plan?.content) return extractPlanTitle(plan.content) || fallback;
+  return planCardCopy(message, fallback).title;
+}
+
+function planCardSummary(message: ChatMessage) {
+  return planCardCopy(message, tr(settingStore.language, "planProposalTitle")).summary;
 }
 
 function hasUserMessageAfter(messageId: string): boolean {
@@ -761,97 +527,71 @@ function isPlanGateStopMessage(message: ChatMessage): boolean {
 }
 
 function hasApprovablePlan(message: ChatMessage): boolean {
-  return looksLikePendingPlan(message) || isPlanGateStopMessage(message);
+  return isCreatedPlanMessage(message) || isPlanGateStopMessage(message);
 }
 
-/** A planning turn: task checklist on THIS message, without mutating tool work yet. */
-function looksLikePendingPlan(message: ChatMessage): boolean {
-  // Message-local only — sessionTasks would make every later reply look like a plan.
-  const tasks = tasksFromMessage(message);
-  if (!tasks.length) return false;
-  const hadMutations = (message.toolActivities ?? []).some((activity) => {
-    if (activity.success === false || activity.status === "error") return false;
-    const kind = String(activity.kind ?? "").toLowerCase();
-    // Shell may be used for read-only inspection while drafting a plan; only
-    // successful file mutations mean this turn already started implementing.
-    return kind === "edit" || kind === "create" || kind === "delete" || kind === "move";
-  });
-  if (hadMutations) return false;
-  return tasks.some((task) => {
-    const status = String(task.status ?? "pending").toLowerCase();
-    return (
-      status === "pending" ||
-      status === "in_progress" ||
-      status === "active" ||
-      status === "running"
-    );
-  });
-}
-
-function showPlanCardFor(message: ChatMessage): boolean {
-  if (message.status !== "done") return false;
-  if (isApprovedPlan(message)) {
-    return planTasksForMessage(message, true).length > 0;
-  }
-  if (message.id !== lastDoneAssistantId.value) return false;
+function canApprovePlan(message: ChatMessage): boolean {
+  if (isApprovedPlan(message) || message.id === rejectedPlanMessageId.value) return false;
   if (hasUserMessageAfter(message.id)) return false;
-  // Plan mode by itself is not an approval request. Only show the card
-  // when there is a checklist, or the writer gate stopped the turn.
   return hasApprovablePlan(message);
+}
+
+function isLivePlanHost(message: ChatMessage): boolean {
+  const status = message.status;
+  if (status === "pending" || status === "streaming") return true;
+  return isSessionSending.value && lastAssistantId.value === message.id;
+}
+
+function showCreatedPlanCard(message: ChatMessage): boolean {
+  return isCreatedPlanMessage(message);
+}
+
+function showBuildTodoCard(message: ChatMessage): boolean {
+  if (isCreatedPlanMessage(message)) return false;
+  return planTasksForMessage(message, isLivePlanHost(message)).length > 0;
+}
+
+function turnBuildHost(turn: DisplayTurn) {
+  const live = turn.assistants.find(
+    (item) => showBuildTodoCard(item.message) && isLivePlanHost(item.message),
+  );
+  if (live) return live;
+  for (let i = turn.assistants.length - 1; i >= 0; i -= 1) {
+    const item = turn.assistants[i];
+    if (item && showBuildTodoCard(item.message)) return item;
+  }
+  return null;
+}
+
+function turnBuildCardBind(turn: DisplayTurn) {
+  const host = turnBuildHost(turn);
+  if (!host) return { title: "", tasks: [] as TaskItem[] };
+  return {
+    title: planCardTitle(host.message),
+    tasks: planTasksForMessage(host.message, isLivePlanHost(host.message)),
+  };
 }
 
 /** If Agent left a pending plan checklist but the gate never flipped, recover it. */
 function ensurePlanGateForPendingChecklist() {
   if (!props.sessionId || planBusy.value || isSessionSending.value) return;
   const messageId = lastDoneAssistantId.value;
-  if (!messageId || messageId === approvedPlanMessageId.value) return;
+  if (
+    !messageId ||
+    messageId === approvedPlanMessageId.value ||
+    messageId === rejectedPlanMessageId.value
+  )
+    return;
   if (hasUserMessageAfter(messageId)) return;
   const message = props.messages.find((item) => item.id === messageId);
-  if (message && isPlanGateStopMessage(message) && !planModeActive.value) {
+  if (!message) return;
+  if (!hasApprovablePlan(message)) return;
+  if (!planModeActive.value) {
     chatStore.setSessionPlanMode(props.sessionId, true);
     void setPlanMode(props.sessionId, true).catch((error) => {
-      log.warn("recover plan gate after writer block failed", error);
+      log.warn("recover plan gate for pending checklist failed", error);
     });
-    return;
   }
-  // Manual Plan mode never auto-executes.
-  if (chatStore.sessionCompose[props.sessionId]?.chatMode === "plan") return;
-  const fingerprint = pendingPlanFingerprint(message);
-  if (!fingerprint) return;
-
-  const rejected = chatStore.rejectedPlanFingerprint(props.sessionId);
-  // Still the same rejected checklist — keep manual approve only.
-  if (rejected && rejected === fingerprint) {
-    if (chatStore.sessionPlanTrigger[props.sessionId] === "auto") {
-      chatStore.setSessionPlanTrigger(props.sessionId, "manual");
-    }
-    return;
-  }
-
-  // New or updated plan after a reject: clear the block and allow countdown.
-  clearRejectedPlanIfUpdated(fingerprint);
-
-  const armAuto = () => {
-    chatStore.setSessionPlanMode(props.sessionId!, true);
-    chatStore.setSessionPlanTrigger(props.sessionId!, "auto");
-    void setPlanMode(props.sessionId!, true, "auto")
-      .then(() => {
-        chatStore.setSessionPlanMode(props.sessionId!, true);
-        chatStore.setSessionPlanTrigger(props.sessionId!, "auto");
-      })
-      .catch((error) => {
-        log.warn("recover plan gate for pending checklist failed", error);
-      });
-  };
-
-  if (planModeActive.value) {
-    if (chatStore.sessionPlanTrigger[props.sessionId] !== "auto") {
-      armAuto();
-    }
-    return;
-  }
-
-  armAuto();
 }
 
 watch(
@@ -874,14 +614,12 @@ watch(
 async function approvePlanMode() {
   if (!props.sessionId || planBusy.value || sending.value?.[props.sessionId]) return;
   planBusy.value = true;
-  clearPlanTimer();
   try {
     // Keep the checklist on this plan message; hide only the approve actions.
     if (lastDoneAssistantId.value) {
       approvedPlanMessageId.value = lastDoneAssistantId.value;
     }
-    chatStore.setSessionRejectedPlanFingerprint(props.sessionId, null);
-    rejectedAutoExecuteMessageId.value = null;
+    rejectedPlanMessageId.value = null;
     // Ensure writers unlock even if the gate was recovered only on the frontend.
     if (!planModeActive.value) {
       chatStore.setSessionPlanMode(props.sessionId, true);
@@ -898,25 +636,13 @@ async function approvePlanMode() {
   }
 }
 
-function rejectAutoExecute() {
-  // Stop auto-run only — keep the plan checklist and manual approve available.
-  // Remember this checklist structure so identical plans don't restart countdown;
-  // a new/updated plan fingerprint will allow auto-execute again.
-  clearPlanTimer();
-  planCountdown.value = null;
+async function rejectPlanMode() {
+  if (!props.sessionId || planBusy.value) return;
   if (lastDoneAssistantId.value) {
-    rejectedAutoExecuteMessageId.value = lastDoneAssistantId.value;
+    rejectedPlanMessageId.value = lastDoneAssistantId.value;
   }
-  if (props.sessionId) {
-    chatStore.setSessionPlanTrigger(props.sessionId, "manual");
-    const message = props.messages.find((item) => item.id === lastDoneAssistantId.value);
-    const fingerprint =
-      pendingPlanFingerprint(message) ??
-      (message ? planStructureFingerprint(tasksFromMessage(message)) : null);
-    if (fingerprint) {
-      chatStore.setSessionRejectedPlanFingerprint(props.sessionId, fingerprint);
-    }
-  }
+  await setPlanMode(props.sessionId, false).catch(() => undefined);
+  chatStore.setSessionPlanMode(props.sessionId, false);
 }
 
 const visibleMessages = computed(() =>
@@ -960,6 +686,32 @@ const displayItems = computed((): DisplayItem[] => {
   return items;
 });
 
+const displayTurns = computed((): DisplayTurn[] => {
+  void lastDoneAssistantId.value;
+  void approvedPlanMessageId.value;
+  if (props.sessionId) {
+    void chatStore.sessionTasks[props.sessionId];
+    void chatStore.sessionPlans[props.sessionId];
+    void chatStore.sessionPlanMode[props.sessionId];
+  }
+  const turns: DisplayTurn[] = [];
+  let current: DisplayTurn | null = null;
+  for (const item of displayItems.value) {
+    if (item.kind === "user") {
+      if (current) turns.push(current);
+      current = { key: `turn-${item.key}`, user: item, assistants: [] };
+      continue;
+    }
+    if (!current) {
+      current = { key: `turn-${item.key}`, user: null, assistants: [item] };
+    } else {
+      current.assistants.push(item);
+    }
+  }
+  if (current) turns.push(current);
+  return turns;
+});
+
 /** Stable deps for v-memo — completed bubbles skip re-render when only siblings stream. */
 function messageMemoDeps(item: DisplayItem) {
   const message = item.message;
@@ -982,13 +734,32 @@ function messageMemoDeps(item: DisplayItem) {
     item.kind === "assistant" ? item.injects.map((inject) => inject.id).join(",") : "",
     copyStatus.value?.id === message.id ? copyStatus.value.state : "",
     rewindBusy.value ? 1 : 0,
+    item.kind === "user" && checkpointFor(item.message) ? 1 : 0,
     live ? durationClock.value : 0,
-    showPlanCardFor(message) ? (planCountdownInfo.value?.remaining ?? -1) : -1,
+    showCreatedPlanCard(message) ? 1 : 0,
+    showBuildTodoCard(message) ? 1 : 0,
+    showBuildTodoCard(message)
+      ? planTasksForMessage(message, isLivePlanHost(message))
+          .map((task) => `${task.status}:${task.content}`)
+          .join("|")
+      : "",
     planBusy.value ? 1 : 0,
     isSessionSending.value ? 1 : 0,
     settingStore.showReasoning ? 1 : 0,
     settingStore.agentWorkDisplay,
     settingStore.language,
+  ];
+}
+
+const { bindTurnHead, isTurnHeadStuck } = useTurnHeadSticky();
+
+function turnMemoDeps(turn: DisplayTurn, turnIndex = 0) {
+  return [
+    turn.key,
+    turnIndex === 0 ? 1 : 0,
+    isTurnHeadStuck(turn.key) && stickyTurnHeadEnabled.value ? 1 : 0,
+    ...(turn.user ? messageMemoDeps(turn.user) : []),
+    ...turn.assistants.flatMap((item) => messageMemoDeps(item)),
   ];
 }
 
@@ -1178,36 +949,10 @@ const { handleScroll, handleWheel, handleKeydown, scrollToMessage, scrollToLates
     displayItems,
     activeUserMessageId,
     railRef,
+    sessionId: computed(() => props.sessionId),
+    isSending: isSessionSending,
     updateActiveUserMessage,
   });
-
-type InlineMessagePart =
-  | { kind: "text"; text: string }
-  | { kind: "mention"; path: string; name: string; isDir: boolean }
-  | { kind: "skill"; id: string }
-  | { kind: "mcp"; id: string };
-
-/** Match `@file`, `#skill:id`, and `#mcp:id` for markdown-like inline marks. */
-function inlineMessageParts(text: string): InlineMessagePart[] {
-  return splitInlineTokenParts(text).map((part) => {
-    if (part.kind === "mention") {
-      return { kind: "mention", path: part.path, name: part.name, isDir: part.isDir };
-    }
-    if (part.kind === "skill" || part.kind === "mcp") {
-      return { kind: part.kind, id: part.id };
-    }
-    return { kind: "text", text: part.text };
-  });
-}
-
-function fileIconForPath(path: string) {
-  return codeLanguageForPath(normalizeMentionPath(path)).icon;
-}
-
-function copyableUserText(message: ChatMessage) {
-  const content = userContent(message);
-  return [content.message.trim(), content.selection?.trim() ?? ""].filter(Boolean).join("\n\n");
-}
 
 function copyButtonLabel(messageId: string) {
   if (copyStatus.value?.id !== messageId) return tr(settingStore.language, "copy");
@@ -1220,7 +965,7 @@ function copyButtonClass(messageId: string) {
 }
 
 async function copyMessage(message: ChatMessage, kind: "user" | "assistant") {
-  const text = kind === "user" ? copyableUserText(message) : message.content;
+  const text = kind === "user" ? userContent(message).message.trim() : message.content;
   if (!text) return;
   if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
   try {
@@ -1342,7 +1087,10 @@ async function confirmRewind(message: ChatMessage) {
   });
   if (!confirmed) return;
 
-  const text = userContent(message).message.trim();
+  const parsedContent = userContent(message);
+  const text = parsedContent.message.trim();
+  const images = parsedContent.images;
+  const attachedFiles = extractAttachedFileChips(message.content);
   rewindBusy.value = true;
   try {
     await rewindSession({
@@ -1350,9 +1098,52 @@ async function confirmRewind(message: ChatMessage) {
       turn: checkpoint.turn,
       restore: "both",
     });
-    emit("rewound", { text });
+    emit("rewound", { text, images, attachedFiles });
   } catch (error) {
     console.error("rewind_session failed:", error);
+  } finally {
+    rewindBusy.value = false;
+  }
+}
+
+async function resendUserMessage(message: ChatMessage, visibleText: string) {
+  const checkpoint = checkpointFor(message);
+  if (!checkpoint || !props.sessionId || rewindBusy.value) return;
+  const nextContent = replaceUserVisibleText(message.content, visibleText);
+  if (!nextContent.trim()) return;
+
+  const confirmed = await confirmDialogRef.value?.ask({
+    title: tr(settingStore.language, "resendConfirmTitle"),
+    description: tr(settingStore.language, "resendConfirm"),
+    confirmLabel: tr(settingStore.language, "resendConfirmAction"),
+    cancelLabel: tr(settingStore.language, "rewindCancel"),
+  });
+  if (!confirmed) return;
+
+  rewindBusy.value = true;
+  try {
+    if (isSessionSending.value) {
+      const pending = props.messages.find(
+        (item) => normalizeRole(item.role) === "assistant" && isPending(item),
+      );
+      chatStore.clearSending(props.sessionId);
+      if (pending) {
+        try {
+          await chatCancel({ messageId: pending.id });
+        } catch (error) {
+          console.error("chat_cancel failed:", error);
+        }
+      }
+    }
+    await rewindSession({
+      sessionId: props.sessionId,
+      turn: checkpoint.turn,
+      restore: "both",
+    });
+    chatStore.clearSending(props.sessionId);
+    emit("rewound", { text: nextContent, resend: true });
+  } catch (error) {
+    console.error("resend_user_message failed:", error);
   } finally {
     rewindBusy.value = false;
   }
@@ -1566,6 +1357,9 @@ defineExpose({ openFind, closeFind });
   outline: 1px solid color-mix(in srgb, #d97706 65%, transparent);
 }
 .message-list {
+  --code-block-sticky-top: calc(-1 * var(--peek-space-4, 16px));
+  --chat-sticky-top: calc(-1 * var(--peek-space-4, 16px) + 2px);
+  --chat-reply-inset: var(--peek-radius-composer, 16px);
   flex: 1;
   min-height: 0;
   overflow-x: hidden;
@@ -1575,8 +1369,8 @@ defineExpose({ openFind, closeFind });
   display: flex;
   flex-direction: column;
   gap: var(--peek-space-4, 16px);
-  scroll-padding-top: var(--peek-space-4, 16px);
-  contain: layout style paint;
+  scroll-padding-top: max(0px, var(--chat-sticky-top, 0px));
+  contain: layout style;
 }
 .message-item {
   content-visibility: auto;
@@ -1593,6 +1387,13 @@ defineExpose({ openFind, closeFind });
   line-height: 1.5;
   text-align: center;
   user-select: none;
+}
+.turn-spacer {
+  display: none;
+  height: 0;
+  flex: none;
+  min-height: 0;
+  pointer-events: none;
 }
 .message-preview-rail {
   position: absolute;
@@ -1704,7 +1505,7 @@ defineExpose({ openFind, closeFind });
 }
 .message-item.user {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   width: 100%;
   contain: layout style;
 }
@@ -1714,88 +1515,101 @@ defineExpose({ openFind, closeFind });
   width: 100%;
   contain: layout style;
 }
-.user-turn {
+.chat-turn:has(.chat-turn-head) .message-item.assistant {
+  content-visibility: visible;
+  contain: none;
+}
+.chat-turn {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  max-width: 78%;
+  gap: inherit;
+  width: 100%;
+  min-width: 0;
 }
-.user-images {
+.chat-turn:has(.chat-turn-head) {
+  --turn-head-height: 40px;
+  --chat-sticky-fade: 12px;
+  --code-block-sticky-top: calc(
+    var(--chat-sticky-top, 0px) + var(--turn-head-height) + var(--chat-sticky-fade)
+  );
+}
+.chat-turn-sticky-sentinel {
+  height: 1px;
+  margin-bottom: -1px;
+  pointer-events: none;
+  visibility: hidden;
+}
+.chat-turn-head {
+  position: sticky;
+  top: var(--chat-sticky-top, 2px);
+  z-index: 4;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-direction: column;
   gap: 8px;
+  width: 100%;
+  padding-bottom: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+.message-list.no-sticky-turn-head .chat-turn-head {
+  position: static;
+  top: auto;
+  z-index: auto;
+}
+.message-list.no-sticky-turn-head .chat-turn:has(.chat-turn-head) {
+  --code-block-sticky-top: 0;
+}
+.chat-turn-head.is-stuck::before {
+  content: "";
+  position: absolute;
+  right: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
+  bottom: 100%;
+  left: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
+  height: calc(-1 * min(0px, var(--chat-sticky-top, 0px)) + 8px);
+  min-height: 8px;
+  background: var(--peek-list-bg);
+  pointer-events: none;
+}
+.chat-turn-head.is-stuck::after {
+  content: "";
+  position: absolute;
+  right: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
+  top: 100%;
+  left: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
+  height: var(--chat-sticky-fade, 12px);
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    var(--peek-list-bg) 0%,
+    color-mix(in srgb, var(--peek-list-bg) 42%, transparent) 55%,
+    transparent 100%
+  );
+}
+.chat-turn.is-first-turn .chat-turn-head.is-stuck::before {
+  content: none;
+}
+.chat-turn-head > * {
+  pointer-events: auto;
+}
+.chat-turn-head .turn-head-build {
+  width: calc(100% - 2 * var(--chat-reply-inset, var(--peek-radius-composer, 16px)));
+  margin: 0 0 0 var(--chat-reply-inset, var(--peek-radius-composer, 16px));
+}
+.chat-turn-head .message-item.user {
+  content-visibility: visible;
+  contain: none;
+}
+.user-turn {
+  width: 100%;
   max-width: 100%;
-  padding: 1px;
-}
-.user-attached-files {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 100%;
-}
-.user-file-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: min(220px, 100%);
-  min-height: var(--peek-control-icon, 28px);
-  padding: 8px 12px;
-  border: 0;
-  border-radius: var(--peek-user-bubble-radius, 18px);
-  background: var(--peek-user-bubble-bg);
-  color: var(--peek-user-bubble-text);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.3;
-  box-shadow: var(--peek-user-bubble-shadow, none);
-}
-.user-file-icon-img {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  object-fit: contain;
-}
-.user-file-chip.skipped {
-  opacity: 0.55;
-}
-.user-file-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.user-bubble {
-  width: fit-content;
-  max-width: 100%;
-  padding: 12px 16px;
-  border: 0;
-  border-radius: var(--peek-user-bubble-radius, 18px);
-  background: var(--peek-user-bubble-bg);
-  color: var(--peek-user-bubble-text);
-  font-size: var(--peek-font-md, 14px);
-  font-weight: 450;
-  line-height: 1.5;
-  letter-spacing: -0.01em;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  box-shadow: var(--peek-user-bubble-shadow, none);
-}
-.user-message-text {
-  display: inline;
-  min-width: 0;
 }
 .message-actions {
   display: flex;
   align-items: center;
   gap: 2px;
   min-height: var(--peek-control-icon, 28px);
-}
-.user-message-actions {
-  justify-content: flex-end;
 }
 .assistant-message-actions {
   justify-content: flex-start;
@@ -1868,22 +1682,15 @@ defineExpose({ openFind, closeFind });
   cursor: default;
   opacity: 0.4;
 }
-.user-selection-quote {
-  display: block;
-  margin-top: 6px;
-  color: color-mix(in srgb, var(--peek-user-bubble-text) 70%, var(--peek-muted));
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 .assistant-bubble {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 100%;
-  max-width: 94%;
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--chat-reply-inset, var(--peek-radius-composer, 16px)));
+  max-width: 100%;
   min-width: 0;
+  margin-left: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
   padding: 0;
   color: var(--peek-text);
 }
@@ -1933,7 +1740,6 @@ defineExpose({ openFind, closeFind });
 .assistant-bubble :deep(.agent-work),
 .assistant-bubble :deep(.tool-activity-list),
 .assistant-bubble :deep(.reasoning-block),
-.assistant-bubble :deep(.ask-answer-card),
 .assistant-bubble :deep(.image-analysis-card) {
   width: 100%;
   max-width: none;

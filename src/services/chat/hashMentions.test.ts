@@ -4,16 +4,18 @@ import {
   activeHashMention,
   filterHashMentionItems,
   formatHashMention,
+  isHashableAgentPlugin,
   parseHashMentions,
   type HashMentionItem,
 } from "./hashMentions";
 
 describe("hashMentions", () => {
-  it("formats and parses skill/mcp tokens", () => {
+  it("formats and parses skill/mcp/plugin tokens", () => {
     expect(formatHashMention("skill", "generate_word")).toBe("#skill:generate_word");
-    expect(parseHashMentions("use #skill:docx and #mcp:gmail")).toEqual([
+    expect(parseHashMentions("use #skill:docx and #mcp:gmail and #plugin:computer-use")).toEqual([
       { kind: "skill", id: "docx" },
       { kind: "mcp", id: "gmail" },
+      { kind: "plugin", id: "computer-use" },
     ]);
   });
 
@@ -38,6 +40,7 @@ describe("hashMentions", () => {
     // Completed resource tokens should not keep the picker open.
     expect(activeHashMention("#skill:docx", 11)).toBeNull();
     expect(activeHashMention("#mcp:gmail", 10)).toBeNull();
+    expect(activeHashMention("#plugin:computer-use", 20)).toBeNull();
     expect(activeHashMention("use #skill:docx", 15)).toBeNull();
   });
 
@@ -56,26 +59,48 @@ describe("hashMentions", () => {
     const items: HashMentionItem[] = [
       { kind: "skill", id: "docx", title: "Docx" },
       { kind: "mcp", id: "gmail", title: "Gmail" },
+      { kind: "plugin", id: "computer-use", title: "Computer use" },
     ];
     expect(filterHashMentionItems(items, "skill:").map((item) => item.id)).toEqual(["docx"]);
     expect(filterHashMentionItems(items, "mcp").map((item) => item.id)).toEqual(["gmail"]);
+    expect(filterHashMentionItems(items, "plugin:").map((item) => item.id)).toEqual([
+      "computer-use",
+    ]);
   });
 
   it("ranks frequently used items first when query is empty", () => {
     const items: HashMentionItem[] = [
       { kind: "skill", id: "pandoc", title: "Pandoc" },
       { kind: "skill", id: "docx", title: "Docx" },
+      { kind: "plugin", id: "computer-use", title: "Computer use" },
       { kind: "mcp", id: "gmail", title: "Gmail" },
     ];
     const usage = {
       skill: { docx: { count: 8, lastUsedAt: 1000 } },
       mcp: { gmail: { count: 30, lastUsedAt: 1000 } },
+      plugin: { "computer-use": { count: 40, lastUsedAt: 1000 } },
     };
-    // Skills stay above MCP even if an MCP is used more often.
+    // Skills stay above plugins, plugins above MCP, even if MCP/plugin is used more often.
     expect(filterHashMentionItems(items, "", usage, 2000).map((item) => item.id)).toEqual([
       "docx",
       "pandoc",
+      "computer-use",
       "gmail",
     ]);
+  });
+
+  it("lists only enabled agent-tool plugins in the # catalog", () => {
+    expect(
+      isHashableAgentPlugin({
+        enabled: true,
+        role: "agent",
+        contributes: { agent: { tools: true } },
+      }),
+    ).toBe(true);
+    expect(isHashableAgentPlugin({ enabled: true, contributes: { agent: { tools: true } } })).toBe(
+      true,
+    );
+    expect(isHashableAgentPlugin({ enabled: false, role: "agent" })).toBe(false);
+    expect(isHashableAgentPlugin({ enabled: true, role: "ui" })).toBe(false);
   });
 });

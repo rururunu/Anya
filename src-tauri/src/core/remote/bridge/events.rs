@@ -2,9 +2,9 @@
 
 use serde_json::json;
 
+use super::super::protocol::ServerMessage;
 use super::{broadcast_server_message, run_state_for, set_run_state, RemoteRunState};
 use crate::core::event::BusEvent;
-use super::super::protocol::ServerMessage;
 
 pub fn on_bus_event(event: &BusEvent) {
     match event {

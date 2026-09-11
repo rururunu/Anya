@@ -1,11 +1,17 @@
-import type { AppLanguage, ThemeId } from "@/types/setting";
+import type {
+  AppLanguage,
+  CustomThemeConfig,
+  ThemeBackgroundConfig,
+  ThemeId,
+} from "@/types/setting";
 
-export type { ThemeId };
+export type { ThemeId, CustomThemeConfig, ThemeBackgroundConfig };
 
 export interface ThemeAppearanceInput {
   colorScheme: ThemeId;
   language: AppLanguage;
   chromeFrostedGlass?: boolean;
+  customThemes?: CustomThemeConfig[];
 }
 
 export interface ThemeState {

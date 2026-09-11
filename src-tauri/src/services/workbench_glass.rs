@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
@@ -7,6 +7,51 @@ use crate::models::settings::AppSettings;
 static WANT_GLASS: AtomicBool = AtomicBool::new(false);
 static DARK: AtomicBool = AtomicBool::new(false);
 static COVERING: AtomicBool = AtomicBool::new(false);
+static TINT: AtomicU32 = AtomicU32::new(0xEB_10_10_10);
+
+fn parse_hex_color(s: &str) -> Option<(u8, u8, u8)> {
+    let s = s.trim().strip_prefix('#')?;
+    if s.len() == 6 {
+        let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+        Some((r, g, b))
+    } else if s.len() == 3 {
+        let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
+        let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
+        let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
+        Some((r, g, b))
+    } else {
+        None
+    }
+}
+
+pub fn resolve_theme_tint(settings: &AppSettings) -> (u8, u8, u8, u8) {
+    let dark = settings.is_dark_mode();
+    let default_rgb = if dark {
+        (16_u8, 16_u8, 16_u8)
+    } else {
+        (232_u8, 232_u8, 232_u8)
+    };
+
+    if let crate::models::settings::ColorScheme::Custom(id) = &settings.color_scheme {
+        if let Some(custom) = settings.custom_themes.iter().find(|t| &t.id == id) {
+            if let Some(hex) = custom
+                .tokens
+                .get("--peek-sidebar")
+                .or_else(|| custom.tokens.get("--peek-bg"))
+            {
+                if let Some((r, g, b)) = parse_hex_color(hex) {
+                    let a = if dark { 160_u8 } else { 180_u8 };
+                    return (r, g, b, a);
+                }
+            }
+        }
+    }
+
+    let a = if dark { 160_u8 } else { 180_u8 };
+    (default_rgb.0, default_rgb.1, default_rgb.2, a)
+}
 
 fn is_covering_display(window: &WebviewWindow) -> bool {
     window.is_maximized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false)
@@ -22,12 +67,18 @@ pub fn apply_from_settings(app: &AppHandle, settings: &AppSettings) {
         return;
     };
     let want = settings.chrome_frosted_glass;
-    let dark = settings.color_scheme.is_dark();
+    let dark = settings.is_dark_mode();
+    let tint = resolve_theme_tint(settings);
+    let packed = u32::from(tint.0)
+        | (u32::from(tint.1) << 8)
+        | (u32::from(tint.2) << 16)
+        | (u32::from(tint.3) << 24);
     WANT_GLASS.store(want, Ordering::Relaxed);
     DARK.store(dark, Ordering::Relaxed);
+    TINT.store(packed, Ordering::Relaxed);
     let covering = is_covering_display(&window);
     COVERING.store(covering, Ordering::Relaxed);
-    apply_to_window(&window, want && !covering, dark);
+    apply_to_window(&window, want && !covering, dark, tint);
 }
 
 /// Re-apply after maximize / restore. Cheap no-op unless covering state changed.
@@ -39,20 +90,28 @@ pub fn sync_covering(app: &AppHandle) {
     if COVERING.swap(covering, Ordering::Relaxed) == covering {
         return;
     }
+    let packed = TINT.load(Ordering::Relaxed);
+    let tint = (
+        (packed & 0xFF) as u8,
+        ((packed >> 8) & 0xFF) as u8,
+        ((packed >> 16) & 0xFF) as u8,
+        ((packed >> 24) & 0xFF) as u8,
+    );
     apply_to_window(
         &window,
         WANT_GLASS.load(Ordering::Relaxed) && !covering,
         DARK.load(Ordering::Relaxed),
+        tint,
     );
 }
 
-fn apply_to_window(window: &WebviewWindow, enabled: bool, dark: bool) {
+fn apply_to_window(window: &WebviewWindow, enabled: bool, dark: bool, tint: (u8, u8, u8, u8)) {
     #[cfg(windows)]
-    windows_imp::apply(window, enabled, dark);
+    windows_imp::apply(window, enabled, dark, tint);
 
     #[cfg(not(windows))]
     {
-        let _ = (window, enabled, dark);
+        let _ = (window, enabled, dark, tint);
     }
 }
 
@@ -63,16 +122,50 @@ mod windows_imp {
     use tauri::WebviewWindow;
     use windows::core::s;
     use windows::Win32::Foundation::{BOOL, HWND};
-    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
+        DWMWA_USE_IMMERSIVE_DARK_MODE,
+    };
     use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
-    use windows::Win32::UI::WindowsAndMessaging::{GetWindow, GW_CHILD, GW_HWNDNEXT};
 
-    #[repr(C)]
-    struct Margins {
-        cx_left_width: i32,
-        cx_right_width: i32,
-        cy_top_height: i32,
-        cy_bottom_height: i32,
+    pub fn apply(window: &WebviewWindow, enabled: bool, dark: bool, tint: (u8, u8, u8, u8)) {
+        let Ok(raw) = window.hwnd() else {
+            return;
+        };
+        let hwnd = HWND(raw.0);
+        let dark_u32 = u32::from(dark);
+
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                &dark_u32 as *const u32 as *const c_void,
+                std::mem::size_of::<u32>() as u32,
+            );
+        }
+
+        // On Windows 11 22H2+ (build >= 22523), DWMWA_SYSTEMBACKDROP_TYPE with
+        // DWMSBT_TRANSIENTWINDOW enables the modern hardware-accelerated Acrylic frosted glass blur.
+        let backdrop = if enabled {
+            DWMSBT_TRANSIENTWINDOW
+        } else {
+            DWMSBT_NONE
+        };
+        let backdrop_res = unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_SYSTEMBACKDROP_TYPE,
+                &backdrop.0 as *const i32 as *const c_void,
+                std::mem::size_of::<i32>() as u32,
+            )
+        };
+
+        // Fall back to SetWindowCompositionAttribute (Acrylic accent 4) on Windows 10
+        // or systems where SYSTEMBACKDROP_TYPE is not supported.
+        // If disabling, clear SWCA accent state as well.
+        if backdrop_res.is_err() || !enabled {
+            set_blur(hwnd, enabled, tint);
+        }
     }
 
     #[repr(C)]
@@ -91,80 +184,11 @@ mod windows_imp {
     }
 
     const ACCENT_DISABLED: u32 = 0;
-    /// Win10/11 blur without Acrylic's noise grain.
-    const ACCENT_ENABLE_BLURBEHIND: u32 = 3;
+    const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
     const WCA_ACCENT_POLICY: u32 = 0x13;
-    const ACCENT_FLAG_DRAW_ALL_BORDERS: u32 = 0x20 | 0x40 | 0x80 | 0x100;
 
     type SetWindowCompositionAttributeFn =
         unsafe extern "system" fn(HWND, *mut WindowCompositionAttribData) -> BOOL;
-
-    #[link(name = "dwmapi")]
-    extern "system" {
-        fn DwmExtendFrameIntoClientArea(hwnd: HWND, margins: *const Margins) -> i32;
-    }
-
-    pub fn apply(window: &WebviewWindow, enabled: bool, dark: bool) {
-        let Ok(raw) = window.hwnd() else {
-            return;
-        };
-        let hwnd = HWND(raw.0);
-        let dark_u32 = u32::from(dark);
-
-        unsafe {
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_USE_IMMERSIVE_DARK_MODE,
-                &dark_u32 as *const u32 as *const c_void,
-                std::mem::size_of::<u32>() as u32,
-            );
-        }
-
-        let margins = if enabled {
-            Margins {
-                cx_left_width: -1,
-                cx_right_width: -1,
-                cy_top_height: -1,
-                cy_bottom_height: -1,
-            }
-        } else {
-            Margins {
-                cx_left_width: 0,
-                cx_right_width: 0,
-                cy_top_height: 0,
-                cy_bottom_height: 0,
-            }
-        };
-        unsafe {
-            let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-        }
-
-        // Win11 SYSTEMBACKDROP (Mica) is too subtle behind WebView2.
-        // Acrylic (accent 4) adds a heavy noise texture; BlurBehind is the same
-        // desktop blur without that grain.
-        let tint = if dark {
-            (16_u8, 16_u8, 16_u8, 235_u8)
-        } else {
-            (232_u8, 232_u8, 232_u8, 230_u8)
-        };
-        visit_hwnds(hwnd, |child| {
-            set_blur(child, enabled, tint);
-        });
-    }
-
-    fn visit_hwnds(root: HWND, mut visit: impl FnMut(HWND)) {
-        visit(root);
-        let Ok(mut child) = (unsafe { GetWindow(root, GW_CHILD) }) else {
-            return;
-        };
-        while !child.0.is_null() {
-            visit(child);
-            match unsafe { GetWindow(child, GW_HWNDNEXT) } {
-                Ok(next) => child = next,
-                Err(_) => break,
-            }
-        }
-    }
 
     fn set_blur(hwnd: HWND, enabled: bool, tint: (u8, u8, u8, u8)) {
         let Some(set_attr) = set_window_composition_attribute() else {
@@ -176,15 +200,11 @@ mod windows_imp {
         }
         let mut policy = AccentPolicy {
             accent_state: if enabled {
-                ACCENT_ENABLE_BLURBEHIND
+                ACCENT_ENABLE_ACRYLICBLURBEHIND
             } else {
                 ACCENT_DISABLED
             },
-            accent_flags: if enabled {
-                ACCENT_FLAG_DRAW_ALL_BORDERS
-            } else {
-                0
-            },
+            accent_flags: 0,
             gradient_color: u32::from(r)
                 | (u32::from(g) << 8)
                 | (u32::from(b) << 16)

@@ -172,3 +172,104 @@ fn now_millis() -> u64 {
 pub(super) fn lock_error<T: std::fmt::Display>(error: T) -> ChatError {
     ChatError::Internal(error.to_string())
 }
+
+pub(super) fn is_trivial_user_text(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_lowercase();
+    let stripped: String = lower
+        .chars()
+        .filter(|c| {
+            !c.is_whitespace()
+                && !matches!(
+                    *c,
+                    '.' | ',' | '!' | '?' | '。' | '，' | '！' | '？' | '~' | '、' | '-' | '_'
+                )
+        })
+        .collect();
+    matches!(
+        stripped.as_str(),
+        "你好"
+            | "您好"
+            | "hi"
+            | "hello"
+            | "hey"
+            | "在吗"
+            | "在不在"
+            | "好的"
+            | "好的谢谢"
+            | "好的好的"
+            | "谢谢"
+            | "收到"
+            | "ok"
+            | "okay"
+            | "k"
+            | "行"
+            | "可以"
+            | "对"
+            | "对的"
+            | "是的"
+            | "嗯"
+            | "嗯嗯"
+            | "yes"
+            | "no"
+            | "thanks"
+            | "thankyou"
+            | "继续"
+            | "接着说"
+            | "下一步"
+            | "continue"
+            | "next"
+            | "goon"
+    )
+}
+
+pub(super) fn clean_assistant_summary(content: &str, max_chars: usize) -> String {
+    let mut cleaned = String::new();
+    let mut in_code_fence = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            if in_code_fence {
+                cleaned.push_str(" [代码] ");
+            }
+            continue;
+        }
+        if !in_code_fence && !trimmed.is_empty() {
+            if !cleaned.is_empty() {
+                cleaned.push(' ');
+            }
+            cleaned.push_str(trimmed);
+        }
+    }
+    let collapsed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    crate::core::chat::limits::truncate_chars(&collapsed, max_chars)
+}
+
+pub(super) fn is_plugin_agent_session_id(session_id: &str) -> bool {
+    session_id.starts_with("plugin:")
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+
+    #[test]
+    fn trivial_user_text_detects_common_fillers() {
+        assert!(is_trivial_user_text("你好"));
+        assert!(is_trivial_user_text("好的谢谢！"));
+        assert!(is_trivial_user_text("ok"));
+        assert!(is_trivial_user_text("继续"));
+        assert!(!is_trivial_user_text("帮我写一个网页爬虫"));
+        assert!(!is_trivial_user_text("现在用ai重新生成标题他的效果很差劲"));
+    }
+
+    #[test]
+    fn plugin_agent_session_ids_use_the_plugin_prefix() {
+        assert!(is_plugin_agent_session_id("plugin:group:room"));
+        assert!(!is_plugin_agent_session_id("session-1"));
+    }
+}

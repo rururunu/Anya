@@ -47,20 +47,32 @@ pub fn canonical_builtin_name(name: &str) -> Option<&'static str> {
         "generate_word" | "generate_docx" | "word" => Some("generate_word"),
         "docx" | "docx_skill" | "word_docx" => Some("docx"),
         "pandoc" | "convert_document" | "md2docx" => Some("pandoc"),
+        "plugin_creator"
+        | "create_plugin"
+        | "manage_plugin_skill"
+        | "plugin_dev"
+        | "plugin_sdk" => Some("plugin_creator"),
         _ => None,
     }
 }
 
 /// Whether a skill name may be used by the agent.
-/// User-installed skills are always allowed; built-ins require Settings opt-in.
+/// User-installed skills are always allowed; built-ins require Settings opt-in
+/// except platform specs (`plugin_creator`) which stay on so the agent can
+/// look up the plugin contract instead of grepping Anya source.
 pub fn is_skill_enabled(name: &str) -> bool {
     match canonical_builtin_name(name) {
+        Some(canon) if is_platform_skill(canon) => true,
         Some(canon) => enabled_builtin_skills()
             .lock()
             .map(|set| set.contains(canon))
             .unwrap_or(false),
         None => true,
     }
+}
+
+fn is_platform_skill(canon: &str) -> bool {
+    matches!(canon, "plugin_creator")
 }
 
 pub fn require_skill_enabled(name: &str) -> Result<(), ToolError> {
@@ -133,6 +145,7 @@ const SECURITY_REVIEW_SKILL: &str = include_str!("../../../../prompts/skills/sec
 const GENERATE_WORD_SKILL: &str = include_str!("../../../../prompts/skills/generate_word.md");
 const DOCX_SKILL: &str = include_str!("../../../../prompts/skills/docx.md");
 const PANDOC_SKILL: &str = include_str!("../../../../prompts/skills/pandoc.md");
+const PLUGIN_CREATOR_SKILL: &str = include_str!("../../../../prompts/skills/plugin_creator.md");
 
 pub fn register_all(registry: &mut ToolRegistry) {
     registry.register(Arc::new(LoadSkillTool));
@@ -176,6 +189,11 @@ fn builtin_skill_body(name: &str) -> Option<&'static str> {
         "generate_word" | "generate_docx" | "word" => Some(GENERATE_WORD_SKILL),
         "docx" | "docx_skill" | "word_docx" => Some(DOCX_SKILL),
         "pandoc" | "convert_document" | "md2docx" => Some(PANDOC_SKILL),
+        "plugin_creator"
+        | "create_plugin"
+        | "manage_plugin_skill"
+        | "plugin_dev"
+        | "plugin_sdk" => Some(PLUGIN_CREATOR_SKILL),
         _ => None,
     }
 }
@@ -242,6 +260,7 @@ fn list_builtin_names() -> Vec<&'static str> {
         "generate_word",
         "docx",
         "pandoc",
+        "plugin_creator",
     ]
 }
 
@@ -602,7 +621,7 @@ impl Tool for LoadSkillTool {
         "load_skill"
     }
     fn description(&self) -> &str {
-        "Load a skill playbook body without executing it. Resolves built-in skills and user-installed skills under the skills directory."
+        "Load a skill playbook without executing it. For Anya user plugins (surfaces, UI entry, ctx.*, AppData plugin folders, blank settings) always load `plugin_creator` instead of grepping src/src-tauri. Resolves built-in and user-installed skills."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -922,5 +941,26 @@ impl Tool for PandocSkillTool {
         let body = resolve_skill_body("pandoc")?;
         let prompt = format!("{body}\n\n## Task\n{task}");
         run_subagent_sync(ctx, &prompt, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_skill_enabled, resolve_skill_body};
+
+    #[test]
+    fn plugin_creator_is_always_enabled() {
+        assert!(is_skill_enabled("plugin_creator"));
+        assert!(is_skill_enabled("plugin_sdk"));
+    }
+
+    #[test]
+    fn plugin_creator_body_documents_two_directories() {
+        let body = resolve_skill_body("plugin_creator").unwrap();
+        assert!(body.contains("Two directories"));
+        assert!(body.contains("ui/src/activate.js"));
+        assert!(body.contains("ui/icon.svg"));
+        assert!(body.contains("Surfaces"));
+        assert!(body.contains("src-tauri"));
     }
 }

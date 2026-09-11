@@ -139,6 +139,12 @@ fn messages_to_responses_input(messages: &[ChatMessage]) -> Vec<Value> {
                     "call_id": message.tool_call_id.clone().unwrap_or_default(),
                     "output": output,
                 }));
+                if message.content.contains("![image](") {
+                    input.push(json!({
+                        "role": "user",
+                        "content": to_responses_user_content(&message.content),
+                    }));
+                }
             }
             Role::Assistant => {
                 if let Some(tool_calls) = message

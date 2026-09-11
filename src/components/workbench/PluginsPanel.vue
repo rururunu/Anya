@@ -5,6 +5,16 @@
         type="button"
         role="tab"
         class="settings-tab"
+        :class="{ on: tab === 'installed' }"
+        :aria-selected="tab === 'installed'"
+        @click="tab = 'installed'"
+      >
+        {{ copy.installed }}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="settings-tab"
         :class="{ on: tab === 'skills' }"
         :aria-selected="tab === 'skills'"
         @click="tab = 'skills'"
@@ -25,8 +35,12 @@
       </button>
     </nav>
 
+    <div v-show="tab === 'installed'" class="plugins-installed">
+      <PluginDiagnostics />
+      <UserPluginsPanel />
+    </div>
     <SkillsSettings v-if="tab === 'skills'" embedded />
-    <McpSettings v-else embedded />
+    <McpSettings v-else-if="tab === 'mcp'" embedded />
   </section>
 </template>
 
@@ -35,21 +49,25 @@ import { computed, ref } from "vue";
 import { Cable, ScrollText } from "@lucide/vue";
 import SkillsSettings from "@/components/settings/SkillsSettings.vue";
 import McpSettings from "@/components/settings/McpSettings.vue";
+import UserPluginsPanel from "@/components/plugins/UserPluginsPanel.vue";
+import PluginDiagnostics from "@/components/plugins/PluginDiagnostics.vue";
 import { useSettingStore } from "@/stores/setting";
 
-type PluginsTab = "skills" | "mcp";
+type PluginsTab = "installed" | "skills" | "mcp";
 
-const tab = ref<PluginsTab>("skills");
+const tab = ref<PluginsTab>("installed");
 const settingStore = useSettingStore();
 
 const copy = computed(() =>
   settingStore.language === "zh-CN"
     ? {
-        skills: "\u6280\u80fd",
+        installed: "已安装",
+        skills: "技能",
         mcp: "MCP",
-        tabsLabel: "\u63d2\u4ef6\u5206\u7c7b",
+        tabsLabel: "插件分类",
       }
     : {
+        installed: "Installed",
         skills: "Skills",
         mcp: "MCP",
         tabsLabel: "Plugin sections",
@@ -81,11 +99,29 @@ const copy = computed(() =>
   opacity: 0.82;
 }
 
+.plugins-installed {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.plugins-installed :deep(.user-plugins) {
+  flex: 1;
+  min-height: 0;
+}
+
+.plugins-panel > :deep(.plugins-installed),
 .plugins-panel > :deep(.skills-settings),
 .plugins-panel > :deep(.mcp-settings) {
   flex: 1;
   min-height: 0;
   width: 100%;
+}
+
+.plugins-panel > :deep(.skills-settings),
+.plugins-panel > :deep(.mcp-settings) {
   margin-inline: 0;
   padding-inline: 0;
   padding-top: 0;

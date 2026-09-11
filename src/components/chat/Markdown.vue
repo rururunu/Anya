@@ -175,8 +175,67 @@ function hydrateCodeBlockIcons() {
   });
 }
 
+let stickyScrollCleanup: (() => void) | null = null;
+
+function findScrollContainer(element: HTMLElement | null): HTMLElement | Window {
+  let current = element?.parentElement;
+  while (current) {
+    const style = window.getComputedStyle(current);
+    if (style.overflowY === "auto" || style.overflowY === "scroll") {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return window;
+}
+
+function updateStickyCodeBlocks() {
+  const root = rootRef.value;
+  if (!root) return;
+  const blocks = root.querySelectorAll<HTMLElement>(".code-block");
+  for (const block of blocks) {
+    const toolbar = block.querySelector<HTMLElement>(".code-block-toolbar");
+    if (!toolbar) continue;
+    const bRect = block.getBoundingClientRect();
+    const tRect = toolbar.getBoundingClientRect();
+    const isStuck = bRect.top < tRect.top - 1 && bRect.bottom > tRect.bottom;
+    block.classList.toggle("is-stuck", isStuck);
+  }
+}
+
+function setupStickyScrollObserver() {
+  stickyScrollCleanup?.();
+  stickyScrollCleanup = null;
+
+  const root = rootRef.value;
+  if (!root) return;
+  const blocks = root.querySelectorAll<HTMLElement>(".code-block");
+  if (!blocks.length) return;
+
+  const container = findScrollContainer(root);
+  let rafId = 0;
+  const onScroll = () => {
+    if (rafId) return;
+    rafId = window.requestAnimationFrame(() => {
+      rafId = 0;
+      updateStickyCodeBlocks();
+    });
+  };
+
+  container.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  updateStickyCodeBlocks();
+
+  stickyScrollCleanup = () => {
+    if (rafId) window.cancelAnimationFrame(rafId);
+    container.removeEventListener("scroll", onScroll);
+    window.removeEventListener("resize", onScroll);
+  };
+}
+
 function hydrateAll() {
   hydrateCodeBlockIcons();
+  setupStickyScrollObserver();
   const root = rootRef.value;
   if (root) {
     hydrateChartBlocks(root);
@@ -197,6 +256,8 @@ function unmountPortalHosts(root: HTMLElement) {
 onMounted(hydrateAll);
 onUpdated(hydrateAll);
 onUnmounted(() => {
+  stickyScrollCleanup?.();
+  stickyScrollCleanup = null;
   const root = rootRef.value;
   if (root) unmountPortalHosts(root);
 });
@@ -378,7 +439,7 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 
 .markdown-body :deep(.code-block) {
   margin: 0.75em 0;
-  overflow: hidden;
+  overflow: clip;
   border: 1px solid var(--peek-code-border);
   border-radius: 10px;
   background: var(--peek-code-bg);
@@ -387,7 +448,9 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 
 .markdown-body :deep(.code-block-toolbar) {
   box-sizing: border-box;
-  position: relative;
+  position: sticky;
+  top: var(--code-block-sticky-top, 0);
+  z-index: 2;
   flex: none;
   display: flex;
   align-items: center;
@@ -400,6 +463,14 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   line-height: 1;
   border-bottom: 1px solid var(--peek-code-border);
   background: var(--peek-code-toolbar-bg);
+  border-top-left-radius: 9px;
+  border-top-right-radius: 9px;
+}
+
+.markdown-body :deep(.code-block.is-stuck),
+.markdown-body :deep(.code-block.is-stuck .code-block-toolbar) {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .markdown-body :deep(.code-language) {
@@ -517,6 +588,8 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 
 .markdown-body :deep(.code-block-body) {
   background: var(--peek-code-body-bg);
+  border-bottom-left-radius: 9px;
+  border-bottom-right-radius: 9px;
 }
 
 .markdown-body :deep(.code-block pre) {

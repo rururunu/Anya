@@ -11,11 +11,6 @@ export const IPC_COMMANDS = {
   exitApp: "exit_app",
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",
-  geminiAuthStatus: "gemini_auth_status",
-  geminiOauthLogin: "gemini_oauth_login",
-  geminiOauthCancelLogin: "gemini_oauth_cancel_login",
-  geminiOauthLogout: "gemini_oauth_logout",
-  geminiImportClientSecrets: "gemini_import_client_secrets",
   getAppInfo: "get_app_info",
   webviewGpuDisabled: "webview_gpu_disabled",
   relaunchApp: "relaunch_app",
@@ -27,6 +22,7 @@ export const IPC_COMMANDS = {
   listChatSessions: "list_chat_sessions",
   listArchivedChatSessions: "list_archived_chat_sessions",
   listChatModels: "list_chat_models",
+  listDeepSeekModels: "list_deepseek_models",
   listCustomProviderModels: "list_custom_provider_models",
   getContextUsage: "get_context_usage",
   getTokenUsageReport: "get_token_usage_report",
@@ -46,9 +42,15 @@ export const IPC_COMMANDS = {
   regenerateChatSessionTitle: "regenerate_chat_session_title",
   revealInExplorer: "reveal_in_explorer",
   openInDefaultApp: "open_in_default_app",
+  toggleDesktopPet: "toggle_desktop_pet",
+  getDesktopPetVisible: "get_desktop_pet_visible",
+  showWorkbench: "show_workbench",
+  toggleOverlayFromPet: "toggle_overlay_from_pet",
 } as const;
 
 export const IPC_EVENTS = {
+  desktopPetVisibilityChanged: "desktop-pet-visibility-changed",
+  desktopPetSizeChanged: "desktop-pet-size-changed",
   agentEvent: "agent-event",
   agentDebugEvent: "agent-debug-event",
   overlayShown: "overlay-shown",
@@ -73,6 +75,7 @@ export const IPC_EVENTS = {
   toolStarted: "tool-started",
   toolFinished: "tool-finished",
   taskListUpdated: "task-list-updated",
+  planUpdated: "plan-updated",
   fileOffer: "file-offer",
   urlOffer: "url-offer",
 } as const;

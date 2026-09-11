@@ -31,7 +31,11 @@ impl StreamManager {
     }
 
     /// Queues a soft-inject user message into an active stream for the session.
-    pub fn soft_inject(&self, session_id: &str, content: String) -> Result<String, crate::core::chat::error::ChatError> {
+    pub fn soft_inject(
+        &self,
+        session_id: &str,
+        content: String,
+    ) -> Result<String, crate::core::chat::error::ChatError> {
         use crate::core::chat::error::ChatError;
 
         let content = content.trim().to_string();
@@ -63,7 +67,7 @@ impl Default for StreamManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lifecycle::{ActiveTask, epoch_still_active};
+    use lifecycle::{epoch_still_active, ActiveTask};
     use std::collections::VecDeque;
     use std::sync::atomic::AtomicBool;
 

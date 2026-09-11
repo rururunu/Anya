@@ -1,0 +1,29 @@
+[[permission]]
+identifier = "allow-plugin-host-commands"
+description = "User plugin list/open/delete and the isolated plugin-window storage/ask IPC."
+commands.allow = [
+  "list_user_plugins",
+  "open_user_plugin",
+  "close_user_plugin_window",
+  "close_all_user_plugin_windows",
+  "delete_user_plugin",
+  "open_plugins_dir",
+  "get_anya_user_dir",
+  "plugin_storage_get",
+  "plugin_storage_set",
+  "plugin_ask_anya",
+  "plugin_fs_pick",
+  "plugin_capability_catalog",
+  "report_plugin_runtime_error",
+  "clear_plugin_runtime_errors",
+  "enable_user_plugin",
+  "disable_user_plugin",
+  "reload_user_plugin",
+  "export_user_plugin",
+  "import_user_plugin",
+  "get_plugin_ui_source",
+  "plugin_host_rpc",
+  "plugin_permission_catalog",
+  "plugin_safe_mode_status",
+  "clear_plugin_safe_mode"
+]

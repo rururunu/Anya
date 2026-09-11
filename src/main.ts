@@ -13,6 +13,7 @@ import "@/services/motion/gsapSafe";
 import { useChatStore } from "@/stores/chat";
 import { applyThemeAppearance, bootstrapThemeAppearance } from "@/services/theme";
 import { useSettingStore } from "@/stores/setting";
+import { installPluginSdk, syncEnabledPluginUi } from "@/composables/plugins/sdk";
 import "./styles/index.css";
 
 installBrowserGuards();
@@ -71,6 +72,7 @@ window.addEventListener("error", (event) => {
 
 app.use(pinia);
 app.use(router);
+installPluginSdk(app, pinia);
 
 const settingStore = useSettingStore();
 const chatStore = useChatStore();
@@ -85,6 +87,8 @@ async function bootstrap() {
   const isOverlay =
     (windowLabel === "overlay" || windowLabel.startsWith("overlay-")) &&
     !windowLabel.startsWith("overlay-preview-");
+
+  const isDesktopPet = windowLabel === "desktop-pet";
 
   // Resolve each interactive route before loading settings. Keep the HTML
   // boot splash up until the workbench loading layer has painted, so we never
@@ -106,6 +110,7 @@ async function bootstrap() {
     await router.isReady();
     await waitForNextPaint();
     hideBootSplash({ fadeMs: 220 });
+    void syncEnabledPluginUi();
   } else if (isOverlay) {
     markPeekWindow();
     hideBootSplash({ fadeMs: 0 });
@@ -118,6 +123,20 @@ async function bootstrap() {
       chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);
+    app.mount("#app");
+    await router.isReady();
+    await waitForNextPaint();
+  } else if (isDesktopPet) {
+    markPeekWindow();
+    hideBootSplash({ fadeMs: 0 });
+    void router.replace("/desktop-pet");
+    applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
+    await settingStore.load();
+    applyThemeAppearance({
+      colorScheme: settingStore.colorScheme,
+      language: settingStore.language,
+      chromeFrostedGlass: settingStore.chromeFrostedGlass,
+    });
     app.mount("#app");
     await router.isReady();
     await waitForNextPaint();
@@ -139,12 +158,12 @@ async function bootstrap() {
   if (windowLabel.startsWith("overlay-preview-")) {
     document.documentElement.classList.add("peek-window");
     await router.replace("/image-preview");
-  } else if (isOverlay) {
-    // The overlay route was mounted eagerly above.
+  } else if (isOverlay || isDesktopPet) {
+    // The overlay / desktop-pet route was mounted eagerly above.
   }
 
   await router.isReady();
-  if (windowLabel !== "workbench" && !isOverlay) {
+  if (windowLabel !== "workbench" && !isOverlay && !isDesktopPet) {
     app.mount("#app");
     await waitForNextPaint();
     hideBootSplash({ fadeMs: 180 });

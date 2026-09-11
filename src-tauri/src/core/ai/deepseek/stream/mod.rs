@@ -8,14 +8,14 @@ mod runner;
 mod sse;
 mod types;
 
-pub(crate) use types::RETRY_BACKOFF;
 pub(crate) use errors::emit_stream_error;
 pub(crate) use runner::{run_anthropic_stream, run_chat_stream, run_responses_stream};
+pub(crate) use types::RETRY_BACKOFF;
 
 #[cfg(test)]
-pub(crate) use types::{StreamReadOutcome, USER_STREAM_INTERRUPTED};
-#[cfg(test)]
 pub(crate) use errors::user_facing_stream_error;
+#[cfg(test)]
+pub(crate) use types::{StreamReadOutcome, USER_STREAM_INTERRUPTED};
 
 #[cfg(test)]
 mod utf8_stream_tests {
@@ -195,6 +195,28 @@ mod retry_tests {
         )));
         assert_eq!(
             deepseek_http_status("DeepSeek API 500 Internal Server Error: x"),
+            Some(500)
+        );
+        // Model-specific error prefixes
+        assert!(is_retryable_stream_error(&ProviderError::message(
+            r#"gpt-4o API 500 Internal Server Error: {"type":"error"}"#
+        )));
+        assert!(is_retryable_stream_error(&ProviderError::message(
+            "claude-3-5-sonnet API 429 Too Many Requests: rate limited"
+        )));
+        assert!(!is_retryable_stream_error(&ProviderError::message(
+            r#"deepseek-chat API 400 Bad Request: {"error":{"message":"bad request"}}"#
+        )));
+        assert_eq!(
+            deepseek_http_status("claude-3-7-sonnet API 502 Bad Gateway: x"),
+            Some(502)
+        );
+        assert_eq!(
+            deepseek_http_status("API 429 Too Many Requests: wait"),
+            Some(429)
+        );
+        assert_eq!(
+            deepseek_http_status("deepseek-reasoner API 500: internal"),
             Some(500)
         );
     }

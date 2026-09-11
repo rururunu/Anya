@@ -18,6 +18,7 @@ import type {
   PathPermissionEvent,
   InteractionResolvedEvent,
   PlanModeChangedEvent,
+  PlanUpdatedEvent,
   TaskListUpdatedEvent,
   ToolActivityEvent,
   ToolApprovalEvent,
@@ -128,6 +129,10 @@ export function listenToolFinished(handler: (payload: ToolActivityEvent) => void
 
 export function listenTaskListUpdated(handler: (payload: TaskListUpdatedEvent) => void) {
   return listenIpcEvent<TaskListUpdatedEvent>(IPC_EVENTS.taskListUpdated, handler);
+}
+
+export function listenPlanUpdated(handler: (payload: PlanUpdatedEvent) => void) {
+  return listenIpcEvent<PlanUpdatedEvent>(IPC_EVENTS.planUpdated, handler);
 }
 
 export function listenFileOffer(handler: (payload: FileOfferEvent) => void) {

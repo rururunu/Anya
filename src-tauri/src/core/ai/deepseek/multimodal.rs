@@ -266,7 +266,7 @@ pub(super) fn multimodal_http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(MULTIMODAL_CONNECT_TIMEOUT)
         .timeout(MULTIMODAL_REQUEST_TIMEOUT)
-        // Match Antigravity: HTTP/1.1 + system proxy avoid flaky HTTP/2 / proxy body reads
+        // HTTP/1.1 + system proxy avoid flaky HTTP/2 / proxy body reads
         // that surface as "error decoding response body".
         .http1_only()
         .build()
@@ -278,7 +278,7 @@ async fn read_multimodal_response_text(
 ) -> Result<String, ProviderError> {
     let bytes = response.bytes().await.map_err(|error| {
         ProviderError::message(format!(
-            "Failed to read multimodal response: {}. If the multimodal model is reached via a proxy (Clash/V2Ray), enable the system proxy or switch multimodal analysis to a Gemini model with Antigravity login.",
+            "Failed to read multimodal response: {}. If the multimodal model is reached via a proxy (Clash/V2Ray), enable the system proxy and retry.",
             format_reqwest_error_chain(&error)
         ))
     })?;
@@ -286,22 +286,6 @@ async fn read_multimodal_response_text(
         // Full body should be UTF-8 JSON; fall back without inventing CJK mojibake.
         String::from_utf8_lossy(&bytes).into_owned()
     }))
-}
-
-/// Use Antigravity only when the *configured multimodal model* is Gemini + OAuth.
-/// (Split analysis itself should not run for Gemini chat primaries.)
-pub(super) fn antigravity_model_for_image_describe(
-    settings: &AppSettings,
-    mm_model: &str,
-) -> Option<String> {
-    let provider = settings.multimodal_model_provider.trim();
-    if (provider.is_empty() || provider == "gemini")
-        && crate::services::gemini_oauth::can_use_antigravity_for_model(settings, mm_model)
-    {
-        Some(mm_model.to_string())
-    } else {
-        None
-    }
 }
 
 pub(super) fn should_retry_multimodal_as_stream(error: &ProviderError) -> bool {
@@ -346,15 +330,6 @@ pub(super) async fn describe_image(
     } else {
         settings.multimodal_model.trim().to_string()
     };
-
-    if let Some(ag_model) = antigravity_model_for_image_describe(&settings, &mm_model) {
-        return crate::core::ai::antigravity::describe_image_via_antigravity(
-            app,
-            &ag_model,
-            image_payload,
-        )
-        .await;
-    }
 
     let endpoint = resolve_multimodal_endpoint(
         &settings,

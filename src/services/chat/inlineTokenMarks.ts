@@ -1,5 +1,5 @@
 /**
- * Markdown-like inline marks for `@file`, `#skill:id`, and `#mcp:id`.
+ * Markdown-like inline marks for `@file`, `#skill:id`, `#mcp:id`, and `#plugin:id`.
  * Typography only (weight / color) — not chip / pill chrome.
  */
 
@@ -13,7 +13,8 @@ export type InlineTokenPart =
   | { kind: "text"; text: string }
   | { kind: "mention"; path: string; name: string; isDir: boolean; raw: string }
   | { kind: "skill"; id: string; raw: string }
-  | { kind: "mcp"; id: string; raw: string };
+  | { kind: "mcp"; id: string; raw: string }
+  | { kind: "plugin"; id: string; raw: string };
 
 /** Escape text for safe use inside highlight HTML. */
 export function escapeInlineHtml(text: string): string {
@@ -48,7 +49,7 @@ export function splitInlineTokenParts(text: string): InlineTokenPart[] {
     }
     const raw = match[0];
     if (match[3] && match[4]) {
-      const kind = match[3] as "skill" | "mcp";
+      const kind = match[3] as "skill" | "mcp" | "plugin";
       parts.push({ kind, id: match[4], raw });
     } else {
       const path = match[1] || match[2] || "";
@@ -81,6 +82,9 @@ export function renderInlineTokenHighlightHtml(text: string): string {
       }
       if (part.kind === "skill") {
         return `<span class="inline-token inline-token-skill">${escapeInlineHtml(part.raw)}</span>`;
+      }
+      if (part.kind === "plugin") {
+        return `<span class="inline-token inline-token-plugin">${escapeInlineHtml(part.raw)}</span>`;
       }
       return `<span class="inline-token inline-token-mcp">${escapeInlineHtml(part.raw)}</span>`;
     })

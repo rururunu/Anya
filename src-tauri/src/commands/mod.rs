@@ -1,12 +1,13 @@
 pub mod app;
 pub mod ask;
 pub mod chat;
+pub mod desktop_pet;
 pub mod diff;
-pub mod gemini;
 pub mod harness;
 pub mod icons;
 pub mod mcp;
 pub mod permission;
+pub mod plugins;
 pub mod remote;
 pub mod semantic;
 pub mod settings;

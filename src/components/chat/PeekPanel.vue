@@ -108,10 +108,12 @@
               :session-id="activeSessionId"
               :workspace-name="workspaceDisplayName"
               :checkpoints="checkpoints"
+              :sticky-turn-head="false"
               @rewound="handleRewound"
               @branch="handleBranchMessage"
               @review-changes="openDiffSidebar"
               @review-file="openDiffSidebarFile"
+              @review-plan="openPlanSidebar"
               @inspect-subagent="openSubagentSidebar"
               @preview-image="handlePreviewImage"
               @edit-from-image="handleEditFromImage"
@@ -145,48 +147,107 @@
                 data-tauri-drag-region="false"
               >
                 <nav class="workspace-sidebar-tabs peek-card-tabs" :aria-label="sidebarViewsLabel">
-                  <button
-                    type="button"
-                    class="workspace-view-tab peek-card-tab"
-                    :class="{ active: sidebarTab === 'diff' }"
-                    :title="diffTabLabel"
-                    @click="selectSidebarTab('diff')"
-                  >
-                    <FileDiff :size="13" />
-                    <span>{{ diffTabLabel }}</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="workspace-view-tab peek-card-tab"
-                    :class="{ active: sidebarTab === 'subagents' }"
-                    :title="subagentTabLabel"
-                    @click="selectSidebarTab('subagents')"
-                  >
-                    <SubagentIcon :status="runningSubagentCount ? 'running' : 'idle'" :size="13" />
-                    <span>{{ subagentTabLabel }}</span>
-                  </button>
-                  <button
-                    v-if="openedImageSources.length"
-                    type="button"
-                    class="workspace-view-tab peek-card-tab"
-                    :class="{ active: sidebarTab === 'image' }"
-                    :title="imageTabLabel"
-                    @click="selectSidebarTab('image')"
-                  >
-                    <ImageIcon :size="13" />
-                    <span>{{ imageTabLabel }}</span>
-                  </button>
-                  <button
-                    v-if="runtimeDebugEnabled"
-                    type="button"
-                    class="workspace-view-tab peek-card-tab"
-                    :class="{ active: sidebarTab === 'runtime' }"
-                    :title="runtimeTabLabel"
-                    @click="selectSidebarTab('runtime')"
-                  >
-                    <Bug :size="13" />
-                    <span>{{ runtimeTabLabel }}</span>
-                  </button>
+                  <TooltipProvider :delay-duration="220">
+                    <Tooltip>
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          class="workspace-view-tab peek-card-tab"
+                          :class="{ active: sidebarTab === 'diff' }"
+                          :aria-label="diffTabLabel"
+                          @click="selectSidebarTab('diff')"
+                        >
+                          <FileDiff :size="13" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ diffTabLabel }}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          class="workspace-view-tab peek-card-tab"
+                          :class="{ active: sidebarTab === 'plan' }"
+                          :aria-label="planTabLabel"
+                          @click="selectSidebarTab('plan')"
+                        >
+                          <FileText :size="13" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ planTabLabel }}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          class="workspace-view-tab peek-card-tab"
+                          :class="{ active: sidebarTab === 'subagents' }"
+                          :aria-label="subagentTabLabel"
+                          @click="selectSidebarTab('subagents')"
+                        >
+                          <SubagentIcon
+                            :status="runningSubagentCount ? 'running' : 'idle'"
+                            :size="13"
+                          />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ subagentTabLabel }}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip v-if="openedImageSources.length">
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          class="workspace-view-tab peek-card-tab"
+                          :class="{ active: sidebarTab === 'image' }"
+                          :aria-label="imageTabLabel"
+                          @click="selectSidebarTab('image')"
+                        >
+                          <ImageIcon :size="13" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ imageTabLabel }}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip v-if="runtimeDebugEnabled">
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          class="workspace-view-tab peek-card-tab"
+                          :class="{ active: sidebarTab === 'runtime' }"
+                          :aria-label="runtimeTabLabel"
+                          @click="selectSidebarTab('runtime')"
+                        >
+                          <Bug :size="13" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ runtimeTabLabel }}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip v-for="tab in pluginViewTabs" :key="tab.id">
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          class="workspace-view-tab peek-card-tab"
+                          :class="{ active: sidebarTab === tab.id }"
+                          :aria-label="tab.title"
+                          @click="selectSidebarTab(tab.id)"
+                        >
+                          <PluginSidebarIcon :name="tab.icon" :size="13" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ tab.title }}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                   <button
                     type="button"
                     class="sidebar-close-button"
@@ -204,6 +265,13 @@
                     :width="diffSidebarWidth"
                     :focus-path="diffFocusPath"
                     :focus-at="diffFocusAt"
+                    embedded
+                  />
+                  <PlanPreviewSidebar
+                    v-show="sidebarTab === 'plan'"
+                    :session-id="activeSessionId"
+                    :messages="messages"
+                    :width="diffSidebarWidth"
                     embedded
                   />
                   <SubagentSidebar
@@ -226,6 +294,13 @@
                     :selected-source="selectedImageSource"
                     @select="selectedImageSource = $event"
                     @close="closeImageTab"
+                  />
+                  <PluginSlotOutlet
+                    class="plugin-review-host"
+                    anchor-id="sidebar.tabs"
+                    chrome="views"
+                    :active-id="sidebarTab"
+                    :host-active="sidebarOpen"
                   />
                 </div>
               </aside>
@@ -287,6 +362,7 @@ import {
   Bug,
   CircleAlert,
   FileDiff,
+  FileText,
   Image as ImageIcon,
   Minus,
   PanelRight,
@@ -302,6 +378,7 @@ import ChatInputBar, {
   type PathPermissionSession,
 } from "@/components/chat/ChatInputBar.vue";
 import CodeDiffSidebar from "@/components/chat/CodeDiffSidebar.vue";
+import PlanPreviewSidebar from "@/components/chat/PlanPreviewSidebar.vue";
 import AgentDebugPanel from "@/components/chat/AgentDebugPanel.vue";
 import SubagentSidebar from "@/components/chat/SubagentSidebar.vue";
 import SubagentIcon from "@/components/chat/SubagentIcon.vue";
@@ -329,11 +406,17 @@ import {
   branchChatSession,
 } from "@/services/ipc";
 import { useChatStore } from "@/stores/chat";
+import { useChatSessionsStore } from "@/stores/chatSessions";
 import { useSettingStore } from "@/stores/setting";
+import { usePluginsStore } from "@/stores/plugins";
+import PluginSlotOutlet from "@/components/plugins/PluginSlotOutlet.vue";
+import PluginSidebarIcon from "@/components/plugins/PluginSidebarIcon.vue";
+import { tabShowsOn } from "@/composables/plugins/slotRegistry";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { tr } from "@/services/i18n";
 import { SUBAGENT_TOOLS } from "@/services/chat/subagentTools";
+import { parseAskUserAnswerItems } from "@/services/chat/askUserAnswer";
 import type {
-  AskUserAnswerItem,
   CapturedContext,
   ChatSessionSummary,
   CheckpointInfo,
@@ -346,6 +429,7 @@ import {
   parseSelectionAttachment,
   selectionLineCount,
 } from "@/services/chat/selectionAttachment";
+import type { AttachedFileChip } from "@/services/chat/attachFiles";
 
 // Lazy: keeps Markdown/echarts out of the Alt+Alt input-mode boot path.
 const MessageList = defineAsyncComponent(() => import("@/components/chat/MessageList.vue"));
@@ -385,7 +469,22 @@ const emit = defineEmits<{
 }>();
 
 const chatStore = useChatStore();
+const chatSessionsStore = useChatSessionsStore();
 const settingStore = useSettingStore();
+const pluginsStore = usePluginsStore();
+const pluginSidebarTabs = computed(() => pluginsStore.sidebarTabs);
+const pluginViewTabs = computed(() =>
+  pluginSidebarTabs.value.filter((tab) => tabShowsOn(tab.surfaces, "views")),
+);
+
+watch(
+  () => pluginsStore.activeSidebarTabId,
+  (id) => {
+    if (id && pluginSidebarTabs.value.some((tab) => tab.id === id)) {
+      selectSidebarTab(id);
+    }
+  },
+);
 const { sessions, overlayDraftSessionId, overlayContextNotice } = storeToRefs(chatStore);
 // The runtime/debug sidebar tab is a development aid; hide it in packaged builds.
 const runtimeDebugEnabled = import.meta.env.DEV;
@@ -407,6 +506,7 @@ const checkpoints = ref<CheckpointInfo[]>([]);
 const historySessions = ref<ChatSessionSummary[] | null>(null);
 const PUBLIC_HISTORY_LIMIT = 10;
 const diffSidebarOpen = ref(false);
+const planSidebarOpen = ref(false);
 const subagentSidebarOpen = ref(false);
 const runtimeSidebarOpen = ref(false);
 const imageSidebarOpen = ref(false);
@@ -416,14 +516,17 @@ const openedSubagentIds = ref<string[]>([]);
 const selectedSubagentId = ref("");
 const diffFocusPath = ref("");
 const diffFocusAt = ref(0);
-type SidebarTab = "diff" | "subagents" | "runtime" | "image";
+type SidebarTab = "diff" | "plan" | "subagents" | "runtime" | "image" | (string & {});
 const sidebarTab = ref<SidebarTab>("diff");
+const pluginSidebarOpen = ref(false);
 const sidebarOpen = computed(
   () =>
     diffSidebarOpen.value ||
+    planSidebarOpen.value ||
     subagentSidebarOpen.value ||
     runtimeSidebarOpen.value ||
-    imageSidebarOpen.value,
+    imageSidebarOpen.value ||
+    pluginSidebarOpen.value,
 );
 const panelStyle = computed(() => ({
   "--workspace-sidebar-width": sidebarOpen.value
@@ -474,6 +577,7 @@ const runningSubagentCount = computed(
 const subagentTabLabel = computed(() => tr(settingStore.language, "sidebar.subagents"));
 const imageTabLabel = computed(() => tr(settingStore.language, "sidebar.image"));
 const diffTabLabel = computed(() => tr(settingStore.language, "sidebar.diff"));
+const planTabLabel = computed(() => tr(settingStore.language, "planProposalTitle"));
 const runtimeTabLabel = computed(() => tr(settingStore.language, "sidebar.runtime"));
 const sidebarViewsLabel = computed(() => tr(settingStore.language, "sidebar.views"));
 const sidebarCloseLabel = computed(() => tr(settingStore.language, "sidebar.close"));
@@ -526,6 +630,15 @@ watch(
   [activeSessionId, panelVisible],
   ([sessionId, visible]) => void setWindowSessionView(visible ? sessionId : undefined),
   { immediate: true },
+);
+watch(
+  () => props.mode,
+  (newMode) => {
+    if (newMode === "input") {
+      chatStore.setOverlayDraftSession("");
+      inputRef.value?.reset();
+    }
+  },
 );
 const chatTitle = computed(() => {
   const userMsg = messages.value.find((message) => String(message.role).toLowerCase() === "user");
@@ -659,18 +772,27 @@ function selectSidebarTab(tab: SidebarTab) {
   }
   sidebarTab.value = tab;
   diffSidebarOpen.value = tab === "diff";
+  planSidebarOpen.value = tab === "plan";
   subagentSidebarOpen.value = tab === "subagents";
   runtimeSidebarOpen.value = tab === "runtime";
   imageSidebarOpen.value = tab === "image";
+  pluginSidebarOpen.value = pluginSidebarTabs.value.some((item) => item.id === tab);
+  if (pluginSidebarOpen.value) pluginsStore.activeSidebarTabId = String(tab);
   emitComposerLayout();
+}
+
+function openPlanSidebar() {
+  selectSidebarTab("plan");
 }
 
 function closeSidebar() {
   if (!sidebarOpen.value) return;
   diffSidebarOpen.value = false;
+  planSidebarOpen.value = false;
   subagentSidebarOpen.value = false;
   runtimeSidebarOpen.value = false;
   imageSidebarOpen.value = false;
+  pluginSidebarOpen.value = false;
 }
 
 function availableDiffSidebarWidth() {
@@ -806,18 +928,29 @@ async function handleSubmit(text: string) {
     return;
   }
 
-  // Snapshot before enterChat/contextConsumed. Consuming capture context used
-  // to clear the composer workspace and mis-file the turn as Quick Ask.
-  const sendOptions = resolveOverlaySendOptions();
-
   if (props.mode === "chat") {
-    await chatStore.send(trimmed, activeSessionId.value, sendOptions);
+    const summary = activeSessionId.value
+      ? chatSessionsStore.summaries.find((s) => s.sessionId === activeSessionId.value)
+      : null;
+    const sessionWorkspaceId =
+      summary?.workspaceId ??
+      (activeSessionId.value
+        ? chatStore.sessionCompose[activeSessionId.value]?.draftWorkspaceId
+        : null) ??
+      null;
+    const isQuickAsk = !sessionWorkspaceId;
+    const chatSendOptions = isQuickAsk
+      ? { quickAsk: true }
+      : { workspaceId: sessionWorkspaceId ?? undefined, quickAsk: false };
+    await chatStore.send(trimmed, activeSessionId.value, chatSendOptions);
     return;
   }
 
   if (sending.value) {
     return;
   }
+
+  const sendOptions = resolveOverlaySendOptions();
 
   const sessionId = createSessionId();
   const messageWithSelection = attachSelection(trimmed, selectedText.value);
@@ -975,31 +1108,9 @@ async function handleAskUserComplete(answer: string) {
   emitComposerLayout();
 
   // 用选择卡片展示回答，不显示 ask_user 原始 JSON
-  try {
-    const parsed = JSON.parse(answer) as {
-      skipped?: boolean;
-      answers?: Array<{
-        header?: string;
-        question?: string;
-        selected?: string[];
-        userSupplement?: boolean;
-      }>;
-    };
-
-    const items: AskUserAnswerItem[] =
-      parsed.answers
-        ?.map((item) => ({
-          header: String(item.header ?? "").trim() || undefined,
-          selected: (item.selected ?? []).map((v) => String(v).trim()).filter(Boolean),
-          userSupplement: Boolean(item.userSupplement),
-        }))
-        .filter((item) => item.userSupplement || item.selected.length > 0) ?? [];
-
-    if (items.length > 0) {
-      chatStore.stageAskUserAnswer(activeSessionId.value, items);
-    }
-  } catch {
-    // ignore formatting errors
+  const items = parseAskUserAnswerItems(answer);
+  if (items.length > 0) {
+    chatStore.stageAskUserAnswer(activeSessionId.value, items);
   }
 
   try {
@@ -1162,13 +1273,28 @@ async function refreshCheckpoints() {
   }
 }
 
-async function handleRewound(payload: { text: string }) {
-  await chatStore.loadHistory(activeSessionId.value);
+async function handleRewound(payload: {
+  text: string;
+  images?: string[];
+  attachedFiles?: AttachedFileChip[];
+  resend?: boolean;
+}) {
+  const sessionId = activeSessionId.value;
+  if (sessionId) chatStore.clearSending(sessionId);
+  await chatStore.loadHistory(sessionId);
   await refreshCheckpoints();
+  if (payload.resend && payload.text) {
+    if (activeSessionId.value) chatStore.clearSending(activeSessionId.value);
+    await handleSubmit(payload.text);
+    return;
+  }
   if (payload.text) {
     inputRef.value?.setMessage(payload.text);
   } else {
     void inputRef.value?.focusInput();
+  }
+  if (payload.images?.length || payload.attachedFiles?.length) {
+    inputRef.value?.restoreAttachments(payload.images, payload.attachedFiles);
   }
 }
 
@@ -1534,13 +1660,18 @@ onUnmounted(() => {
   gap: 2px;
   background: color-mix(in srgb, var(--peek-text) 1.5%, transparent);
 }
+.workspace-sidebar-tabs :deep([data-slot="tooltip"]) {
+  display: contents;
+}
 
 .workspace-sidebar-tabs .workspace-view-tab {
-  flex: 0 1 auto;
-  gap: 6px;
-  min-width: 68px;
+  flex: none;
+  gap: 0;
+  min-width: 30px;
+  width: 30px;
   height: 30px;
-  padding: 0 9px;
+  padding: 0;
+  justify-content: center;
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -1560,12 +1691,6 @@ onUnmounted(() => {
 }
 .workspace-sidebar-tabs .workspace-view-tab > svg {
   flex: none;
-}
-.workspace-sidebar-tabs .workspace-view-tab > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .workspace-sidebar-tabs .sidebar-close-button {
   flex: none;
@@ -1589,21 +1714,19 @@ onUnmounted(() => {
 .workspace-sidebar-content {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   overflow: hidden;
+}
+.workspace-sidebar-content :deep(.plugin-review-host) {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
 
 @container workspace-sidebar (max-width: 560px) {
   .workspace-sidebar-tabs .workspace-view-tab {
     flex: none;
-    min-width: 32px;
-    width: 32px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .workspace-sidebar-tabs .workspace-view-tab > span {
-    display: none;
   }
 }
 
@@ -1693,11 +1816,12 @@ onUnmounted(() => {
 }
 
 .peek-panel.chat :deep(.message-list) {
+  --code-block-sticky-top: 0;
+  --chat-sticky-top: 0;
   position: relative;
   z-index: 2;
-  padding-top: 42px;
+  padding: 42px 16px calc(var(--composer-overlap, 12px) + var(--composer-clearance, 90px));
   scroll-padding-top: 42px;
-  padding-bottom: calc(var(--composer-overlap, 12px) + var(--composer-clearance, 90px));
 }
 
 .thread-header {
@@ -1779,8 +1903,8 @@ onUnmounted(() => {
 }
 
 .composer-dock.expanded {
-  width: calc(100% - 2px);
-  margin: 0 1px 1px;
+  width: calc(100% - (2 * var(--thread-side-gap)));
+  margin: 0 auto 1px;
   border-radius: 8px;
   background: linear-gradient(
     180deg,

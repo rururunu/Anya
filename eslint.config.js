@@ -22,6 +22,7 @@ export default [
       ".anya/**",
       "*.msi",
       "coverage/**",
+      "target/**",
     ],
   },
   js.configs.recommended,

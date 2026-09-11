@@ -96,6 +96,10 @@
   color: color-mix(in srgb, #2563eb 68%, var(--peek-text));
 }
 
+.composer-editable .ce-token-plugin {
+  color: color-mix(in srgb, #7c3aed 68%, var(--peek-text));
+}
+
 /* Contenteditable shares .composer-textarea sizing rules from ChatInputBar. */
 .workbench-composer .composer-editable.composer-textarea,
 .overlay-composer .composer-editable.composer-textarea {

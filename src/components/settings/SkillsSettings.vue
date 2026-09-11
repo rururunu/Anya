@@ -87,8 +87,14 @@
             <SettingsToggle
               v-if="skill.source === 'builtin'"
               :model-value="isBuiltinEnabled(skill.name)"
-              :disabled="busy"
-              :title="isBuiltinEnabled(skill.name) ? copy.enabled : copy.disabled"
+              :disabled="busy || isPlatformBuiltin(skill.name)"
+              :title="
+                isPlatformBuiltin(skill.name)
+                  ? copy.alwaysOn
+                  : isBuiltinEnabled(skill.name)
+                    ? copy.enabled
+                    : copy.disabled
+              "
               @click.prevent="toggleBuiltin(skill.name)"
             />
             <CatalogRoundAction
@@ -340,6 +346,7 @@ const copy = computed(() => {
     collapse: tr(language, "skills.collapse"),
     enabled: tr(language, "skills.enabled"),
     disabled: tr(language, "skills.disabled"),
+    alwaysOn: language === "zh-CN" ? "始终开启" : "Always on",
   };
 });
 
@@ -368,7 +375,14 @@ function isSkillInstalled(entry: SmitherySkillSummary) {
   return skills.value.some((skill) => isSameSkillInstall(skill, entry));
 }
 
+const PLATFORM_BUILTIN_SKILLS = new Set(["plugin_creator"]);
+
+function isPlatformBuiltin(name: string) {
+  return PLATFORM_BUILTIN_SKILLS.has(name);
+}
+
 function isBuiltinEnabled(name: string) {
+  if (isPlatformBuiltin(name)) return true;
   return (settingStore.enabledBuiltinSkills ?? []).includes(name);
 }
 
@@ -376,13 +390,18 @@ function localPills(skill: SkillInfo) {
   if (skill.source === "builtin") {
     return [
       copy.value.builtin,
-      isBuiltinEnabled(skill.name) ? copy.value.enabled : copy.value.disabled,
+      isPlatformBuiltin(skill.name)
+        ? copy.value.alwaysOn
+        : isBuiltinEnabled(skill.name)
+          ? copy.value.enabled
+          : copy.value.disabled,
     ];
   }
   return [copy.value.user];
 }
 
 async function toggleBuiltin(name: string) {
+  if (isPlatformBuiltin(name)) return;
   const current = settingStore.enabledBuiltinSkills ?? [];
   const next = current.includes(name)
     ? current.filter((item) => item !== name)

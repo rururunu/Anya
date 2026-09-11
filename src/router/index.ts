@@ -19,6 +19,10 @@ const router = createRouter({
       path: "/image-preview",
       component: () => import("@/pages/ImagePreview.vue"),
     },
+    {
+      path: "/desktop-pet",
+      component: () => import("@/pages/DesktopPet.vue"),
+    },
   ],
 });
 

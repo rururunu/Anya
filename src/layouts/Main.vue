@@ -3,15 +3,22 @@
     class="workbench"
     :class="{
       'is-glass': settingStore.chromeFrostedGlass,
+      'has-custom-bg': hasCustomBg,
       'navigation-closed': !navigationOpen,
       'navigation-resizing': navigationResizing,
       'is-settings': settingsOpen,
       'is-maximized': isMaximized,
+      'is-unfocused': !windowFocused,
     }"
     :data-theme="builtInTheme"
     @click="workspaceMenuId = ''"
   >
     <div class="glass-chrome" aria-hidden="true" />
+    <WorkbenchPluginBackdrop v-if="pluginBackdrop" :window-focused="windowFocused" />
+    <div v-else-if="activeBackground?.image" class="workbench-custom-backdrop" aria-hidden="true">
+      <div class="workbench-custom-backdrop-image" :style="backdropImageStyle" />
+      <div class="workbench-custom-backdrop-overlay" />
+    </div>
     <AppConfirmDialog ref="confirmDialogRef" />
     <EditWorkspaceDialog ref="editWorkspaceDialogRef" />
     <RenameSessionDialog ref="renameSessionDialogRef" />
@@ -223,6 +230,17 @@
                   />
                 </span>
                 <span>{{ navigationLabels.connectPhone }}</span>
+              </button>
+              <button
+                v-for="tab in pluginNavTabs"
+                :key="tab.id"
+                type="button"
+                class="nav-shortcut-button"
+                :class="{ active: isPluginNavActive(tab) }"
+                @click.stop="togglePluginSidebar(tab.id)"
+              >
+                <PluginSidebarIcon :name="tab.icon" :size="15" />
+                <span>{{ tab.title }}</span>
               </button>
             </div>
 
@@ -465,8 +483,8 @@
         <section
           class="conversation-pane peek-pane"
           :class="{
-            'empty-conversation': !extensionView && !hasConversationMessages,
-            'extension-open': Boolean(extensionView),
+            'empty-conversation': !extensionView && !pluginMainView && !hasConversationMessages,
+            'extension-open': Boolean(extensionView) || Boolean(pluginMainView),
           }"
           :style="composerOverlayStyle"
         >
@@ -477,6 +495,18 @@
           >
             <span class="conversation-header-spacer" aria-hidden="true" />
             <p class="conversation-title" :title="activeTitle">{{ activeTitle }}</p>
+            <button
+              v-for="tab in pluginHeaderTabs"
+              :key="tab.id"
+              type="button"
+              class="icon-button"
+              :class="{ active: !tabIsChromeAction(tab.surfaces) && isPluginNavActive(tab) }"
+              :title="tab.title"
+              :aria-label="tab.title"
+              @click="onPluginHeaderClick(tab)"
+            >
+              <PluginSidebarIcon :name="tab.icon" :size="15" />
+            </button>
             <button
               v-if="!reviewOpen"
               type="button"
@@ -491,143 +521,167 @@
             </button>
           </header>
 
-          <div v-if="extensionView" class="extension-pane">
+          <div v-show="extensionView || pluginMainView" class="extension-pane">
             <div class="extension-scroll peek-scrollbar">
               <div class="extension-panel">
-                <PluginsPanel v-if="extensionView === 'plugins'" />
-                <ConnectPhonePanel v-else-if="extensionView === 'phone'" />
+                <PluginsPanel v-show="extensionView === 'plugins'" />
+                <ConnectPhonePanel v-if="extensionView === 'phone'" />
+                <div v-else-if="pluginMainView" class="plugin-main-view">
+                  <PluginSlotOutlet anchor-id="workbench.main" />
+                </div>
               </div>
             </div>
           </div>
-          <template v-else>
-            <div v-if="contextNotice" class="context-notice" role="status">
-              <CircleAlert :size="14" :stroke-width="1.8" aria-hidden="true" />
-              <span>{{ contextNotice }}</span>
-            </div>
-            <Transition name="empty-hero">
+          <Teleport :disabled="!pluginChatMountEl" :to="pluginChatMountEl || 'body'">
+            <div
+              v-show="pluginChatMountEl || (!extensionView && !pluginMainView)"
+              class="conversation-stack"
+              :class="{ 'is-embedded': Boolean(pluginChatMountEl) }"
+            >
+              <div v-if="contextNotice" class="context-notice" role="status">
+                <CircleAlert :size="14" :stroke-width="1.8" aria-hidden="true" />
+                <span>{{ contextNotice }}</span>
+              </div>
+              <PluginSlotOutlet
+                v-if="pluginsStore.conversationWorkspacePluginId"
+                class="peek-scrollbar"
+                anchor-id="conversation.materials"
+                :plugin-id="pluginsStore.conversationWorkspacePluginId"
+                fit="content"
+                layout="rail"
+              />
+              <Transition name="empty-hero">
+                <div
+                  v-if="!viewingSubagent && !hasConversationMessages"
+                  class="empty-conversation-hero"
+                >
+                  <div
+                    class="empty-conversation-brand"
+                    data-onboarding-logo-target
+                    aria-hidden="true"
+                  >
+                    <MascotFace
+                      interactive
+                      :tool="heroMascotTool"
+                      :look-at="composerFocused ? composerWrapRef : null"
+                    />
+                  </div>
+                  <p class="empty-conversation-prompt">
+                    {{ emptyConversationPrompt }}
+                  </p>
+                </div>
+              </Transition>
+              <AppErrorBoundary v-if="viewingSubagent" compact class="workbench-messages">
+                <SubagentConversationPanel
+                  class="workbench-messages"
+                  :session-id="activeSessionId"
+                  :parent-messages="parentMessages"
+                  :language="settingStore.language"
+                  :show-reasoning="settingStore.showReasoning"
+                  :display-mode="settingStore.agentWorkDisplay"
+                />
+              </AppErrorBoundary>
+              <AppErrorBoundary v-else compact class="workbench-messages">
+                <MessageList
+                  class="workbench-messages"
+                  :messages="conversationMessages"
+                  :session-id="activeSessionId"
+                  :checkpoints="checkpoints"
+                  @rewound="handleRewound"
+                  @branch="handleBranchMessage"
+                  @review-changes="openReview('diff')"
+                  @review-file="openReviewFile"
+                  @review-plan="openReview('plan')"
+                  @inspect-subagent="openAgentReview"
+                  @preview-image="previewImage"
+                  @edit-from-image="handleEditFromImage"
+                />
+              </AppErrorBoundary>
+
               <div
-                v-if="!viewingSubagent && !hasConversationMessages"
-                class="empty-conversation-hero"
+                v-if="!viewingSubagent"
+                ref="composerWrapRef"
+                class="composer-wrap"
+                :class="{ 'has-interaction-picker': Boolean(activePendingInteraction) }"
+                @focusin="composerFocused = true"
+                @focusout="composerFocused = false"
               >
                 <div
-                  class="empty-conversation-brand"
-                  data-onboarding-logo-target
-                  aria-hidden="true"
+                  v-if="stagedMessages.length"
+                  class="staged-wrap peek-scrollbar"
+                  data-tauri-drag-region="false"
                 >
-                  <MascotFace
-                    interactive
-                    :tool="heroMascotTool"
-                    :look-at="composerFocused ? composerWrapRef : null"
-                  />
-                </div>
-                <p class="empty-conversation-prompt">
-                  {{ emptyConversationPrompt }}
-                </p>
-              </div>
-            </Transition>
-            <AppErrorBoundary v-if="viewingSubagent" compact class="workbench-messages">
-              <SubagentConversationPanel
-                class="workbench-messages"
-                :session-id="activeSessionId"
-                :parent-messages="parentMessages"
-                :language="settingStore.language"
-                :show-reasoning="settingStore.showReasoning"
-                :display-mode="settingStore.agentWorkDisplay"
-              />
-            </AppErrorBoundary>
-            <AppErrorBoundary v-else compact class="workbench-messages">
-              <MessageList
-                class="workbench-messages"
-                :messages="conversationMessages"
-                :session-id="activeSessionId"
-                :checkpoints="checkpoints"
-                @rewound="handleRewound"
-                @branch="handleBranchMessage"
-                @review-changes="openReview('diff')"
-                @review-file="openReviewFile"
-                @inspect-subagent="openAgentReview"
-                @preview-image="previewImage"
-                @edit-from-image="handleEditFromImage"
-              />
-            </AppErrorBoundary>
-
-            <div
-              v-if="!viewingSubagent"
-              ref="composerWrapRef"
-              class="composer-wrap"
-              :class="{ 'has-interaction-picker': Boolean(activePendingInteraction) }"
-              @focusin="composerFocused = true"
-              @focusout="composerFocused = false"
-            >
-              <div
-                v-if="stagedMessages.length"
-                class="staged-wrap peek-scrollbar"
-                data-tauri-drag-region="false"
-              >
-                <div class="staged-list">
-                  <div
-                    v-for="(message, index) in stagedMessages"
-                    :key="`${index}-${message}`"
-                    class="staged-item"
-                  >
-                    <span class="staged-item-text">{{ message }}</span>
-                    <span class="staged-item-actions">
-                      <button
-                        type="button"
-                        class="staged-btn staged-btn-guide"
-                        :title="labels.guideOneHint"
-                        @click="guideStaged(index)"
-                      >
-                        <CornerDownLeft :size="13" />
-                      </button>
-                      <button
-                        type="button"
-                        class="staged-btn"
-                        :title="labels.editStaged"
-                        @click="startStagedEdit(index)"
-                      >
-                        <Pencil :size="13" />
-                      </button>
-                      <button
-                        type="button"
-                        class="staged-btn staged-btn-danger"
-                        :title="labels.removeStaged"
-                        @click="removeStaged(index)"
-                      >
-                        <Trash2 :size="13" />
-                      </button>
-                    </span>
+                  <div class="staged-list">
+                    <div
+                      v-for="(message, index) in stagedMessages"
+                      :key="`${index}-${message}`"
+                      class="staged-item"
+                    >
+                      <span class="staged-item-text">{{ message }}</span>
+                      <span class="staged-item-actions">
+                        <button
+                          type="button"
+                          class="staged-btn staged-btn-guide"
+                          :title="labels.guideOneHint"
+                          @click="guideStaged(index)"
+                        >
+                          <CornerDownLeft :size="13" />
+                        </button>
+                        <button
+                          type="button"
+                          class="staged-btn"
+                          :title="labels.editStaged"
+                          @click="startStagedEdit(index)"
+                        >
+                          <Pencil :size="13" />
+                        </button>
+                        <button
+                          type="button"
+                          class="staged-btn staged-btn-danger"
+                          :title="labels.removeStaged"
+                          @click="removeStaged(index)"
+                        >
+                          <Trash2 :size="13" />
+                        </button>
+                      </span>
+                    </div>
                   </div>
                 </div>
+                <PluginSlotOutlet
+                  class="plugin-composer-slot"
+                  anchor-id="composer.accessory"
+                  fit="content"
+                  layout="wrap"
+                />
+                <ChatInputBar
+                  ref="inputRef"
+                  :sending="sending"
+                  :close-on-escape="false"
+                  appearance="workbench"
+                  overlay-pickers
+                  :context-ready="true"
+                  :session-id="activeSessionId"
+                  :ask-user="askUserSession"
+                  :path-permission="pathPermissionSession"
+                  :tool-approval="toolApprovalSession"
+                  @submit="submitMessage"
+                  @pause="pauseResponse"
+                  @ask-user-complete="completeAskUser"
+                  @path-permission-complete="completePathPermission"
+                  @tool-approval-complete="completeToolApproval"
+                  @preview-image="previewImage"
+                  @show-context="handleShowContext"
+                  @open-history="openSearchPalette"
+                  @close="handleCreateQuickConversation"
+                />
               </div>
-              <ChatInputBar
-                ref="inputRef"
-                :sending="sending"
-                :close-on-escape="false"
-                appearance="workbench"
-                overlay-pickers
-                :context-ready="true"
-                :session-id="activeSessionId"
-                :ask-user="askUserSession"
-                :path-permission="pathPermissionSession"
-                :tool-approval="toolApprovalSession"
-                @submit="submitMessage"
-                @pause="pauseResponse"
-                @ask-user-complete="completeAskUser"
-                @path-permission-complete="completePathPermission"
-                @tool-approval-complete="completeToolApproval"
-                @preview-image="previewImage"
-                @show-context="handleShowContext"
-                @open-history="openSearchPalette"
-                @close="handleCreateQuickConversation"
-              />
             </div>
-          </template>
+          </Teleport>
         </section>
 
         <Transition name="review-panel">
           <div
-            v-if="reviewOpen"
+            v-show="reviewOpen"
             class="review-shell"
             :style="{ '--review-pane-width': `${reviewWidth + REVIEW_RESIZE_HANDLE_WIDTH}px` }"
           >
@@ -649,18 +703,40 @@
             />
             <aside class="review-pane">
               <header class="review-header">
-                <div class="review-tabs" role="tablist" :aria-label="labels.views">
-                  <button
-                    v-for="view in reviewViews"
-                    :key="view.id"
-                    type="button"
-                    :class="{ active: reviewView === view.id }"
-                    @click="reviewView = view.id"
-                  >
-                    <component :is="view.icon" :size="14" />
-                    <span>{{ view.label }}</span>
-                  </button>
-                </div>
+                <TooltipProvider :delay-duration="220">
+                  <div class="review-tabs" role="tablist" :aria-label="labels.views">
+                    <Tooltip v-for="view in reviewViews" :key="view.id">
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          :class="{ active: reviewView === view.id }"
+                          :aria-label="view.label"
+                          @click="selectReviewView(view.id)"
+                        >
+                          <component :is="view.icon" :size="14" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ view.label }}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip v-for="tab in pluginViewTabs" :key="tab.id">
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          :class="{ active: reviewView === tab.id }"
+                          :aria-label="tab.title"
+                          @click="selectReviewView(tab.id)"
+                        >
+                          <PluginSidebarIcon :name="tab.icon" :size="14" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ tab.title }}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TooltipProvider>
                 <button
                   type="button"
                   class="small-icon-button"
@@ -678,7 +754,21 @@
                 :focus-path="reviewFocusPath"
                 :focus-at="reviewFocusAt"
               />
+              <PlanPreviewSidebar
+                v-show="reviewView === 'plan'"
+                embedded
+                :session-id="activeSessionId"
+                :messages="messages"
+                :width="reviewWidth"
+              />
               <AgentDebugPanel v-show="reviewView === 'runtime'" embedded />
+              <PluginSlotOutlet
+                class="plugin-review-host"
+                anchor-id="sidebar.tabs"
+                exclude-main-pane
+                :active-id="reviewView"
+                :host-active="reviewOpen"
+              />
             </aside>
           </div>
         </Transition>
@@ -780,6 +870,7 @@ import AppErrorBoundary from "@/components/AppErrorBoundary.vue";
 import AgentDebugPanel from "@/components/chat/AgentDebugPanel.vue";
 import ChatInputBar from "@/components/chat/ChatInputBar.vue";
 import CodeDiffSidebar from "@/components/chat/CodeDiffSidebar.vue";
+import PlanPreviewSidebar from "@/components/chat/PlanPreviewSidebar.vue";
 import ImageLightbox from "@/components/chat/ImageLightbox.vue";
 import MessageList from "@/components/chat/MessageList.vue";
 import SubagentConversationPanel from "@/components/chat/SubagentConversationPanel.vue";
@@ -819,9 +910,27 @@ import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore, applyZoom, applyTheme } from "@/stores/setting";
 import { normalizeChatMode, type ChatMode } from "@/types/setting";
 import { useUpdaterStore } from "@/stores/updater";
+import { usePluginsStore } from "@/stores/plugins";
 import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
+import { useResolvedBackgroundSrc } from "@/composables/theme/useResolvedBackgroundSrc";
 import type { Workspace } from "@/commands/workspace";
 import type { CapturedContext } from "@/types/chat";
+import PluginSlotOutlet from "@/components/plugins/PluginSlotOutlet.vue";
+import PluginSidebarIcon from "@/components/plugins/PluginSidebarIcon.vue";
+import WorkbenchPluginBackdrop from "@/components/plugins/WorkbenchPluginBackdrop.vue";
+import { getAssetOverride } from "@/composables/plugins/assetRegistry";
+import {
+  tabIsChromeAction,
+  tabOpensMainPane,
+  tabShowsOn,
+  type PluginChromeSurface,
+} from "@/composables/plugins/slotRegistry";
+import {
+  bindPluginAgentSession,
+  bindPluginConversationSend,
+  listenPluginAskAnya,
+  pluginChatMountEl,
+} from "@/composables/plugins/conversationSend";
 
 const SettingsPage = defineAsyncComponent(() => import("@/pages/Settings/index.vue"));
 const PluginsPanel = defineAsyncComponent(() => import("@/components/workbench/PluginsPanel.vue"));
@@ -839,6 +948,18 @@ const sessionsStore = useChatSessionsStore();
 const { summaries: sessions } = storeToRefs(sessionsStore);
 const subagentSessionStore = useSubagentSessionStore();
 const settingStore = useSettingStore();
+const pluginsStore = usePluginsStore();
+const pluginMainView = computed(() => pluginsStore.mainView);
+const pluginSidebarTabs = computed(() => pluginsStore.sidebarTabs);
+const pluginNavTabs = computed(() =>
+  pluginSidebarTabs.value.filter((tab) => tabShowsOn(tab.surfaces, "nav")),
+);
+const pluginHeaderTabs = computed(() =>
+  pluginSidebarTabs.value.filter((tab) => tabShowsOn(tab.surfaces, "header")),
+);
+const pluginViewTabs = computed(() =>
+  pluginSidebarTabs.value.filter((tab) => tabShowsOn(tab.surfaces, "views")),
+);
 const updaterStore = useUpdaterStore();
 const appDisplayName = "Anya";
 const isDevBuild = import.meta.env.DEV;
@@ -859,6 +980,54 @@ function handleEditFromImage(payload: { images: string[]; draftText?: string; re
 /** Extra space between the last message and the composer. */
 const COMPOSER_CLEARANCE_EXTRA = 12;
 let composerResizeObserver: ResizeObserver | null = null;
+
+const pluginBackdrop = computed(() => getAssetOverride("workbench.backdrop"));
+const activeBackground = computed(() => {
+  const currentThemeId = settingStore.colorScheme;
+  const customTheme = settingStore.customThemes.find((t) => t.id === currentThemeId);
+  if (customTheme?.background?.image) {
+    return customTheme.background;
+  }
+  return settingStore.customBackground;
+});
+const hasCustomBg = computed(() => Boolean(pluginBackdrop.value || activeBackground.value?.image));
+
+const { resolvedSource: backdropImageSrc } = useResolvedBackgroundSrc(
+  () => activeBackground.value?.image,
+);
+
+const backdropImageStyle = computed<CSSProperties>(() => {
+  const bg = activeBackground.value;
+  if (!bg?.image || !backdropImageSrc.value) return {};
+  const opacity = typeof bg.opacity === "number" ? bg.opacity : 0.2;
+  const blur = typeof bg.blur === "number" ? bg.blur : 0;
+  const fit = (bg.fit as CSSProperties["backgroundSize"]) || "cover";
+
+  return {
+    backgroundImage: `url(${JSON.stringify(backdropImageSrc.value)})`,
+    backgroundSize: fit,
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+    opacity,
+    filter: blur > 0 ? `blur(${blur}px)` : "none",
+  };
+});
+
+watch(
+  hasCustomBg,
+  (hasBg) => {
+    if (typeof document !== "undefined") {
+      document.documentElement.classList.toggle("has-custom-bg", hasBg);
+    }
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  if (typeof document !== "undefined") {
+    document.documentElement.classList.remove("has-custom-bg");
+  }
+});
 
 const composerOverlayStyle = computed(() => {
   const height = composerFootprint.value;
@@ -942,6 +1111,8 @@ const {
 
 function openSettings(category?: Parameters<typeof openSettingsPanel>[0]) {
   extensionView.value = null;
+  pluginsStore.activeSidebarTabId = null;
+  pluginsStore.conversationWorkspacePluginId = null;
   openSettingsPanel(category);
 }
 
@@ -1100,6 +1271,8 @@ const {
 
 function handleCreateQuickConversation() {
   extensionView.value = null;
+  pluginsStore.clearMainView();
+  pluginsStore.activeSidebarTabId = null;
   return createQuickConversation();
 }
 
@@ -1217,12 +1390,96 @@ watch(workspaceMenuId, (id) => {
 
 function openExtensionView(view: ExtensionView) {
   closeSettings();
+  pluginsStore.clearMainView();
+  pluginsStore.activeSidebarTabId = null;
+  pluginsStore.conversationWorkspacePluginId = null;
   extensionView.value = extensionView.value === view ? null : view;
+}
+
+watch(
+  () => pluginsStore.activeSidebarTabId,
+  (id) => {
+    if (id && pluginsStore.sidebarTabs.some((tab) => tab.id === id)) {
+      extensionView.value = null;
+    }
+  },
+);
+
+function selectReviewView(id: string) {
+  reviewView.value = id;
+  const isPlugin = pluginsStore.sidebarTabs.some((tab) => tab.id === id);
+  pluginsStore.activeSidebarTabId = isPlugin ? id : null;
+  if (!reviewOpen.value) {
+    reviewOpen.value = true;
+    updateReviewWidth();
+    updateNavigationWidth();
+  }
+}
+
+function onPluginHeaderClick(tab: {
+  id: string;
+  pluginId: string;
+  surfaces: PluginChromeSurface[];
+  onClick?: () => void | Promise<void>;
+}) {
+  if (tabIsChromeAction(tab.surfaces)) {
+    void Promise.resolve(tab.onClick?.()).catch((error) => {
+      pluginsStore.recordError({
+        pluginId: tab.pluginId,
+        phase: "mount",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return;
+  }
+  togglePluginSidebar(tab.id);
+}
+
+function togglePluginSidebar(tabId: string) {
+  closeSettings();
+  const tab = pluginSidebarTabs.value.find((item) => item.id === tabId);
+  if (tab && tabOpensMainPane(tab.surfaces)) {
+    reviewOpen.value = false;
+    pluginsStore.activeSidebarTabId = null;
+    pluginsStore.conversationWorkspacePluginId = null;
+    extensionView.value = null;
+    if (pluginsStore.mainView?.id === tab.id) {
+      pluginsStore.clearMainView();
+      return;
+    }
+    pluginsStore.clearMainView();
+    pluginsStore.setMainView({
+      id: tab.id,
+      pluginId: tab.pluginId,
+      title: tab.title,
+      mount: tab.mount,
+    });
+    return;
+  }
+  pluginsStore.clearMainView();
+  extensionView.value = null;
+  if (reviewOpen.value && reviewView.value === tabId) {
+    reviewOpen.value = false;
+    pluginsStore.activeSidebarTabId = null;
+    pluginsStore.conversationWorkspacePluginId = null;
+    return;
+  }
+  if (tab) pluginsStore.conversationWorkspacePluginId = tab.pluginId;
+  selectReviewView(tabId);
+}
+
+function isPluginNavActive(tab: { id: string; pluginId: string; surfaces: PluginChromeSurface[] }) {
+  if (tabIsChromeAction(tab.surfaces)) return false;
+  if (tabOpensMainPane(tab.surfaces)) return pluginMainView.value?.id === tab.id;
+  if (pluginsStore.conversationWorkspacePluginId === tab.pluginId) return true;
+  return reviewOpen.value && reviewView.value === tab.id;
 }
 
 async function handleSelectConversation(sessionId: string) {
   if (consumeSuppressedSessionClick(sessionId)) return;
   extensionView.value = null;
+  pluginsStore.clearMainView();
+  pluginsStore.activeSidebarTabId = null;
   await selectConversation(sessionId);
 }
 
@@ -1232,6 +1489,8 @@ function handleBranchMessage(messageId: string) {
 
 function handleCreateWorkspaceConversation(workspace: Workspace) {
   extensionView.value = null;
+  pluginsStore.clearMainView();
+  pluginsStore.activeSidebarTabId = null;
   return createWorkspaceConversation(workspace);
 }
 
@@ -1246,12 +1505,11 @@ const { searchPaletteOpen, shortcutHelpOpen, openSearchPalette, handleWorkbenchH
     createQuickConversation: handleCreateQuickConversation,
   });
 
-const showConversationHeader = computed(
-  () => !settingsOpen.value && !reviewOpen.value && !extensionView.value,
-);
+const showConversationHeader = computed(() => !settingsOpen.value && !reviewOpen.value);
 
 const activeTitle = computed(() => {
   if (settingsOpen.value) return labels.value.settings;
+  if (pluginMainView.value) return pluginMainView.value.title;
   if (extensionView.value === "plugins") return navigationLabels.value.plugins;
   if (extensionView.value === "phone") return navigationLabels.value.connectPhone;
   if (isSubagentSessionId(activeSessionId.value)) {
@@ -1270,6 +1528,8 @@ const activeTitle = computed(() => {
   return formatSessionPreview(preview) || labels.value.untitled;
 });
 
+const windowFocused = ref(true);
+
 useWorkbenchLifecycle({
   appWindow,
   activeSessionId,
@@ -1279,6 +1539,7 @@ useWorkbenchLifecycle({
   initializing,
   inputRef,
   settingsOpen,
+  windowFocused,
   openSettings,
   syncMaximizedState,
   refreshSessions,
@@ -1313,8 +1574,15 @@ async function refreshRemoteGatewayRunning() {
 }
 
 onMounted(async () => {
+  bindPluginConversationSend((text) => submitMessage(text));
+  bindPluginAgentSession(() => activeSessionId.value);
   window.addEventListener("resize", closeWorkspaceMenu);
   await refreshRemoteGatewayRunning();
+  try {
+    await listenPluginAskAnya();
+  } catch {
+    /* event bridge unavailable in some shells */
+  }
   try {
     remoteGatewayUnlisten = await listen<GatewayStatus>("remote-gateway-status", (event) => {
       remoteGatewayRunning.value = Boolean(event.payload?.running);
@@ -1325,6 +1593,8 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  bindPluginConversationSend(null);
+  bindPluginAgentSession(null);
   window.removeEventListener("resize", closeWorkspaceMenu);
   workspaceMenuScrollTarget?.removeEventListener("scroll", onWorkspaceMenuScroll);
   workspaceMenuScrollTarget = null;
@@ -1343,9 +1613,9 @@ watch(
 );
 
 watch(
-  () => [settingStore.colorScheme, settingStore.language] as const,
-  ([colorScheme, language]) => {
-    applyTheme({ colorScheme, language });
+  () => [settingStore.colorScheme, settingStore.language, settingStore.chromeFrostedGlass] as const,
+  ([colorScheme, language, chromeFrostedGlass]) => {
+    applyTheme({ colorScheme, language, chromeFrostedGlass });
   },
   { immediate: true },
 );
@@ -1357,6 +1627,7 @@ watch(settingsOpen, (open) => {
   applyTheme({
     colorScheme: settingStore.colorScheme,
     language: settingStore.language,
+    chromeFrostedGlass: settingStore.chromeFrostedGlass,
   });
 });
 </script>
@@ -1433,7 +1704,7 @@ watch(settingsOpen, (open) => {
 
 .workbench.is-glass .review-shell,
 .workbench.is-glass .conversation-pane {
-  background: var(--peek-list-bg);
+  background: color-mix(in srgb, var(--peek-list-bg) 95%, transparent);
 }
 
 .workbench.is-glass {
@@ -1449,12 +1720,36 @@ watch(settingsOpen, (open) => {
   z-index: 0;
   pointer-events: none;
   background: var(--workbench-glass-fill);
+  backdrop-filter: blur(20px) saturate(1.25);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  transition: background 260ms cubic-bezier(0.2, 0.8, 0.25, 1);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.16),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.06),
+    inset -1px 0 0 0 rgba(0, 0, 0, 0.1),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.15);
+}
+
+:global(html[data-theme-mode="light"]) .workbench.is-glass .glass-chrome {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.45),
+    inset -1px 0 0 0 rgba(0, 0, 0, 0.05),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.08);
+}
+
+/* Inactive / unfocused state: slightly deeper tint so background desktop doesn't distract */
+.workbench.is-glass.is-unfocused:not(.is-maximized) .glass-chrome {
+  background: color-mix(in srgb, var(--peek-sidebar) 92%, transparent);
 }
 
 /* Fullscreen / maximized: native blur is off (it ghosts icons). Use a
    smooth opaque tint so chrome does not fall through to black. */
 .workbench.is-glass.is-maximized .glass-chrome {
   background: var(--workbench-glass-fill-covering);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
 }
 
 .workbench.is-glass .titlebar,
@@ -1468,6 +1763,154 @@ watch(settingsOpen, (open) => {
 .workbench.is-glass :deep([data-slot="sidebar-wrapper"]) {
   background: transparent !important;
   box-shadow: none;
+}
+
+.workbench-custom-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.workbench-custom-backdrop-image {
+  position: absolute;
+  inset: 0;
+  transition:
+    opacity 280ms ease,
+    filter 280ms ease;
+  transform: translateZ(0);
+}
+
+.workbench-custom-backdrop-overlay {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--peek-bg) 8%, transparent);
+}
+
+.workbench.has-custom-bg {
+  background: transparent;
+}
+
+.workbench.has-custom-bg .glass-chrome {
+  display: none !important;
+}
+
+.workbench.has-custom-bg .main-stage {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+.workbench.has-custom-bg .workspace-grid {
+  background: color-mix(in srgb, var(--workbench-chrome-bg) 82%, transparent) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none;
+}
+
+.workbench.has-custom-bg .navigation-shell {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.workbench.has-custom-bg .navigation-pane {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-right: 0 !important;
+}
+
+.workbench.has-custom-bg .titlebar {
+  position: relative;
+  z-index: 1;
+  background: color-mix(in srgb, var(--workbench-chrome-bg) 82%, transparent) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: 0 !important;
+}
+
+.workbench.has-custom-bg.is-settings .titlebar {
+  background: color-mix(in srgb, var(--workbench-chrome-bg) 82%, transparent) !important;
+  border-bottom: 0 !important;
+}
+
+.workbench.has-custom-bg .conversation-pane {
+  background: color-mix(in srgb, var(--peek-list-bg) 40%, transparent) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 60%, transparent) !important;
+  border-right: 0 !important;
+  border-bottom: 0 !important;
+  border-radius: var(--peek-radius-lg, 12px) 0 0 0 !important;
+  box-shadow: var(--peek-pane-shadow) !important;
+}
+
+.workbench.has-custom-bg.is-glass .conversation-pane {
+  background: color-mix(in srgb, var(--peek-list-bg) 40%, transparent) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.workbench.has-custom-bg .conversation-pane.extension-open {
+  background: color-mix(in srgb, var(--peek-list-bg) 40%, transparent) !important;
+}
+
+.workbench.has-custom-bg .conversation-header {
+  background: transparent !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 42%, transparent) !important;
+}
+
+.workbench.has-custom-bg .review-shell {
+  background: color-mix(in srgb, var(--peek-list-bg) 85%, transparent) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 60%, transparent) !important;
+}
+
+.workbench.has-custom-bg .review-header {
+  background: transparent !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 30%, transparent);
+}
+
+.workbench.has-custom-bg .embedded-settings {
+  background: color-mix(in srgb, var(--workbench-chrome-bg) 82%, transparent) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.workbench.has-custom-bg .composer-wrap :deep(.input-bar) {
+  background: color-mix(
+    in srgb,
+    var(--peek-composer-fill, var(--peek-surface)) 90%,
+    transparent
+  ) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid
+    var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
+  box-shadow: var(--peek-composer-shadow, none);
+}
+
+.workbench.has-custom-bg .composer-wrap :deep(.ask-user-list),
+.workbench.has-custom-bg .composer-wrap :deep(.path-permission-list),
+.workbench.has-custom-bg .composer-wrap :deep(.tool-approval-list) {
+  background: color-mix(
+    in srgb,
+    var(--peek-interaction-fill, var(--peek-composer-fill, var(--peek-surface))) 90%,
+    transparent
+  ) !important;
+}
+
+.workbench.has-custom-bg .conversation-pane.empty-conversation .composer-wrap :deep(.input-bar) {
+  background: color-mix(
+    in srgb,
+    var(--peek-composer-fill, var(--peek-surface)) 92%,
+    transparent
+  ) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 button {
@@ -2153,6 +2596,8 @@ button {
   --composer-dock-gap: 10px;
   --composer-fade-height: 120px;
   --composer-list-clearance: 132px;
+  --chat-column-max: 820px;
+  --chat-column-gutter: 48px;
   position: relative;
   z-index: 1;
   grid-column: 2;
@@ -2227,6 +2672,9 @@ button {
   display: flex;
   flex-direction: column;
 }
+.extension-scroll:has(.plugin-main-view) {
+  overflow: hidden;
+}
 .extension-panel {
   flex: 1;
   min-height: 100%;
@@ -2237,10 +2685,33 @@ button {
   box-sizing: border-box;
 }
 .extension-panel > :deep(.plugins-panel),
-.extension-panel > :deep(.connect-phone) {
+.extension-panel > :deep(.connect-phone),
+.extension-panel > :deep(.plugin-main-view) {
   flex: 1;
   min-height: 0;
   width: 100%;
+}
+.plugin-main-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.plugin-main-view :deep(.plugin-slot-outlet),
+.plugin-main-view :deep(.plugin-host-pane) {
+  flex: 1;
+  min-height: 0;
+}
+.conversation-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.conversation-stack.is-embedded {
+  width: 100%;
+  height: 100%;
 }
 .workbench-messages {
   box-sizing: border-box;
@@ -2255,9 +2726,15 @@ button {
   border-top-left-radius: inherit;
 }
 .workbench-messages :deep(.message-list) {
-  padding: 18px clamp(12px, 4vw, max(40px, calc((100% - 900px) / 2))) var(--composer-list-clearance);
+  --code-block-sticky-top: -18px;
+  --chat-sticky-top: -16px;
+  padding: 18px max(calc(var(--chat-column-gutter) / 2), calc((100% - var(--chat-column-max)) / 2))
+    var(--composer-list-clearance);
   gap: 20px;
   scroll-behavior: auto;
+}
+.workbench-messages :deep(.chat-turn.is-first-turn) {
+  --chat-sticky-top: 0px;
 }
 .workbench-messages :deep(.message-preview-rail) {
   right: 8px;
@@ -2267,10 +2744,12 @@ button {
   bottom: calc(var(--composer-fade-height) + 10px);
 }
 .workbench-messages :deep(.assistant-bubble) {
+  width: calc(100% - 2 * var(--chat-reply-inset, var(--peek-radius-composer, 16px)));
   max-width: 100%;
+  margin-left: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
 }
 .workbench-messages :deep(.user-turn) {
-  max-width: min(76%, 680px);
+  max-width: 100%;
 }
 .composer-wrap {
   position: absolute;
@@ -2278,7 +2757,7 @@ button {
   left: 50%;
   top: calc(100% - var(--composer-dock-gap));
   bottom: auto;
-  width: min(calc(100% - 48px), 820px);
+  width: min(calc(100% - var(--chat-column-gutter)), var(--chat-column-max));
   min-width: 0;
   min-height: 0;
   max-height: min(320px, calc(100% - 16px));
@@ -2321,7 +2800,7 @@ button {
 .composer-wrap :deep(.input-bar) {
   width: 100%;
   max-height: 100%;
-  box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
+  box-shadow: var(--peek-composer-shadow, none);
   transition:
     min-height 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     padding 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
@@ -2331,7 +2810,11 @@ button {
     box-shadow 280ms var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .composer-wrap :deep(.input-bar:focus-within) {
-  box-shadow: var(--peek-composer-shadow-focus, var(--peek-composer-shadow, var(--peek-elev-sm)));
+  border-color: var(
+    --peek-composer-border-focus,
+    var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent))
+  );
+  box-shadow: var(--peek-composer-shadow-focus, none);
 }
 .composer-wrap :deep(.input-content),
 .composer-wrap :deep(.composer-textarea),
@@ -2503,7 +2986,7 @@ button {
   border: 1px solid
     var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
   background: var(--peek-composer-fill);
-  box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
+  box-shadow: var(--peek-composer-shadow, none);
 }
 
 /* Ask / permission panels should merge into the composer, not stack as a second card. */
@@ -2546,9 +3029,9 @@ button {
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-bar:focus-within) {
   border-color: var(
     --peek-composer-border-focus,
-    color-mix(in srgb, var(--peek-text) 28%, transparent)
+    var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent))
   );
-  box-shadow: var(--peek-composer-shadow-focus, var(--peek-composer-shadow, var(--peek-elev-sm)));
+  box-shadow: var(--peek-composer-shadow-focus, none);
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.input-content) {
   min-height: 56px;
@@ -2565,7 +3048,6 @@ button {
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.footer-chip) {
   height: 30px;
-  border-radius: 8px;
   font-size: 12px;
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.model-picker-list) {
@@ -2706,12 +3188,16 @@ button {
   align-items: center;
   gap: 2px;
 }
+.review-tabs :deep([data-slot="tooltip"]) {
+  display: contents;
+}
 .review-tabs button {
   height: var(--peek-control-icon);
+  width: var(--peek-control-icon);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 9px;
+  justify-content: center;
+  padding: 0;
   border-radius: var(--peek-radius-sm);
   background: transparent;
   color: var(--peek-muted);
@@ -2727,6 +3213,11 @@ button {
 }
 .review-pane > :deep(aside) {
   flex: 1;
+  min-height: 0;
+}
+.plugin-review-host {
+  flex: 1;
+  min-width: 0;
   min-height: 0;
 }
 .spinning {
@@ -2754,9 +3245,9 @@ button {
     --composer-dock-gap: 8px;
     --composer-fade-height: 96px;
     --composer-list-clearance: 108px;
+    --chat-column-gutter: 28px;
   }
   .composer-wrap {
-    width: min(calc(100% - 28px), 820px);
     max-height: calc(100% - 12px);
   }
 }
@@ -2778,24 +3269,21 @@ button {
     --composer-dock-gap: 8px;
     --composer-fade-height: 96px;
     --composer-list-clearance: 108px;
+    --chat-column-gutter: 20px;
   }
   .composer-wrap {
-    width: min(calc(100% - 20px), 820px);
     max-height: min(46cqh, calc(100% - 12px));
   }
 }
 
 @container conversation (max-width: 560px) {
+  .conversation-pane {
+    --chat-column-gutter: 16px;
+  }
   .workbench-messages :deep(.message-list) {
-    padding-left: 14px;
-    padding-right: 14px;
     gap: 16px;
   }
-  .workbench-messages :deep(.user-turn) {
-    max-width: 92%;
-  }
   .composer-wrap {
-    width: calc(100% - 16px);
     max-height: min(360px, calc(100% - 12px));
   }
   .composer-wrap :deep(.workbench-composer .input-footer) {

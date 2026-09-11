@@ -245,6 +245,9 @@ impl ToolApprovalStore {
 }
 
 fn requires_approval(tool: &dyn Tool) -> bool {
+    if crate::core::plugins::requires_tool_approval(tool.name()) {
+        return true;
+    }
     if tool.read_only() {
         return matches!(tool.name(), "run_shell");
     }

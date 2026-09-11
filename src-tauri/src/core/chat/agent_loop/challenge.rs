@@ -77,6 +77,15 @@ pub const OPEN_TASKS_CHALLENGE: &str = concat!(
     "(path or check command), or cancel out-of-scope steps explicitly, then answer.",
 );
 
+pub const LENGTH_EXCEEDED_CHALLENGE: &str = concat!(
+    "[System] The previous turn hit the output token limit with no tool calls and no answer. ",
+    "Do not continue or restate that reasoning. Call tools now. ",
+    "For large HTML/JSON/logs/flamegraphs, do not read_file or paginate the whole file — ",
+    "write a short run_shell script that extracts/aggregates the needed facts and prints ",
+    "a compact summary. For source, Grep then read_file ",
+    "(around_line for a hit, or the key file from the start).",
+);
+
 /// Global ablation switch used by the eval harness (`--no-challenge`).
 static CHALLENGES_DISABLED: AtomicBool = AtomicBool::new(false);
 
@@ -134,6 +143,7 @@ pub struct CompletionGate {
     require_share_deliverable: bool,
     /// Disable all challenges for this gate instance (eval ablation).
     disabled: bool,
+    length_retries: u32,
 }
 
 impl CompletionGate {
@@ -234,8 +244,9 @@ impl CompletionGate {
                 "run_subagent" | "run_parallel_subagents" | "run_skill"
             )
         {
-            let paths =
-                crate::core::tools::agent::extract_touched_paths_from_subagent_result(&outcome.result);
+            let paths = crate::core::tools::agent::extract_touched_paths_from_subagent_result(
+                &outcome.result,
+            );
             if !paths.is_empty() {
                 self.note_subagent_mutations(paths);
             }
@@ -317,6 +328,23 @@ impl CompletionGate {
                 content: image_missing_message(&content),
                 reasoning: non_empty(reasoning),
                 finish_reason: Some("missing_image".to_string()),
+            };
+        }
+
+        if finish_reason.as_deref() == Some("length")
+            && content.trim().is_empty()
+            && self.length_retries < MAX_COMPLETION_RETRIES
+        {
+            self.length_retries += 1;
+            push_completion_feedback(
+                request,
+                user_msg_index,
+                content,
+                reasoning,
+                LENGTH_EXCEEDED_CHALLENGE,
+            );
+            return ChallengeOutcome::ContinueWithChallenge {
+                status_kind: "length_no_tools".to_string(),
             };
         }
 
@@ -409,6 +437,13 @@ impl CompletionGate {
         }
 
         let mut final_content = content;
+        if final_content.trim().is_empty() {
+            final_content = if finish_reason.as_deref() == Some("length") {
+                "⚠️ 模型深度思考耗尽了单次输出上限（Token Limit Exceeded），未能生成正文与执行计划。建议在输入时给出明确的分析目标（例如“请直接分析性能瓶颈并制定排查方案”），或输入“请直接输出分析结论与方案”继续。".to_string()
+            } else {
+                "⚠️ 模型完成了思考，但未能生成正文内容。您可以输入“请根据上述思考直接输出方案”让其继续。".to_string()
+            };
+        }
         let completion_rejected = reject_unverified_completion(
             &mut final_content,
             request,
@@ -526,7 +561,20 @@ fn trim_path_token(token: &str) -> &str {
     token.trim_matches(|c: char| {
         matches!(
             c,
-            ',' | ';' | ':' | '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}' | '.' | '!' | '?'
+            ',' | ';'
+                | ':'
+                | '"'
+                | '\''
+                | '`'
+                | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '.'
+                | '!'
+                | '?'
         )
     })
 }
@@ -571,11 +619,7 @@ fn extract_paths_from_args(arguments: &str) -> Vec<String> {
     }
     if let Some(input) = value.get("input").and_then(|v| v.as_str()) {
         for line in input.lines() {
-            for marker in [
-                "*** Update File: ",
-                "*** Add File: ",
-                "*** Delete File: ",
-            ] {
+            for marker in ["*** Update File: ", "*** Add File: ", "*** Delete File: "] {
                 if let Some(path) = line.strip_prefix(marker) {
                     let path = path.trim();
                     if !path.is_empty() {
@@ -644,10 +688,7 @@ fn provides_completion_evidence(outcome: &ToolOutcome) -> bool {
     is_mutation_tool(&outcome.tool_name)
 }
 
-fn provides_verification_evidence(
-    outcome: &ToolOutcome,
-    mutated_paths: &HashSet<String>,
-) -> bool {
+fn provides_verification_evidence(outcome: &ToolOutcome, mutated_paths: &HashSet<String>) -> bool {
     if outcome.tool_name == "read_file" {
         let Some(path) = extract_path_from_args(&outcome.arguments) else {
             return false;
@@ -926,7 +967,11 @@ mod tests {
             Some("stop".into()),
         );
         match second {
-            ChallengeOutcome::Finish { content, finish_reason, .. } => {
+            ChallengeOutcome::Finish {
+                content,
+                finish_reason,
+                ..
+            } => {
                 assert!(content.contains("未能生成图片"));
                 assert_eq!(finish_reason.as_deref(), Some("missing_image"));
             }
@@ -1225,6 +1270,42 @@ mod tests {
                 assert_eq!(status_kind, "verify_completion");
             }
             other => panic!("expected verify_completion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn length_with_empty_content_is_challenged_once() {
+        let mut gate = CompletionGate::new();
+        let mut request = empty_request();
+        let mut user_idx = None;
+        match gate.evaluate_final_answer(
+            &mut request,
+            &mut user_idx,
+            String::new(),
+            "a".repeat(200),
+            Some("length".into()),
+        ) {
+            ChallengeOutcome::ContinueWithChallenge { status_kind } => {
+                assert_eq!(status_kind, "length_no_tools");
+            }
+            other => panic!("expected length_no_tools, got {other:?}"),
+        }
+        match gate.evaluate_final_answer(
+            &mut request,
+            &mut user_idx,
+            String::new(),
+            String::new(),
+            Some("length".into()),
+        ) {
+            ChallengeOutcome::Finish {
+                content,
+                finish_reason,
+                ..
+            } => {
+                assert!(content.contains("Token Limit"), "{content}");
+                assert_eq!(finish_reason.as_deref(), Some("length"));
+            }
+            other => panic!("expected finish after retry, got {other:?}"),
         }
     }
 }

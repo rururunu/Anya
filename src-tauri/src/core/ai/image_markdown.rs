@@ -73,7 +73,10 @@ pub fn strip_edit_region_images(content: &str) -> String {
 
 pub fn merge_reference_sources(user_markdown: &str, example_image: Option<&str>) -> Vec<String> {
     let mut refs = extract_image_refs(user_markdown);
-    if let Some(example) = example_image.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(example) = example_image
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if is_image_ref(example) && !refs.iter().any(|item| item == example) {
             refs.push(example.to_string());
         }

@@ -13,6 +13,7 @@ pub mod event;
 pub mod lsp;
 pub mod mcp;
 pub mod office;
+pub mod plugins;
 pub mod remote;
 pub mod rules;
 pub mod runtime;
@@ -54,6 +55,7 @@ impl PeekCore {
             Arc::clone(&conversation),
             Arc::clone(&event_bus),
         )));
+        crate::core::plugins::shared_runtime().attach(app.clone(), tools.registry());
         let chat = ChatService::new(
             provider,
             event_bus,

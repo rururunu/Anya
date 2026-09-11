@@ -1,15 +1,12 @@
 //! Model-aware token counting and AgentRun accounting.
 
 mod accounting;
-mod gemini;
 mod registry;
 mod tokenizer;
 mod types;
 
 #[allow(unused_imports)]
 pub use accounting::{AccountingProvider, TokenAccountant};
-#[allow(unused_imports)]
-pub use gemini::{GeminiCountClient, GeminiCountError};
 #[allow(unused_imports)]
 pub use registry::{MatchKind, TokenizerRegistry, TokenizerSelection};
 pub use tokenizer::{

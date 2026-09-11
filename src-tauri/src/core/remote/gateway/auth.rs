@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
-use crate::core::remote::protocol::{ClientMessage, ServerMessage};
 use super::send::{app_version, send_ws_msg};
+use crate::core::remote::protocol::{ClientMessage, ServerMessage};
 use crate::core::remote::state::RemoteGatewayState;
 
 pub(super) async fn authenticate<S>(
@@ -71,7 +71,10 @@ where
                 if protocol_version != crate::core::remote::protocol::PROTOCOL_VERSION {
                     let err = ServerMessage::hello_error(
                         "protocol_mismatch",
-                        format!("server expects {}", crate::core::remote::protocol::PROTOCOL_VERSION),
+                        format!(
+                            "server expects {}",
+                            crate::core::remote::protocol::PROTOCOL_VERSION
+                        ),
                     );
                     send_ws_msg(ws, &err).await?;
                     return Err("protocol mismatch".into());

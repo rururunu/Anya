@@ -77,9 +77,14 @@ impl ToolExecutor {
             let mut execution_context = tool_ctx.clone();
             execution_context.parent_activity_id = Some(started.activity_id.clone());
             let tool_name = started.tool_name.clone();
-            let tool_args = started.args.clone();
+            let hooked =
+                crate::core::plugins::before_tool(&started.tool_name, started.args.clone());
             let max_chars = self.tool_output_max_chars;
             async move {
+                let tool_args = match hooked {
+                    Ok(args) => args,
+                    Err(error) => return (started, Err(error), max_chars),
+                };
                 let span = tracing::info_span!(
                     target: "peek.tool",
                     "tool_dispatch",
@@ -127,7 +132,18 @@ impl ToolExecutor {
         let mut execution_context = tool_ctx.clone();
         execution_context.parent_activity_id = Some(started.activity_id.clone());
         let tool_name = started.tool_name.clone();
-        let tool_args = started.args.clone();
+        let tool_args =
+            match crate::core::plugins::before_tool(&started.tool_name, started.args.clone()) {
+                Ok(args) => args,
+                Err(error) => {
+                    return Ok(self.finish_tool_activity(
+                        started,
+                        Err(error),
+                        tool_ctx,
+                        self.tool_output_max_chars,
+                    ));
+                }
+            };
         let execution = tools
             .dispatch_async(&execution_context, &tool_name, tool_args)
             .instrument(span.clone())
@@ -246,9 +262,10 @@ impl ToolExecutor {
                 result: result.clone(),
                 success,
             });
+        crate::core::plugins::after_tool(&started.tool_name, success, &result);
         ToolOutcome {
             call_id: started.call_id,
-            tool_name: started.tool_name,
+            tool_name: started.tool_name.clone(),
             arguments: serde_json::to_string(&started.args).unwrap_or_default(),
             result,
             success,

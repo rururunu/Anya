@@ -52,4 +52,27 @@ __pycache__/
 # Debug symbols and temporary artifacts
 *.pdb
 tmp_*
+.tmp_*
+
+# Bundled sidecars (downloaded by scripts/fetch-rg.mjs / fetch-deno.mjs)
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+
+# Loose captures dropped next to Cargo.toml (icons live in src-tauri/icons/)
+src-tauri/*.png
+src-tauri/*.jpg
+src-tauri/*.jpeg
+src-tauri/*.webp
+
+# Generated plugin caches if they appear in source
+src-tauri/plugins/**/data/
+src-tauri/plugins/**/ui/.anya/
+src-tauri/plugins/**/node_modules/
+
+# Cursor local plans (keep .cursor/rules committed)
+.cursor/plans/
+
+# OS junk
+Thumbs.db
+Desktop.ini
 

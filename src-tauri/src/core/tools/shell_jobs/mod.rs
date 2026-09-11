@@ -13,10 +13,10 @@ pub use types::ShellJobStore;
 
 #[cfg(test)]
 mod tests {
-    use super::constants::{
-        IDLE_CHECK_GRACE, IDLE_CHECK_MIN_INTERVAL, IDLE_JUDGE_ROUNDS,
+    use super::constants::{IDLE_CHECK_GRACE, IDLE_CHECK_MIN_INTERVAL, IDLE_JUDGE_ROUNDS};
+    use super::foreground::{
+        next_wait_action, run_foreground_with_policy, WaitAction, WaitPolicy, WaitSnapshot,
     };
-    use super::foreground::{next_wait_action, run_foreground_with_policy, WaitAction, WaitPolicy, WaitSnapshot};
     use super::*;
     use crate::core::tools::context::ToolContext;
     use std::sync::atomic::{AtomicBool, Ordering};

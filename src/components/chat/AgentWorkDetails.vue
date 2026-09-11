@@ -89,9 +89,11 @@
 <script setup lang="ts">
 import { ChevronRight } from "@lucide/vue";
 import { computed, inject, reactive, ref, watch } from "vue";
-import AgentWorkSegment from "@/components/chat/AgentWorkSegment.vue";
+import AgentWorkSegment, { type WorkSegment } from "@/components/chat/AgentWorkSegment.vue";
 import type { ChatMessage, ToolActivity } from "@/types/chat";
 import type { AgentWorkDisplay, AppLanguage } from "@/types/setting";
+import { askUserAnswersForActivity } from "@/services/chat/askUserAnswer";
+import { shouldHidePlanChromeActivity } from "@/services/chat/planProposal";
 import { SUBAGENT_TOOLS } from "@/services/chat/subagentTools";
 import {
   countReasoningSegments,
@@ -124,12 +126,7 @@ const emit = defineEmits<{
   editFromImage: [payload: import("@/services/chat/imageEditReference").ImageEditReferencePayload];
 }>();
 
-type TimelineSegment =
-  | { type: "reasoning"; id: string; content: string }
-  | { type: "narration"; id: string; content: string }
-  | { type: "content"; id: string; content: string }
-  | { type: "inline"; id: string; activities: ToolActivity[]; operations: boolean }
-  | { type: "process"; id: string; activities: ToolActivity[]; operations: boolean };
+type TimelineSegment = WorkSegment;
 
 const SHOWCASE_KINDS = new Set(["shell", "create", "edit", "delete", "move", "image"]);
 const TASK_LIST_TOOLS = new Set(["update_tasks", "todo_write"]);
@@ -146,28 +143,28 @@ const streaming = computed(
 const waitingForAskUser = computed(
   () =>
     props.message.toolActivities?.some(
-      (activity) => activity.toolName === "ask_user" && activity.status === "running",
+      (activity) =>
+        activity.toolName === "ask_user" &&
+        activity.status === "running" &&
+        askUserAnswersForActivity(activity, props.message.askUserAnswer).length === 0,
     ) ?? false,
 );
+const recordedActivities = computed(() =>
+  (props.message.toolActivities ?? []).filter((activity) => !activity.parentActivityId),
+);
 const visibleActivities = computed(() =>
-  (props.message.toolActivities ?? []).filter(
-    (activity) => !(activity.toolName === "ask_user" && activity.status !== "running"),
+  recordedActivities.value.filter(
+    (activity) =>
+      !(activity.toolName === "ask_user" && activity.status !== "running") &&
+      !shouldHidePlanChromeActivity(activity, props.message),
   ),
 );
 const activityById = computed(
-  () =>
-    new Map(
-      visibleActivities.value
-        .filter((activity) => !activity.parentActivityId)
-        .map((activity) => [activity.id, activity]),
-    ),
-);
-const topLevelActivities = computed(() =>
-  visibleActivities.value.filter((activity) => !activity.parentActivityId),
+  () => new Map(recordedActivities.value.map((activity) => [activity.id, activity])),
 );
 
 const hasRunningSubagent = computed(() =>
-  topLevelActivities.value.some(
+  recordedActivities.value.some(
     (activity) => activity.status === "running" && SUBAGENT_TOOLS.has(activity.toolName),
   ),
 );
@@ -221,6 +218,23 @@ function pushActivity(segments: TimelineSegment[], activity: ToolActivity) {
     operations,
   };
   segments.push(kind === "inline" ? { type: "inline", ...base } : { type: "process", ...base });
+}
+
+function considerAskUser(segments: TimelineSegment[], seen: Set<string>, activity: ToolActivity) {
+  if (seen.has(activity.id)) return;
+  seen.add(activity.id);
+  const items = askUserAnswersForActivity(activity, props.message.askUserAnswer);
+  if (items.length > 0) {
+    segments.push({
+      type: "ask-answer",
+      id: `ask-answer-${activity.id}`,
+      items,
+    });
+    return;
+  }
+  if (activity.status === "running") {
+    pushActivity(segments, activity);
+  }
 }
 
 /** Same parallel batch can be recorded under new activity ids on stream retry. */
@@ -351,12 +365,17 @@ function pickFullText(fromMessage: string, fromSegments: string): string {
  */
 function coalesceCompletedNarration(out: TimelineSegment[]): TimelineSegment[] {
   if (streaming.value) return out;
-  const hasTools = out.some((segment) => segment.type === "process" || segment.type === "inline");
+  const hasTools = out.some(
+    (segment) =>
+      segment.type === "process" || segment.type === "inline" || segment.type === "ask-answer",
+  );
   if (!hasTools) return out;
 
   let lastToolIdx = -1;
   for (let i = 0; i < out.length; i++) {
-    if (out[i].type === "process" || out[i].type === "inline") lastToolIdx = i;
+    if (out[i].type === "process" || out[i].type === "inline" || out[i].type === "ask-answer") {
+      lastToolIdx = i;
+    }
   }
   if (lastToolIdx < 0) return out;
 
@@ -422,6 +441,14 @@ const segments = computed<TimelineSegment[]>(() => {
     }
     const activity = activityById.value.get(item.toolActivityId);
     if (!activity) continue;
+    if (shouldHidePlanChromeActivity(activity, props.message)) {
+      seen.add(activity.id);
+      continue;
+    }
+    if (activity.toolName === "ask_user") {
+      considerAskUser(out, seen, activity);
+      continue;
+    }
     considerActivity(out, seen, activity);
   }
 
@@ -434,7 +461,15 @@ const segments = computed<TimelineSegment[]>(() => {
     out = out.filter((segment) => segment.type !== "reasoning");
   }
 
-  for (const activity of topLevelActivities.value) {
+  for (const activity of recordedActivities.value) {
+    if (shouldHidePlanChromeActivity(activity, props.message)) {
+      seen.add(activity.id);
+      continue;
+    }
+    if (activity.toolName === "ask_user") {
+      considerAskUser(out, seen, activity);
+      continue;
+    }
     considerActivity(out, seen, activity);
   }
   return coalesceCompletedNarration(coalesceCompletedReasoning(out));
@@ -450,7 +485,9 @@ function isGeneratedImageSegment(segment: TimelineSegment): boolean {
 
 /** After the turn completes, images stay next to the reply instead of inside the fold. */
 function isReplySegment(segment: TimelineSegment): boolean {
-  return segment.type === "content" || isGeneratedImageSegment(segment);
+  return (
+    segment.type === "content" || segment.type === "ask-answer" || isGeneratedImageSegment(segment)
+  );
 }
 
 const preambleSegments = computed(() =>
@@ -460,6 +497,9 @@ const replySegments = computed(() => segments.value.filter((segment) => isReplyS
 
 const foldLabel = computed(() => {
   const language = props.language ?? "zh-CN";
+  if (props.message.status === "done" && !props.message.content.trim()) {
+    return language === "zh-CN" ? "思考过程（未输出正文）" : "Reasoning (No output)";
+  }
   return tr(language, "worked");
 });
 
@@ -568,6 +608,14 @@ function segmentMatchesQuery(segment: TimelineSegment, query: string) {
   if (segment.type === "reasoning" || segment.type === "narration" || segment.type === "content") {
     return textIncludesQuery(segment.content, query);
   }
+  if (segment.type === "ask-answer") {
+    return segment.items.some(
+      (item) =>
+        textIncludesQuery(item.question ?? "", query) ||
+        textIncludesQuery(item.header ?? "", query) ||
+        item.selected.some((value) => textIncludesQuery(value, query)),
+    );
+  }
   return segment.activities.some((activity) => activityMatchesQuery(activity, query));
 }
 
@@ -602,7 +650,8 @@ watch(
 
 .agent-work :deep(.shell-terminal-card),
 .agent-work :deep(.file-diff-card),
-.agent-work :deep(.task-list-card.embedded) {
+.agent-work :deep(.task-list-card.embedded),
+.agent-work :deep(.ask-answer-card) {
   margin-left: 0;
   margin-right: 0;
 }
@@ -636,7 +685,7 @@ watch(
    viewport instead of letting it scroll away with the rest of the body. */
 .agent-work-fold-summary.pinned {
   position: sticky;
-  top: 0;
+  top: var(--code-block-sticky-top, 0);
   z-index: 3;
   background: var(--peek-bg);
   margin: 0;

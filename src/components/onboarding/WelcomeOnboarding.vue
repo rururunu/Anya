@@ -84,59 +84,6 @@
               </div>
             </article>
 
-            <article class="provider-panel" :class="{ open: providerTab === 'gemini' }">
-              <button type="button" class="provider-panel-head" @click="providerTab = 'gemini'">
-                <span class="provider-icon"><GeminiIcon :size="18" /></span>
-                <span class="provider-copy">
-                  <strong>Gemini</strong>
-                  <small>{{ t("onboarding.providerGeminiHint") }}</small>
-                </span>
-                <span v-if="isGeminiConfigured" class="ready-pill">
-                  {{ t("onboarding.providerConfigured") }}
-                </span>
-              </button>
-              <div v-if="providerTab === 'gemini'" class="provider-panel-body gemini-body">
-                <div class="oauth-status">
-                  <p class="oauth-status-label">{{ t("settings.provider.geminiAccount") }}</p>
-                  <p class="oauth-status-value">
-                    {{
-                      isGeminiConfigured
-                        ? settingStore.geminiOauth.email || t("settings.provider.geminiSignedIn")
-                        : t("settings.provider.geminiSignedOut")
-                    }}
-                  </p>
-                  <p v-if="geminiError" class="gemini-error">{{ geminiError }}</p>
-                </div>
-                <div class="gemini-actions">
-                  <button
-                    v-if="!isGeminiConfigured && !geminiBusy"
-                    type="button"
-                    class="primary-btn compact"
-                    @click="loginGemini"
-                  >
-                    {{ t("settings.provider.geminiLogin") }}
-                  </button>
-                  <template v-else-if="!isGeminiConfigured && geminiBusy">
-                    <button type="button" class="primary-btn compact" disabled>
-                      {{ t("settings.provider.geminiLoggingIn") }}
-                    </button>
-                    <button type="button" class="ghost-btn compact" @click="cancelGeminiLogin">
-                      {{ t("settings.provider.geminiCancelLogin") }}
-                    </button>
-                  </template>
-                  <button
-                    v-else
-                    type="button"
-                    class="ghost-btn compact"
-                    :disabled="geminiBusy"
-                    @click="logoutGemini"
-                  >
-                    {{ t("settings.provider.geminiLogout") }}
-                  </button>
-                </div>
-              </div>
-            </article>
-
             <article class="provider-panel" :class="{ open: providerTab === 'custom' }">
               <button type="button" class="provider-panel-head" @click="providerTab = 'custom'">
                 <span class="provider-icon">
@@ -271,10 +218,8 @@ import { useDebounceFn } from "@vueuse/core";
 import { gsap, safeGsap } from "@/services/motion/gsapSafe";
 
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
-import GeminiIcon from "@/components/icons/GeminiIcon.vue";
 import MascotFace from "@/components/icons/MascotFace.vue";
 import { tr } from "@/services/i18n";
-import { geminiOauthCancelLogin, geminiOauthLogin, geminiOauthLogout } from "@/services/ipc";
 import { gsapOnboardingReveal } from "@/services/motion/gsapPresets";
 import { useChatModelStore } from "@/stores/chatModel";
 import { useSettingStore } from "@/stores/setting";
@@ -287,7 +232,7 @@ const settingStore = useSettingStore();
 const chatModelStore = useChatModelStore();
 
 const step = ref(1);
-const providerTab = ref<"deepseek" | "gemini" | "custom">("deepseek");
+const providerTab = ref<"deepseek" | "custom">("deepseek");
 const revealing = ref(false);
 const overlayRef = ref<HTMLElement | null>(null);
 const logoWrapRef = ref<HTMLElement | null>(null);
@@ -296,8 +241,6 @@ const deepseekKey = ref(settingStore.deepseekApiKey);
 const deepseekKeyDirty = ref(false);
 const deepseekKeyVisible = ref(false);
 const customKeyVisible = ref(false);
-const geminiBusy = ref(false);
-const geminiError = ref("");
 const customName = ref("");
 const customUrl = ref("");
 const customKey = ref("");
@@ -306,16 +249,10 @@ const customModels = ref("");
 const t = (key: Parameters<typeof tr>[1]) => tr(settingStore.language, key);
 
 const isDeepSeekConfigured = computed(() => deepseekKey.value.trim().length > 0);
-const isGeminiConfigured = computed(() => {
-  const oauth = settingStore.geminiOauth;
-  return Boolean(oauth.accessToken?.trim() || oauth.refreshToken?.trim());
-});
 const hasCustomProvider = computed(() =>
   settingStore.customProviders.some((p) => p.baseUrl.trim() || p.apiKey.trim()),
 );
-const hasAnyProvider = computed(
-  () => isDeepSeekConfigured.value || isGeminiConfigured.value || hasCustomProvider.value,
-);
+const hasAnyProvider = computed(() => isDeepSeekConfigured.value || hasCustomProvider.value);
 
 function resetOnboardingScroll() {
   const el = overlayRef.value;
@@ -389,44 +326,6 @@ function handleDeepSeekInput() {
 const persistDeepSeekDebounced = useDebounceFn(() => {
   void saveDeepSeek();
 }, 400);
-
-async function loginGemini() {
-  geminiError.value = "";
-  geminiBusy.value = true;
-  try {
-    await geminiOauthLogin();
-    await settingStore.load();
-    await chatModelStore.refresh();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/sign-in was cancelled|sign-in was canceled|access_denied/i.test(message)) {
-      geminiError.value = message;
-    }
-  } finally {
-    geminiBusy.value = false;
-  }
-}
-
-async function cancelGeminiLogin() {
-  try {
-    await geminiOauthCancelLogin();
-  } catch {
-    // await path surfaces cancel
-  }
-}
-
-async function logoutGemini() {
-  geminiBusy.value = true;
-  try {
-    await geminiOauthLogout();
-    await settingStore.load();
-    await chatModelStore.refresh();
-  } catch (error) {
-    geminiError.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    geminiBusy.value = false;
-  }
-}
 
 async function saveCustom() {
   if (!customUrl.value.trim() || !customKey.value.trim()) return;
@@ -803,41 +702,6 @@ async function completeOnboarding() {
 .custom-fields {
   display: grid;
   gap: 12px;
-}
-
-.oauth-status {
-  display: grid;
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid rgba(28, 25, 21, 0.1);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.55);
-}
-
-.oauth-status-label {
-  margin: 0;
-  color: rgba(28, 25, 21, 0.5);
-  font-size: 10px;
-  font-weight: 550;
-}
-
-.oauth-status-value {
-  margin: 0;
-  color: #1c1915;
-  font-size: 12px;
-  font-weight: 550;
-}
-
-.gemini-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.gemini-error {
-  margin: 0;
-  color: #c42b1c;
-  font-size: 12px;
 }
 
 .onboarding-actions {

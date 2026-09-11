@@ -1,9 +1,10 @@
 /**
- * Display helpers for `#skill:` / `#mcp:` chips.
+ * Display helpers for `#skill:` / `#mcp:` / `#plugin:` chips.
  * Wire tokens use install ids (`gmail`, legacy `sm-gmail`); UI shows title / vendor.
  */
 
 import { peekInstallIcon } from "@/services/iconCache";
+import { pluginIconUrl } from "@/services/plugins/ipc";
 import type { McpServerConfig } from "@/types/setting";
 
 /** Strip Smithery install-id prefixes for fallback labels. */
@@ -48,4 +49,21 @@ export function skillMentionIconUrl(
   if (peeked) return peeked;
   const skill = skills?.find((item) => item.name === id);
   return skill?.iconUrl?.trim() || null;
+}
+
+export function pluginMentionLabel(
+  id: string,
+  plugins?: readonly { id: string; name?: string }[],
+): string {
+  const plugin = plugins?.find((item) => item.id === id);
+  return plugin?.name?.trim() || prettyHashInstallId(id) || id;
+}
+
+export function pluginMentionIconUrl(
+  id: string,
+  plugins?: readonly { id: string; icon?: string | null }[],
+): string | null {
+  const plugin = plugins?.find((item) => item.id === id);
+  const rel = plugin?.icon?.trim();
+  return rel ? pluginIconUrl(id, rel) : null;
 }

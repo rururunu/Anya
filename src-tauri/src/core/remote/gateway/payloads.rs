@@ -78,12 +78,12 @@ fn remote_provider_meta(
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .or_else(|| match provider_id {
-                "deepseek" | "gemini" => Some(provider_id.to_string()),
+                "deepseek" => Some(provider_id.to_string()),
                 _ => None,
             }),
         favicon_url: custom
             .and_then(|item| favicon_url_for_base(&item.base_url))
-            .filter(|_| provider_id != "deepseek" && provider_id != "gemini"),
+            .filter(|_| provider_id != "deepseek"),
     }
 }
 
@@ -93,9 +93,6 @@ fn remote_provider_display_name(
 ) -> String {
     if provider_id == "deepseek" {
         return "DeepSeek".into();
-    }
-    if provider_id == "gemini" {
-        return "Gemini".into();
     }
     if let Some(name) = custom
         .map(|item| item.name.trim())

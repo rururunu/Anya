@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.19                            |
+| **版本**   | v0.2.20                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -329,6 +329,7 @@ sequenceDiagram
 | MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/office`      | 外部协议适配                                                                                   |
 | 协议类型           | `core/runtime/`                            | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`                                               |
 | Event bus          | `core/event/`                              | 领域事件                                                                                       |
+| 插件               | `core/plugins/`                            | 清单、授权、Deno host、官方捆绑；**computer-use** 在 `computer/`（UIA、截屏、`launch`）        |
 | Remote gateway     | `core/remote/`                             | WS `/remote/v1`；`gateway/`、`state/`、`bridge/`、配对、隧道、上传、**下载 `/f/`**、预览 `/p/` |
 
 ### 5.2 命名：三处 “runtime”
@@ -348,7 +349,7 @@ sequenceDiagram
 | 聊天 composables      | `composables/chat/`                                            | `wireChatIpc`、`useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`、`useMessage{Scroll,PreviewRail}`、Ask User、附件 |
 | Chat store            | `stores/chat.ts`、`stores/chatSessions.ts`                     | Pinia façade；会话列表/归档/标题在 `chatSessions`；compose/stream helper 在旁路模块                                                  |
 | Workbench composables | `composables/workbench/`                                       | `useWorkbenchNavigation`、`useNavigationSidebar`、会话/工作区/审查生命周期                                                           |
-| 其他 stores           | `stores/setting.ts`、`chatModel.ts`                            | 设置、模型目录                                                                                                                       |
+| 其他 stores           | `stores/setting.ts`、`chatModel.ts`、`plugins.ts`              | 设置、模型目录、用户插件                                                                                                             |
 | 主题                  | `services/theme/`                                              | 目录（浅色/深色）、`ThemeService` 应用路径、`themes.css` token                                                                       |
 | 聊天 services         | `services/chat/`                                               | 生图模式、本地图路径、保存图片、composer 分段、token 估算                                                                            |
 | IPC                   | `services/ipc/`                                                | 类型化 invoke 与事件订阅                                                                                                             |
@@ -695,6 +696,12 @@ flowchart LR
 
 API 路径会把 **查询与候选片段** 发到配置的嵌入主机。本地路径首次下载后离线可用。
 
+### 11.3 电脑操控
+
+官方插件 `computer-use`（`core/plugins/computer/`，仅 Windows，默认关闭）。动作在 Rust 执行，Deno host 只声明 schema。优先级：`launch` → `key` → UIA `click_control` / `set_value` → 像素 `click`/`drag`。`screenshot` 同时返回 JPEG **和** 可交互控件列表。JPEG 坐标按缩放 + 窗口原点映射到物理像素。内置 playbook：`src-tauri/plugins/computer-use/skills/windows.md`（`contributes.agent.skills`）。
+
+详见 [电脑操控](./computer-use.zh-CN.md)。
+
 ---
 
 ## 12. 事件契约（领域 → UI）
@@ -747,16 +754,17 @@ flowchart LR
 
 ## 15. 扩展点
 
-| 目标                 | 首选挂接点                                         |
-| -------------------- | -------------------------------------------------- |
-| 新模型厂商           | `core/ai` 实现 `AIProvider` + 设置接线             |
-| 新内置工具           | `core/tools` 注册表 + 可选 `runtime/` 适配         |
-| 新回合策略           | `core/chat/agent_loop` 模块，由 `AgentRunner` 调用 |
-| 新窗口表面           | Tauri window label + `src/main.ts` 启动分支        |
-| 外部上下文源         | `core/context` provider                            |
-| 新 Skill             | `src-tauri/prompts/skills/*.md`（按需加资源）      |
-| Companion RPC / 事件 | `core/remote/protocol.rs` + AnyaAndroid 手机客户端 |
-| RAG 嵌入后端         | `core/ai/embed.rs` + 设置 RAG 页                   |
+| 目标                 | 首选挂接点                                                                    |
+| -------------------- | ----------------------------------------------------------------------------- |
+| 新模型厂商           | `core/ai` 实现 `AIProvider` + 设置接线                                        |
+| 新内置工具           | `core/tools` 注册表 + 可选 `runtime/` 适配                                    |
+| 新回合策略           | `core/chat/agent_loop` 模块，由 `AgentRunner` 调用                            |
+| 新窗口表面           | Tauri window label + `src/main.ts` 启动分支                                   |
+| 外部上下文源         | `core/context` provider                                                       |
+| 新 Skill             | `src-tauri/prompts/skills/*.md`（按需加资源）                                 |
+| Agent 插件 playbook  | `contributes.agent.skills` markdown（见 [电脑操控](./computer-use.zh-CN.md)） |
+| Companion RPC / 事件 | `core/remote/protocol.rs` + AnyaAndroid 手机客户端                            |
+| RAG 嵌入后端         | `core/ai/embed.rs` + 设置 RAG 页                                              |
 
 避免在 `AgentRunner` 之外平行再造一套 Agent 循环。
 Companion 不得再长出第二套 Agent 运行时。
@@ -780,6 +788,7 @@ Companion 不得再长出第二套 Agent 运行时。
 | 输入栏抽取                  | `src/composables/chat/useComposer*.ts`、`useMessageScroll.ts`、`useMessagePreviewRail.ts` |
 | Remote gateway / 配对       | `core/remote/gateway/`、`pairing.rs`、`tunnel.rs`                                         |
 | Shell jobs / 工作区 / MCP   | `core/tools/shell_jobs/`、`core/workspace/`、`core/mcp/`                                  |
+| 插件 / 电脑操控             | `core/plugins/`、`src-tauri/plugins/computer-use/`、[电脑操控](./computer-use.zh-CN.md)   |
 | DeepSeek stream             | `core/ai/deepseek/stream/`                                                                |
 | 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                                |
 | 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                             |

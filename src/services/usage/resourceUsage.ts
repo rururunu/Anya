@@ -1,9 +1,9 @@
 /**
- * Local usage habits for Skills and MCP servers.
+ * Local usage habits for Skills, agent plugins, and MCP servers.
  * Used to rank `#` mention suggestions and settings lists.
  */
 
-export type ResourceKind = "skill" | "mcp";
+export type ResourceKind = "skill" | "mcp" | "plugin";
 
 export type ResourceUsageEntry = {
   count: number;
@@ -14,6 +14,7 @@ export type ResourceUsageEntry = {
 export type ResourceUsageStore = {
   skill: Record<string, ResourceUsageEntry>;
   mcp: Record<string, ResourceUsageEntry>;
+  plugin: Record<string, ResourceUsageEntry>;
 };
 
 const STORAGE_KEY = "anya.resourceUsage.v1";
@@ -35,7 +36,7 @@ const SKILL_TOOL_ALIASES: Record<string, string> = {
 };
 
 function emptyStore(): ResourceUsageStore {
-  return { skill: {}, mcp: {} };
+  return { skill: {}, mcp: {}, plugin: {} };
 }
 
 function canUseStorage(): boolean {
@@ -51,6 +52,7 @@ export function loadResourceUsage(): ResourceUsageStore {
     return {
       skill: sanitizeMap(parsed.skill),
       mcp: sanitizeMap(parsed.mcp),
+      plugin: sanitizeMap(parsed.plugin),
     };
   } catch {
     return emptyStore();
@@ -127,7 +129,7 @@ export function resourceUsageScore(
   store: ResourceUsageStore = loadResourceUsage(),
   now = Date.now(),
 ): number {
-  const entry = store[kind][id.trim()];
+  const entry = store[kind]?.[id.trim()];
   if (!entry) return 0;
   const ageMs = Math.max(0, now - entry.lastUsedAt);
   const dayMs = 86_400_000;
@@ -162,13 +164,20 @@ export function sortByResourceUsage<T>(
   });
 }
 
-/** Map a tool activity to a skill/MCP usage event when applicable. */
+/** Map a tool activity to a skill/MCP/plugin usage event when applicable. */
 export function resourceFromToolActivity(
   toolName: string,
   args?: Record<string, unknown> | null,
 ): { kind: ResourceKind; id: string } | null {
   const name = toolName.trim();
   if (!name) return null;
+
+  if (name.startsWith("plugin_")) {
+    const rest = name.slice("plugin_".length);
+    const sep = rest.indexOf("__");
+    const id = (sep >= 0 ? rest.slice(0, sep) : rest).trim();
+    return id ? { kind: "plugin", id } : null;
+  }
 
   if (name.startsWith("mcp__")) {
     const rest = name.slice("mcp__".length);

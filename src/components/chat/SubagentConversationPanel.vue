@@ -176,6 +176,7 @@ watchEffect(() => {
 }
 
 .subagent-conversation-body {
+  --code-block-sticky-top: -14px;
   flex: 1;
   min-height: 0;
   overflow: auto;

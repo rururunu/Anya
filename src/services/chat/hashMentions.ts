@@ -1,8 +1,9 @@
 /**
- * `#` resource mentions for Skills and MCP servers.
+ * `#` resource mentions for Skills, agent plugins, and MCP servers.
  *
  * Wire format in the sent message (human-readable + agent-parseable):
  * - `#skill:generate_word`
+ * - `#plugin:computer-use`
  * - `#mcp:server-id`
  *
  * Chips in the composer use the same tokens via {@link formatHashMention}.
@@ -14,7 +15,9 @@ import {
   type ResourceUsageStore,
 } from "@/services/usage/resourceUsage";
 
-export type HashResourceKind = "skill" | "mcp";
+export type HashResourceKind = "skill" | "plugin" | "mcp";
+
+const KIND_RANK: Record<HashResourceKind, number> = { skill: 0, plugin: 1, mcp: 2 };
 
 export type HashMentionItem = {
   kind: HashResourceKind;
@@ -45,9 +48,19 @@ export function formatHashMention(kind: HashResourceKind, id: string): string {
   return `#${kind}:${cleaned}`;
 }
 
-const HASH_TOKEN_RE = /#(skill|mcp):([A-Za-z0-9_.-]+)/g;
+const HASH_TOKEN_RE = /#(skill|mcp|plugin):([A-Za-z0-9_.-]+)/g;
 
-/** Parse all `#skill:` / `#mcp:` tokens from free text. */
+/** True when an installed plugin should appear in the `#` catalog. */
+export function isHashableAgentPlugin(plugin: {
+  enabled: boolean;
+  role?: string;
+  contributes?: { agent?: { tools?: boolean } };
+}): boolean {
+  if (!plugin.enabled) return false;
+  return plugin.role === "agent" || plugin.contributes?.agent?.tools === true;
+}
+
+/** Parse all `#skill:` / `#mcp:` / `#plugin:` tokens from free text. */
 export function parseHashMentions(text: string): Array<{ kind: HashResourceKind; id: string }> {
   const out: Array<{ kind: HashResourceKind; id: string }> = [];
   const re = new RegExp(HASH_TOKEN_RE.source, "g");
@@ -100,8 +113,8 @@ function activeTriggerMention(
   const end = safeCaret;
   const query = message.slice(start + 1, end);
 
-  // A completed `#skill:id` / `#mcp:id` token should not keep the picker open.
-  if (trigger === "#" && /^(skill|mcp):[A-Za-z0-9_.-]+$/.test(query)) {
+  // A completed `#skill:id` / `#mcp:id` / `#plugin:id` token should not keep the picker open.
+  if (trigger === "#" && /^(skill|mcp|plugin):[A-Za-z0-9_.-]+$/.test(query)) {
     return null;
   }
 
@@ -109,8 +122,8 @@ function activeTriggerMention(
 }
 
 /**
- * Filter skill/MCP catalog by the typed query after `#`.
- * Supports prefixes like `skill:`, `mcp:`, or free-text against id/title/vendor/desc.
+ * Filter skill/plugin/MCP catalog by the typed query after `#`.
+ * Supports prefixes like `skill:`, `plugin:`, `mcp:`, or free-text against id/title/vendor/desc.
  * Frequent / recent usage ranks above alphabetical order.
  */
 export function filterHashMentionItems(
@@ -132,12 +145,18 @@ export function filterHashMentionItems(
   if (query === "skill" || query === "skills") {
     kindFilter = "skill";
     needle = "";
+  } else if (query === "plugin" || query === "plugins") {
+    kindFilter = "plugin";
+    needle = "";
   } else if (query === "mcp") {
     kindFilter = "mcp";
     needle = "";
   } else if (query.startsWith("skill:") || query.startsWith("skill/")) {
     kindFilter = "skill";
     needle = query.slice(6);
+  } else if (query.startsWith("plugin:") || query.startsWith("plugin/")) {
+    kindFilter = "plugin";
+    needle = query.slice(7);
   } else if (query.startsWith("mcp:") || query.startsWith("mcp/")) {
     kindFilter = "mcp";
     needle = query.slice(4);
@@ -171,8 +190,8 @@ function compareMentionItems(
     needle && (rightId.startsWith(needle) || rightVendor.startsWith(needle)) ? 0 : 1;
   if (leftPrefix !== rightPrefix) return leftPrefix - rightPrefix;
 
-  // Keep Skills and MCP in separate blocks (skills first), then rank by usage.
-  if (left.kind !== right.kind) return left.kind === "skill" ? -1 : 1;
+  // Keep kinds in separate blocks (skills, then plugins, then MCP), then rank by usage.
+  if (left.kind !== right.kind) return KIND_RANK[left.kind] - KIND_RANK[right.kind];
 
   const leftUsage = resourceUsageScore(left.kind, left.id, usage, now);
   const rightUsage = resourceUsageScore(right.kind, right.id, usage, now);

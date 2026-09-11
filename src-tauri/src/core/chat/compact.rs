@@ -624,13 +624,21 @@ fn build_mechanical_summary(messages: &[ChatMessage]) -> String {
     if !tool_lines.is_empty() {
         sections.push(format!(
             "## Tools\n{}",
-            tool_lines.into_iter().take(40).collect::<Vec<_>>().join("\n")
+            tool_lines
+                .into_iter()
+                .take(40)
+                .collect::<Vec<_>>()
+                .join("\n")
         ));
     }
     if !other_lines.is_empty() {
         sections.push(format!(
             "## Notes\n{}",
-            other_lines.into_iter().take(30).collect::<Vec<_>>().join("\n")
+            other_lines
+                .into_iter()
+                .take(30)
+                .collect::<Vec<_>>()
+                .join("\n")
         ));
     }
 

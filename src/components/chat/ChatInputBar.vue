@@ -191,6 +191,7 @@
       <OptionPicker
         v-else-if="showApprovalPicker"
         key="approval-mode-list"
+        compact
         :options="approvalPickerOptions"
         :selected-id="sessionToolApprovalMode"
         :selected-index="selectedIndex"
@@ -244,6 +245,7 @@
         :ariaLabel="tr(language, 'hashMentions')"
         :skill-label="tr(language, 'hashSkill')"
         :mcp-label="tr(language, 'hashMcp')"
+        :plugin-label="tr(language, 'hashPlugin')"
         @hover="selectedIndex = $event"
         @select="selectHashMention"
       />
@@ -372,12 +374,14 @@
           :aria-expanded="showSuggestions || interactivePickerOpen"
           :mcp-servers="settingStore.mcpServers ?? []"
           :skills="composerSkillMeta"
+          :plugins="pluginsStore.plugins"
           :file-catalog="workspaceFiles"
           class="peek-scrollbar"
           @caret-change="onComposerCaretChange"
           @input="onComposerInput"
           @keydown="handleKeydown"
           @paste="handlePaste"
+          @oversized-paste="handleOversizedPaste"
         />
       </div>
 
@@ -625,7 +629,7 @@ import {
   ShieldQuestion,
   Shield,
   ShieldCheck,
-  Unlock,
+  ShieldOff,
   Plus,
   ListChecks,
   Check,
@@ -663,10 +667,12 @@ import {
   formatResourceMention,
   normalizeMentionPath,
 } from "@/services/chat/composerSegments";
+import { createPastedTextFile } from "@/services/chat/longText";
 import {
   activeFilePathMention,
   activeHashMention,
   filterHashMentionItems,
+  isHashableAgentPlugin,
   type HashMentionItem,
 } from "@/services/chat/hashMentions";
 import { recordResourceUsage, sortByResourceUsage } from "@/services/usage/resourceUsage";
@@ -678,6 +684,8 @@ import {
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useChatModelStore } from "@/stores/chatModel";
 import { useSettingStore } from "@/stores/setting";
+import { usePluginsStore } from "@/stores/plugins";
+import { pluginIconUrl } from "@/services/plugins/ipc";
 import { warmProviderFavicons } from "@/services/providerFavicon";
 import {
   getModelIcon,
@@ -923,6 +931,7 @@ const modelChipConfirm = ref(false);
 let modelChipConfirmTimer: ReturnType<typeof setTimeout> | null = null;
 
 const settingStore = useSettingStore();
+const pluginsStore = usePluginsStore();
 watch(
   () => settingStore.customProviders,
   (providers) => {
@@ -973,7 +982,11 @@ const {
   clearAttachedImages,
   clearAttachedFiles,
   attachedFilesMessagePrefix,
+  persistAttachments,
+  loadAttachments,
+  restoreAttachments,
 } = useComposerAttachments({
+  sessionId: sessionIdRef,
   language,
   emitLayoutChange: () => emitLayoutChangeImpl(),
   emitPreviewImage: (url) => emit("previewImage", url),
@@ -1066,9 +1079,11 @@ watch(
   (next, prev) => {
     if (prev && prev !== next) {
       persistDraft(prev, serializeComposerSegments(), true);
+      persistAttachments(prev, true);
     }
     syncComposeToModel();
     loadDraft();
+    loadAttachments();
   },
   { immediate: true },
 );
@@ -1442,8 +1457,7 @@ function getApprovalIcon(mode: ToolApprovalMode) {
       // Auto-run under policy —guarded shield.
       return Shield;
     case "alwaysAllow":
-      // No prompts (dangerous shell still blocked) —unlocked.
-      return Unlock;
+      return ShieldOff;
   }
 }
 
@@ -1977,7 +1991,7 @@ async function openApprovalPicker() {
   );
   selectedIndex.value = idx >= 0 ? idx : 0;
   approvalPickerOpen.value = true;
-  await positionChipPicker(approvalButtonRef.value, 340);
+  await positionChipPicker(approvalButtonRef.value, 160);
   await syncPopupState(true);
   emitLayoutChange();
   void focusInput();
@@ -2466,6 +2480,16 @@ const attachMcpItems = computed(() =>
   ),
 );
 
+function pluginHashItems(): HashMentionItem[] {
+  return pluginsStore.plugins.filter(isHashableAgentPlugin).map((plugin) => ({
+    kind: "plugin" as const,
+    id: plugin.id,
+    title: plugin.name || plugin.id,
+    description: plugin.description || undefined,
+    iconUrl: plugin.icon ? pluginIconUrl(plugin.id, plugin.icon) : null,
+  }));
+}
+
 const showSuggestions = computed(
   () => showFileSuggestions.value || showHashSuggestions.value || showCommandSuggestions.value,
 );
@@ -2504,16 +2528,18 @@ async function ensureHashCatalog(force = false) {
         iconUrl: server.iconUrl ?? null,
         vendor: server.qualifiedName?.trim() || undefined,
       }));
-    hashCatalog.value = [...skillItems, ...mcpItems];
+    const pluginItems: HashMentionItem[] = pluginHashItems();
+    hashCatalog.value = [...skillItems, ...pluginItems, ...mcpItems];
     hashCatalogReady.value = true;
     void warmInstallIcons(
-      hashCatalog.value.map((item) => ({
-        kind: item.kind,
-        cacheKey: item.id,
-        url: item.iconUrl,
-      })),
+      hashCatalog.value.flatMap((item) =>
+        item.kind === "skill" || item.kind === "mcp"
+          ? [{ kind: item.kind, cacheKey: item.id, url: item.iconUrl }]
+          : [],
+      ),
     ).then(() => {
       hashCatalog.value = hashCatalog.value.map((item) => {
+        if (item.kind === "plugin") return item;
         const local = peekInstallIcon(item.kind, item.id);
         return local ? { ...item, iconUrl: local } : item;
       });
@@ -2525,6 +2551,23 @@ async function ensureHashCatalog(force = false) {
     hashCatalogLoading.value = false;
   }
 }
+
+watch(
+  () =>
+    pluginsStore.plugins
+      .map(
+        (plugin) =>
+          `${plugin.id}:${plugin.enabled}:${plugin.role}:${plugin.contributes.agent?.tools ? 1 : 0}:${plugin.icon ?? ""}`,
+      )
+      .join("|"),
+  () => {
+    if (!hashCatalogReady.value) return;
+    hashCatalog.value = [
+      ...hashCatalog.value.filter((item) => item.kind !== "plugin"),
+      ...pluginHashItems(),
+    ];
+  },
+);
 
 function insertPlainToken(token: string) {
   const sel = composerRef.value?.getSelection() ?? {
@@ -2829,15 +2872,11 @@ function syncOverlayWorkspaceFromContext() {
   // IDE / resolved capture context when it matches a known folder.
   const root = overlayContextWorkspaceRoot();
   if (!root) {
-    // Keep an already-shown selection for this summon. Clearing here races with
-    // submit: PeekPanel consumes capture context in the same turn as send.
+    currentWorkspace.value = null;
     return;
   }
   const matched = matchKnownWorkspace(root);
-  if (!matched) {
-    return;
-  }
-  currentWorkspace.value = matched;
+  currentWorkspace.value = matched ?? null;
 }
 
 async function loadWorkspaceState() {
@@ -3202,6 +3241,14 @@ function handlePaste(event: ClipboardEvent) {
   }
 
   // Plain-text paste (including multiline) is handled by ComposerEditable.
+  emitLayoutChange();
+  scheduleResizeComposerInput(true);
+}
+
+async function handleOversizedPaste(text: string) {
+  if (!text.trim()) return;
+  const file = await createPastedTextFile(text);
+  await ingestDroppedOrPastedFiles([file]);
   emitLayoutChange();
   scheduleResizeComposerInput(true);
 }
@@ -4015,6 +4062,7 @@ defineExpose({
   insertFileMention,
   resolveSendWorkspaceOptions,
   attachImageEditReference,
+  restoreAttachments,
 });
 </script>
 
@@ -4146,7 +4194,7 @@ defineExpose({
   border: 1px solid var(--peek-border);
   border-bottom: 0;
   border-radius: 14px 14px 0 0;
-  background: var(--peek-surface);
+  background: var(--peek-interaction-fill, var(--peek-composer-fill, var(--peek-surface)));
   box-shadow: none;
 }
 
@@ -4386,10 +4434,8 @@ defineExpose({
     var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
   border-radius: var(--peek-radius-composer, 16px);
   background: var(--peek-composer-fill);
-  box-shadow: var(--peek-composer-shadow, var(--peek-elev-sm));
-  transition:
-    border-color var(--motion-fast, 110ms) var(--motion-ease-out, ease),
-    box-shadow var(--motion-fast, 110ms) var(--motion-ease-out, ease);
+  box-shadow: var(--peek-composer-shadow, none);
+  transition: border-color var(--motion-fast, 110ms) var(--motion-ease-out, ease);
 }
 
 .workbench-composer :deep(.image-gen-toolbar),
@@ -4400,9 +4446,9 @@ defineExpose({
 .workbench-composer .input-bar:focus-within {
   border-color: var(
     --peek-composer-border-focus,
-    color-mix(in srgb, var(--peek-text) 28%, transparent)
+    var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent))
   );
-  box-shadow: var(--peek-composer-shadow-focus, var(--peek-composer-shadow, var(--peek-elev-sm)));
+  box-shadow: var(--peek-composer-shadow-focus, none);
 }
 
 .workbench-composer {
@@ -4523,7 +4569,6 @@ defineExpose({
   height: var(--peek-control-icon, 28px);
   padding-right: 8px;
   padding-left: 8px;
-  border-radius: var(--peek-radius-sm, 6px);
 }
 
 .workbench-composer .model-badge {
@@ -4582,7 +4627,7 @@ defineExpose({
     var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
-  background: var(--peek-interaction-fill);
+  background: var(--peek-interaction-fill, var(--peek-composer-fill, var(--peek-surface)));
   box-shadow: none;
 }
 
@@ -4741,7 +4786,7 @@ defineExpose({
   border: 1px solid var(--peek-border);
   border-bottom: 0;
   border-radius: 14px 14px 0 0;
-  background: var(--peek-surface);
+  background: var(--peek-interaction-fill, var(--peek-composer-fill, var(--peek-surface)));
 }
 
 .overlay-composer.overlay-pickers.interaction-request-open :deep(.ask-user-list) {
@@ -4849,32 +4894,33 @@ defineExpose({
 /* Shared ghost-chip language for footer controls */
 .footer-chip {
   height: var(--peek-control-icon, 28px);
-  border-radius: var(--peek-radius-sm, 6px);
-  border: 1px solid transparent;
+  border: 0;
+  border-radius: 0;
   background: transparent;
   color: var(--peek-muted);
+  box-shadow: none;
   font-family: var(--peek-font-sans);
   font-size: var(--peek-font-xs, 12px);
   font-weight: 500;
   letter-spacing: 0.01em;
   line-height: 1.2;
   transition:
-    border-color var(--motion-fast, 110ms) ease,
     color var(--motion-fast, 110ms) ease,
-    background-color var(--motion-fast, 110ms) ease,
-    box-shadow var(--motion-fast, 110ms) ease,
-    transform var(--motion-instant, 80ms) ease;
+    opacity var(--motion-fast, 110ms) ease;
 }
 
-.footer-chip:hover:not(:disabled) {
+.footer-chip:hover:not(:disabled),
+.footer-chip:focus-visible {
   color: var(--peek-text);
-  background: var(--peek-hover-bg);
-  border-color: color-mix(in srgb, var(--peek-border) 80%, transparent);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  outline: none;
 }
 
 .footer-chip:active:not(:disabled) {
-  transform: scale(0.97);
-  background: var(--peek-press-bg);
+  color: var(--peek-text);
+  background: transparent;
 }
 
 .footer-chip-icon {
@@ -4891,8 +4937,12 @@ defineExpose({
   opacity: 1;
 }
 
-.footer-chip.active {
-  border-color: color-mix(in srgb, var(--peek-accent, currentColor) 32%, transparent);
+.footer-chip.active,
+.footer-chip.open {
+  color: var(--peek-text);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .footer-chip-icon-only {
@@ -5149,9 +5199,10 @@ defineExpose({
 }
 
 .model-badge.confirm {
-  border-color: color-mix(in srgb, var(--peek-accent) 45%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--peek-accent) 22%, transparent);
   color: var(--peek-text);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .model-chevron {
@@ -5172,16 +5223,13 @@ defineExpose({
 }
 
 .model-badge:hover,
-.model-badge.open {
-  border-color: color-mix(in srgb, var(--peek-border) 80%, transparent);
+.model-badge.open,
+.model-badge:focus-visible {
   color: var(--peek-text);
-  background: color-mix(in srgb, var(--peek-text) 5%, transparent);
-}
-
-.model-badge.open {
-  border-color: color-mix(in srgb, var(--peek-accent) 28%, transparent);
-  background: color-mix(in srgb, var(--peek-accent) 10%, transparent);
-  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--peek-accent) 12%, transparent);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  outline: none;
 }
 
 .context-label {

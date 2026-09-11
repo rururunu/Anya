@@ -25,16 +25,6 @@ pub(super) async fn apply_image_input_fallback(
 ) -> Result<FallbackPlan, ProviderError> {
     let mm_model = settings.multimodal_model.trim();
 
-    if !mm_model.is_empty()
-        && (settings.multimodal_model_provider.trim().is_empty()
-            || settings.multimodal_model_provider.trim() == "gemini")
-        && crate::services::gemini_oauth::can_use_antigravity_for_model(settings, mm_model)
-        && !settings.multimodal_split_analysis
-    {
-        apply_split_image_analysis(request, settings, app, tx).await?;
-        return Ok(FallbackPlan::RetryPrimary);
-    }
-
     if settings.multimodal_split_analysis {
         apply_split_image_analysis(request, settings, app, tx).await?;
         return Ok(FallbackPlan::RetryPrimary);
@@ -43,15 +33,6 @@ pub(super) async fn apply_image_input_fallback(
     if mm_model.is_empty() {
         return Err(ProviderError::message(
             "The primary model does not support image input. Configure a multimodal model in Settings, or enable multimodal split analysis.",
-        ));
-    }
-
-    if (settings.multimodal_model_provider.trim().is_empty()
-        || settings.multimodal_model_provider.trim() == "gemini")
-        && crate::services::gemini_oauth::can_use_antigravity_for_model(settings, mm_model)
-    {
-        return Err(ProviderError::message(
-            "Gemini multimodal models cannot be switched wholesale to the OpenAI API. Enable multimodal split analysis, or use a model such as gpt-4o.",
         ));
     }
 
@@ -90,7 +71,9 @@ async fn apply_split_image_analysis(
     let mut patches: Vec<(String, String)> = Vec::new();
 
     for message in &mut request.messages {
-        if message.role != Role::User || !message.content.contains("![image](") {
+        if !matches!(message.role, Role::User | Role::Tool)
+            || !message.content.contains("![image](")
+        {
             continue;
         }
 

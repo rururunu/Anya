@@ -2,7 +2,7 @@ import type { AskUserSession, PathPermissionSession } from "@/components/chat/Ch
 import type { ToolApprovalSession } from "@/types/chat";
 
 /** Which panel is shown in the review sidebar. */
-export type ReviewView = "diff" | "agents" | "runtime" | "image";
+export type ReviewView = "diff" | "agents" | "runtime" | "image" | "plan";
 
 /** Side of the drop target a dragged workspace row is hovering over. */
 export type WorkspaceDropPosition = "before" | "after";

@@ -3,6 +3,7 @@
  * Module-level singletons stay process-wide — do not put these in Pinia state.
  */
 
+import type { AttachedFileChip } from "@/services/chat/attachFiles";
 import { normalizeChatMode } from "@/types/setting";
 import {
   defaultImageGenCompose,
@@ -23,6 +24,10 @@ export interface SessionCompose {
   /** Workspace binding for draft-only (not-yet-sent) sessions shown in the sidebar. */
   draftWorkspaceId?: string | null;
   draftUpdatedAt?: number;
+  /** Unsent image/file chips left in the composer — restored on session switch. */
+  draftImages?: string[];
+  draftEditSources?: Array<string | null>;
+  draftFiles?: AttachedFileChip[];
 }
 
 export function defaultCompose(): SessionCompose {
@@ -33,6 +38,9 @@ export function defaultCompose(): SessionCompose {
     toolApprovalMode: "ask",
     imageGen: defaultImageGenCompose(),
     draft: "",
+    draftImages: [],
+    draftEditSources: [],
+    draftFiles: [],
   };
 }
 
@@ -55,6 +63,18 @@ export function sanitizeCompose(raw: Partial<SessionCompose> | null | undefined)
     draft: typeof raw.draft === "string" ? raw.draft : "",
     draftWorkspaceId: raw.draftWorkspaceId ?? null,
     draftUpdatedAt: typeof raw.draftUpdatedAt === "number" ? raw.draftUpdatedAt : undefined,
+    draftImages: Array.isArray(raw.draftImages)
+      ? raw.draftImages.filter((value): value is string => typeof value === "string")
+      : [],
+    draftEditSources: Array.isArray(raw.draftEditSources)
+      ? raw.draftEditSources.map((value) => (typeof value === "string" ? value : null))
+      : [],
+    draftFiles: Array.isArray(raw.draftFiles)
+      ? raw.draftFiles.filter(
+          (value): value is AttachedFileChip =>
+            Boolean(value) && typeof value === "object" && typeof value.path === "string",
+        )
+      : [],
   };
 }
 

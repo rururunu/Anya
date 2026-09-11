@@ -12,6 +12,8 @@ export function useMessageScroll(options: {
   displayItems: ComputedRef<unknown[]>;
   activeUserMessageId: Ref<string>;
   railRef: Ref<HTMLElement | null>;
+  sessionId?: ComputedRef<string | undefined> | Ref<string | undefined>;
+  isSending?: ComputedRef<boolean> | Ref<boolean>;
   updateActiveUserMessage: (metrics: ActiveUserMessageMetrics) => void;
 }) {
   let cachedLastMessageEl: HTMLElement | null = null;
@@ -19,10 +21,9 @@ export function useMessageScroll(options: {
   let bottomScrollRaf = 0;
   let resizeScrollRaf = 0;
   let resizeObserver: ResizeObserver | null = null;
-  /* scrollTop we last set ourselves; scroll events landing there are not user intent. */
   let programmaticScrollTop: number | null = null;
-  /* After the user deliberately scrolls up, ignore re-sticking for a moment so smooth
-     wheel/trackpad scrolling that briefly passes "near bottom" doesn't snap them back. */
+  let isSmoothScrollingToBottom = false;
+  let sessionSwitchPending = true;
   let userScrollUpUntil = 0;
   const USER_SCROLL_GRACE_MS = 700;
 
@@ -74,11 +75,21 @@ export function useMessageScroll(options: {
       scrollRaf = 0;
       const element = options.listRef.value;
       if (!element) return;
-      // Our own scrollTo() also fires scroll events; those must not flip the sticky flag.
+
+      if (sessionSwitchPending || isSmoothScrollingToBottom) {
+        if (isNearBottom(element)) {
+          sessionSwitchPending = false;
+          isSmoothScrollingToBottom = false;
+        }
+        options.updateActiveUserMessage(activeUserMetrics(element));
+        return;
+      }
+
       const isProgrammatic =
-        programmaticScrollTop !== null && Math.abs(element.scrollTop - programmaticScrollTop) < 2;
-      programmaticScrollTop = null;
-      if (!isProgrammatic) {
+        programmaticScrollTop !== null && Math.abs(element.scrollTop - programmaticScrollTop) <= 4;
+      if (isProgrammatic) {
+        programmaticScrollTop = null;
+      } else {
         const wantsBottom = isNearBottom(element) || isLastTurnOnScreen(element);
         if (!wantsBottom) {
           options.stickToBottom.value = false;
@@ -93,6 +104,8 @@ export function useMessageScroll(options: {
   /** Wheel / trackpad: scrolling up is an explicit "let me read" and unsticks at once. */
   function handleWheel(event: WheelEvent) {
     if (event.deltaY < 0) {
+      sessionSwitchPending = false;
+      isSmoothScrollingToBottom = false;
       options.stickToBottom.value = false;
       userScrollUpUntil = performance.now() + USER_SCROLL_GRACE_MS;
     }
@@ -101,6 +114,8 @@ export function useMessageScroll(options: {
   /** Keyboard scrolling inside the list: same intent as wheel-up. */
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
+      sessionSwitchPending = false;
+      isSmoothScrollingToBottom = false;
       options.stickToBottom.value = false;
       userScrollUpUntil = performance.now() + USER_SCROLL_GRACE_MS;
     }
@@ -112,6 +127,8 @@ export function useMessageScroll(options: {
       `[data-message-id="${CSS.escape(messageId)}"]`,
     );
     if (!container || !node) return;
+    sessionSwitchPending = false;
+    isSmoothScrollingToBottom = false;
     options.stickToBottom.value = false;
     options.activeUserMessageId.value = messageId;
     gsapScrollContainerTo(container, node, { offsetY: 42 });
@@ -123,8 +140,28 @@ export function useMessageScroll(options: {
     if (!element) return;
     options.stickToBottom.value = true;
     userScrollUpUntil = 0;
+    sessionSwitchPending = false;
+    isSmoothScrollingToBottom = true;
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
     options.updateActiveUserMessage(activeUserMetrics(element));
+  }
+
+  function getTurnSpacer(element: HTMLElement): number {
+    const spacer = element.querySelector<HTMLElement>(".turn-spacer");
+    if (!spacer || spacer.style.display === "none") return 0;
+    return Number.parseFloat(spacer.style.height) || 0;
+  }
+
+  function setTurnSpacer(element: HTMLElement, height: number) {
+    const spacer = element.querySelector<HTMLElement>(".turn-spacer");
+    if (!spacer) return;
+    if (height <= 0) {
+      spacer.style.display = "none";
+      spacer.style.height = "0px";
+    } else {
+      spacer.style.display = "block";
+      spacer.style.height = `${Math.round(height)}px`;
+    }
   }
 
   /** Pin the latest user turn on-screen while streaming when stick-to-bottom is active. */
@@ -140,29 +177,48 @@ export function useMessageScroll(options: {
     }
 
     const padBottom = Number.parseFloat(getComputedStyle(element).paddingBottom) || 0;
-    const maxScroll = element.scrollHeight - element.clientHeight;
-    if (maxScroll <= 1) {
+    const currentSpacer = getTurnSpacer(element);
+    const scrollHeightWithoutSpacer = element.scrollHeight - currentSpacer;
+    const maxScrollWithoutSpacer = Math.max(0, scrollHeightWithoutSpacer - element.clientHeight);
+
+    if (maxScrollWithoutSpacer <= 1) {
+      setTurnSpacer(element, 0);
       setScrollTop(element, 0);
+      sessionSwitchPending = false;
       options.updateActiveUserMessage(activeUserMetrics(element));
       return;
     }
 
-    const users = element.querySelectorAll<HTMLElement>(".message-item.user");
-    const lastUser = users[users.length - 1];
-    if (lastUser) {
-      const listTop = element.getBoundingClientRect().top;
-      const userTop = lastUser.getBoundingClientRect().top - listTop + element.scrollTop;
-      const contentBottom = element.scrollHeight - padBottom;
-      const turnHeight = contentBottom - userTop;
+    if (options.isSending?.value) {
+      const users = element.querySelectorAll<HTMLElement>(".message-item.user");
+      const lastUser = users[users.length - 1];
+      if (lastUser) {
+        const listTop = element.getBoundingClientRect().top;
+        const userTop = lastUser.getBoundingClientRect().top - listTop + element.scrollTop;
+        const targetViewportTop = Math.min(
+          userTop,
+          Math.max(64, Math.min(140, Math.round(element.clientHeight * 0.14))),
+        );
+        const targetScrollTop = Math.max(0, userTop - targetViewportTop);
 
-      if (turnHeight <= element.clientHeight - 4) {
-        setScrollTop(element, users.length <= 1 ? 0 : Math.max(0, userTop - 8));
-        options.updateActiveUserMessage(activeUserMetrics(element));
-        return;
+        const contentBottom = scrollHeightWithoutSpacer - padBottom;
+        const visibleHeight = element.clientHeight - padBottom;
+        const viewportContentBottom = contentBottom - targetScrollTop;
+
+        if (viewportContentBottom <= visibleHeight - 12) {
+          const deficit = Math.max(0, targetScrollTop - maxScrollWithoutSpacer);
+          setTurnSpacer(element, deficit);
+          setScrollTop(element, targetScrollTop);
+          options.updateActiveUserMessage(activeUserMetrics(element));
+          return;
+        }
       }
     }
 
-    setScrollTop(element, maxScroll);
+    setTurnSpacer(element, 0);
+    const targetScroll = Math.max(0, element.scrollHeight - element.clientHeight);
+    setScrollTop(element, targetScroll);
+    sessionSwitchPending = false;
     options.updateActiveUserMessage(activeUserMetrics(element));
   }
 
@@ -174,8 +230,41 @@ export function useMessageScroll(options: {
     });
   }
 
+  function resetForSessionSwitch() {
+    options.stickToBottom.value = true;
+    userScrollUpUntil = 0;
+    cachedLastMessageEl = null;
+    programmaticScrollTop = null;
+    isSmoothScrollingToBottom = false;
+    sessionSwitchPending = true;
+    const element = options.listRef.value;
+    if (element) {
+      setTurnSpacer(element, 0);
+    }
+    void scheduleScrollToBottomIfNeeded();
+  }
+
+  if (options.sessionId) {
+    watch(options.sessionId, () => {
+      resetForSessionSwitch();
+    });
+  }
+
+  if (options.isSending) {
+    watch(options.isSending, (sending, wasSending) => {
+      if (wasSending && !sending) {
+        void scheduleScrollToBottomIfNeeded();
+      }
+    });
+  }
+
   watch(options.displayItems, () => {
-    void nextTick(refreshMessageDomCache);
+    void nextTick(() => {
+      refreshMessageDomCache();
+      if (options.stickToBottom.value) {
+        void scrollToBottomIfNeeded();
+      }
+    });
   });
 
   watch(
@@ -189,19 +278,20 @@ export function useMessageScroll(options: {
     () => {
       const messages = options.messages.value;
       const last = messages[messages.length - 1];
-      if (!last) return "0";
+      if (!last) return `${options.sessionId?.value ?? ""}:0`;
       const tools =
         last.toolActivities
           ?.map((activity) => `${activity.id}:${activity.status}:${activity.detail?.length ?? 0}`)
           .join(",") ?? "";
       const asks = last.askUserAnswer?.map((answer) => answer.selected.join(",")).join(";") ?? "";
-      return `${messages.length}|${last.id}:${last.content.length}:${last.reasoning?.length ?? 0}:${tools}:${asks}:${last.status}:${last.activityStatus ?? ""}`;
+      return `${options.sessionId?.value ?? ""}|${messages.length}|${last.id}:${last.content.length}:${last.reasoning?.length ?? 0}:${tools}:${asks}:${last.status}:${last.activityStatus ?? ""}`;
     },
     () => void scheduleScrollToBottomIfNeeded(),
     { immediate: true },
   );
 
   onMounted(() => {
+    sessionSwitchPending = true;
     const element = options.listRef.value;
     if (!element || typeof ResizeObserver === "undefined") return;
     resizeObserver = new ResizeObserver(() => {
@@ -214,6 +304,7 @@ export function useMessageScroll(options: {
       });
     });
     resizeObserver.observe(element);
+    void scheduleScrollToBottomIfNeeded();
   });
 
   onUnmounted(() => {
@@ -222,6 +313,8 @@ export function useMessageScroll(options: {
     if (scrollRaf) cancelAnimationFrame(scrollRaf);
     if (bottomScrollRaf) cancelAnimationFrame(bottomScrollRaf);
     if (resizeScrollRaf) cancelAnimationFrame(resizeScrollRaf);
+    const element = options.listRef.value;
+    if (element) setTurnSpacer(element, 0);
   });
 
   return {

@@ -14,9 +14,11 @@ struct StagedStore {
 
 fn store() -> &'static Mutex<StagedStore> {
     static STORE: OnceLock<Mutex<StagedStore>> = OnceLock::new();
-    STORE.get_or_init(|| Mutex::new(StagedStore {
-        by_session: HashMap::new(),
-    }))
+    STORE.get_or_init(|| {
+        Mutex::new(StagedStore {
+            by_session: HashMap::new(),
+        })
+    })
 }
 
 pub fn list(session_id: &str) -> Vec<String> {

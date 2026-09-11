@@ -19,6 +19,7 @@ import { useUpdaterStore } from "@/stores/updater";
 import type { Workspace } from "@/commands/workspace";
 import { DEFAULT_SETTINGS_CATEGORY, type CategoryId } from "@/types/setting";
 import type { ChatSessionSummary } from "@/types/chat";
+import { isPluginAgentSessionId } from "@/services/chat/pluginSession";
 import type { PendingInteraction } from "./types";
 
 export interface UseWorkbenchLifecycleOptions {
@@ -30,6 +31,7 @@ export interface UseWorkbenchLifecycleOptions {
   initializing: Ref<boolean>;
   inputRef: Ref<InstanceType<typeof ChatInputBar> | null>;
   settingsOpen: Ref<boolean>;
+  windowFocused?: Ref<boolean>;
   openSettings: (category?: CategoryId) => void;
   syncMaximizedState: () => Promise<void>;
   refreshSessions: () => Promise<void>;
@@ -127,6 +129,9 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     unlisteners.push(await appWindow.onResized(() => void syncMaximizedState()));
     unlisteners.push(
       await appWindow.onFocusChanged(({ payload: focused }) => {
+        if (options.windowFocused) {
+          options.windowFocused.value = focused;
+        }
         if (focused && !settingsOpen.value) clearSessionUnread(activeSessionId.value);
       }),
     );
@@ -209,6 +214,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     unlisteners.push(
       await listenAskUser((payload) => {
         const sessionId = payload.sessionId || activeSessionId.value;
+        if (isPluginAgentSessionId(sessionId)) return;
         setPendingInteraction(sessionId, {
           kind: "ask_user",
           value: { requestId: payload.requestId, questions: payload.questions },
@@ -224,6 +230,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     unlisteners.push(
       await listenPathPermission((payload) => {
         const sessionId = payload.sessionId || activeSessionId.value;
+        if (isPluginAgentSessionId(sessionId)) return;
         setPendingInteraction(sessionId, { kind: "path_permission", value: payload });
         void notifyWhenNotViewed(
           sessionId,
@@ -236,6 +243,7 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     unlisteners.push(
       await listenToolApproval((payload) => {
         const sessionId = payload.sessionId || activeSessionId.value;
+        if (isPluginAgentSessionId(sessionId)) return;
         setPendingInteraction(sessionId, { kind: "tool_approval", value: payload });
         chatStore.attachToolApprovalPreview(
           sessionId,

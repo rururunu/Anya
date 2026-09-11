@@ -11,6 +11,7 @@ import {
 } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
+import { parseAskUserAnswerItems } from "@/services/chat/askUserAnswer";
 import { useChatStore } from "@/stores/chat";
 import { useSettingStore } from "@/stores/setting";
 import type {
@@ -158,6 +159,10 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     const session = askUserSession.value;
     if (!session) return;
     const sessionId = activeSessionId.value;
+    const items = parseAskUserAnswerItems(answer);
+    if (items.length) {
+      chatStore.stageAskUserAnswer(sessionId, items);
+    }
     removePendingInteraction(sessionId, session.requestId);
     void dismissNotificationForInteraction(session.requestId, sessionId);
     try {

@@ -2,9 +2,11 @@
 
 mod office;
 mod read;
+mod search;
 mod write;
 
 pub use read::*;
+pub use search::*;
 pub use write::*;
 
 use std::fs;
@@ -43,7 +45,104 @@ pub(super) fn required_string<'a>(args: &'a Value, key: &str) -> Result<&'a str,
         .ok_or_else(|| ToolError::new(format!("{key} is required")))
 }
 
+pub(super) fn locate_candidate_snippet(content: &str, old_string: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return "(file is empty)".to_string();
+    }
+    if lines.len() <= 35 {
+        return lines
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| format!("{:>4} | {line}", idx + 1))
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+
+    let old_lines: Vec<&str> = old_string
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    let mut candidate_idx = None;
+    let mut longest_matched_len = 0;
+    for &old_line in &old_lines {
+        for (idx, &file_line) in lines.iter().enumerate() {
+            if file_line.trim() == old_line && old_line.len() > longest_matched_len {
+                candidate_idx = Some(idx);
+                longest_matched_len = old_line.len();
+            }
+        }
+    }
+
+    if candidate_idx.is_none() {
+        for &old_line in &old_lines {
+            if old_line.len() >= 6 {
+                for (idx, &file_line) in lines.iter().enumerate() {
+                    if file_line.contains(old_line) {
+                        candidate_idx = Some(idx);
+                        break;
+                    }
+                }
+                if candidate_idx.is_some() {
+                    break;
+                }
+            }
+        }
+    }
+
+    let target_line = candidate_idx.unwrap_or(0);
+    let start = target_line.saturating_sub(8);
+    let end = (target_line + 12).min(lines.len());
+
+    let mut snippet = Vec::with_capacity(end - start + 2);
+    if start > 0 {
+        snippet.push(format!("... (lines 1..{} omitted)", start));
+    }
+    for idx in start..end {
+        snippet.push(format!("{:>4} | {}", idx + 1, lines[idx]));
+    }
+    if end < lines.len() {
+        snippet.push(format!("... (lines {}..{} omitted)", end + 1, lines.len()));
+    }
+    snippet.join("\n")
+}
+
+pub(super) fn format_match_error(
+    tool_or_edit: &str,
+    path: &str,
+    matches: usize,
+    content: Option<&str>,
+    old_string: Option<&str>,
+) -> ToolError {
+    if matches == 0 {
+        let snippet = if let (Some(c), Some(o)) = (content, old_string) {
+            locate_candidate_snippet(c, o)
+        } else {
+            String::new()
+        };
+        if snippet.is_empty() {
+            ToolError::new(format!(
+                "{tool_or_edit}: target `old_string` was not found in `{path}`. The file content may have changed or the match context was inaccurate. You MUST call `read_file` to view the latest file content and regenerate your edit based on the current state. Do NOT attempt to rewrite the entire file with `write_file`."
+            ))
+        } else {
+            ToolError::new(format!(
+                "{tool_or_edit}: target `old_string` was not found in `{path}`. The file content may have changed or the match context was inaccurate.\n\nCurrent content around the target area in `{path}`:\n```\n{snippet}\n```\nUse the exact matching lines above to call `replace_in_file` again. Do NOT attempt to rewrite the entire file with `write_file`."
+            ))
+        }
+    } else {
+        ToolError::new(format!(
+            "{tool_or_edit}: `old_string` appeared {matches} times in `{path}` (must be unique). Please include more surrounding context lines in `old_string` so it matches exactly once."
+        ))
+    }
+}
+
 pub(super) fn apply_many_edits(content: &str, args: &Value) -> Result<(String, usize), ToolError> {
+    let path = args
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or("the file");
     let edits = args
         .get("edits")
         .and_then(Value::as_array)
@@ -60,10 +159,13 @@ pub(super) fn apply_many_edits(content: &str, args: &Value) -> Result<(String, u
             .ok_or_else(|| ToolError::new(format!("edit {index}: new_string is required")))?;
         let applied = apply_old_string_edit(&updated, old, new, false);
         if applied.applied != 1 {
-            return Err(ToolError::new(format!(
-                "edit {index}: old_string must appear exactly once, found {}",
-                applied.matches
-            )));
+            return Err(format_match_error(
+                &format!("edit {index}"),
+                path,
+                applied.matches,
+                Some(&updated),
+                Some(old),
+            ));
         }
         fuzzy_count += usize::from(applied.fuzzy);
         updated = applied.updated;
@@ -76,20 +178,26 @@ pub(super) fn single_edit_preview(
     content: String,
     old: &str,
     new: &str,
-) -> Option<ToolPreview> {
+) -> Result<Option<ToolPreview>, ToolError> {
     let applied = apply_old_string_edit(&content, old, new, false);
     if applied.applied != 1 {
-        return None;
+        return Err(format_match_error(
+            "replace_in_file",
+            path,
+            applied.matches,
+            Some(&content),
+            Some(old),
+        ));
     }
     let diff = unified_diff(path, &content, &applied.updated);
-    Some(ToolPreview {
+    Ok(Some(ToolPreview {
         path: path.to_string(),
         affected_paths: vec![path.to_string()],
         kind: ChangeKind::Modify,
         old_text: Some(content),
         new_text: Some(applied.updated),
         unified_diff: diff,
-    })
+    }))
 }
 
 /// Rejects whole-file edits: an `old_string` covering most of a file hides the real change.
@@ -196,13 +304,46 @@ mod edit_tests {
 
     #[test]
     fn replace_single_preview_uses_complete_file_contents() {
-        let preview =
-            single_edit_preview("file.txt", "before\nold\nafter\n".into(), "old", "new").unwrap();
+        let preview = single_edit_preview("file.txt", "before\nold\nafter\n".into(), "old", "new")
+            .unwrap()
+            .unwrap();
         assert_eq!(preview.old_text.as_deref(), Some("before\nold\nafter\n"));
         assert_eq!(preview.new_text.as_deref(), Some("before\nnew\nafter\n"));
         assert!(preview.unified_diff.contains(" before"));
         assert!(preview.unified_diff.contains("-old"));
         assert!(preview.unified_diff.contains("+new"));
+    }
+
+    #[test]
+    fn single_edit_preview_fails_with_guided_error_when_zero_matches() {
+        let error = single_edit_preview("file.txt", "line 1\nline 2\n".into(), "missing", "new")
+            .unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("target `old_string` was not found in `file.txt`"));
+        assert!(message.contains("Current content around the target area in `file.txt`"));
+        assert!(message.contains("1 | line 1"));
+        assert!(message.contains("2 | line 2"));
+        assert!(message.contains("Do NOT attempt to rewrite the entire file with `write_file`"));
+    }
+
+    #[test]
+    fn locate_candidate_snippet_centers_on_partial_match() {
+        let content = (1..=100)
+            .map(|i| format!("statement_{i}();"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let snippet = locate_candidate_snippet(&content, "statement_50();\nmissing_call();");
+        assert!(snippet.contains("50 | statement_50();"));
+        assert!(snippet.contains("45 | statement_45();"));
+        assert!(snippet.contains("55 | statement_55();"));
+    }
+
+    #[test]
+    fn single_edit_preview_fails_with_guided_error_when_multiple_matches() {
+        let error = single_edit_preview("file.txt", "dup\ndup\n".into(), "dup", "new").unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("appeared 2 times in `file.txt`"));
+        assert!(message.contains("must be unique"));
     }
 
     #[test]

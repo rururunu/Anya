@@ -11,7 +11,8 @@ use super::errors::map_read_error;
 use super::responses::{append_delta, json_index, ResponsesTick};
 use super::sse::next_sse_line;
 use super::types::{
-    StreamReadOutcome, ToolCallBuilder, STREAM_IDLE_TIMEOUT, USER_STREAM_INTERRUPTED, USER_STREAM_STALLED,
+    StreamReadOutcome, ToolCallBuilder, STREAM_IDLE_TIMEOUT, USER_STREAM_INTERRUPTED,
+    USER_STREAM_STALLED,
 };
 
 pub(super) async fn read_anthropic_sse_stream(

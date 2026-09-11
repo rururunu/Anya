@@ -5,8 +5,7 @@ use super::models::{
     endpoint_url_for_protocol, normalize_chat_completions_url, normalize_images_generations_url,
 };
 use super::multimodal::{
-    antigravity_model_for_image_describe, multimodal_http_error_message,
-    multimodal_transport_error_message, resolve_multimodal_endpoint,
+    multimodal_http_error_message, multimodal_transport_error_message, resolve_multimodal_endpoint,
     should_retry_multimodal_as_stream,
 };
 use super::stream::{user_facing_stream_error, StreamReadOutcome, USER_STREAM_INTERRUPTED};
@@ -189,6 +188,28 @@ fn message_to_api_json_serializes_tool_result() {
     assert_eq!(tool_json["role"], "tool");
     assert_eq!(tool_json["tool_call_id"], "call-1");
     assert_eq!(tool_json["name"], "read_file");
+}
+
+#[test]
+fn message_to_api_json_keeps_screenshot_parts_on_tool() {
+    let tool = ChatMessage {
+        id: "t1".into(),
+        session_id: "default".into(),
+        role: Role::Tool,
+        content: "shot\n![image](data:image/png;base64,QQ==)".into(),
+        reasoning: None,
+        work_timeline: None,
+        tool_activities: None,
+        tool_calls: None,
+        tool_call_id: Some("call-1".into()),
+        name: Some("plugin_computer-use__screenshot".into()),
+        status: MessageStatus::Done,
+        timestamp: 2,
+        estimated_tokens: None,
+    };
+    let json = message_to_api_json(&tool, true, false);
+    assert!(json["content"].is_array());
+    assert_eq!(json["content"][1]["type"], "image_url");
 }
 
 fn msg(
@@ -789,12 +810,8 @@ fn normalize_images_generations_url_from_chat_base() {
 fn resolve_multimodal_endpoint_uses_deepseek_builtin() {
     let mut settings = crate::models::settings::AppSettings::default();
     settings.deepseek_api_key = "sk-test".into();
-    let endpoint = resolve_multimodal_endpoint(
-        &settings,
-        "deepseek-v4-flash-vision-exp",
-        "deepseek",
-    )
-    .unwrap();
+    let endpoint =
+        resolve_multimodal_endpoint(&settings, "deepseek-v4-flash-vision-exp", "deepseek").unwrap();
     assert_eq!(endpoint.api_key, "sk-test");
     assert!(endpoint.url.contains("deepseek.com"));
 }
@@ -850,8 +867,7 @@ fn resolve_multimodal_endpoint_disambiguates_duplicate_model_ids() {
         ..Default::default()
     };
 
-    let endpoint =
-        resolve_multimodal_endpoint(&settings, "shared-vision-model", "second").unwrap();
+    let endpoint = resolve_multimodal_endpoint(&settings, "shared-vision-model", "second").unwrap();
     assert_eq!(endpoint.api_key, "key-2");
     assert_eq!(endpoint.url, "https://second.example/v1/chat/completions");
 }
@@ -905,23 +921,4 @@ fn should_not_retry_stream_after_body_decode_failure() {
     assert!(should_retry_multimodal_as_stream(&ProviderError::message(
         "Failed to extract an image description from the multimodal response. Debug: empty. Snippet: {}"
     )));
-}
-
-#[test]
-fn antigravity_describe_model_only_when_multimodal_is_gemini() {
-    let mut settings = crate::models::settings::AppSettings {
-        chat_model: "gemini-3.5-flash-low".into(),
-        multimodal_model: "gpt-4o".into(),
-        ..Default::default()
-    };
-    settings.gemini_oauth.refresh_token = "rt".into();
-    // Chat Gemini must not hijack multimodal describe — chat already sees images natively.
-    assert!(antigravity_model_for_image_describe(&settings, "gpt-4o").is_none());
-    assert_eq!(
-        antigravity_model_for_image_describe(&settings, "gemini-3-flash").as_deref(),
-        Some("gemini-3-flash")
-    );
-
-    settings.multimodal_model_provider = "custom-gemini".into();
-    assert!(antigravity_model_for_image_describe(&settings, "gemini-3-flash").is_none());
 }

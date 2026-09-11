@@ -1,5 +1,6 @@
-import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
-import { Bug, FileDiff } from "@lucide/vue";
+import { computed, onMounted, ref, watch, type ComputedRef, type Ref } from "vue";
+import { Bug, FileDiff, FileText } from "@lucide/vue";
+import { tr } from "@/services/i18n";
 
 import {
   useReviewSidebarResize,
@@ -33,6 +34,77 @@ export {
   NAVIGATION_SIDEBAR_MAX_WIDTH,
 };
 
+const REVIEW_MEMORY_STORAGE_KEY = "anya.workbenchReviewBySession.v1";
+const DEFAULT_REVIEW_VIEW = "diff";
+const TRANSIENT_REVIEW_VIEWS = new Set(["agents", "subagents", "image"]);
+const MAX_REVIEW_MEMORY_ENTRIES = 80;
+
+type SessionReviewMemory = { view: string; open: boolean; at: number };
+
+function normalizeReviewView(view: string): string {
+  const stored = view.trim();
+  if (!stored || TRANSIENT_REVIEW_VIEWS.has(stored)) return DEFAULT_REVIEW_VIEW;
+  if (stored === "runtime" && !import.meta.env.DEV) return DEFAULT_REVIEW_VIEW;
+  return stored;
+}
+
+function reviewMemoryId(sessionId: string): string {
+  return rootSessionId(sessionId) || sessionId;
+}
+
+function readReviewMemoryMap(): Record<string, SessionReviewMemory> {
+  try {
+    const raw = localStorage.getItem(REVIEW_MEMORY_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, SessionReviewMemory> = {};
+    for (const [id, value] of Object.entries(parsed)) {
+      if (!id || !value || typeof value !== "object" || Array.isArray(value)) continue;
+      const row = value as { view?: unknown; open?: unknown; at?: unknown };
+      out[id] = {
+        view: typeof row.view === "string" ? normalizeReviewView(row.view) : DEFAULT_REVIEW_VIEW,
+        open: row.open === true,
+        at: typeof row.at === "number" && Number.isFinite(row.at) ? row.at : 0,
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function readSessionReviewMemory(sessionId: string): SessionReviewMemory {
+  const id = reviewMemoryId(sessionId);
+  if (!id) return { view: DEFAULT_REVIEW_VIEW, open: false, at: 0 };
+  return readReviewMemoryMap()[id] ?? { view: DEFAULT_REVIEW_VIEW, open: false, at: 0 };
+}
+
+function persistSessionReviewMemory(sessionId: string, memory: Omit<SessionReviewMemory, "at">) {
+  const id = reviewMemoryId(sessionId);
+  if (!id) return;
+  try {
+    const all = readReviewMemoryMap();
+    all[id] = {
+      view: normalizeReviewView(memory.view),
+      open: memory.open,
+      at: Date.now(),
+    };
+    const ids = Object.keys(all);
+    if (ids.length > MAX_REVIEW_MEMORY_ENTRIES) {
+      ids
+        .sort((left, right) => (all[left]?.at ?? 0) - (all[right]?.at ?? 0))
+        .slice(0, ids.length - MAX_REVIEW_MEMORY_ENTRIES)
+        .forEach((extra) => {
+          if (extra !== id) delete all[extra];
+        });
+    }
+    localStorage.setItem(REVIEW_MEMORY_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    /* private mode / quota */
+  }
+}
+
 export interface UseWorkbenchReviewOptions {
   navigationOpen: Ref<boolean>;
   navigationWidth?: Ref<number>;
@@ -62,7 +134,7 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
   const subagentSessionStore = useSubagentSessionStore();
 
   const reviewOpen = ref(false);
-  const reviewView = ref<ReviewView>("diff");
+  const reviewView = ref<string>(DEFAULT_REVIEW_VIEW);
   const imageLightboxOpen = ref(false);
   const openedImageSources = ref<string[]>([]);
   const selectedImageSource = ref("");
@@ -109,12 +181,13 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
 
   const reviewViews = computed(() => [
     { id: "diff" as const, label: labels.value.diff, icon: FileDiff },
+    { id: "plan" as const, label: tr(settingStore.language, "planProposalTitle"), icon: FileText },
     ...(import.meta.env.DEV
       ? [{ id: "runtime" as const, label: labels.value.runtime, icon: Bug }]
       : []),
   ]);
 
-  function openReview(view: ReviewView) {
+  function openReview(view: ReviewView | string) {
     if (view === "agents") {
       reviewView.value = "diff";
     } else {
@@ -137,7 +210,6 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
       return;
     }
 
-    reviewView.value = "diff";
     reviewOpen.value = true;
     updateReviewWidth();
     updateNavigationWidth();
@@ -189,12 +261,23 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     }
   }
 
-  watch(activeSessionId, () => {
-    clearSessionUnread(activeSessionId.value);
-    openedImageSources.value = [];
-    selectedImageSource.value = "";
-    imageLightboxOpen.value = false;
-  });
+  watch(
+    activeSessionId,
+    (sessionId) => {
+      clearSessionUnread(sessionId);
+      openedImageSources.value = [];
+      selectedImageSource.value = "";
+      imageLightboxOpen.value = false;
+      const memory = readSessionReviewMemory(sessionId);
+      reviewView.value = memory.view;
+      reviewOpen.value = memory.open;
+      if (memory.open) {
+        updateReviewWidth();
+        updateNavigationWidth();
+      }
+    },
+    { immediate: true },
+  );
 
   watch(navigationWidth, () => {
     if (reviewOpen.value) updateReviewWidth();
@@ -202,6 +285,19 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
 
   watch(reviewWidth, () => {
     if (navigationOpen.value) updateNavigationWidth();
+  });
+
+  watch([reviewView, reviewOpen], () => {
+    persistSessionReviewMemory(activeSessionId.value, {
+      view: reviewView.value,
+      open: reviewOpen.value,
+    });
+  });
+
+  onMounted(() => {
+    if (!reviewOpen.value) return;
+    updateReviewWidth();
+    updateNavigationWidth();
   });
 
   return {

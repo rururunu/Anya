@@ -13,6 +13,10 @@ import {
 } from "@/services/chat/normalize";
 import { accumulateCacheUsage, estimateMessageTokens } from "@/services/chat/tokenEstimate";
 import {
+  normalizeAskUserAnswerItems,
+  parseAskUserAnswerItems,
+} from "@/services/chat/askUserAnswer";
+import {
   CONFIGURE_PROVIDER_MARKER,
   isConfigureProviderError,
 } from "@/services/chat/ensureDefaultModel";
@@ -29,6 +33,7 @@ import type {
   ChatMessage,
   ContextUsageSnapshot,
   FileOfferEvent,
+  PlanProposal,
   SessionCacheUsage,
   SharedFileOffer,
   SharedUrlOffer,
@@ -60,6 +65,7 @@ import {
 } from "./chatHistory";
 import { appendTimelineText, findLastMessageIndex } from "./chatStream";
 import { useChatSessionsStore } from "./chatSessions";
+import { planFromHistory, tasksFromHistory } from "@/services/chat/planProposal";
 
 function sessionsStore() {
   return useChatSessionsStore();
@@ -97,6 +103,8 @@ export const useChatStore = defineStore("chat", {
     messageCacheUsage: {} as Record<string, Record<string, SessionCacheUsage>>,
     /** Live in-session task list from update_tasks. */
     sessionTasks: {} as Record<string, TaskItem[]>,
+    /** Live plan proposal Markdown from save_plan. */
+    sessionPlans: {} as Record<string, PlanProposal>,
     /** Session plan-mode gate (writer tools blocked until approve). */
     sessionPlanMode: {} as Record<string, boolean>,
     /** How the active plan was entered. Auto plans (agent complexity
@@ -313,6 +321,28 @@ export const useChatStore = defineStore("chat", {
         });
       }
     },
+    /** Persist unsent image/file chips for one conversation (debounced by callers). */
+    setComposeAttachments(
+      sessionId: string,
+      images: string[],
+      editSources: Array<string | null>,
+      files: import("@/services/chat/attachFiles").AttachedFileChip[],
+      options?: { persistImmediate?: boolean },
+    ) {
+      if (!sessionId) {
+        return;
+      }
+      const current = this.ensureCompose(sessionId);
+      current.draftImages = [...images];
+      current.draftEditSources = [...editSources];
+      current.draftFiles = files.map((file) => ({ ...file }));
+      composeCache.entries[sessionId] = { ...current };
+      if (options?.persistImmediate) {
+        flushPersistComposeCache();
+      } else {
+        schedulePersistComposeCache(1000);
+      }
+    },
     sessionHasDraft(sessionId: string): boolean {
       return sessionsStore().sessionHasDraft(sessionId, this.sessionCompose);
     },
@@ -359,6 +389,46 @@ export const useChatStore = defineStore("chat", {
       const next = { ...this.sessionTasks };
       delete next[sessionId];
       this.sessionTasks = next;
+    },
+    setSessionPlan(sessionId: string, plan: { path: string; content: string }) {
+      if (!sessionId) {
+        return;
+      }
+      this.sessionPlans = {
+        ...this.sessionPlans,
+        [sessionId]: {
+          ...plan,
+          updatedAt: Date.now(),
+        },
+      };
+    },
+    clearSessionPlan(sessionId: string) {
+      if (!sessionId || !(sessionId in this.sessionPlans)) {
+        return;
+      }
+      const next = { ...this.sessionPlans };
+      delete next[sessionId];
+      this.sessionPlans = next;
+    },
+    restorePlanStateFromMessages(sessionId: string, messages: ChatMessage[]) {
+      if (!sessionId) {
+        return;
+      }
+      const tasks = tasksFromHistory(messages);
+      if (tasks.length) {
+        this.setSessionTasks(sessionId, tasks);
+      } else {
+        this.clearSessionTasks(sessionId);
+      }
+      const plan = planFromHistory(messages);
+      if (plan) {
+        this.setSessionPlan(sessionId, {
+          path: plan.path ?? "",
+          content: plan.content,
+        });
+      } else {
+        this.clearSessionPlan(sessionId);
+      }
     },
     setSessionPlanMode(sessionId: string, active: boolean) {
       if (!sessionId) {
@@ -495,13 +565,7 @@ export const useChatStore = defineStore("chat", {
       return true;
     },
     stageAskUserAnswer(sessionId: string, items: AskUserAnswerItem[]) {
-      const normalized = items
-        .map((item) => ({
-          header: item.header?.trim() || undefined,
-          selected: item.selected.map((v) => v.trim()).filter(Boolean),
-          userSupplement: Boolean(item.userSupplement),
-        }))
-        .filter((item) => item.userSupplement || item.selected.length > 0);
+      const normalized = normalizeAskUserAnswerItems(items);
       if (normalized.length === 0) {
         return;
       }
@@ -512,7 +576,7 @@ export const useChatStore = defineStore("chat", {
         return;
       }
 
-      // 挂在当前轮的 assistant 消息上，渲染在工具卡片之后、AI 正文之前
+      // 挂在当前轮的 assistant 消息上，由 AgentWorkDetails 插进 ask_user 时间线位置
       let targetIndex = -1;
       for (let i = messages.length - 1; i >= 0; i -= 1) {
         const message = messages[i];
@@ -1266,7 +1330,16 @@ export const useChatStore = defineStore("chat", {
       if (existingIndex === -1) {
         activities.push(activity);
       } else {
-        activities[existingIndex] = { ...activities[existingIndex], ...activity };
+        const previous = activities[existingIndex];
+        const keepAskUserResult =
+          previous.toolName === "ask_user" &&
+          parseAskUserAnswerItems(previous.result).length > 0 &&
+          parseAskUserAnswerItems(activity.result).length === 0;
+        activities[existingIndex] = {
+          ...previous,
+          ...activity,
+          ...(keepAskUserResult ? { result: previous.result } : {}),
+        };
       }
 
       const alreadyOnTimeline = current.workTimeline?.some(
@@ -1550,6 +1623,7 @@ export const useChatStore = defineStore("chat", {
         }
         if (!this.sending[sessionId]) {
           this.clearSending(sessionId);
+          this.restorePlanStateFromMessages(sessionId, nextMessages);
         }
       } catch (error) {
         log.error("chat_history failed", error);
@@ -1582,6 +1656,8 @@ export const useChatStore = defineStore("chat", {
         skipAutoPlan?: boolean;
         /** Approve & execute continuation: unlocks writers; message is persisted. */
         resumePlan?: boolean;
+        /** Plugin-owned session: same Rust agent loop, do not remap the overlay draft. */
+        isolate?: boolean;
       },
     ) {
       const trimmed = message.trim();
@@ -1610,7 +1686,9 @@ export const useChatStore = defineStore("chat", {
       // happen when no turn is in flight.
       const softInject = !options?.staged && busy;
 
-      this.setOverlayDraftSession(sessionId);
+      if (!options?.isolate) {
+        this.setOverlayDraftSession(sessionId);
+      }
 
       if (!options?.staged) {
         if (softInject) {

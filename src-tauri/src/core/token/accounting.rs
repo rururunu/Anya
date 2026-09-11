@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use crate::core::ai::provider::{AIProvider, ProviderError};
 use crate::core::runtime::{ChatMessage, ChatRequest, Role, StreamEvent, ToolCallPayload};
 
-use super::{GeminiCountClient, TokenAccuracy, TokenCategory, TokenUsage, TokenizerRegistry};
+use super::{TokenAccuracy, TokenCategory, TokenUsage, TokenizerRegistry};
 
 pub struct TokenAccountant {
     registry: Arc<TokenizerRegistry>,
@@ -121,22 +121,14 @@ pub struct AccountingProvider {
     model: String,
     provider: String,
     accountant: TokenAccountant,
-    gemini: Option<GeminiCountClient>,
 }
 
 impl AccountingProvider {
-    pub fn new(
-        inner: Arc<dyn AIProvider>,
-        model: impl Into<String>,
-        app: Option<tauri::AppHandle>,
-    ) -> Self {
+    pub fn new(inner: Arc<dyn AIProvider>, model: impl Into<String>) -> Self {
         let provider = inner.id().to_string();
         Self {
             inner,
             model: model.into(),
-            gemini: app
-                .filter(|_| provider == "antigravity")
-                .map(GeminiCountClient::new),
             provider,
             accountant: TokenAccountant::default(),
         }
@@ -157,13 +149,6 @@ impl AIProvider for AccountingProvider {
         let mut input = self
             .accountant
             .count_request(&self.model, &self.provider, &request);
-        let input_text = request
-            .messages
-            .iter()
-            .map(|message| message.content.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-
         let (inner_tx, mut inner_rx) = mpsc::channel(64);
         let inner = Arc::clone(&self.inner);
         let task =
@@ -218,26 +203,6 @@ impl AIProvider for AccountingProvider {
         );
         let mut usage = if let Some(usage) = provider_usage {
             usage
-        } else if let Some(gemini) = &self.gemini {
-            let output_text = format!("{reasoning}{content}");
-            match (
-                gemini.count(&self.model, &input_text).await,
-                gemini.count(&self.model, &output_text).await,
-            ) {
-                (Ok(input_count), Ok(output_count)) => {
-                    let mut usage = TokenUsage::exact(
-                        input_count.tokens,
-                        output_count.tokens,
-                        "google/countTokens",
-                    );
-                    usage.accuracy = TokenAccuracy::Mixed;
-                    usage
-                }
-                _ => {
-                    input.accumulate(&output);
-                    input.clone()
-                }
-            }
         } else {
             input.accumulate(&output);
             input.clone()
@@ -324,7 +289,7 @@ mod tests {
 
     #[tokio::test]
     async fn accounting_emits_usage_before_finish() {
-        let provider = AccountingProvider::new(Arc::new(UsageProvider), "deepseek-chat", None);
+        let provider = AccountingProvider::new(Arc::new(UsageProvider), "deepseek-chat");
         let request = ChatRequest {
             request_id: "r".into(),
             session_id: "s".into(),

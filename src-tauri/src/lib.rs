@@ -7,6 +7,7 @@ mod runtime;
 mod services;
 
 pub use core::chat::eval_harness;
+pub use core::plugins::run_plugin_host;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,8 +22,8 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use app_state::AppState;
 use commands::{
-    app, ask, chat, diff, gemini, harness, icons, mcp, permission, remote, semantic, settings,
-    skills, token_usage, updater, window, workspace,
+    app, ask, chat, desktop_pet, diff, harness, icons, mcp, permission, plugins, remote, semantic,
+    settings, skills, token_usage, updater, window, workspace,
 };
 use services::app_lifecycle;
 use services::overlay_native::clear_minimize_pending;
@@ -101,9 +102,10 @@ fn start_hotkey_listener(app: AppHandle) {
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let workbench = MenuItem::with_id(app, "workbench", "Open Workbench", true, None::<&str>)?;
+    let pet = MenuItem::with_id(app, "desktop_pet", "桌面宠物", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&workbench, &settings, &quit])?;
+    let menu = Menu::with_items(app, &[&workbench, &pet, &settings, &quit])?;
     // The tray shows the mascot's front view; the app icon keeps the tilted pose.
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
         .unwrap_or_else(|_| {
@@ -119,6 +121,9 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .tooltip(app.package_info().name.clone())
         .on_menu_event(|app, event| match event.id.as_ref() {
             "workbench" => show_workbench_window(app),
+            "desktop_pet" => {
+                crate::services::desktop_pet::toggle_desktop_pet(app, None);
+            }
             "settings" => show_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
@@ -154,6 +159,11 @@ pub fn run() {
                 show_workbench_window(&handle);
             });
         }))
+        .register_asynchronous_uri_scheme_protocol("anya-plugin", |_ctx, request, responder| {
+            std::thread::spawn(move || {
+                responder.respond(crate::core::plugins::handle_plugin_protocol(request));
+            });
+        })
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -188,14 +198,29 @@ pub fn run() {
             start_hotkey_listener(app.handle().clone());
             show_workbench_window(app.handle());
             crate::services::webview_theme::apply_webview_theme(app.handle(), &settings);
+            crate::services::desktop_pet::restore_desktop_pet_on_startup(app.handle());
             crate::core::remote::restore_gateway_if_enabled(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
             let label = window.label().to_string();
 
+            if label.starts_with("plugin-") {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = crate::core::plugins::destroy_plugin_window_label(
+                        window.app_handle(),
+                        &label,
+                    );
+                    return;
+                }
+            }
+
             if label == "workbench" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    crate::services::workbench_window::remember_workbench_window(
+                        window.app_handle(),
+                    );
                     // During Windows MSI updates the installer / updater may request
                     // close; blocking it deadlocks the install after download finishes.
                     if !app_lifecycle::allow_exit() {
@@ -206,6 +231,7 @@ pub fn run() {
                 }
                 if matches!(event, tauri::WindowEvent::Resized(_)) {
                     crate::services::workbench_glass::sync_covering(window.app_handle());
+                    crate::services::workbench_window::schedule_remember(window.app_handle());
                     return;
                 }
             }
@@ -271,17 +297,16 @@ pub fn run() {
             window::take_overlay_context,
             window::open_image_preview,
             window::get_preview_image,
+            desktop_pet::toggle_desktop_pet,
+            desktop_pet::get_desktop_pet_visible,
+            desktop_pet::show_workbench,
+            desktop_pet::toggle_overlay_from_pet,
             settings::get_app_settings,
             settings::set_app_settings,
             semantic::get_semantic_search_status,
             semantic::set_semantic_search,
             semantic::test_semantic_search_api,
             semantic::fetch_semantic_search_models,
-            gemini::gemini_auth_status,
-            gemini::gemini_oauth_login,
-            gemini::gemini_oauth_cancel_login,
-            gemini::gemini_oauth_logout,
-            gemini::gemini_import_client_secrets,
             skills::list_skills,
             skills::install_skill,
             skills::install_skill_markdown,
@@ -289,6 +314,30 @@ pub fn run() {
             skills::uninstall_skill,
             skills::get_skills_dir,
             skills::open_skills_dir,
+            plugins::list_user_plugins,
+            plugins::open_user_plugin,
+            plugins::close_user_plugin_window,
+            plugins::close_all_user_plugin_windows,
+            plugins::delete_user_plugin,
+            plugins::open_plugins_dir,
+            plugins::get_anya_user_dir,
+            plugins::plugin_storage_get,
+            plugins::plugin_storage_set,
+            plugins::plugin_ask_anya,
+            plugins::plugin_fs_pick,
+            plugins::enable_user_plugin,
+            plugins::disable_user_plugin,
+            plugins::reload_user_plugin,
+            plugins::export_user_plugin,
+            plugins::import_user_plugin,
+            plugins::get_plugin_ui_source,
+            plugins::plugin_host_rpc,
+            plugins::plugin_permission_catalog,
+            plugins::plugin_capability_catalog,
+            plugins::report_plugin_runtime_error,
+            plugins::clear_plugin_runtime_errors,
+            plugins::plugin_safe_mode_status,
+            plugins::clear_plugin_safe_mode,
             mcp::get_mcp_runtime_support,
             mcp::list_mcp_server_statuses,
             mcp::connect_mcp_server,
@@ -309,6 +358,7 @@ pub fn run() {
             chat::list_chat_sessions,
             chat::list_archived_chat_sessions,
             chat::list_chat_models,
+            chat::list_deepseek_models,
             chat::list_custom_provider_models,
             chat::get_context_usage,
             chat::get_environment_context,

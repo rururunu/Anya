@@ -7,10 +7,10 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, oneshot};
+use tokio_tungstenite::accept_hdr_async;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::http::{header, HeaderValue};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::accept_hdr_async;
 
 use super::auth::authenticate;
 use super::constants::{INBOUND_DEADLINE, PATH, PING_INTERVAL, SEND_TIMEOUT};

@@ -5,9 +5,9 @@
 
 import { prettyHashInstallId } from "@/services/chat/hashMentionDisplay";
 
-const INLINE_TOKEN_RE = /@(?:"([^"]+)"|([^\s@#]+))|#(?:skill|mcp):([A-Za-z0-9_.-]+)/g;
+const INLINE_TOKEN_RE = /@(?:"([^"]+)"|([^\s@#]+))|#(?:skill|mcp|plugin):([A-Za-z0-9_.-]+)/g;
 const LEADING_CHIP_RE =
-  /^(?:@(?:"[^"]+"|[^\s@#]+)|#(?:skill|mcp):[A-Za-z0-9_.-]+|#\S+)(?:\s+(?:@(?:"[^"]+"|[^\s@#]+)|#(?:skill|mcp):[A-Za-z0-9_.-]+|#\S+))*\s*/;
+  /^(?:@(?:"[^"]+"|[^\s@#]+)|#(?:skill|mcp|plugin):[A-Za-z0-9_.-]+|#\S+)(?:\s+(?:@(?:"[^"]+"|[^\s@#]+)|#(?:skill|mcp|plugin):[A-Za-z0-9_.-]+|#\S+))*\s*/;
 
 function fileBaseName(path: string | undefined | null): string {
   const value = path ?? "";

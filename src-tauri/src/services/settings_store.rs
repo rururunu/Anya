@@ -170,12 +170,11 @@ pub fn load_settings(app: &AppHandle) -> AppSettings {
 }
 
 fn normalize_settings(mut settings: AppSettings) -> AppSettings {
+    settings.migrate_legacy_deepseek_models();
     settings.primary_hotkey =
         crate::services::hotkey::normalize_primary_hotkey(&settings.primary_hotkey);
     settings.secondary_hotkey =
         crate::services::hotkey::normalize_hotkey(&settings.secondary_hotkey);
-    // OAuth client secrets now live in ignored local files, never in app settings.
-    settings.gemini_oauth.client_secret.clear();
     // Pin mcp-remote package versions so OAuth token dirs stay stable across launches.
     let _ = crate::core::mcp::normalize_mcp_servers(&mut settings.mcp_servers);
     settings
@@ -268,18 +267,7 @@ pub fn broadcast_settings(app: &AppHandle, settings: &AppSettings) {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_settings;
     use crate::models::settings::AppSettings;
-
-    #[test]
-    fn normalizes_runtime_only_settings_before_storage() {
-        let mut settings = AppSettings::default();
-        settings.gemini_oauth.client_secret = "secret-from-ui".into();
-
-        let normalized = normalize_settings(settings);
-
-        assert!(normalized.gemini_oauth.client_secret.is_empty());
-    }
 
     #[test]
     fn frosted_glass_keeps_webview_gpu_enabled() {

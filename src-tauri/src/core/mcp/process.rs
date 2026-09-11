@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use super::command::{build_mcp_command, forward_mcp_stderr, kill_process_tree, mcp_remote_uses_smithery_key_auth, spawn_config};
+use super::command::{
+    build_mcp_command, forward_mcp_stderr, kill_process_tree, mcp_remote_uses_smithery_key_auth,
+    spawn_config,
+};
 use super::remote_auth;
 
 pub(super) struct McpProcess {

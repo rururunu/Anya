@@ -6,17 +6,19 @@ use tauri::Manager;
 use crate::app_state::AppState;
 
 use super::chat_send::handle_chat_send;
-use super::compose::{apply_remote_reasoning_effort, parse_approval_mode, parse_chat_mode, resolve_session_compose};
+use super::compose::{
+    apply_remote_reasoning_effort, parse_approval_mode, parse_chat_mode, resolve_session_compose,
+};
 use super::outbound::Outbound;
 use super::payloads::{
     list_mcp_payload, list_remote_models_payload, list_skills_payload, session_history,
 };
-use crate::core::remote::protocol::{ClientMessage, ServerMessage};
 use super::send::send_msg;
 use super::workspace_files::{
     begin_file_download, list_workspace_files_payload, read_workspace_file_payload,
     workspace_snapshot_payload,
 };
+use crate::core::remote::protocol::{ClientMessage, ServerMessage};
 
 pub(super) async fn handle_binary_chunk(payload: Vec<u8>, out: Outbound) {
     const HEADER_LEN: usize = 36 + 36 + 8;
@@ -77,9 +79,7 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
     };
 
     match parsed {
-        ClientMessage::Hello { .. } => {
-            Ok(())
-        }
+        ClientMessage::Hello { .. } => Ok(()),
         ClientMessage::Pong { .. } => Ok(()),
         ClientMessage::SessionList { request_id } => {
             let sessions = crate::core::remote::bridge::build_session_snapshot(app);
@@ -152,7 +152,11 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                     .find(|w| w.id == id)
                     .map(|w| w.root)
             });
-            crate::core::remote::upload::cleanup_session_uploads(app, &session_id, workspace_root.as_deref());
+            crate::core::remote::upload::cleanup_session_uploads(
+                app,
+                &session_id,
+                workspace_root.as_deref(),
+            );
             state.core.chat().conversation().delete_session(&session_id);
             let _ = app.emit("history-updated", json!({ "sessionId": session_id }));
             let snapshot = crate::core::remote::bridge::build_session_snapshot(app);
@@ -175,7 +179,11 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
             };
             if session_id.trim().is_empty() {
-                return send_msg(ws, &ServerMessage::rpc_err(request_id, "sessionId required")).await;
+                return send_msg(
+                    ws,
+                    &ServerMessage::rpc_err(request_id, "sessionId required"),
+                )
+                .await;
             }
             let workspace_id = state
                 .core
@@ -198,7 +206,8 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                     {
                         let manager = state.core.workspaces();
                         if let Err(message) = manager.set_archived(&workspace_id, false).await {
-                            return send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await;
+                            return send_msg(ws, &ServerMessage::rpc_err(request_id, &message))
+                                .await;
                         }
                         let _ = app.emit("workspaces-changed", manager.current());
                     }
@@ -241,7 +250,11 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
             };
             if workspace_id.trim().is_empty() {
-                return send_msg(ws, &ServerMessage::rpc_err(request_id, "workspaceId required")).await;
+                return send_msg(
+                    ws,
+                    &ServerMessage::rpc_err(request_id, "workspaceId required"),
+                )
+                .await;
             }
             // Same as the desktop command: the workspace and every session bound to it move together.
             let manager = state.core.workspaces();
@@ -292,12 +305,18 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                     })
                 })
                 .collect();
-            send_msg(ws, &ServerMessage::rpc_ok(request_id, json!({ "workspaces": workspaces }))).await
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(request_id, json!({ "workspaces": workspaces })),
+            )
+            .await
         }
         ClientMessage::ImageGenOptions { request_id } => {
             let settings = match crate::services::settings_store::get_settings(app) {
                 Ok(settings) => settings,
-                Err(error) => return send_msg(ws, &ServerMessage::rpc_err(request_id, error)).await,
+                Err(error) => {
+                    return send_msg(ws, &ServerMessage::rpc_err(request_id, error)).await
+                }
             };
             let payload = super::payloads::image_gen_options_payload(&settings);
             send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await
@@ -309,7 +328,9 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
         } => {
             let settings = match crate::services::settings_store::get_settings(app) {
                 Ok(settings) => settings,
-                Err(error) => return send_msg(ws, &ServerMessage::rpc_err(request_id, error)).await,
+                Err(error) => {
+                    return send_msg(ws, &ServerMessage::rpc_err(request_id, error)).await
+                }
             };
             let provider = provider.trim().to_string();
             let model = model.trim().to_string();
@@ -324,7 +345,10 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
             if !known {
                 return send_msg(
                     ws,
-                    &ServerMessage::rpc_err(request_id, "image model is not configured on the desktop"),
+                    &ServerMessage::rpc_err(
+                        request_id,
+                        "image model is not configured on the desktop",
+                    ),
                 )
                 .await;
             }

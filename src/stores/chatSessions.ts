@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 
 import { branchChatSession, listChatSessions, regenerateChatSessionTitle } from "@/services/ipc";
 import { resolveSessionId } from "@/services/chat/normalize";
+import { isPluginAgentSessionId } from "@/services/chat/pluginSession";
 import { createLogger } from "@/services/logger";
 import { composeCache, loadComposeCache } from "./chatCompose";
 import type { ChatMessage, ChatSessionSummary } from "@/types/chat";
@@ -134,6 +135,7 @@ export const useChatSessionsStore = defineStore("chatSessions", {
       for (const [sessionId, compose] of Object.entries(entries)) {
         const draft = compose.draft?.trim();
         if (!draft || known.has(sessionId)) continue;
+        if (isPluginAgentSessionId(sessionId)) continue;
         const messages = this.sessions[sessionId] ?? [];
         if (messages.some((item) => item.role === "user" || item.role === "assistant")) {
           continue;
@@ -193,7 +195,9 @@ export const useChatSessionsStore = defineStore("chatSessions", {
       if (!sessionId || this.titleGeneratingSessionIds.includes(sessionId)) return;
       this.titleGeneratingSessionIds = [...this.titleGeneratingSessionIds, sessionId];
       try {
-        await regenerateChatSessionTitle(sessionId);
+        loadComposeCache();
+        const compose = composeCache.entries[sessionId];
+        await regenerateChatSessionTitle(sessionId, compose?.chatModel, compose?.chatModelProvider);
         await this.refreshSummaries();
       } catch (error) {
         log.error("regenerate_chat_session_title failed", error);

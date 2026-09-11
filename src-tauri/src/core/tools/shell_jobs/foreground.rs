@@ -6,11 +6,11 @@ use super::output::{
 use super::process::terminate_process_tree;
 use crate::core::tools::context::ToolContext;
 use crate::core::tools::error::ToolError;
+#[cfg(windows)]
+use crate::core::tools::sandbox::restricted_process;
 use crate::core::tools::shell_judge::{judge_shell_completion, CompletionVerdict};
 use crate::runtime::encoding::decode_process_bytes;
 use crate::runtime::terminal::prepare_powershell;
-#[cfg(windows)]
-use crate::core::tools::sandbox::restricted_process;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};

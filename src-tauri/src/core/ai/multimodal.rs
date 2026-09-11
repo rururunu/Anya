@@ -14,7 +14,7 @@ pub fn primary_model_has_native_vision(model: &str) -> bool {
     if m.is_empty() {
         return false;
     }
-    // Gemini (Antigravity / Google) — always native vision.
+    // Gemini — always native vision.
     if m.starts_with("gemini") {
         return true;
     }

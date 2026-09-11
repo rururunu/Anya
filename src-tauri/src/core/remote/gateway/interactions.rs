@@ -56,7 +56,9 @@ pub(super) fn build_interaction_snapshot(app: &AppHandle) -> serde_json::Value {
         }));
     }
     for session_id in crate::core::tools::plan_mode::shared_plan_mode_store().active_session_ids() {
-        if crate::core::remote::bridge::run_state_for(&session_id) == crate::core::remote::bridge::RemoteRunState::Streaming {
+        if crate::core::remote::bridge::run_state_for(&session_id)
+            == crate::core::remote::bridge::RemoteRunState::Streaming
+        {
             continue;
         }
         if !crate::core::tools::plan_mode::shared_plan_mode_store()
@@ -74,7 +76,10 @@ pub(super) fn build_interaction_snapshot(app: &AppHandle) -> serde_json::Value {
     json!({ "pending": pending })
 }
 
-pub(super) async fn replay_pending_interactions(app: &AppHandle, ws: &Outbound) -> Result<(), String> {
+pub(super) async fn replay_pending_interactions(
+    app: &AppHandle,
+    ws: &Outbound,
+) -> Result<(), String> {
     let Some(state) = app.try_state::<crate::app_state::AppState>() else {
         return Ok(());
     };

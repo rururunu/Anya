@@ -172,9 +172,16 @@ async fn post_stream_request(
             .text()
             .await
             .unwrap_or_else(|_| "unknown error".to_string());
-        return Err(ProviderError::message(format!(
-            "DeepSeek API {status}: {text}"
-        )));
+        let model = body
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let prefix = match model {
+            Some(model_name) => format!("{model_name} API"),
+            None => "API".to_string(),
+        };
+        return Err(ProviderError::message(format!("{prefix} {status}: {text}")));
     }
 
     Ok(response)

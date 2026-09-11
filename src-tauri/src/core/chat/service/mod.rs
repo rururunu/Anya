@@ -56,7 +56,7 @@ impl ChatService {
             tools,
             ask_store: Arc::new(AskStore::new()),
             path_permission_store: Arc::new(PathPermissionStore::new()),
-            tasks: Arc::new(Mutex::new(Vec::new())),
+            tasks: crate::core::tools::task_list::shared_task_list(),
             app_handle: Some(app_handle),
         }
     }
@@ -89,6 +89,31 @@ impl ChatService {
             session_id: session_id.to_string(),
             active,
             source,
+        });
+    }
+
+    /// Rebuilds the in-memory checklist from remaining history after a rewind.
+    pub fn restore_progress_after_rewind(&self, session_id: &str) {
+        use crate::core::event::BusEvent;
+        use crate::core::tools::plan_mode::{shared_plan_mode_store, task_status_is_open};
+        use crate::core::tools::task_list::{
+            history_has_save_plan, last_tasks_from_messages, replace_shared_tasks,
+        };
+
+        let messages = self.conversation.messages(session_id);
+        let tasks = last_tasks_from_messages(&messages);
+        replace_shared_tasks(tasks.clone());
+        let plan_store = shared_plan_mode_store();
+        plan_store.sync_plan_saved(session_id, history_has_save_plan(&messages));
+        let has_open = tasks.iter().any(|task| task_status_is_open(&task.status));
+        if plan_store.is_active(session_id) && has_open {
+            plan_store.mark_awaiting_approval(session_id);
+        } else if !has_open {
+            plan_store.clear_awaiting_approval(session_id);
+        }
+        self.event_bus.emit(BusEvent::TaskListUpdated {
+            session_id: session_id.to_string(),
+            tasks,
         });
     }
 }

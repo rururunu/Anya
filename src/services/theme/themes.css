@@ -3,7 +3,8 @@
    darkness comes from these variables, not from color-scheme: dark. */
 
 :root,
-html[data-theme="light"] {
+html[data-theme="light"],
+html[data-theme-mode="light"] {
   --peek-bg: #f8f8f8;
   --peek-sidebar: #f3f3f3;
   --peek-surface: #ffffff;
@@ -12,9 +13,13 @@ html[data-theme="light"] {
   --peek-muted: #5a5a5a;
   --peek-faint: #767676;
   --peek-accent: #111111;
+  --peek-accent-fg: #ffffff;
   --peek-border: rgba(0, 0, 0, 0.16);
   --peek-strong-border: rgba(0, 0, 0, 0.24);
   --peek-icon: #242424;
+  --peek-icon-muted: #6e6e6e;
+  --peek-icon-accent: var(--peek-accent);
+  --peek-icon-glow: none;
   --peek-active-fg: #111111;
   --peek-list-bg: #ffffff;
   --peek-list-active: #e8e8e8;
@@ -36,20 +41,22 @@ html[data-theme="light"] {
   --peek-focus: #111111;
   --peek-shadow: rgb(0 0 0 / 18%);
   --peek-composer-fill: var(--peek-list-bg);
-  --peek-interaction-fill: var(--peek-list-bg);
+  --peek-interaction-fill: var(--peek-composer-fill);
   --peek-composer-border: color-mix(in srgb, var(--peek-text) 9%, transparent);
-  --peek-composer-border-focus: color-mix(in srgb, var(--peek-text) 17%, transparent);
-  --peek-composer-shadow:
-    inset 0 1px 0 color-mix(in srgb, #fff 78%, transparent),
-    0 1px 2px color-mix(in srgb, var(--peek-shadow) 10%, transparent),
-    0 6px 22px color-mix(in srgb, var(--peek-shadow) 7%, transparent);
-  --peek-composer-shadow-focus:
-    inset 0 1px 0 color-mix(in srgb, #fff 90%, transparent),
-    0 2px 5px color-mix(in srgb, var(--peek-shadow) 12%, transparent),
-    0 10px 28px color-mix(in srgb, var(--peek-shadow) 9%, transparent);
+  --peek-composer-border-focus: var(--peek-composer-border);
+  --peek-composer-shadow: none;
+  --peek-composer-shadow-focus: none;
   --peek-pane-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
-  --workbench-glass-fill: rgb(232 232 232 / 0.9);
-  --workbench-glass-fill-covering: rgb(243 243 243 / 0.98);
+  --workbench-glass-fill: color-mix(
+    in srgb,
+    var(--peek-sidebar, #f3f3f3) var(--workbench-glass-opacity, 82%),
+    transparent
+  );
+  --workbench-glass-fill-covering: color-mix(
+    in srgb,
+    var(--peek-sidebar, #f3f3f3) 98%,
+    transparent
+  );
   --peek-scrollbar: rgba(0, 0, 0, 0.12);
   --peek-scrollbar-hover: rgba(0, 0, 0, 0.22);
   --peek-code-fg: #1f2328;
@@ -81,7 +88,8 @@ html[data-theme="light"] {
   --peek-chart-8: #8a9aa8;
 }
 
-html[data-theme="dark"] {
+html[data-theme="dark"],
+html[data-theme-mode="dark"] {
   --peek-bg: #141414;
   --peek-sidebar: #101010;
   --peek-surface: #1c1c1c;
@@ -90,9 +98,13 @@ html[data-theme="dark"] {
   --peek-muted: #9a9a9a;
   --peek-faint: #6e6e6e;
   --peek-accent: #f5f5f5;
+  --peek-accent-fg: #141414;
   --peek-border: rgba(255, 255, 255, 0.1);
   --peek-strong-border: rgba(255, 255, 255, 0.18);
   --peek-icon: #e0e0e0;
+  --peek-icon-muted: #8a8a8a;
+  --peek-icon-accent: var(--peek-accent);
+  --peek-icon-glow: none;
   --peek-active-fg: #ffffff;
   --peek-list-bg: #1c1c1c;
   --peek-list-active: #2a2a2a;
@@ -114,19 +126,23 @@ html[data-theme="dark"] {
   --peek-focus: #f5f5f5;
   --peek-shadow: rgb(0 0 0 / 48%);
   --peek-composer-fill: #222222;
-  --peek-interaction-fill: #222222;
+  --peek-interaction-fill: var(--peek-composer-fill);
   --peek-composer-border: color-mix(in srgb, var(--peek-text) 12%, transparent);
-  --peek-composer-border-focus: color-mix(in srgb, var(--peek-text) 22%, transparent);
-  --peek-composer-shadow:
-    inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent), 0 1px 2px rgb(0 0 0 / 28%),
-    0 8px 24px rgb(0 0 0 / 22%);
-  --peek-composer-shadow-focus:
-    inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent), 0 2px 6px rgb(0 0 0 / 32%),
-    0 12px 28px rgb(0 0 0 / 26%);
+  --peek-composer-border-focus: var(--peek-composer-border);
+  --peek-composer-shadow: none;
+  --peek-composer-shadow-focus: none;
   --peek-pane-shadow:
     -2px 1px 10px rgb(0 0 0 / 32%), inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
-  --workbench-glass-fill: rgb(16 16 16 / 0.92);
-  --workbench-glass-fill-covering: rgb(20 20 20 / 0.98);
+  --workbench-glass-fill: color-mix(
+    in srgb,
+    var(--peek-sidebar, #101010) var(--workbench-glass-opacity, 82%),
+    transparent
+  );
+  --workbench-glass-fill-covering: color-mix(
+    in srgb,
+    var(--peek-sidebar, #101010) 98%,
+    transparent
+  );
   --peek-scrollbar: rgba(255, 255, 255, 0.12);
   --peek-scrollbar-hover: rgba(255, 255, 255, 0.22);
   --peek-code-fg: #e6e6e6;
@@ -159,8 +175,7 @@ html[data-theme="dark"] {
 }
 
 :root,
-html[data-theme="dark"],
-html[data-theme="light"] {
+html[data-theme] {
   --warning: var(--peek-warning);
   --background: var(--peek-bg);
   --foreground: var(--peek-text);
@@ -222,4 +237,14 @@ html[data-theme="light"] {
     0 4px 16px color-mix(in srgb, var(--peek-shadow) 28%, transparent),
     0 12px 32px color-mix(in srgb, var(--peek-shadow) 16%, transparent);
   --peek-focus-ring: 0 0 0 2px color-mix(in srgb, var(--peek-accent) 28%, transparent);
+}
+
+/* Icons styling inheritance and custom glow */
+svg.lucide,
+.lucide-icon,
+.nav-shortcut-button > svg,
+.nav-shortcut-icon > svg,
+.footer-chip-icon,
+.titlebar-btn svg {
+  filter: var(--peek-icon-glow, none);
 }

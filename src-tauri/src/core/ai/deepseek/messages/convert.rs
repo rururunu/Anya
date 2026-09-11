@@ -168,10 +168,15 @@ pub(crate) fn message_to_api_json(
         } else {
             message.content.clone()
         };
+        let content_json = if content.contains("![image](") {
+            parse_multimodal_content(&content)
+        } else {
+            json!(content)
+        };
         let mut payload = json!({
             "role": "tool",
             "tool_call_id": message.tool_call_id.clone().unwrap_or_default(),
-            "content": content,
+            "content": content_json,
         });
         if let Some(name) = message.name.as_deref().filter(|name| !name.is_empty()) {
             payload

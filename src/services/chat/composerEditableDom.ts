@@ -1,6 +1,6 @@
 /**
  * Contenteditable composer DOM helpers.
- * Source of truth is plain text (`@path`, `#skill:id`, `#mcp:id`);
+ * Source of truth is plain text (`@path`, `#skill:id`, `#mcp:id`, `#plugin:id`);
  * tokens render as atomic inline marks (icons + colored labels).
  */
 
@@ -10,7 +10,7 @@ import { splitInlineTokenParts, type InlineTokenPart } from "@/services/chat/inl
 export const CE_TOKEN_ATTR = "data-ce-token";
 export const CE_KIND_ATTR = "data-ce-kind";
 
-export type ComposerTokenKind = "mention" | "skill" | "mcp";
+export type ComposerTokenKind = "mention" | "skill" | "mcp" | "plugin";
 
 export type ComposerTokenMeta = {
   kind: ComposerTokenKind;
@@ -21,7 +21,7 @@ export type ComposerTokenMeta = {
   title?: string;
   iconUrl?: string | null;
   /** Lucide-style fallback name when iconUrl is missing. */
-  fallback: "file" | "folder" | "zap" | "bot";
+  fallback: "file" | "folder" | "zap" | "bot" | "puzzle";
   className: string;
 };
 
@@ -240,7 +240,16 @@ function createFallbackIcon(kind: ComposerTokenMeta["fallback"]): HTMLElement {
   span.className = `ce-token-fallback ce-token-fallback--${kind}`;
   span.setAttribute("aria-hidden", "true");
   // Compact geometric fallbacks (no Lucide dependency inside DOM builder).
-  span.textContent = kind === "folder" ? "▣" : kind === "zap" ? "⚡" : kind === "bot" ? "◉" : "▤";
+  span.textContent =
+    kind === "folder"
+      ? "▣"
+      : kind === "zap"
+        ? "⚡"
+        : kind === "bot"
+          ? "◉"
+          : kind === "puzzle"
+            ? "◈"
+            : "▤";
   return span;
 }
 

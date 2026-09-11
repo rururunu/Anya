@@ -697,10 +697,19 @@ mod branch_tests {
         for message in [&user, &assistant] {
             db::save_message(&manager.db_pool, message).await.unwrap();
         }
-        manager.set_session_title(source_id, "Narrow Relativity".into(), SessionTitleSource::Auto);
-        db::save_session_title(&manager.db_pool, source_id, "Narrow Relativity", SessionTitleSource::Auto)
-            .await
-            .unwrap();
+        manager.set_session_title(
+            source_id,
+            "Narrow Relativity".into(),
+            SessionTitleSource::Auto,
+        );
+        db::save_session_title(
+            &manager.db_pool,
+            source_id,
+            "Narrow Relativity",
+            SessionTitleSource::Auto,
+        )
+        .await
+        .unwrap();
         db::bind_session_workspace(&manager.db_pool, source_id, "ws-1")
             .await
             .unwrap();

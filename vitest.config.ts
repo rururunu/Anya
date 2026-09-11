@@ -15,5 +15,10 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.{test,spec}.ts"],
     globals: false,
+    // A globally exported NODE_ENV=production would make Vue skip its dev-only
+    // devtools emit reporting, silently breaking VTU `emitted()` assertions.
+    env: {
+      NODE_ENV: "test",
+    },
   },
 });

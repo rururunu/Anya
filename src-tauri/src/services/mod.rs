@@ -1,5 +1,5 @@
 pub mod app_lifecycle;
-pub mod gemini_oauth;
+pub mod desktop_pet;
 pub mod hotkey;
 pub mod overlay_native;
 pub mod pin_badge;
@@ -7,3 +7,4 @@ pub mod settings_store;
 pub mod webview_theme;
 pub mod window;
 pub mod workbench_glass;
+pub mod workbench_window;

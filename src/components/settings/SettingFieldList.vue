@@ -4,199 +4,87 @@
 
     <SettingsEmptyState v-if="items.length === 0" :message="emptyText" />
 
-    <section v-for="group in groups" :key="group.id" class="settings-group">
-      <h2 class="settings-group-title">{{ group.title }}</h2>
+    <template v-for="(group, groupIndex) in groups" :key="group.id">
+      <section class="settings-group">
+        <h2 class="settings-group-title">{{ group.title }}</h2>
 
-      <div class="settings-card">
-        <article
-          v-for="item in group.items"
-          :key="item.id"
-          class="settings-row"
-          :class="{
-            'is-wide': item.type === 'collaboration-models' || item.type === 'hotkey-record',
-            'is-top':
-              item.type === 'collaboration-models' ||
-              item.type === 'hotkey-record' ||
-              item.type === 'select-model',
-            'collaboration-setting': item.type === 'collaboration-models',
-          }"
-        >
-          <div class="settings-row-copy">
-            <h3>
-              {{ item.title }}
-              <SettingsHelpTip :text="item.help" />
-            </h3>
-            <p v-if="item.description">
-              <template
-                v-for="(part, index) in descriptionParts(item.description)"
-                :key="`${item.id}-desc-${index}`"
-              >
-                <button
-                  v-if="part.type === 'url'"
-                  type="button"
-                  class="setting-desc-link"
-                  @click="openExternalUrl(part.value)"
-                >
-                  {{ part.value }}
-                </button>
-                <template v-else>{{ part.value }}</template>
-              </template>
-            </p>
-          </div>
-
-          <div
-            class="settings-row-control"
+        <div class="settings-card">
+          <article
+            v-for="item in group.items"
+            :key="item.id"
+            class="settings-row"
             :class="{
-              'is-stack': item.type === 'select-model' || item.type === 'hotkey-record',
-              'collaboration-control': item.type === 'collaboration-models',
+              'is-wide': item.type === 'collaboration-models' || item.type === 'hotkey-record',
+              'is-top':
+                item.type === 'collaboration-models' ||
+                item.type === 'hotkey-record' ||
+                item.type === 'select-model',
+              'collaboration-setting': item.type === 'collaboration-models',
             }"
           >
-            <Select
-              v-if="item.type === 'select-color'"
-              :model-value="selectedThemeValue"
-              @update:model-value="onThemeOptionSelect"
-            >
-              <SelectTrigger class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup v-for="group in builtInThemeGroups" :key="group.id">
-                  <SelectLabel>{{ group.label }}</SelectLabel>
-                  <SelectItem
-                    v-for="option in group.options"
-                    :key="option.value"
-                    :value="option.value"
+            <div class="settings-row-copy">
+              <h3>
+                {{ item.title }}
+                <SettingsHelpTip :text="item.help" />
+              </h3>
+              <p v-if="item.description">
+                <template
+                  v-for="(part, index) in descriptionParts(item.description)"
+                  :key="`${item.id}-desc-${index}`"
+                >
+                  <button
+                    v-if="part.type === 'url'"
+                    type="button"
+                    class="setting-desc-link"
+                    @click="openExternalUrl(part.value)"
                   >
-                    {{ option.label }}
-                  </SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+                    {{ part.value }}
+                  </button>
+                  <template v-else>{{ part.value }}</template>
+                </template>
+              </p>
+            </div>
 
-            <Select
-              v-else-if="item.type === 'select-language'"
-              :model-value="settingStore.language"
-              @update:model-value="(v) => emit('language-change', v)"
+            <div
+              class="settings-row-control"
+              :class="{
+                'is-stack': item.type === 'select-model' || item.type === 'hotkey-record',
+                'collaboration-control': item.type === 'collaboration-models',
+              }"
             >
-              <SelectTrigger class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="option in languageSelectOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              v-else-if="item.type === 'select-zoom'"
-              :model-value="String(settingStore.zoom)"
-              @update:model-value="(v) => emit('zoom-change', v)"
-            >
-              <SelectTrigger class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="option in zoomSelectOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              v-else-if="item.type === 'select-reasoning-effort'"
-              :model-value="settingStore.reasoningEffort"
-              @update:model-value="(v) => emit('reasoning-effort-change', v)"
-            >
-              <SelectTrigger class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="option in reasoningEffortSelectOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <div v-else-if="item.type === 'select-model'" class="space-y-1.5">
-              <div class="flex items-center gap-1.5">
-                <Select
-                  :model-value="resolveModelSelectValue(item.id)"
-                  :disabled="chatModelStore.loading || availableModelOptions.length === 0"
-                  @update:model-value="(v) => handleModelSelection(item.id, v)"
-                >
-                  <SelectTrigger class="w-full">
-                    <SelectValue :placeholder="modelStatusText">
-                      <span
-                        v-if="selectedModelOption(item.id)"
-                        class="inline-flex min-w-0 items-center gap-1.5"
-                      >
-                        <component
-                          :is="selectedModelOption(item.id)?.icon"
-                          v-if="selectedModelOption(item.id)?.icon"
-                          class="size-3.5 shrink-0 text-muted-foreground"
-                        />
-                        <span class="truncate">{{ selectedModelOption(item.id)?.label }}</span>
-                      </span>
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
+              <Select
+                v-if="item.type === 'select-color'"
+                :model-value="selectedThemeValue"
+                @update:model-value="onThemeOptionSelect"
+              >
+                <SelectTrigger class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup v-for="themeGroup in builtInThemeGroups" :key="themeGroup.id">
+                    <SelectLabel>{{ themeGroup.label }}</SelectLabel>
                     <SelectItem
-                      v-for="option in availableModelOptions"
+                      v-for="option in themeGroup.options"
                       :key="option.value"
                       :value="option.value"
-                      :text-value="option.label"
                     >
-                      <template v-if="option.icon" #leading>
-                        <component
-                          :is="option.icon"
-                          class="size-3.5 shrink-0 text-muted-foreground"
-                        />
-                      </template>
                       {{ option.label }}
                     </SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  class="size-8 shrink-0"
-                  :disabled="chatModelStore.loading || chatModelStore.refreshing"
-                  :title="refreshModelsLabel"
-                  :aria-label="refreshModelsLabel"
-                  @click="refreshModelList"
-                >
-                  <RefreshCw
-                    class="size-3.5"
-                    :class="{ 'animate-spin': chatModelStore.refreshing }"
-                  />
-                </Button>
-              </div>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+
               <Select
-                v-if="selectedModelThinkingTierOptions(item.id).length > 1"
-                :model-value="modelSelectionForItem(item.id).id"
-                :disabled="chatModelStore.loading"
-                @update:model-value="(v) => handleThinkingTierSelection(item.id, v)"
+                v-else-if="item.type === 'select-language'"
+                :model-value="settingStore.language"
+                @update:model-value="(v) => emit('language-change', v)"
               >
                 <SelectTrigger class="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem
-                    v-for="option in selectedModelThinkingTierOptions(item.id)"
+                    v-for="option in languageSelectOptions"
                     :key="option.value"
                     :value="option.value"
                   >
@@ -204,220 +92,336 @@
                   </SelectItem>
                 </SelectContent>
               </Select>
-              <p v-if="chatModelStore.error" class="text-[10px] leading-4 text-destructive">
-                {{ chatModelStore.error }}
-              </p>
-            </div>
 
-            <div v-else-if="item.type === 'collaboration-models'" class="collaboration-models">
-              <SettingsToggle
-                :model-value="settingStore.multiModelCollaboration"
-                @update:model-value="toggleModelCollaboration"
-              />
-              <div
-                v-if="settingStore.multiModelCollaboration"
-                class="collaboration-model-list peek-scrollbar"
+              <Select
+                v-else-if="item.type === 'select-zoom'"
+                :model-value="String(settingStore.zoom)"
+                @update:model-value="(v) => emit('zoom-change', v)"
               >
-                <label
-                  v-for="option in availableModelOptions"
-                  :key="option.value"
-                  class="collaboration-model-option"
+                <SelectTrigger class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="option in zoomSelectOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                v-else-if="item.type === 'select-reasoning-effort'"
+                :model-value="settingStore.reasoningEffort"
+                @update:model-value="(v) => emit('reasoning-effort-change', v)"
+              >
+                <SelectTrigger class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="option in reasoningEffortSelectOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <div v-else-if="item.type === 'select-model'" class="space-y-1.5">
+                <div class="flex items-center gap-1.5">
+                  <Select
+                    :model-value="resolveModelSelectValue(item.id)"
+                    :disabled="chatModelStore.loading || availableModelOptions.length === 0"
+                    @update:model-value="(v) => handleModelSelection(item.id, v)"
+                  >
+                    <SelectTrigger class="w-full">
+                      <SelectValue :placeholder="modelStatusText">
+                        <span
+                          v-if="selectedModelOption(item.id)"
+                          class="inline-flex min-w-0 items-center gap-1.5"
+                        >
+                          <component
+                            :is="selectedModelOption(item.id)?.icon"
+                            v-if="selectedModelOption(item.id)?.icon"
+                            class="size-3.5 shrink-0 text-muted-foreground"
+                          />
+                          <span class="truncate">{{ selectedModelOption(item.id)?.label }}</span>
+                        </span>
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem
+                        v-for="option in availableModelOptions"
+                        :key="option.value"
+                        :value="option.value"
+                        :text-value="option.label"
+                      >
+                        <template v-if="option.icon" #leading>
+                          <component
+                            :is="option.icon"
+                            class="size-3.5 shrink-0 text-muted-foreground"
+                          />
+                        </template>
+                        {{ option.label }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    class="size-8 shrink-0"
+                    :disabled="chatModelStore.loading || chatModelStore.refreshing"
+                    :title="refreshModelsLabel"
+                    :aria-label="refreshModelsLabel"
+                    @click="refreshModelList"
+                  >
+                    <RefreshCw
+                      class="size-3.5"
+                      :class="{ 'animate-spin': chatModelStore.refreshing }"
+                    />
+                  </Button>
+                </div>
+                <Select
+                  v-if="selectedModelThinkingTierOptions(item.id).length > 1"
+                  :model-value="modelSelectionForItem(item.id).id"
+                  :disabled="chatModelStore.loading"
+                  @update:model-value="(v) => handleThinkingTierSelection(item.id, v)"
                 >
-                  <input
-                    type="checkbox"
-                    :checked="isCollaborationModelSelected(option)"
-                    @change="toggleCollaborationModel(option)"
-                  />
-                  <component
-                    :is="option.icon"
-                    v-if="option.icon"
-                    class="size-3.5 shrink-0 text-muted-foreground"
-                  />
-                  <span :title="option.label">{{ option.label }}</span>
-                </label>
-                <p v-if="!availableModelOptions.length" class="text-[10px] text-muted-foreground">
-                  {{ modelStatusText }}
+                  <SelectTrigger class="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      v-for="option in selectedModelThinkingTierOptions(item.id)"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p v-if="chatModelStore.error" class="text-[10px] leading-4 text-destructive">
+                  {{ chatModelStore.error }}
                 </p>
               </div>
-            </div>
 
-            <Select
-              v-else-if="item.type === 'select-reasoning-language'"
-              :model-value="settingStore.reasoningLanguage"
-              @update:model-value="(v) => emit('reasoning-language-change', v)"
-            >
-              <SelectTrigger class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="option in reasoningLanguageSelectOptions"
-                  :key="option.value"
-                  :value="option.value"
+              <div v-else-if="item.type === 'collaboration-models'" class="collaboration-models">
+                <SettingsToggle
+                  :model-value="settingStore.multiModelCollaboration"
+                  @update:model-value="toggleModelCollaboration"
+                />
+                <div
+                  v-if="settingStore.multiModelCollaboration"
+                  class="collaboration-model-list peek-scrollbar"
                 >
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+                  <label
+                    v-for="option in availableModelOptions"
+                    :key="option.value"
+                    class="collaboration-model-option"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="isCollaborationModelSelected(option)"
+                      @change="toggleCollaborationModel(option)"
+                    />
+                    <component
+                      :is="option.icon"
+                      v-if="option.icon"
+                      class="size-3.5 shrink-0 text-muted-foreground"
+                    />
+                    <span :title="option.label">{{ option.label }}</span>
+                  </label>
+                  <p v-if="!availableModelOptions.length" class="text-[10px] text-muted-foreground">
+                    {{ modelStatusText }}
+                  </p>
+                </div>
+              </div>
 
-            <Select
-              v-else-if="item.type === 'select-web-search-provider'"
-              :model-value="settingStore.webSearchProvider"
-              :disabled="!settingStore.webSearchEnabled"
-              @update:model-value="(v) => emit('web-search-provider-change', v)"
-            >
-              <SelectTrigger class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="option in webSearchProviderSelectOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              v-else-if="item.type === 'select-tool-approval-mode'"
-              :model-value="settingStore.toolApprovalMode"
-              @update:model-value="(v) => emit('tool-approval-mode-change', v)"
-            >
-              <SelectTrigger class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="option in toolApprovalModeSelectOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              v-else-if="item.type === 'select-agent-work-display'"
-              :model-value="settingStore.agentWorkDisplay"
-              @update:model-value="(v) => emit('agent-work-display-change', v)"
-            >
-              <SelectTrigger class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="option in agentWorkDisplaySelectOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <SecretInput
-              v-else-if="item.type === 'secret'"
-              :model-value="apiKeyDraft"
-              :placeholder="apiKeyPlaceholder"
-              @update:model-value="(v) => emit('update:apiKeyDraft', String(v))"
-              @blur="emit('save-api-key')"
-            />
-
-            <SecretInput
-              v-else-if="item.type === 'memory-secret'"
-              :model-value="mem0ApiKeyDraft"
-              placeholder="m0-..."
-              :disabled="!settingStore.memoryEnabled"
-              @update:model-value="(v) => emit('update:mem0ApiKeyDraft', String(v))"
-              @blur="emit('save-memory-settings')"
-            />
-
-            <SecretInput
-              v-else-if="item.type === 'search-secret'"
-              :model-value="item.id === 'serperApiKey' ? serperApiKeyDraft : tavilyApiKeyDraft"
-              :placeholder="item.id === 'serperApiKey' ? 'serper-...' : 'tvly-...'"
-              :disabled="!settingStore.webSearchEnabled"
-              @update:model-value="(v) => onSearchSecretInput(item.id, v)"
-              @blur="emit('save-web-search-settings')"
-            />
-
-            <Input
-              v-else-if="item.type === 'memory-text'"
-              :model-value="item.id === 'mem0UserId' ? mem0UserIdDraft : mem0BaseUrlDraft"
-              :disabled="!settingStore.memoryEnabled"
-              @update:model-value="(v) => onMemoryTextInput(item.id, v)"
-              @blur="emit('save-memory-settings')"
-            />
-
-            <SettingsToggle
-              v-else-if="item.type === 'toggle'"
-              :model-value="toggleActive(item.id)"
-              @update:model-value="() => emit('toggle', item.id)"
-            />
-
-            <div
-              v-else-if="item.type === 'slider'"
-              class="flex items-center gap-3 w-full max-w-[200px]"
-            >
-              <input
-                type="range"
-                :min="item.min ?? 10"
-                :max="item.max ?? 100"
-                :step="item.step ?? 5"
-                :value="getSettingValue(item.id)"
-                @input="(e) => onSliderChange(item.id, e)"
-                class="setting-slider h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-border accent-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <span
-                class="text-xs font-semibold tabular-nums min-w-[36px] text-right text-muted-foreground select-none"
+              <Select
+                v-else-if="item.type === 'select-reasoning-language'"
+                :model-value="settingStore.reasoningLanguage"
+                @update:model-value="(v) => emit('reasoning-language-change', v)"
               >
-                {{ getSettingValue(item.id) }}%
+                <SelectTrigger class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="option in reasoningLanguageSelectOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                v-else-if="item.type === 'select-web-search-provider'"
+                :model-value="settingStore.webSearchProvider"
+                :disabled="!settingStore.webSearchEnabled"
+                @update:model-value="(v) => emit('web-search-provider-change', v)"
+              >
+                <SelectTrigger class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="option in webSearchProviderSelectOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                v-else-if="item.type === 'select-tool-approval-mode'"
+                :model-value="settingStore.toolApprovalMode"
+                @update:model-value="(v) => emit('tool-approval-mode-change', v)"
+              >
+                <SelectTrigger class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="option in toolApprovalModeSelectOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                v-else-if="item.type === 'select-agent-work-display'"
+                :model-value="settingStore.agentWorkDisplay"
+                @update:model-value="(v) => emit('agent-work-display-change', v)"
+              >
+                <SelectTrigger class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="option in agentWorkDisplaySelectOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <SecretInput
+                v-else-if="item.type === 'secret'"
+                :model-value="apiKeyDraft"
+                :placeholder="apiKeyPlaceholder"
+                @update:model-value="(v) => emit('update:apiKeyDraft', String(v))"
+                @blur="emit('save-api-key')"
+              />
+
+              <SecretInput
+                v-else-if="item.type === 'memory-secret'"
+                :model-value="mem0ApiKeyDraft"
+                placeholder="m0-..."
+                :disabled="!settingStore.memoryEnabled"
+                @update:model-value="(v) => emit('update:mem0ApiKeyDraft', String(v))"
+                @blur="emit('save-memory-settings')"
+              />
+
+              <SecretInput
+                v-else-if="item.type === 'search-secret'"
+                :model-value="item.id === 'serperApiKey' ? serperApiKeyDraft : tavilyApiKeyDraft"
+                :placeholder="item.id === 'serperApiKey' ? 'serper-...' : 'tvly-...'"
+                :disabled="!settingStore.webSearchEnabled"
+                @update:model-value="(v) => onSearchSecretInput(item.id, v)"
+                @blur="emit('save-web-search-settings')"
+              />
+
+              <Input
+                v-else-if="item.type === 'memory-text'"
+                :model-value="item.id === 'mem0UserId' ? mem0UserIdDraft : mem0BaseUrlDraft"
+                :disabled="!settingStore.memoryEnabled"
+                @update:model-value="(v) => onMemoryTextInput(item.id, v)"
+                @blur="emit('save-memory-settings')"
+              />
+
+              <SettingsToggle
+                v-else-if="item.type === 'toggle'"
+                :model-value="toggleActive(item.id)"
+                @update:model-value="() => emit('toggle', item.id)"
+              />
+
+              <div
+                v-else-if="item.type === 'slider'"
+                class="flex items-center gap-3 w-full max-w-[200px]"
+              >
+                <input
+                  type="range"
+                  :min="item.min ?? 10"
+                  :max="item.max ?? 100"
+                  :step="item.step ?? 5"
+                  :value="getSettingValue(item.id)"
+                  @input="(e) => onSliderChange(item.id, e)"
+                  class="setting-slider h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-border accent-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <span
+                  class="text-xs font-semibold tabular-nums min-w-[36px] text-right text-muted-foreground select-none"
+                >
+                  {{ getSettingValue(item.id) }}%
+                </span>
+              </div>
+
+              <HotkeyRecordField
+                v-else-if="item.type === 'hotkey-record'"
+                :model-value="
+                  item.id === 'primaryHotkey'
+                    ? settingStore.primaryHotkey
+                    : settingStore.secondaryHotkey
+                "
+                :enabled="
+                  item.id === 'primaryHotkey'
+                    ? settingStore.primaryHotkeyEnabled
+                    : settingStore.secondaryHotkeyEnabled
+                "
+                :setting-key="item.id === 'primaryHotkey' ? 'primaryHotkey' : 'secondaryHotkey'"
+                :mode="item.id === 'primaryHotkey' ? 'double-modifier' : 'chord'"
+                :default-value="item.id === 'primaryHotkey' ? 'Alt' : 'Ctrl+Alt+Space'"
+                @update:model-value="
+                  (value) =>
+                    item.id === 'primaryHotkey'
+                      ? (settingStore.primaryHotkey = value)
+                      : (settingStore.secondaryHotkey = value)
+                "
+                @update:enabled="
+                  (value) =>
+                    item.id === 'primaryHotkey'
+                      ? (settingStore.primaryHotkeyEnabled = value)
+                      : (settingStore.secondaryHotkeyEnabled = value)
+                "
+              />
+
+              <span
+                v-else
+                class="text-sm"
+                :class="{ 'font-mono text-xs break-all': item.id === 'appIdentifier' }"
+              >
+                {{ item.value }}
               </span>
             </div>
-
-            <HotkeyRecordField
-              v-else-if="item.type === 'hotkey-record'"
-              :model-value="
-                item.id === 'primaryHotkey'
-                  ? settingStore.primaryHotkey
-                  : settingStore.secondaryHotkey
-              "
-              :enabled="
-                item.id === 'primaryHotkey'
-                  ? settingStore.primaryHotkeyEnabled
-                  : settingStore.secondaryHotkeyEnabled
-              "
-              :setting-key="item.id === 'primaryHotkey' ? 'primaryHotkey' : 'secondaryHotkey'"
-              :mode="item.id === 'primaryHotkey' ? 'double-modifier' : 'chord'"
-              :default-value="item.id === 'primaryHotkey' ? 'Alt' : 'Ctrl+Alt+Space'"
-              @update:model-value="
-                (value) =>
-                  item.id === 'primaryHotkey'
-                    ? (settingStore.primaryHotkey = value)
-                    : (settingStore.secondaryHotkey = value)
-              "
-              @update:enabled="
-                (value) =>
-                  item.id === 'primaryHotkey'
-                    ? (settingStore.primaryHotkeyEnabled = value)
-                    : (settingStore.secondaryHotkeyEnabled = value)
-              "
-            />
-
-            <span
-              v-else
-              class="text-sm"
-              :class="{ 'font-mono text-xs break-all': item.id === 'appIdentifier' }"
-            >
-              {{ item.value }}
-            </span>
-          </div>
-        </article>
-      </div>
-    </section>
+          </article>
+        </div>
+      </section>
+      <slot v-if="groupIndex === 0" name="after-first-group" />
+    </template>
+    <slot />
   </section>
 </template>
 
@@ -468,7 +472,7 @@ import {
   agentWorkDisplayOptions,
   zoomOptions,
 } from "@/types/setting";
-import { themeOptionGroups } from "@/services/theme/catalog";
+import { buildFullThemeGroups } from "@/services/theme/catalog";
 
 type DescriptionPart = { type: "text" | "url"; value: string };
 
@@ -485,7 +489,7 @@ function descriptionParts(text: string): DescriptionPart[] {
     }
     let url = match[0];
     let trailing = "";
-    while (/[.,;:!?)]$/.test(url)) {
+    while (/[.,;:!?。，；：！？）)]$/.test(url)) {
       trailing = `${url.slice(-1)}${trailing}`;
       url = url.slice(0, -1);
     }
@@ -560,7 +564,10 @@ const emit = defineEmits<{
 const settingStore = useSettingStore();
 const chatModelStore = useChatModelStore();
 
-const selectedThemeValue = computed(() => `builtin:${settingStore.colorScheme}`);
+const selectedThemeValue = computed(() => {
+  const isCustom = settingStore.customThemes.some((t) => t.id === settingStore.colorScheme);
+  return isCustom ? `custom:${settingStore.colorScheme}` : `builtin:${settingStore.colorScheme}`;
+});
 
 function onThemeOptionSelect(value: unknown) {
   if (typeof value !== "string") {
@@ -587,16 +594,17 @@ const groups = computed(() => {
   }));
 });
 
-const builtInThemeGroups = computed(() =>
-  themeOptionGroups.map((group) => ({
+const builtInThemeGroups = computed(() => {
+  const allGroups = buildFullThemeGroups(settingStore.customThemes);
+  return allGroups.map((group) => ({
     id: group.id,
     label: group.label[settingStore.language as keyof typeof group.label] ?? group.label["en-US"],
     options: group.options.map((option) => ({
-      value: `builtin:${option.value}`,
+      value: group.id === "custom-themes" ? `custom:${option.value}` : `builtin:${option.value}`,
       label: localizedOptionLabel(option, settingStore.language),
     })),
-  })),
-);
+  }));
+});
 
 const languageSelectOptions = computed(() =>
   languageOptions.map((option) => ({

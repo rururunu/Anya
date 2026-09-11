@@ -32,6 +32,16 @@ const resolveMeta: ResolveComposerTokenMeta = (part) => {
       className: "ce-token-skill",
     };
   }
+  if (part.kind === "plugin") {
+    return {
+      kind: "plugin",
+      token: part.raw,
+      label: part.id,
+      iconUrl: null,
+      fallback: "puzzle",
+      className: "ce-token-plugin",
+    };
+  }
   return {
     kind: "mcp",
     token: part.raw,

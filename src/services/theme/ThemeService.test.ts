@@ -117,4 +117,61 @@ describe("ThemeService", () => {
 
     expect(document.documentElement.style.colorScheme).toBe("only light");
   });
+
+  it("generates --theme-bg-* CSS variables when custom theme has background", () => {
+    applyThemeAppearance({
+      colorScheme: "custom-neon",
+      language: "zh-CN",
+      chromeFrostedGlass: false,
+      customThemes: [
+        {
+          id: "custom-neon",
+          name: "Neon",
+          mode: "dark",
+          tokens: {
+            "--peek-bg": "#0a0a0a",
+            "--peek-accent": "#00ffcc",
+          },
+          background: {
+            image: "path:C:/wallpaper.png",
+            opacity: 0.25,
+            blur: 4,
+            fit: "cover",
+          },
+          updatedAt: 100,
+        },
+      ],
+    });
+
+    const styleEl = document.getElementById("anya-custom-theme-sheet");
+    expect(styleEl).toBeTruthy();
+    expect(styleEl?.textContent).not.toContain("--theme-bg-image:");
+    expect(styleEl?.textContent).not.toContain("asset:");
+    expect(styleEl?.textContent).toContain("--theme-bg-opacity: 0.25;");
+    expect(styleEl?.textContent).toContain("--theme-bg-blur: 4px;");
+    expect(styleEl?.textContent).toContain("--theme-bg-fit: cover;");
+    expect(styleEl?.textContent).toContain("--peek-composer-fill:");
+    expect(styleEl?.textContent).toContain("--peek-interaction-fill:");
+  });
+
+  it("keeps remote wallpaper URLs on --theme-bg-image", () => {
+    applyThemeAppearance({
+      colorScheme: "custom-neon",
+      language: "zh-CN",
+      chromeFrostedGlass: false,
+      customThemes: [
+        {
+          id: "custom-neon",
+          name: "Neon",
+          mode: "dark",
+          tokens: { "--peek-bg": "#0a0a0a" },
+          background: { image: "https://example.com/bg.jpg", opacity: 0.2 },
+          updatedAt: 100,
+        },
+      ],
+    });
+
+    const styleEl = document.getElementById("anya-custom-theme-sheet");
+    expect(styleEl?.textContent).toContain('--theme-bg-image: url("https://example.com/bg.jpg")');
+  });
 });

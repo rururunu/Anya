@@ -115,7 +115,6 @@ impl StreamManager {
             let accounting_provider: Arc<dyn AIProvider> = Arc::new(AccountingProvider::new(
                 Arc::clone(&provider),
                 model.clone(),
-                app_handle.clone(),
             ));
             let tool_ctx = ToolContext {
                 workspace_root,
@@ -243,7 +242,10 @@ impl StreamManager {
                 Err(ProviderError::cancelled())
             } else {
                 match agent_task.await {
-                    Ok(result) => result,
+                    Ok(result) => {
+                        crate::core::plugins::on_turn_end(&session_id);
+                        result
+                    }
                     Err(error) => Err(ProviderError::message(format!(
                         "agent task failed: {error}"
                     ))),

@@ -22,7 +22,7 @@ use super::{ChatSendResult, ChatService};
 impl ChatService {
     /// Resolve the AI provider from current settings on every turn.
     /// Startup-time provider is only a fallback for tests without an AppHandle —
-    /// otherwise switching Gemini ↔ DeepSeek would keep the wrong backend until restart.
+    /// otherwise switching providers would keep the wrong backend until restart.
     fn active_provider(&self) -> Arc<dyn crate::core::ai::provider::AIProvider> {
         match &self.app_handle {
             Some(app) => crate::core::ai::resolve_provider(app.clone()),
@@ -179,6 +179,7 @@ impl ChatService {
         } else {
             content
         };
+        let content = crate::core::plugins::rewrite_user_message(&content);
         let user_message = create_message(&session_id, Role::User, content, MessageStatus::Done);
         let assistant_message = create_message(
             &session_id,
@@ -201,7 +202,8 @@ impl ChatService {
         });
 
         // Memory recall may use `reqwest::blocking` — must not run on a tokio worker.
-        let recall_text = super::super::selection::visible_user_text(&user_message.content).to_string();
+        let recall_text =
+            super::super::selection::visible_user_text(&user_message.content).to_string();
         let recall_text_for_rules = recall_text.clone();
         let user_turn_count = self
             .conversation
@@ -640,7 +642,7 @@ fn append_plan_checklist(
     let mut lines = vec![
         content.trim_end().to_string(),
         String::new(),
-        "[System] Approved checklist — execute these steps. Mark each finished step with `complete_plan_step` and evidence (path or check command) before finishing:".to_string(),
+        "[System] Plan approved. Execute strictly according to the approved plan proposal (previewed in sidebar / `.anya/plan.md`) and complete the following steps one by one. Mark each finished step with `complete_plan_step` and evidence (path or check command):".to_string(),
     ];
     for (index, task) in guard.iter().enumerate() {
         lines.push(format!(

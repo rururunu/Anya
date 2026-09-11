@@ -89,24 +89,24 @@ function isBinaryMime(type: string): boolean {
   if (!type) return false;
   if (type.startsWith("text/")) return false;
   if (
-    type.includes("json")
-    || type.includes("xml")
-    || type.includes("javascript")
-    || type.includes("typescript")
-    || type.includes("svg")
+    type.includes("json") ||
+    type.includes("xml") ||
+    type.includes("javascript") ||
+    type.includes("typescript") ||
+    type.includes("svg")
   ) {
     return false;
   }
   if (type === "application/octet-stream") return false;
   return (
-    type.startsWith("image/")
-    || type.startsWith("audio/")
-    || type.startsWith("video/")
-    || type.startsWith("font/")
-    || type === "application/pdf"
-    || type === "application/zip"
-    || type.includes("msword")
-    || type.includes("officedocument")
+    type.startsWith("image/") ||
+    type.startsWith("audio/") ||
+    type.startsWith("video/") ||
+    type.startsWith("font/") ||
+    type === "application/pdf" ||
+    type === "application/zip" ||
+    type.includes("msword") ||
+    type.includes("officedocument")
   );
 }
 
@@ -133,12 +133,7 @@ function decodeTextBytes(bytes: Uint8Array): string | null {
   if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
     return new TextDecoder("utf-16be").decode(bytes);
   }
-  if (
-    bytes.length >= 3
-    && bytes[0] === 0xef
-    && bytes[1] === 0xbb
-    && bytes[2] === 0xbf
-  ) {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     return new TextDecoder("utf-8").decode(bytes);
   }
 
@@ -332,6 +327,26 @@ const ATTACHED_FILE_TAG_RE =
 /** Legacy format used before peek-attached-file tags. */
 const LEGACY_ATTACHED_RE =
   /\[Attached file: ([^\]]+)\]\n(?:\(Skipped: ([^)]+)\)|```(?:\w*)\n([\s\S]*?)```)/g;
+
+/** Reconstruct full attachment chips (with content) from a persisted message, for composer restore. */
+export function extractAttachedFileChips(content: string): AttachedFileChip[] {
+  const chips: AttachedFileChip[] = [];
+  const re = new RegExp(ATTACHED_FILE_TAG_RE.source, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    const [, selfAttrs, openAttrs, body] = match;
+    const attrs = parseTagAttrs(String(selfAttrs ?? openAttrs ?? ""));
+    const path = attrs.path || attrs.name || "file";
+    const name = attrs.name || path.split(/[/\\]/).pop() || "file";
+    if (attrs.skipped) {
+      chips.push({ path, name, size: 0, content: null, skippedReason: attrs.skipped });
+      continue;
+    }
+    const text = body ?? "";
+    chips.push({ path, name, size: text.length, content: text });
+  }
+  return chips;
+}
 
 /**
  * Strip attached-file payloads from visible user text and return chip metadata.

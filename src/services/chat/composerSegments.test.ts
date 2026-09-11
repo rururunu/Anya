@@ -75,9 +75,12 @@ describe("composerSegments", () => {
   });
 
   it("restores chips from serialized rewind text", () => {
-    const parsed = parseComposerTextToSegments('#skill:docx @src/a.ts @"my file.ts" please review');
+    const parsed = parseComposerTextToSegments(
+      '#skill:docx #plugin:computer-use @src/a.ts @"my file.ts" please review',
+    );
     expect(parsed.segments).toEqual([
       { kind: "skill", id: "docx" },
+      { kind: "plugin", id: "computer-use" },
       { kind: "mention", path: "src/a.ts" },
       { kind: "mention", path: "my file.ts" },
     ]);

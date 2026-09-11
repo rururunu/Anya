@@ -12,11 +12,22 @@ pub const PLAN_GATE_BLOCKED: &str =
 /// that the turn ended because of the gate (even if no checklist exists).
 pub const PLAN_GATE_STOP_HINT: &str = "计划尚未批准";
 
+/// `update_tasks` in plan mode without a prior `save_plan` this cycle.
+pub const PLAN_TASKS_WITHOUT_SAVED_PLAN: &str = "plan mode requires save_plan before update_tasks: call save_plan with the full implementation proposal first, then resubmit this checklist";
+
+/// `save_plan` after the user already approved — execution must not open a new proposal.
+pub const SAVE_PLAN_REQUIRES_PLAN_MODE: &str =
+    "save_plan is only available while plan mode is active. Continue executing the approved plan; do not start a new proposal this turn";
+
 pub struct PlanModeStore {
     active_sessions: Mutex<HashSet<String>>,
     /// Sessions that actually have something to approve: a checklist, or a
     /// writer that hit the gate. Plan mode alone is not enough.
     awaiting_approval: Mutex<HashSet<String>>,
+    /// Sessions where `save_plan` has already run during the current planning
+    /// cycle. Reset whenever plan mode (re)activates so a stale save from a
+    /// previous cycle never excuses skipping `save_plan` this time.
+    plans_saved: Mutex<HashSet<String>>,
 }
 
 impl PlanModeStore {
@@ -24,6 +35,7 @@ impl PlanModeStore {
         Self {
             active_sessions: Mutex::new(HashSet::new()),
             awaiting_approval: Mutex::new(HashSet::new()),
+            plans_saved: Mutex::new(HashSet::new()),
         }
     }
 
@@ -38,6 +50,36 @@ impl PlanModeStore {
         if !active {
             self.clear_awaiting_approval(session_id);
         }
+        // Either a fresh planning cycle starts or the previous one just
+        // ended — both cases should forget any earlier `save_plan` call.
+        if let Ok(mut guard) = self.plans_saved.lock() {
+            guard.remove(session_id);
+        }
+    }
+
+    /// Record that `save_plan` wrote a proposal for this session's current
+    /// planning cycle.
+    pub fn mark_plan_saved(&self, session_id: &str) {
+        self.sync_plan_saved(session_id, true);
+    }
+
+    /// Align `save_plan` memory with remaining history after a rewind.
+    pub fn sync_plan_saved(&self, session_id: &str, saved: bool) {
+        if let Ok(mut guard) = self.plans_saved.lock() {
+            if saved {
+                guard.insert(session_id.to_string());
+            } else {
+                guard.remove(session_id);
+            }
+        }
+    }
+
+    /// True once `save_plan` has run since plan mode last (re)activated.
+    pub fn has_saved_plan(&self, session_id: &str) -> bool {
+        self.plans_saved
+            .lock()
+            .ok()
+            .is_some_and(|g| g.contains(session_id))
     }
 
     pub fn is_active(&self, session_id: &str) -> bool {
@@ -114,7 +156,13 @@ fn plan_mode_allowed(tool_name: &str, read_only: bool) -> bool {
     }
     matches!(
         tool_name,
-        "update_tasks" | "ask_user" | "share_to_companion" | "share_preview_url" | "todo_write"
+        "save_plan"
+            | "update_tasks"
+            | "ask_user"
+            | "share_to_companion"
+            | "share_preview_url"
+            | "todo_write"
+            | "manage_plugin"
     )
 }
 
@@ -147,26 +195,19 @@ pub fn should_auto_plan(message: &str, chat_mode: ChatMode) -> bool {
     }
 
     let mut score = 0u32;
-    let char_len = text.chars().count();
-    if char_len >= 120 {
-        score += 1;
-    }
-    if char_len >= 280 {
-        score += 1;
-    }
 
     let list_items = count_list_items(text);
     if list_items >= 3 {
-        score += 2;
-    } else if list_items >= 2 {
-        score += 1;
+        score += 3;
     }
 
-    let path_hits = count_path_like_mentions(text);
-    if path_hits >= 3 {
-        score += 2;
-    } else if path_hits >= 2 {
-        score += 1;
+    let enum_actions = count_enumeration_actions(text);
+    if enum_actions >= 3 {
+        score += 3;
+    }
+
+    if has_sequential_phase_markers(text, &lower) {
+        score += 3;
     }
 
     let keyword_hits = COMPLEXITY_KEYWORDS
@@ -174,38 +215,42 @@ pub fn should_auto_plan(message: &str, chat_mode: ChatMode) -> bool {
         .filter(|keyword| text.contains(*keyword) || lower.contains(&keyword.to_lowercase()))
         .count();
     if keyword_hits >= 2 {
-        score += 2;
+        score += 3;
     } else if keyword_hits == 1 {
+        score += 2;
+    }
+
+    let path_hits = count_path_like_mentions(text);
+    if path_hits >= 5 {
+        score += 2;
+    } else if path_hits >= 3 {
         score += 1;
     }
 
-    if count_action_connectors(text, &lower) >= 1 {
+    if text.chars().count() >= 350 {
         score += 1;
     }
 
-    score >= 2
+    score >= 3
 }
 
 const COMPLEXITY_KEYWORDS: &[&str] = &[
-    "实现",
-    "重构",
-    "架构",
-    "完整",
-    "迁移",
-    "接入",
     "系统设计",
-    "端到端",
-    "分步",
-    "设计并",
-    "implement",
-    "refactor",
-    "migrate",
-    "architecture",
-    "end-to-end",
-    "from scratch",
-    "multi-step",
-    "roll out",
-    "wire up",
+    "架构重构",
+    "架构设计",
+    "大规模重构",
+    "端到端架构",
+    "从零搭建",
+    "分阶段实施",
+    "分步执行",
+    "全流程设计",
+    "system design",
+    "architecture redesign",
+    "architecture refactor",
+    "large-scale refactor",
+    "end-to-end architecture",
+    "from scratch architecture",
+    "multi-phase rollout",
 ];
 
 fn has_skip_plan_intent(lower: &str) -> bool {
@@ -215,6 +260,13 @@ fn has_skip_plan_intent(lower: &str) -> bool {
         "不要规划",
         "不用规划",
         "跳过计划",
+        "不用出方案",
+        "不用计划",
+        "别出方案",
+        "直接改",
+        "直接修复",
+        "直接写",
+        "直接实现",
         "skip plan",
         "don't plan",
         "do not plan",
@@ -231,14 +283,80 @@ fn has_force_plan_intent(text: &str, lower: &str) -> bool {
         "先规划",
         "先出方案",
         "先出计划",
+        "先给出计划",
+        "请给出计划",
+        "请出计划",
+        "做个计划",
+        "出个计划",
+        "做个方案",
+        "出个方案",
+        "制定计划",
+        "制定方案",
+        "列出计划再",
+        "先给计划",
+        "先给方案",
+        "先设计方案",
+        "列出步骤再做",
+        "先列出步骤",
+        "先列出计划",
+        "给我出个计划",
+        "给我做个计划",
         "plan first",
         "make a plan",
         "write a plan",
         "propose a plan",
+        "create a plan",
+        "generate a plan",
+        "give me a plan",
+        "draft a plan",
     ];
     PHRASES
         .iter()
         .any(|phrase| text.contains(phrase) || lower.contains(phrase))
+}
+
+fn count_enumeration_actions(text: &str) -> usize {
+    if !text.contains('、') {
+        return 0;
+    }
+    const ACTION_PREFIXES: &[&str] = &[
+        "加", "改", "接入", "建", "删", "查", "跑", "写", "设", "调", "迁", "配", "验", "测",
+        "修复", "实现", "重构", "添加", "优化", "更新",
+    ];
+    let count = text
+        .split('、')
+        .filter(|part| {
+            let trimmed = part.trim();
+            ACTION_PREFIXES
+                .iter()
+                .any(|prefix| trimmed.contains(prefix))
+        })
+        .count();
+    if count >= 3 {
+        count
+    } else {
+        0
+    }
+}
+
+fn has_sequential_phase_markers(text: &str, lower: &str) -> bool {
+    const MARKERS: &[&str] = &[
+        "第一步",
+        "第二步",
+        "第1步",
+        "第2步",
+        "步骤一",
+        "步骤二",
+        "阶段一",
+        "阶段二",
+        "step 1",
+        "step 2",
+        "phase 1",
+        "phase 2",
+    ];
+    MARKERS
+        .iter()
+        .any(|marker| text.contains(marker) || lower.contains(marker))
 }
 
 fn count_list_items(text: &str) -> usize {
@@ -291,26 +409,6 @@ fn count_path_like_mentions(text: &str) -> usize {
         .count()
 }
 
-fn count_action_connectors(text: &str, lower: &str) -> usize {
-    const CONNECTORS: &[&str] = &[
-        "然后",
-        "并且",
-        "同时",
-        "接着",
-        "再",
-        "以及",
-        " and then ",
-        " then ",
-        " also ",
-        " as well as ",
-        " plus ",
-    ];
-    CONNECTORS
-        .iter()
-        .filter(|connector| text.contains(*connector) || lower.contains(*connector))
-        .count()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +424,22 @@ mod tests {
     #[test]
     fn short_trivial_requests_skip_plan() {
         assert!(!should_auto_plan("把 typo 改了", ChatMode::Agent));
+    }
+
+    #[test]
+    fn normal_tasks_do_not_auto_plan() {
+        assert!(!should_auto_plan(
+            "优化一个问题，就是它经常会莫名的给出计划，有时候甚至计划是空的。这很严重",
+            ChatMode::Agent
+        ));
+        assert!(!should_auto_plan(
+            "帮我实现一下登录接口，然后再在页面上测试一下效果。",
+            ChatMode::Agent
+        ));
+        assert!(!should_auto_plan(
+            "把这个接口接入，在 main.ts 里面测试一下，并且看一下完整的报错信息。",
+            ChatMode::Agent
+        ));
     }
 
     #[test]
@@ -376,6 +490,14 @@ mod tests {
         let store = PlanModeStore::new();
         store.set_active("s", true);
         assert!(store.authorize("s", "read_file", true).is_ok());
+        assert!(!store.is_awaiting_approval("s"));
+    }
+
+    #[test]
+    fn manage_plugin_is_allowed_while_planning() {
+        let store = PlanModeStore::new();
+        store.set_active("s", true);
+        assert!(store.authorize("s", "manage_plugin", false).is_ok());
         assert!(!store.is_awaiting_approval("s"));
     }
 

@@ -12,7 +12,8 @@ use crate::core::tools::fuzzy::apply_old_string_edit;
 use crate::core::tools::preview::{unified_diff, ChangeKind, ToolPreview};
 
 use super::{
-    apply_many_edits, guard_minimal_edit, required_string, resolve_write, single_edit_preview,
+    apply_many_edits, format_match_error, guard_minimal_edit, required_string, resolve_write,
+    single_edit_preview,
 };
 
 pub struct WriteFileTool;
@@ -23,24 +24,49 @@ pub struct EditNotebookCellTool;
 pub struct DeleteTextRangeTool;
 pub struct DeleteGoSymbolTool;
 
+fn check_overwrite_permission(
+    resolved: &std::path::Path,
+    args: &Value,
+    path: &str,
+) -> Result<(), ToolError> {
+    if resolved.exists() {
+        let allow_overwrite = args
+            .get("allow_overwrite")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            || args
+                .get("overwrite")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+        if !allow_overwrite {
+            return Err(ToolError::new(format!(
+                "File '{path}' already exists. Full-file overwrites hide diffs and cause data loss. Use `replace_in_file` or `apply_patch` to edit this file, or pass `allow_overwrite: true` only if a complete rewrite is explicitly intended."
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl Tool for WriteFileTool {
     fn name(&self) -> &str {
         "write_file"
     }
     fn description(&self) -> &str {
-        "Create a new file, or perform an explicitly requested full-file replacement. Path is relative to workspace root; parent directories are created automatically.
+        "Create a brand-new file, or perform an explicitly requested full-file replacement. Path is relative to workspace root; parent directories are created automatically.
 
 Usage:
-- Prefer editing existing files with replace_in_file / replace_many_in_file / apply_patch.
-- Never use for an existing file when only part of the content changes — a full rewrite hides the real diff and is the wrong tool.
-- Use only for brand-new files or when the user explicitly asks for a full rewrite."
+- Use primarily for brand-new files.
+- If the file already exists, this tool will FAIL unless `allow_overwrite: true` is explicitly passed.
+- Never use for an existing file when only part of the content changes — a full rewrite hides the real diff, discards concurrent edits, and is the wrong tool.
+- To modify an existing file, you MUST use `replace_in_file`, `replace_many_in_file`, or `apply_patch`."
     }
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
                 "path": { "type": "string", "description": "File path relative to workspace root" },
-                "content": { "type": "string" }
+                "content": { "type": "string", "description": "Full file content to write" },
+                "allow_overwrite": { "type": "boolean", "description": "Must be set to true if you explicitly intend to overwrite an existing file. If false or omitted and the file already exists, the write is rejected to prevent accidental data loss." }
             },
             "required": ["path", "content"]
         })
@@ -49,6 +75,7 @@ Usage:
         let path = args["path"].as_str().unwrap_or("");
         let content = args["content"].as_str().unwrap_or("");
         let resolved = resolve_write(ctx, self.name(), path)?;
+        check_overwrite_permission(&resolved, &args, path)?;
         if let Some(parent) = resolved.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -60,6 +87,7 @@ Usage:
         let path = args["path"].as_str().unwrap_or("");
         let new_text = args["content"].as_str().unwrap_or("").to_string();
         let resolved = resolve_write(ctx, self.name(), path)?;
+        check_overwrite_permission(&resolved, args, path)?;
         let (kind, old_text) = if resolved.exists() {
             (
                 ChangeKind::Modify,
@@ -117,10 +145,13 @@ Usage:
         guard_minimal_edit(self.name(), &[old], &content)?;
         let applied = apply_old_string_edit(&content, old, new, false);
         if applied.applied != 1 {
-            return Err(ToolError::new(format!(
-                "old_string must appear exactly once, found {}",
-                applied.matches
-            )));
+            return Err(format_match_error(
+                "replace_in_file",
+                path,
+                applied.matches,
+                Some(&content),
+                Some(old),
+            ));
         }
         atomic_write(&resolved, &applied.updated)?;
         if applied.fuzzy {
@@ -143,7 +174,7 @@ Usage:
         let resolved = resolve_write(ctx, self.name(), path)?;
         let content = fs::read_to_string(&resolved)?;
         guard_minimal_edit(self.name(), &[old], &content)?;
-        Ok(single_edit_preview(path, content, old, new))
+        single_edit_preview(path, content, old, new)
     }
 }
 
@@ -362,5 +393,115 @@ impl Tool for DeleteGoSymbolTool {
         let updated = re.replace(&content, "").trim().to_string() + "\n";
         fs::write(&resolved, updated)?;
         Ok("deleted".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::chat::conversation_manager::ConversationManager;
+    use crate::core::event::{BusEvent, EventBus};
+    use crate::core::tools::context::{AskStore, PathPermissionStore};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
+
+    struct NullBus;
+    impl EventBus for NullBus {
+        fn emit(&self, _event: BusEvent) {}
+    }
+
+    fn test_ctx(workspace: std::path::PathBuf) -> (ToolContext, std::path::PathBuf) {
+        let db = std::env::temp_dir().join(format!("peek-test-{}.db", uuid::Uuid::new_v4()));
+        let ctx = ToolContext {
+            workspace_root: workspace,
+            request_context: Default::default(),
+            session_id: "s".into(),
+            assistant_message_id: "a".into(),
+            conversation: Arc::new(ConversationManager::new(db.clone())),
+            event_bus: Arc::new(NullBus),
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            ask_store: Arc::new(AskStore::new()),
+            path_permission_store: Arc::new(PathPermissionStore::new()),
+            registry: None,
+            provider: None,
+            subagent_depth: 0,
+            max_subagent_depth: 1,
+            subagent_id: None,
+            parent_activity_id: None,
+            app_handle: None,
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        (ctx, db)
+    }
+
+    #[test]
+    fn write_file_blocks_existing_file_without_allow_overwrite() {
+        let dir = std::env::temp_dir().join(format!("peek-wf-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("existing.txt"), "hello").unwrap();
+        let (ctx, db) = test_ctx(dir.clone());
+
+        let tool = WriteFileTool;
+        let args = json!({ "path": "existing.txt", "content": "world" });
+        let err_preview = tool.preview(&ctx, &args).unwrap_err();
+        assert!(err_preview.to_string().contains("already exists"));
+        assert!(err_preview.to_string().contains("allow_overwrite: true"));
+
+        let err_exec = tool.execute(&ctx, args).unwrap_err();
+        assert!(err_exec.to_string().contains("already exists"));
+
+        let _ = fs::remove_dir_all(dir);
+        let _ = fs::remove_file(db);
+    }
+
+    #[test]
+    fn write_file_overwrites_existing_file_with_allow_overwrite() {
+        let dir = std::env::temp_dir().join(format!("peek-wf-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("existing.txt"), "hello").unwrap();
+        let (ctx, db) = test_ctx(dir.clone());
+
+        let tool = WriteFileTool;
+        let args = json!({ "path": "existing.txt", "content": "world", "allow_overwrite": true });
+        assert!(tool.preview(&ctx, &args).unwrap().is_some());
+        assert_eq!(tool.execute(&ctx, args).unwrap(), "written");
+        assert_eq!(
+            fs::read_to_string(dir.join("existing.txt")).unwrap(),
+            "world"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+        let _ = fs::remove_file(db);
+    }
+
+    #[test]
+    fn replace_in_file_fails_with_guided_error_on_mismatch() {
+        let dir = std::env::temp_dir().join(format!("peek-rif-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("file.txt"), "line1\nline2\n").unwrap();
+        let (ctx, db) = test_ctx(dir.clone());
+
+        let tool = ReplaceInFileTool;
+        let args =
+            json!({ "path": "file.txt", "old_string": "missing", "new_string": "replacement" });
+        let err_preview = tool.preview(&ctx, &args).unwrap_err();
+        assert!(err_preview
+            .to_string()
+            .contains("target `old_string` was not found in `file.txt`"));
+        assert!(err_preview
+            .to_string()
+            .contains("Current content around the target area in `file.txt`"));
+        assert!(err_preview.to_string().contains("1 | line1"));
+
+        let err_exec = tool.execute(&ctx, args).unwrap_err();
+        assert!(err_exec
+            .to_string()
+            .contains("target `old_string` was not found in `file.txt`"));
+        assert!(err_exec
+            .to_string()
+            .contains("Current content around the target area in `file.txt`"));
+
+        let _ = fs::remove_dir_all(dir);
+        let _ = fs::remove_file(db);
     }
 }
