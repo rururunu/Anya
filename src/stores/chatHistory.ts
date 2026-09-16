@@ -3,6 +3,7 @@
  * Pure functions only — no Pinia state.
  */
 
+import { isSoftInjectContent, stripSoftInjectMarker } from "@/services/chat/softInject";
 import type { ChatMessage, MessageCacheUsage, SessionCacheUsage } from "@/types/chat";
 
 /** Cheap equality fingerprint so loadHistory can skip no-op setSessionMessages. */
@@ -86,4 +87,15 @@ export function mergeActiveHistory(persisted: ChatMessage[], live: ChatMessage[]
     }
   }
   return merged;
+}
+
+/** Plain text of the latest non-injected user turn, or empty if none. */
+export function lastTurnUserContent(messages: ChatMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || String(message.role).toLowerCase() !== "user") continue;
+    if (message.injected === true || isSoftInjectContent(message.content)) continue;
+    return stripSoftInjectMarker(message.content).trim();
+  }
+  return "";
 }

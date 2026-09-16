@@ -96,6 +96,18 @@ describe("tasksFromHistory / planFromHistory", () => {
   });
 });
 
+describe("isCreatedPlanMessage", () => {
+  it("does not treat a plan-gate stop as a created plan", () => {
+    const msg = {
+      ...message([]),
+      content:
+        "已停止：计划尚未批准，Shell 和写文件已暂停。请点「批准并执行」，或批准后再发消息继续。",
+    };
+    expect(isCreatedPlanMessage(msg)).toBe(false);
+    expect(msg.content.includes("计划尚未批准")).toBe(true);
+  });
+});
+
 describe("isPlanExecutePrompt", () => {
   it("matches the canned approve-and-execute prompt", () => {
     expect(

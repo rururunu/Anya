@@ -1,5 +1,87 @@
 use thiserror::Error;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorCategory {
+    MissingPath,
+    PatchConflict,
+    InvalidArguments,
+    Permission,
+    Transient,
+    Unknown,
+}
+
+impl ErrorCategory {
+    pub fn classify(message: &str) -> Self {
+        let text = message.to_lowercase();
+        if [
+            "permission denied",
+            "access denied",
+            "access is denied",
+            "not allowed",
+            "权限",
+        ]
+        .iter()
+        .any(|s| text.contains(s))
+        {
+            Self::Permission
+        } else if [
+            "not found",
+            "does not exist",
+            "cannot find",
+            "no such file",
+            "找不到",
+        ]
+        .iter()
+        .any(|s| text.contains(s))
+        {
+            Self::MissingPath
+        } else if ["match", "patch", "old_string"]
+            .iter()
+            .any(|s| text.contains(s))
+        {
+            Self::PatchConflict
+        } else if [
+            "invalid argument",
+            "missing field",
+            "must be",
+            "expected",
+            "invalid type",
+        ]
+        .iter()
+        .any(|s| text.contains(s))
+        {
+            Self::InvalidArguments
+        } else if [
+            "timeout",
+            "timed out",
+            "429",
+            "502",
+            "503",
+            "connection reset",
+            "temporarily unavailable",
+        ]
+        .iter()
+        .any(|s| text.contains(s))
+        {
+            Self::Transient
+        } else {
+            Self::Unknown
+        }
+    }
+
+    pub fn guidance(self) -> &'static str {
+        match self {
+            Self::MissingPath => "Locate the actual path with list_folder/find_files before retrying.",
+            Self::PatchConflict => "Read the current target range and reconstruct the patch from exact text; do not overwrite the file.",
+            Self::InvalidArguments => "Inspect the tool schema and correct the indicated fields before retrying.",
+            Self::Permission => "Respect the denied scope; obtain missing authorization or report the blocker. Do not bypass it.",
+            Self::Transient => "A bounded retry may help for read-only operations. Check whether a write already took effect before retrying it.",
+            Self::Unknown => "Inspect this error and choose a different approach instead of repeating the same call.",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Error)]
 #[error("{message}")]
 pub struct ToolError {
@@ -39,6 +121,14 @@ impl ToolError {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled
+    }
+
+    pub fn category(&self) -> ErrorCategory {
+        if self.terminal {
+            ErrorCategory::Permission
+        } else {
+            ErrorCategory::classify(&self.message)
+        }
     }
 }
 

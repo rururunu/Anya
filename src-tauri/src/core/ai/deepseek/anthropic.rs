@@ -196,6 +196,17 @@ fn anthropic_user_content(content: &str) -> Value {
             parts.push(json!({ "type": "text", "text": before }));
         }
         if let Some(url) = cap.get(1).map(|m| m.as_str()).filter(|url| !url.is_empty()) {
+            if let Some(file_id) = super::files::file_id_from_ref(url) {
+                parts.push(json!({
+                    "type": "image",
+                    "source": {
+                        "type": "file",
+                        "file_id": file_id,
+                    }
+                }));
+                last = mat.end();
+                continue;
+            }
             match crate::core::ai::image_gen::resolve_image_url_for_api(url) {
                 Ok(resolved) => {
                     if let Some(b64) = resolved.strip_prefix("data:") {

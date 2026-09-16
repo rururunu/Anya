@@ -84,6 +84,7 @@
         :selected-count-label="tr(language, 'askSelectedCount', { count: askSelectedCount })"
         :selected-index="selectedIndex"
         :ariaLabel="tr(language, 'select')"
+        :plan-switch="askIsPlanSwitch"
         :is-option-selected="isAskOptionSelected"
         @hover="selectedIndex = $event"
         @select="selectAskOption"
@@ -955,6 +956,7 @@ const {
   isAskOptionSelected,
   selectAskOption,
   confirmAskSelection,
+  askIsPlanSwitch,
 } = useAskUserFlow({
   language,
   askUser: () => props.askUser,
@@ -1752,6 +1754,9 @@ const inputPlaceholder = computed(() => {
     return tr(language.value, "permissionHint");
   }
   if (showAskUserPicker.value) {
+    if (askIsPlanSwitch.value) {
+      return tr(language.value, "askPlanSwitchHint");
+    }
     return tr(
       language.value,
       activeAskQuestion.value?.multiSelect ? "askMultiHint" : "askCustomHint",

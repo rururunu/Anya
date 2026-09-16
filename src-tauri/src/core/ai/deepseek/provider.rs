@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc::Sender;
 use tracing::Instrument;
 
-use crate::core::runtime::{ChatRequest, Role, StreamEvent};
+use crate::core::runtime::{ChatRequest, StreamEvent};
 use crate::models::settings::{ProviderApiProtocol, ReasoningEffort};
 
 use super::anthropic::{
@@ -183,7 +183,12 @@ impl DeepSeekProvider {
         let has_images = request
             .messages
             .iter()
-            .any(|msg| msg.role == Role::User && msg.content.contains("![image]("));
+            .any(|msg| msg.content.contains("![image]("));
+        let restore_original = super::files::uses_files_api(&self.provider_id) && has_images;
+        let original_request = restore_original.then(|| request.clone());
+        if restore_original {
+            super::files::attach_files_to_messages(&primary_api_key, &mut request.messages).await;
+        }
 
         let _ = tx.send(StreamEvent::Start).await;
         let client = reqwest::Client::new();
@@ -217,6 +222,9 @@ impl DeepSeekProvider {
                             &primary_model,
                         ) =>
                 {
+                    if let Some(original) = original_request {
+                        request = original;
+                    }
                     match apply_image_input_fallback(&mut request, &settings, &self.app, &tx).await
                     {
                         Ok(FallbackPlan::RetryPrimary) => {

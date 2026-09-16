@@ -308,6 +308,7 @@ fn build_title(tool_name: &str, args: &Value) -> String {
             }
         }
         "ask_user" => "Ask user".into(),
+        "request_plan_mode" => "Request Plan mode".into(),
         "share_to_companion" => "Share file".into(),
         "share_preview_url" => "Share preview URL".into(),
         "generate_image" => {

@@ -206,6 +206,7 @@ impl EventBus for TauriEventBus {
                                     })
                                     .collect(),
                                 multi_select: question.multi_select,
+                                kind: question.kind,
                             })
                             .collect(),
                     },

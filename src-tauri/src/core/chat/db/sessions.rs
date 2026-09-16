@@ -215,7 +215,8 @@ pub async fn load_session_summaries(
             COALESCE(s.archived, 0) AS archived,
             COUNT(*) AS message_count,
             SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END) AS turn_count,
-            SUM(COALESCE(m.estimated_tokens, 0)) AS estimated_tokens,
+            SUM(COALESCE(m.estimated_tokens, 0))
+                + COALESCE(MAX(s.consumed_tokens), 0) AS estimated_tokens,
             MAX(m.timestamp) AS updated_at,
             (
                 SELECT u.content
@@ -280,6 +281,59 @@ pub async fn load_session_summaries(
             }
         })
         .collect())
+}
+
+/// Load per-session tokens kept after rewind (turns no longer in history).
+pub async fn load_session_consumed_tokens_map(
+    pool: &SqlitePool,
+) -> Result<HashMap<String, usize>, String> {
+    let rows = sqlx::query(
+        "SELECT session_id, consumed_tokens FROM chat_sessions WHERE consumed_tokens > 0",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let session_id: String = row.get("session_id");
+            let tokens = row.get::<i64, _>("consumed_tokens").max(0) as usize;
+            if tokens == 0 {
+                return None;
+            }
+            Some((session_id, tokens))
+        })
+        .collect())
+}
+
+/// Add tokens from deleted turns so session consumption never shrinks on rewind.
+pub async fn add_session_consumed_tokens(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    session_id: &str,
+    delta: i64,
+) -> Result<(), String> {
+    if delta <= 0 {
+        return Ok(());
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    sqlx::query(
+        "INSERT INTO chat_sessions (session_id, consumed_tokens, created_at, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+             consumed_tokens = chat_sessions.consumed_tokens + excluded.consumed_tokens,
+             updated_at = excluded.updated_at",
+    )
+    .bind(session_id)
+    .bind(delta)
+    .bind(now)
+    .bind(now)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn truncate_session_preview(value: &str) -> String {

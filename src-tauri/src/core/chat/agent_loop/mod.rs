@@ -21,5 +21,6 @@ pub mod mid_turn_compact;
 pub mod post_edit_verify;
 pub mod soft_inject;
 pub mod stream_turn;
+pub mod task_state;
 pub mod tools;
 pub mod types;

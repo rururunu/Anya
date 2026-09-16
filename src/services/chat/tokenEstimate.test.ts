@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { accumulateCacheUsage, formatTokenCount, promptCacheHitPercent } from "./tokenEstimate";
+import {
+  accumulateCacheUsage,
+  conversationConsumedTokens,
+  formatTokenCount,
+  promptCacheHitPercent,
+} from "./tokenEstimate";
 
 describe("formatTokenCount", () => {
   it("keeps small counts plain", () => {
@@ -37,5 +42,21 @@ describe("accumulateCacheUsage", () => {
         { inputTokens: 10, cacheReadTokens: 90 },
       ),
     ).toEqual({ inputTokens: 30, cacheReadTokens: 170 });
+  });
+});
+
+describe("conversationConsumedTokens", () => {
+  it("keeps rewound tokens after remaining messages shrink", () => {
+    const remaining = {
+      id: "keep",
+      sessionId: "s",
+      role: "user" as const,
+      content: "abcd",
+      status: "done" as const,
+      timestamp: 1,
+    };
+    const afterRewind = conversationConsumedTokens([remaining], 40);
+    expect(afterRewind).toBeGreaterThanOrEqual(40);
+    expect(afterRewind).toBe(conversationConsumedTokens([remaining], 0) + 40);
   });
 });

@@ -209,6 +209,13 @@ fn to_responses_user_content(content: &str) -> Value {
                                 .unwrap_or("");
                             json!({ "type": "input_image", "image_url": url })
                         }
+                        "file" => {
+                            let file_id = part
+                                .get("file_id")
+                                .and_then(Value::as_str)
+                                .unwrap_or("");
+                            json!({ "type": "input_image", "file_id": file_id })
+                        }
                         "text" => json!({
                             "type": "input_text",
                             "text": part.get("text").and_then(Value::as_str).unwrap_or(""),

@@ -1,0 +1,33 @@
+{
+  "id": "recover_stale_path",
+  "prompt": "The calculator helper is broken: subtraction adds instead. The old directory was src, but the code may have moved. Locate the current implementation, fix it, and verify without changing the tests.",
+  "setupFiles": [
+    {
+      "path": "package.json",
+      "content": "{\"scripts\": {\"test\": \"node --test tests.test.cjs\"}}"
+    },
+    {
+      "path": "lib/calculator.cjs",
+      "content": "exports.subtract = (a, b) => a + b;\n"
+    },
+    {
+      "path": "tests.test.cjs",
+      "content": "const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst { subtract } = require('./lib/calculator.cjs');\ntest('subtract', () => assert.equal(subtract(7, 2), 5));\n"
+    }
+  ],
+  "assertions": [
+    {
+      "type": "commandSucceeds",
+      "command": "node --test tests.test.cjs"
+    },
+    {
+      "type": "fileMissing",
+      "path": "src/calculator.cjs"
+    },
+    {
+      "type": "fileEquals",
+      "path": "tests.test.cjs",
+      "text": "const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst { subtract } = require('./lib/calculator.cjs');\ntest('subtract', () => assert.equal(subtract(7, 2), 5));\n"
+    }
+  ]
+}

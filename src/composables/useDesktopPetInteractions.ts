@@ -30,6 +30,7 @@ export type PetInteraction =
       sessionTitle: string;
       workspaceName?: string;
       header?: string;
+      questionKind?: string;
       question: string;
       options: Array<{ label: string; description?: string }>;
       multiSelect?: boolean;
@@ -291,6 +292,7 @@ export function useDesktopPetInteractions(options: UseDesktopPetInteractionsOpti
         sessionTitle: title,
         workspaceName,
         header: firstQ.header,
+        questionKind: firstQ.kind,
         question: firstQ.question,
         options: firstQ.options || [],
         multiSelect: firstQ.multiSelect,

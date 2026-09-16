@@ -10,7 +10,7 @@ import {
   Sparkle,
 } from "@lucide/vue";
 import {
-  estimateMessageTokens,
+  conversationConsumedTokens,
   formatTokenCount,
   promptCacheHitPercent,
   promptTokenTotal,
@@ -163,12 +163,11 @@ export function useComposerFooterDisplay(sessionId: () => string) {
   });
 
   const conversationTokenCount = computed(() => {
-    const messages = chatStore.sessions[sessionId()] ?? [];
-    let total = 0;
-    for (const item of messages) {
-      total += estimateMessageTokens(item);
-    }
-    return total;
+    const id = sessionId();
+    return conversationConsumedTokens(
+      chatStore.sessions[id] ?? [],
+      chatStore.sessionConsumedTokens[id] ?? 0,
+    );
   });
 
   const conversationTokenTitle = computed(() =>

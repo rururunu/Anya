@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -20,6 +21,7 @@ use super::types::{now_millis, StartedTool, ToolOutcome};
 pub struct ToolExecutor {
     tools: Arc<ToolManager>,
     tool_output_max_chars: usize,
+    allowed_tools: Option<HashSet<String>>,
 }
 
 impl ToolExecutor {
@@ -27,7 +29,23 @@ impl ToolExecutor {
         Self {
             tools,
             tool_output_max_chars,
+            allowed_tools: None,
         }
+    }
+
+    pub fn set_allowed_tools(&mut self, names: impl IntoIterator<Item = String>) {
+        self.allowed_tools = Some(names.into_iter().collect());
+    }
+
+    fn ensure_available(&self, name: &str) -> Result<(), ToolError> {
+        if self
+            .allowed_tools
+            .as_ref()
+            .is_some_and(|names| !names.contains(name))
+        {
+            return Err(ToolError::new(format!("Tool {name} is not allowed in the current tool set. Use an available tool or search_tools to discover capabilities permitted in this mode.")));
+        }
+        Ok(())
     }
 
     /// Parallel execution is only safe when every call in the batch is
@@ -77,8 +95,9 @@ impl ToolExecutor {
             let mut execution_context = tool_ctx.clone();
             execution_context.parent_activity_id = Some(started.activity_id.clone());
             let tool_name = started.tool_name.clone();
-            let hooked =
-                crate::core::plugins::before_tool(&started.tool_name, started.args.clone());
+            let hooked = self.ensure_available(&started.tool_name).and_then(|()| {
+                crate::core::plugins::before_tool(&started.tool_name, started.args.clone())
+            });
             let max_chars = self.tool_output_max_chars;
             async move {
                 let tool_args = match hooked {
@@ -93,10 +112,10 @@ impl ToolExecutor {
                     session_id = %execution_context.session_id,
                 );
                 tracing::debug!(parent: &span, "tool start");
-                let execution = tools
-                    .dispatch_async(&execution_context, &tool_name, tool_args)
-                    .instrument(span.clone())
-                    .await;
+                let execution =
+                    dispatch_with_read_retry(&tools, &execution_context, &tool_name, tool_args)
+                        .instrument(span.clone())
+                        .await;
                 tracing::debug!(parent: &span, success = execution.is_ok(), "tool done");
                 (started, execution, max_chars)
             }
@@ -132,20 +151,20 @@ impl ToolExecutor {
         let mut execution_context = tool_ctx.clone();
         execution_context.parent_activity_id = Some(started.activity_id.clone());
         let tool_name = started.tool_name.clone();
-        let tool_args =
-            match crate::core::plugins::before_tool(&started.tool_name, started.args.clone()) {
-                Ok(args) => args,
-                Err(error) => {
-                    return Ok(self.finish_tool_activity(
-                        started,
-                        Err(error),
-                        tool_ctx,
-                        self.tool_output_max_chars,
-                    ));
-                }
-            };
-        let execution = tools
-            .dispatch_async(&execution_context, &tool_name, tool_args)
+        let tool_args = match self.ensure_available(&started.tool_name).and_then(|()| {
+            crate::core::plugins::before_tool(&started.tool_name, started.args.clone())
+        }) {
+            Ok(args) => args,
+            Err(error) => {
+                return Ok(self.finish_tool_activity(
+                    started,
+                    Err(error),
+                    tool_ctx,
+                    self.tool_output_max_chars,
+                ));
+            }
+        };
+        let execution = dispatch_with_read_retry(&tools, &execution_context, &tool_name, tool_args)
             .instrument(span.clone())
             .await;
         tracing::debug!(parent: &span, success = execution.is_ok(), "tool done");
@@ -220,10 +239,24 @@ impl ToolExecutor {
     ) -> ToolOutcome {
         let user_denied = execution.as_ref().err().is_some_and(ToolError::is_terminal);
         let (raw_result, success) = match execution {
-            Ok(value) => (value, true),
-            Err(error) => (format!("tool error: {error}"), false),
+            Ok(value) => {
+                let success = started.tool_name != "run_shell"
+                    || !value.starts_with("exit_code:")
+                    || super::post_edit_verify::shell_exit_code_ok(&value);
+                (value, success)
+            }
+            Err(error) => (
+                format!(
+                    "tool error: {error}\n[Recovery] {}",
+                    serde_json::json!({
+                        "category":error.category(), "retryable": error.category() == crate::core::tools::error::ErrorCategory::Transient,
+                        "next_action":error.category().guidance()
+                    })
+                ),
+                false,
+            ),
         };
-        let result = truncate_tool_output(&raw_result, max_chars);
+        let result = preserve_tool_output(&tool_ctx.workspace_root, &raw_result, max_chars);
         let finished = build_activity_view(&started.tool_name, &started.args, Some(&result));
         let detail = finished.detail.or(started.preview_detail);
         let display_sid = tool_ctx.root_session_id().to_string();
@@ -271,5 +304,87 @@ impl ToolExecutor {
             success,
             user_denied,
         }
+    }
+}
+
+async fn dispatch_with_read_retry(
+    tools: &ToolManager,
+    ctx: &ToolContext,
+    name: &str,
+    args: serde_json::Value,
+) -> Result<String, ToolError> {
+    let first = tools.dispatch_async(ctx, name, args.clone()).await;
+    let retry = tools.is_read_only(name)
+        && first.as_ref().err().is_some_and(|error| {
+            !error.is_terminal()
+                && !error.is_cancelled()
+                && error.category() == crate::core::tools::error::ErrorCategory::Transient
+        });
+    if !retry {
+        return first;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    ctx.ensure_not_cancelled()?;
+    tools.dispatch_async(ctx, name, args).await
+}
+
+/// Keep the complete result addressable after context truncation. Never build
+/// artifact paths from model-controlled tool names, session IDs or arguments.
+fn preserve_tool_output(workspace: &std::path::Path, raw: &str, max_chars: usize) -> String {
+    let preview = truncate_tool_output(raw, max_chars);
+    if raw.chars().count() <= max_chars {
+        return preview;
+    }
+    let save = || -> std::io::Result<String> {
+        let root = workspace.canonicalize()?;
+        let dir = root.join(".anya").join("tool-results");
+        if let Some(parent) = dir.ancestors().find(|p| p.exists()) {
+            if !parent.canonicalize()?.starts_with(&root) {
+                return Err(std::io::Error::other(
+                    "artifact directory escapes workspace",
+                ));
+            }
+        }
+        std::fs::create_dir_all(&dir)?;
+        if !dir.canonicalize()?.starts_with(&root) {
+            return Err(std::io::Error::other(
+                "artifact directory escapes workspace",
+            ));
+        }
+        let relative = format!(".anya/tool-results/{}.txt", uuid::Uuid::new_v4());
+        std::fs::write(root.join(&relative), raw)?;
+        Ok(relative)
+    };
+    match save() {
+        Ok(path) => {
+            let reference = format!("\n[Full tool output saved: {path}; read_file for omitted evidence.]");
+            format!("{}{}", truncate_tool_output(raw, max_chars.saturating_sub(reference.chars().count())), reference)
+        }
+        Err(error) => format!("{preview}\n[Could not save full tool output: {error}; rerun with a narrower query if omitted evidence is needed.]"),
+    }
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    #[test]
+    fn truncated_output_has_a_retrievable_complete_artifact() {
+        let root = std::env::temp_dir().join(format!("anya-output-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let raw = "HEAD".to_string()
+            + &"x".repeat(1000)
+            + "CRITICAL MIDDLE EVIDENCE"
+            + &"y".repeat(1000)
+            + "TAIL";
+        let result = preserve_tool_output(&root, &raw, 100);
+        assert!(result.contains("Full tool output saved:"));
+        let path = std::fs::read_dir(root.join(".anya/tool-results"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), raw);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

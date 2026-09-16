@@ -2,6 +2,7 @@ import type { ToolActivity, WorkTimelineItem } from "@/types/chat";
 import type { AppLanguage } from "@/types/setting";
 import { tr } from "@/services/i18n";
 import { SUBAGENT_TOOLS } from "@/services/chat/subagentTools";
+import { isAskUserTool } from "@/services/chat/askUserAnswer";
 import { isImageGenActivity } from "@/services/chat/toolActivityEnrichment";
 
 const HIDE_RESULT_TOOLS = new Set([
@@ -13,6 +14,7 @@ const HIDE_RESULT_TOOLS = new Set([
   "list_symbols",
   "fetch_url",
   "ask_user",
+  "request_plan_mode",
 ]);
 
 const FILE_TOOLS = new Set([
@@ -124,7 +126,7 @@ export function summarizeWorkFoldMeta(
   reasoningSegmentCount: number,
   language: AppLanguage,
 ): string {
-  const tools = activities.filter((activity) => activity.toolName !== "ask_user");
+  const tools = activities.filter((activity) => !isAskUserTool(activity.toolName));
   let searchCount = 0;
   for (const activity of tools) {
     if (categorizeActivity(activity) === "search") searchCount += 1;
@@ -172,6 +174,9 @@ export function toolVariantLabel(activity: ToolActivity, language: AppLanguage):
   }
   if (SUBAGENT_TOOLS.has(activity.toolName)) {
     return tr(language, "toolVariantAgent");
+  }
+  if (activity.toolName === "request_plan_mode") {
+    return tr(language, "chatModePlan");
   }
   return tr(language, "toolVariantTool");
 }

@@ -4,6 +4,10 @@
 //! mid-turn compact so harness changes can be measured on the same signal.
 
 use std::collections::VecDeque;
+
+#[path = "eval_live.rs"]
+mod live;
+pub use live::{EvalMetrics, LiveEvalConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -47,6 +51,17 @@ pub struct EvalTask {
     /// Force plan-mode gate for this task (independent of CLI `--plan-mode`).
     #[serde(default, alias = "plan_mode")]
     pub plan_mode: bool,
+    #[serde(default)]
+    pub followups: Vec<EvalFollowup>,
+    #[serde(default)]
+    pub context_window: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvalFollowup {
+    pub after_tool_calls: usize,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +105,8 @@ pub enum EvalAssertion {
     StatusSeen { kind: String },
     #[serde(rename = "toolCalled")]
     ToolCalled { name: String },
+    /// Deterministic acceptance check authored in the fixture, not by the model.
+    CommandSucceeds { command: String },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -101,6 +118,8 @@ pub struct EvalOptions {
     pub results_dir: PathBuf,
     pub filter: Option<String>,
     pub seeds: u32,
+    pub live: Option<LiveEvalConfig>,
+    pub include_office: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,6 +133,7 @@ pub struct TaskResult {
     pub finish_reason: Option<String>,
     pub statuses: Vec<String>,
     pub errors: Vec<String>,
+    pub metrics: EvalMetrics,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -133,6 +153,8 @@ pub struct EvalOptionsReport {
     pub compact: bool,
     pub plan_mode: bool,
     pub seeds: u32,
+    pub provider: String,
+    pub model: Option<String>,
 }
 
 struct ScriptedProvider {
@@ -196,10 +218,23 @@ impl AIProvider for ScriptedProvider {
 
     async fn stream(
         &self,
-        _request: ChatRequest,
+        request: ChatRequest,
         tx: mpsc::Sender<StreamEvent>,
     ) -> Result<(), ProviderError> {
-        let turn = self.take_turn();
+        // Compaction uses the same provider, but must not consume a scripted
+        // task action. Otherwise a summary request could swallow its next edit.
+        let turn = if request.request_id.starts_with("compact-") {
+            ProviderTurn {
+                content: request
+                    .messages
+                    .last()
+                    .map(|m| super::limits::truncate_tool_output(&m.content, 3500))
+                    .unwrap_or_default(),
+                tool_calls: vec![],
+            }
+        } else {
+            self.take_turn()
+        };
         if !turn.content.is_empty() {
             let _ = tx.send(StreamEvent::Delta(turn.content.clone())).await;
         }
@@ -231,10 +266,45 @@ pub fn load_tasks(dir: &Path) -> Result<Vec<EvalTask>, String> {
         let raw = raw.strip_prefix('\u{feff}').unwrap_or(&raw);
         let task: EvalTask =
             serde_json::from_str(raw).map_err(|e| format!("{}: {e}", path.display()))?;
+        if task.id.is_empty()
+            || !task
+                .id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err("Evaluation task IDs must contain only letters, digits, _ or -".into());
+        }
+        for file in &task.setup_files {
+            if !safe_fixture_path(&file.path) {
+                return Err(format!(
+                    "Setup path must stay inside the evaluation workspace: {}",
+                    file.path
+                ));
+            }
+        }
+        for assertion in &task.assertions {
+            if let EvalAssertion::FileContains { path, .. }
+            | EvalAssertion::FileEquals { path, .. }
+            | EvalAssertion::FileMissing { path } = assertion
+            {
+                if !safe_fixture_path(path) {
+                    return Err(format!(
+                        "Assertion path must stay inside the evaluation workspace: {path}"
+                    ));
+                }
+            }
+        }
         tasks.push(task);
     }
     tasks.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(tasks)
+}
+
+fn safe_fixture_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.contains(':')
+        && !path.starts_with(['/', '\\'])
+        && !path.replace('\\', "/").split('/').any(|part| part == "..")
 }
 
 pub async fn run_eval(options: EvalOptions) -> Result<EvalReport, String> {
@@ -254,6 +324,13 @@ pub async fn run_eval(options: EvalOptions) -> Result<EvalReport, String> {
         })
         .collect();
 
+    if tasks.is_empty() {
+        return Err("No evaluation tasks matched".into());
+    }
+    if options.live.is_none() && tasks.iter().any(|task| task.script.is_empty()) {
+        return Err("Tasks without scripted turns require --live".into());
+    }
+
     let seeds = options.seeds.max(1);
     let mut results = Vec::new();
     for seed in 0..seeds {
@@ -262,12 +339,12 @@ pub async fn run_eval(options: EvalOptions) -> Result<EvalReport, String> {
         }
     }
 
-    let passed = results.iter().filter(|r| r.passed).count();
-    let failed = results.len() - passed;
-    let pass_rate = if results.is_empty() {
+    let passed = results.iter().filter(|r| r.passed && !r.skipped).count();
+    let failed = results.iter().filter(|r| !r.passed && !r.skipped).count();
+    let pass_rate = if passed + failed == 0 {
         0.0
     } else {
-        passed as f64 / results.len() as f64
+        passed as f64 / (passed + failed) as f64
     };
 
     let report = EvalReport {
@@ -276,6 +353,12 @@ pub async fn run_eval(options: EvalOptions) -> Result<EvalReport, String> {
             compact: options.compact,
             plan_mode: options.plan_mode,
             seeds,
+            provider: if options.live.is_some() {
+                "live".into()
+            } else {
+                "scripted".into()
+            },
+            model: options.live.as_ref().map(|c| c.model.clone()),
         },
         results,
         passed,
@@ -299,7 +382,7 @@ pub async fn run_eval(options: EvalOptions) -> Result<EvalReport, String> {
 
 async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> TaskResult {
     if let Some(app) = task.skip_unless_office.as_deref() {
-        if !crate::core::office::office_app_available(app) {
+        if !options.include_office || !crate::core::office::office_app_available(app) {
             return TaskResult {
                 id: task.id.clone(),
                 passed: true,
@@ -308,11 +391,16 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
                 answer: String::new(),
                 finish_reason: None,
                 statuses: Vec::new(),
-                errors: vec![format!("skipped: {app} unavailable")],
+                errors: vec![format!(
+                    "skipped: {app} evaluation not enabled or unavailable"
+                )],
+                metrics: EvalMetrics::default(),
             };
         }
     }
 
+    let started = std::time::Instant::now();
+    let metrics = Arc::new(Mutex::new(EvalMetrics::default()));
     let workspace = std::env::temp_dir().join(format!(
         "anya-eval-{}-{}-{}",
         task.id,
@@ -331,8 +419,16 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
     let db_path = workspace.join("eval.db");
     let conversation = Arc::new(ConversationManager::new(db_path));
     let tools_called = Arc::new(Mutex::new(Vec::<String>::new()));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let soft_queue = Arc::new(Mutex::new(VecDeque::new()));
     let event_bus: Arc<dyn EventBus> = Arc::new(ToolRecordingBus {
         tools_called: Arc::clone(&tools_called),
+        metrics: Arc::clone(&metrics),
+        fingerprints: Mutex::new(std::collections::HashSet::new()),
+        soft_queue: Arc::clone(&soft_queue),
+        followups: Mutex::new(task.followups.clone()),
+        finished_calls: std::sync::atomic::AtomicUsize::new(0),
+        cancelled: Arc::clone(&cancelled),
     });
     let mut registry = ToolRegistry::new();
     builtin::register_all(
@@ -343,10 +439,32 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
     crate::core::office::register_tools(&mut registry);
     let tools = Arc::new(ToolManager::new(registry));
     let registry = tools.registry();
-    let provider = Arc::new(ScriptedProvider::from_task(task));
-    let runner = AgentRunner::new(provider, Arc::clone(&tools)).with_max_steps(40);
+    let provider: Arc<dyn AIProvider> = if let Some(config) = &options.live {
+        match live::LiveProvider::new(config.clone(), Arc::clone(&metrics)) {
+            Ok(provider) => Arc::new(provider),
+            Err(error) => {
+                return TaskResult {
+                    id: task.id.clone(),
+                    passed: false,
+                    skipped: false,
+                    seed,
+                    answer: String::new(),
+                    finish_reason: None,
+                    statuses: vec![],
+                    errors: vec![error],
+                    metrics: EvalMetrics::default(),
+                }
+            }
+        }
+    } else {
+        Arc::new(ScriptedProvider::from_task(task))
+    };
+    let mut runner = AgentRunner::new(Arc::clone(&provider), Arc::clone(&tools)).with_max_steps(40);
+    if let Some(window) = task.context_window {
+        runner = runner.with_max_turn_tokens(window);
+    }
 
-    let session_id = format!("eval-{}", task.id);
+    let session_id = format!("eval-{}-{}", task.id, uuid::Uuid::new_v4());
     shared_plan_mode_store().set_active(&session_id, options.plan_mode || task.plan_mode);
 
     let tool_ctx = ToolContext {
@@ -360,16 +478,16 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
         ask_store: Arc::new(AskStore::new()),
         path_permission_store: Arc::new(PathPermissionStore::new()),
         registry: Some(registry),
-        provider: None,
+        provider: Some(provider),
         subagent_depth: 0,
         max_subagent_depth: 1,
         subagent_id: None,
         parent_activity_id: None,
         app_handle: None,
-        cancelled: Arc::new(AtomicBool::new(false)),
+        cancelled: Arc::clone(&cancelled),
     };
 
-    let request = ChatRequest {
+    let mut request = ChatRequest {
         request_id: format!("req-{}", task.id),
         session_id: session_id.clone(),
         messages: vec![ChatMessage {
@@ -395,20 +513,50 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
         max_tokens: None,
     };
 
+    if options.live.is_some() {
+        request.messages.insert(
+            0,
+            ChatMessage {
+                id: "eval-system".into(),
+                session_id: session_id.clone(),
+                role: Role::System,
+                content: super::prompts::SYSTEM_PROMPT.into(),
+                reasoning: None,
+                work_timeline: None,
+                tool_activities: None,
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+                status: MessageStatus::Done,
+                timestamp: 0,
+                estimated_tokens: None,
+            },
+        );
+    }
     let (tx, mut rx) = mpsc::channel::<StreamEvent>(64);
-    let soft_queue = Arc::new(Mutex::new(VecDeque::new()));
-    let cancelled = Arc::clone(&tool_ctx.cancelled);
+    let run_cancelled = Arc::clone(&cancelled);
 
-    let run = tauri::async_runtime::spawn(async move {
+    let mut run = tauri::async_runtime::spawn(async move {
         runner
-            .run(request, tool_ctx, tx, cancelled, soft_queue)
+            .run(request, tool_ctx, tx, run_cancelled, soft_queue)
             .await
     });
 
     let mut answer = String::new();
     let mut finish_reason = None;
     let mut statuses = Vec::new();
-    while let Some(event) = rx.recv().await {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(300);
+    let mut timed_out = false;
+    loop {
+        let event = match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Some(event)) => event,
+            Ok(None) => break,
+            Err(_) => {
+                cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                timed_out = true;
+                break;
+            }
+        };
         match event {
             StreamEvent::TurnComplete {
                 content,
@@ -423,13 +571,26 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
             _ => {}
         }
     }
-    let run_err = run.await.err().map(|e| e.to_string());
+    let mut stopped = true;
+    let run_err = match tokio::time::timeout(std::time::Duration::from_secs(10), &mut run).await {
+        Ok(Ok(Ok(()))) => None,
+        Ok(Ok(Err(error))) => Some(error.to_string()),
+        Ok(Err(error)) => Some(error.to_string()),
+        Err(_) => {
+            run.abort();
+            stopped = false;
+            Some("Evaluation cancellation did not settle; workspace retained".into())
+        }
+    };
 
     let mut errors = Vec::new();
+    if timed_out {
+        errors.push("Evaluation exceeded its 300-second limit".into());
+    }
     if let Some(err) = run_err {
         errors.push(err);
     }
-    for assertion in &task.assertions {
+    for assertion in task.assertions.iter().filter(|_| stopped && !timed_out) {
         if let Some(err) = check_assertion(
             assertion,
             &workspace,
@@ -442,7 +603,9 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
         }
     }
 
-    let _ = fs::remove_dir_all(&workspace);
+    if stopped {
+        let _ = fs::remove_dir_all(&workspace);
+    }
 
     TaskResult {
         id: task.id.clone(),
@@ -453,6 +616,11 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
         finish_reason,
         statuses,
         errors,
+        metrics: {
+            let mut m = metrics.lock().unwrap().clone();
+            m.duration_ms = started.elapsed().as_millis() as u64;
+            m
+        },
     }
 }
 
@@ -465,8 +633,28 @@ fn check_assertion(
     tools_called: &Arc<Mutex<Vec<String>>>,
 ) -> Option<String> {
     match assertion {
+        EvalAssertion::CommandSucceeds { command } => {
+            match crate::core::tools::shell_jobs::run_foreground(
+                command,
+                Some(workspace),
+                &Arc::new(AtomicBool::new(false)),
+                None,
+            ) {
+                Ok(result) if super::agent_loop::post_edit_verify::shell_exit_code_ok(&result) => {
+                    None
+                }
+                Ok(result) => Some(format!(
+                    "commandSucceeds failed: {command}\n{}",
+                    super::limits::truncate_tool_output(&result, 2000)
+                )),
+                Err(error) => Some(format!("commandSucceeds failed: {command}: {error}")),
+            }
+        }
         EvalAssertion::FileContains { path, text } => {
-            let content = fs::read_to_string(workspace.join(path)).unwrap_or_default();
+            let content = match fs::read_to_string(workspace.join(path)) {
+                Ok(content) => content,
+                Err(error) => return Some(format!("fileContains could not read {path}: {error}")),
+            };
             if content.contains(text) {
                 None
             } else {
@@ -474,7 +662,10 @@ fn check_assertion(
             }
         }
         EvalAssertion::FileEquals { path, text } => {
-            let content = fs::read_to_string(workspace.join(path)).unwrap_or_default();
+            let content = match fs::read_to_string(workspace.join(path)) {
+                Ok(content) => content,
+                Err(error) => return Some(format!("fileEquals could not read {path}: {error}")),
+            };
             if content == *text {
                 None
             } else {
@@ -536,14 +727,67 @@ fn check_assertion(
 
 struct ToolRecordingBus {
     tools_called: Arc<Mutex<Vec<String>>>,
+    metrics: Arc<Mutex<EvalMetrics>>,
+    fingerprints: Mutex<std::collections::HashSet<String>>,
+    soft_queue: Arc<Mutex<VecDeque<String>>>,
+    followups: Mutex<Vec<EvalFollowup>>,
+    finished_calls: std::sync::atomic::AtomicUsize,
+    cancelled: Arc<AtomicBool>,
 }
 
 impl EventBus for ToolRecordingBus {
     fn emit(&self, event: BusEvent) {
-        if let BusEvent::ToolStarted { tool_name, .. } = event {
-            if let Ok(mut guard) = self.tools_called.lock() {
-                guard.push(tool_name);
+        match event {
+            BusEvent::ToolStarted {
+                tool_name,
+                arguments,
+                ..
+            } => {
+                if let Ok(mut guard) = self.tools_called.lock() {
+                    guard.push(tool_name.clone());
+                }
+                if let Ok(mut m) = self.metrics.lock() {
+                    m.tool_calls += 1;
+                    if let Ok(mut seen) = self.fingerprints.lock() {
+                        if !seen.insert(format!("{tool_name}|{arguments}")) {
+                            m.repeated_tool_calls += 1;
+                        }
+                    }
+                }
             }
+            BusEvent::ToolFinished { success, .. } => {
+                if !success {
+                    if let Ok(mut m) = self.metrics.lock() {
+                        m.failed_tool_calls += 1;
+                    }
+                }
+                let count = self
+                    .finished_calls
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    + 1;
+                if let (Ok(mut pending), Ok(mut queue)) =
+                    (self.followups.lock(), self.soft_queue.lock())
+                {
+                    pending.retain(|followup| {
+                        if followup.after_tool_calls <= count {
+                            queue.push_back(followup.content.clone());
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
+            }
+            BusEvent::AskUser { .. }
+            | BusEvent::PathPermissionRequest { .. }
+            | BusEvent::ToolApprovalRequest { .. } => {
+                if let Ok(mut m) = self.metrics.lock() {
+                    m.user_interventions += 1;
+                }
+                self.cancelled
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            _ => {}
         }
     }
 }
@@ -581,6 +825,8 @@ mod tests {
             results_dir: dir.join("results"),
             filter: None,
             seeds: 1,
+            live: None,
+            include_office: false,
         })
         .await
         .unwrap();

@@ -1,0 +1,21 @@
+{
+  "id": "inspect_without_edit",
+  "prompt": "Explain why this subtraction function is wrong and how to fix it. Do not modify the project.",
+  "setupFiles": [
+    {
+      "path": "calculator.cjs",
+      "content": "exports.subtract = (a, b) => a + b;\n"
+    }
+  ],
+  "assertions": [
+    {
+      "type": "fileEquals",
+      "path": "calculator.cjs",
+      "text": "exports.subtract = (a, b) => a + b;\n"
+    },
+    {
+      "type": "toolCalled",
+      "name": "read_file"
+    }
+  ]
+}

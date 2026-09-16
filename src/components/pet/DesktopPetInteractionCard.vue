@@ -7,8 +7,13 @@
   >
     <!-- 头部：图标、标题、所属工作区、关闭按钮 -->
     <header class="permission-card-header">
-      <span class="permission-card-icon" :class="interaction.kind" aria-hidden="true">
-        <CircleHelp v-if="interaction.kind === 'ask_user'" :size="16" :stroke-width="2" />
+      <span
+        class="permission-card-icon"
+        :class="[interaction.kind, { 'plan-switch': isPlanSwitch }]"
+        aria-hidden="true"
+      >
+        <ListChecks v-if="isPlanSwitch" :size="16" :stroke-width="2" />
+        <CircleHelp v-else-if="interaction.kind === 'ask_user'" :size="16" :stroke-width="2" />
         <Shield v-else-if="interaction.kind === 'path_permission'" :size="16" :stroke-width="2" />
         <ShieldAlert v-else :size="16" :stroke-width="2" />
       </span>
@@ -105,6 +110,13 @@
             aria-hidden="true"
           >
             <Check v-if="isOptionSelected(opt.label)" :size="11" :stroke-width="2.75" />
+          </span>
+          <span
+            v-else-if="planSwitchOptionIcon(opt.label)"
+            class="permission-option-icon"
+            aria-hidden="true"
+          >
+            <component :is="planSwitchOptionIcon(opt.label)" :size="14" :stroke-width="2.25" />
           </span>
 
           <div class="permission-option-text">
@@ -238,15 +250,22 @@ import {
   ChevronRight,
   CircleHelp,
   Folder,
+  ListChecks,
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Sparkle,
   X,
 } from "@lucide/vue";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
 import type { PetInteraction } from "@/composables/useDesktopPetInteractions";
 import type { PathPermissionDecision, ToolApprovalDecision } from "@/types/chat";
+import {
+  isPlanSwitchQuestion,
+  PLAN_SWITCH_ACCEPT_LABEL,
+  PLAN_SWITCH_DECLINE_LABEL,
+} from "@/services/chat/askUserAnswer";
 
 const props = withDefaults(
   defineProps<{
@@ -295,6 +314,22 @@ const headerTitle = computed(() => {
 });
 
 const confirmLabel = computed(() => tr(language.value, "confirmSelection"));
+
+const isPlanSwitch = computed(
+  () =>
+    props.interaction.kind === "ask_user" &&
+    isPlanSwitchQuestion({
+      kind: props.interaction.questionKind,
+      header: props.interaction.header,
+    }),
+);
+
+function planSwitchOptionIcon(label: string) {
+  if (!isPlanSwitch.value) return undefined;
+  if (label === PLAN_SWITCH_ACCEPT_LABEL) return ListChecks;
+  if (label === PLAN_SWITCH_DECLINE_LABEL) return Sparkle;
+  return undefined;
+}
 
 const selectedCountLabel = computed(() =>
   tr(language.value, "askSelectedCount", { count: selectedOptions.value.length }),

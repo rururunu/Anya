@@ -33,7 +33,13 @@ import type {
   SemanticSearchConfig,
   SemanticSearchState,
 } from "@/types/setting";
-import type { TokenUsageReport } from "@/types/tokenUsage";
+import type {
+  TokenUsageReport,
+  DeepSeekBalanceReport,
+  DeepSeekFileList,
+  DeepSeekFileObject,
+  DeepSeekFileDeleteResult,
+} from "@/types/tokenUsage";
 import { invoke } from "@tauri-apps/api/core";
 
 export function ipcInvoke<TResponse>(
@@ -196,6 +202,40 @@ export function getTokenUsageReport(request: {
 }) {
   return ipcInvoke<TokenUsageReport>(IPC_COMMANDS.getTokenUsageReport, {
     request,
+  });
+}
+
+/** DeepSeek account balance from GET /user/balance. */
+export function getDeepSeekBalance() {
+  return ipcInvoke<DeepSeekBalanceReport>(IPC_COMMANDS.getDeepSeekBalance);
+}
+
+/** DeepSeek POST /files — upload an image for `file_id` citation. */
+export function uploadDeepSeekFile(path: string) {
+  return ipcInvoke<DeepSeekFileObject>(IPC_COMMANDS.uploadDeepSeekFile, { path });
+}
+
+/** DeepSeek GET /files. */
+export function listDeepSeekFiles(after?: string, limit?: number) {
+  const payload: Record<string, unknown> = {};
+  if (after) payload.after = after;
+  if (limit != null) payload.limit = limit;
+  return ipcInvoke<DeepSeekFileList>(IPC_COMMANDS.listDeepSeekFiles, payload);
+}
+
+/** DeepSeek GET /files/:file_id. */
+export function retrieveDeepSeekFile(fileId: string) {
+  return ipcInvoke<DeepSeekFileObject>(IPC_COMMANDS.retrieveDeepSeekFile, {
+    fileId,
+    file_id: fileId,
+  });
+}
+
+/** DeepSeek DELETE /files/:file_id. */
+export function deleteDeepSeekFile(fileId: string) {
+  return ipcInvoke<DeepSeekFileDeleteResult>(IPC_COMMANDS.deleteDeepSeekFile, {
+    fileId,
+    file_id: fileId,
   });
 }
 

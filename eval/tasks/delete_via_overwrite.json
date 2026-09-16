@@ -15,7 +15,8 @@
           "name": "write_file",
           "arguments": {
             "path": "trash.txt",
-            "content": ""
+            "content": "",
+            "allow_overwrite": true
           }
         }
       ]
@@ -41,6 +42,10 @@
       "type": "fileEquals",
       "path": "trash.txt",
       "text": ""
+    },
+    {
+      "type": "finishReason",
+      "reason": "stop"
     }
   ]
 }

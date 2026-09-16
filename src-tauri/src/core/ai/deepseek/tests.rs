@@ -212,6 +212,45 @@ fn message_to_api_json_keeps_screenshot_parts_on_tool() {
     assert_eq!(json["content"][1]["type"], "image_url");
 }
 
+#[test]
+fn message_to_api_json_cites_deepseek_file_id() {
+    let user = msg(
+        "u1",
+        Role::User,
+        "see\n![image](file:file-api-0a1b2c3d4e5f60718293a4b5c6d7e8f9)",
+        None,
+        None,
+    );
+    let json = message_to_api_json(&user, true, false);
+    assert!(json["content"].is_array());
+    assert_eq!(json["content"][1]["type"], "file");
+    assert_eq!(
+        json["content"][1]["file_id"],
+        "file-api-0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+    );
+}
+
+#[test]
+fn responses_body_cites_file_id_as_input_image() {
+    let request = sample_request(vec![msg(
+        "u1",
+        Role::User,
+        "see\n![image](file:file-api-abc)",
+        None,
+        None,
+    )]);
+    let body = build_responses_body(
+        &request,
+        "deepseek-v4-flash",
+        true,
+        ReasoningEffort::Disabled,
+        true,
+    );
+    let content = &body["input"][0]["content"];
+    assert_eq!(content[1]["type"], "input_image");
+    assert_eq!(content[1]["file_id"], "file-api-abc");
+}
+
 fn msg(
     id: &str,
     role: Role,
@@ -921,4 +960,63 @@ fn should_not_retry_stream_after_body_decode_failure() {
     assert!(should_retry_multimodal_as_stream(&ProviderError::message(
         "Failed to extract an image description from the multimodal response. Debug: empty. Snippet: {}"
     )));
+}
+
+#[test]
+fn parses_deepseek_file_object_and_list() {
+    let parsed = super::files::parse_file_object(
+        r#"{
+          "id": "file-api-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+          "object": "file",
+          "bytes": 102400,
+          "created_at": 1700000000,
+          "filename": "image.jpg",
+          "purpose": "user_data"
+        }"#,
+    )
+    .expect("parse file");
+    assert_eq!(parsed.id, "file-api-0a1b2c3d4e5f60718293a4b5c6d7e8f9");
+    assert_eq!(parsed.bytes, 102400);
+    assert!(parsed.expires_at.is_none());
+
+    let list = super::files::parse_file_list(
+        r#"{
+          "object": "list",
+          "data": [{
+            "id": "file-api-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+            "object": "file",
+            "bytes": 102400,
+            "created_at": 1700000000,
+            "filename": "image.jpg",
+            "purpose": "user_data"
+          }],
+          "first_id": "file-api-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+          "last_id": "file-api-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+          "has_more": false
+        }"#,
+    )
+    .expect("parse list");
+    assert!(!list.has_more);
+    assert_eq!(list.data[0].filename, "image.jpg");
+}
+
+#[test]
+fn file_id_from_ref_accepts_prefixed_and_raw() {
+    assert_eq!(
+        super::files::file_id_from_ref("file:file-api-abc"),
+        Some("file-api-abc")
+    );
+    assert_eq!(
+        super::files::file_id_from_ref("file-api-abc"),
+        Some("file-api-abc")
+    );
+    assert_eq!(
+        super::files::file_id_from_ref("data:image/png;base64,QQ=="),
+        None
+    );
+    assert!(super::files::uses_files_api("deepseek"));
+    assert!(!super::files::uses_files_api("openrouter"));
+    assert!(super::files::json_contains_file_id(&json!({
+        "messages": [{ "content": [{ "type": "file", "file_id": "file-api-abc" }] }]
+    })));
 }

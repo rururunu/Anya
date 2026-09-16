@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::core::chat::error::ChatError;
+use crate::core::chat::limits::estimate_message_tokens;
 use crate::core::runtime::{ChatMessage, MessageStatus};
 
 use super::helpers::{
@@ -268,7 +269,7 @@ impl ConversationManager {
         user_message_id: &str,
     ) -> Result<(), ChatError> {
         self.ensure_session_loaded(session_id);
-        let removed_ids = {
+        let (removed_ids, removed_tokens) = {
             let mut sessions = self.sessions.lock().map_err(lock_error)?;
             let messages = sessions
                 .get_mut(session_id)
@@ -276,9 +277,17 @@ impl ConversationManager {
             let Some(index) = messages.iter().position(|m| m.id == user_message_id) else {
                 return Err(ChatError::MessageNotFound);
             };
+            let removed_tokens = messages[index..]
+                .iter()
+                .map(|message| {
+                    message
+                        .estimated_tokens
+                        .unwrap_or_else(|| estimate_message_tokens(message))
+                })
+                .sum::<usize>();
             let removed: Vec<String> = messages[index..].iter().map(|m| m.id.clone()).collect();
             messages.truncate(index);
-            removed
+            (removed, removed_tokens)
         };
 
         let mut transaction = self
@@ -298,10 +307,22 @@ impl ConversationManager {
                 .await
                 .map_err(|error| ChatError::Internal(error.to_string()))?;
         }
+        super::super::db::add_session_consumed_tokens(
+            &mut transaction,
+            session_id,
+            removed_tokens as i64,
+        )
+        .await
+        .map_err(ChatError::Internal)?;
         transaction
             .commit()
             .await
             .map_err(|error| ChatError::Internal(error.to_string()))?;
+        if removed_tokens > 0 {
+            if let Ok(mut consumed) = self.session_consumed_tokens.lock() {
+                *consumed.entry(session_id.to_string()).or_insert(0) += removed_tokens;
+            }
+        }
         for id in removed_ids {
             self.journal.discard_message(&id);
         }

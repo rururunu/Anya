@@ -151,6 +151,56 @@ fn minimal_coding_is_injected_only_when_enabled() {
 }
 
 #[test]
+fn plan_request_hint_is_injected_only_when_suggested() {
+    let context = RequestContext::default();
+    let enabled = PromptPreferences {
+        suggest_plan_request: true,
+        ..PromptPreferences::default()
+    };
+    let request = PromptBuilder::build(PromptBuildInput {
+        request_id: "request",
+        session_id: "session",
+        history: &[],
+        context: &context,
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: None,
+        provider: None,
+        preferences: &enabled,
+    });
+    let block = request
+        .messages
+        .iter()
+        .find(|message| message.id.starts_with("plan-request-hint-"));
+    assert!(block.is_some_and(|message| message.content.contains("request_plan_mode")));
+
+    let already_planning = PromptPreferences {
+        plan_mode: true,
+        suggest_plan_request: true,
+        ..PromptPreferences::default()
+    };
+    let planned = PromptBuilder::build(PromptBuildInput {
+        request_id: "request",
+        session_id: "session",
+        history: &[],
+        context: &context,
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: None,
+        provider: None,
+        preferences: &already_planning,
+    });
+    assert!(!planned
+        .messages
+        .iter()
+        .any(|message| message.id.starts_with("plan-request-hint-")));
+    assert!(planned
+        .messages
+        .iter()
+        .any(|message| message.id.starts_with("plan-mode-")));
+}
+
+#[test]
 fn injects_reasoning_language_for_chinese_user_text() {
     let prefs = PromptPreferences {
         app_language: AppLanguage::EnUs,

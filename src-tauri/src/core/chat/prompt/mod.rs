@@ -26,6 +26,8 @@ pub struct PromptPreferences {
     pub minimal_coding: bool,
     /// Inject plan-mode instructions while writer tools are gated.
     pub plan_mode: bool,
+    /// Nudge Agent to call `request_plan_mode` on complex work (does not gate writers).
+    pub suggest_plan_request: bool,
     /// True when this turn was sent from the paired phone (Companion app).
     pub companion_origin: bool,
     /// Inject image-mode instructions and pin generate_image arguments.
@@ -127,6 +129,7 @@ impl PromptBuilder {
             &preferences.collaboration_models,
             preferences.minimal_coding,
             preferences.plan_mode,
+            preferences.suggest_plan_request,
             preferences.companion_origin,
             preferences.image_mode.as_ref(),
         );
@@ -164,4 +167,22 @@ impl PromptBuilder {
             max_tokens: None,
         }
     }
+}
+
+/// Inject plan-mode instructions if the gate flipped mid-turn (user accepted
+/// `request_plan_mode`) and the assembled prompt does not already include them.
+pub fn ensure_plan_mode_prompt(messages: &mut Vec<ChatMessage>, session_id: &str) {
+    if !crate::core::tools::plan_mode::shared_plan_mode_store().is_active(session_id) {
+        return;
+    }
+    let id = format!("plan-mode-{session_id}");
+    if messages.iter().any(|message| message.id == id) {
+        return;
+    }
+    inject_system_block(
+        messages,
+        session_id,
+        "plan-mode",
+        Some(crate::core::chat::prompts::PLAN_MODE_PROMPT),
+    );
 }

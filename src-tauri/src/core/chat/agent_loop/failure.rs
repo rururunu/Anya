@@ -25,8 +25,16 @@ pub const CONSECUTIVE_FAILURE_CHALLENGE: &str = concat!(
     "stop and report the blocker clearly. Last errors:\n",
 );
 
-/// Stop the turn as soon as plan mode rejects a writer — do not let the
-/// model "change strategy" with a different Shell command (same gate).
+/// First plan-gate hit: tell the model to save_plan instead of retrying Shell.
+pub const PLAN_GATE_CHALLENGE: &str = concat!(
+    "[System] Plan mode is active: Shell and other writer tools are blocked ",
+    "until the user approves. Do NOT retry Shell, write_file, replace_in_file, ",
+    "or any mutating command. If you have not saved a plan yet, call save_plan ",
+    "with a concrete proposal, then update_tasks (pending steps only), then stop. ",
+    "If a plan is already saved, stop now and wait for the user to approve.",
+);
+
+/// Hard-stop after the model retries a blocked writer despite the challenge.
 pub const PLAN_GATE_STOP_REASON: &str =
     "计划尚未批准，Shell 和写文件已暂停。请点「批准并执行」，或批准后再发消息继续。";
 
@@ -59,6 +67,8 @@ pub struct FailureBreaker {
     challenged_keys: std::collections::HashSet<String>,
     /// Whether the consecutive-failure challenge was already injected.
     consecutive_challenged: bool,
+    /// Whether the plan-gate challenge was already injected this turn.
+    plan_gate_challenged: bool,
 }
 
 impl FailureBreaker {
@@ -87,8 +97,15 @@ impl FailureBreaker {
                 continue;
             }
             if is_plan_gate_error(&outcome.result) {
-                return FailureAction::Stop {
-                    reason: PLAN_GATE_STOP_REASON.to_string(),
+                if self.plan_gate_challenged {
+                    return FailureAction::Stop {
+                        reason: PLAN_GATE_STOP_REASON.to_string(),
+                    };
+                }
+                self.plan_gate_challenged = true;
+                return FailureAction::Challenge {
+                    status_kind: "plan_gate".into(),
+                    message: PLAN_GATE_CHALLENGE.to_string(),
                 };
             }
             any_failure = true;
@@ -98,13 +115,14 @@ impl FailureBreaker {
                 truncate_error(&outcome.result, 240)
             ));
 
-            let key = format!("{}|{}", outcome.tool_name, outcome.arguments);
+            let key = failure_key(outcome);
+            let normalized = normalized_error(&outcome.result);
             let next_count = match self.repeated_tool_errors.get(&key) {
-                Some((previous, count)) if previous == &outcome.result => count + 1,
+                Some((previous, count)) if previous == &normalized => count + 1,
                 _ => 1,
             };
             self.repeated_tool_errors
-                .insert(key.clone(), (outcome.result.clone(), next_count));
+                .insert(key.clone(), (normalized, next_count));
 
             // Prefer the more specific identical-error stop over the generic
             // consecutive-failure breaker when both would fire.
@@ -125,7 +143,12 @@ impl FailureBreaker {
                     message: format!(
                         "{IDENTICAL_ERROR_CHALLENGE}\n\nLast error from `{}`:\n{}",
                         display_tool_name(&outcome.tool_name),
-                        truncate_error(&outcome.result, 800)
+                        format!(
+                            "{}\n{}",
+                            truncate_error(&outcome.result, 800),
+                            crate::core::tools::error::ErrorCategory::classify(&outcome.result)
+                                .guidance()
+                        )
                     ),
                 };
             }
@@ -168,6 +191,29 @@ impl FailureBreaker {
     }
 }
 
+pub(crate) fn failure_key(outcome: &ToolOutcome) -> String {
+    let arguments = serde_json::from_str::<serde_json::Value>(&outcome.arguments)
+        .map(|mut value| {
+            if let Some(object) = value.as_object_mut() {
+                object.remove("description");
+            }
+            value.to_string()
+        })
+        .unwrap_or_else(|_| outcome.arguments.clone());
+    format!("{}|{arguments}", outcome.tool_name)
+}
+
+fn normalized_error(error: &str) -> String {
+    // Preserve paths, error codes and argument values; only strip volatile metadata.
+    static VOLATILE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = VOLATILE.get_or_init(|| regex::Regex::new(r"(?i)\b\d{4}-\d{2}-\d{2}[T ][0-9:.]+Z?|\b(?:request[_ -]?id|trace[_ -]?id|timestamp)\s*[:=]\s*[a-z0-9_.:-]+").unwrap());
+    pattern
+        .replace_all(error, "<volatile>")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn display_tool_name(name: &str) -> &str {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -195,6 +241,28 @@ mod tests {
     use super::*;
     use crate::core::chat::limits::MAX_CONSECUTIVE_TOOL_FAILURES;
     use crate::core::tools::plan_mode::PLAN_GATE_BLOCKED;
+
+    #[test]
+    fn volatile_request_ids_and_ui_descriptions_do_not_hide_repeated_errors() {
+        let mut breaker = FailureBreaker::new();
+        let first = outcome(
+            "read_file",
+            r#"{"path":"missing","description":"first"}"#,
+            "not found request_id=abc timestamp=2026-09-15T00:00:01Z",
+            false,
+        );
+        let second = outcome(
+            "read_file",
+            r#"{"description":"second","path":"missing"}"#,
+            "not found request_id=def timestamp=2026-09-15T00:00:02Z",
+            false,
+        );
+        assert_eq!(breaker.check(&[first]), FailureAction::Continue);
+        assert!(matches!(
+            breaker.check(&[second]),
+            FailureAction::Challenge { .. }
+        ));
+    }
 
     fn outcome(tool: &str, args: &str, result: &str, success: bool) -> ToolOutcome {
         ToolOutcome {
@@ -361,11 +429,38 @@ mod tests {
     }
 
     #[test]
-    fn plan_gate_stops_on_first_blocked_writer() {
+    fn plan_gate_challenges_on_first_blocked_writer() {
         let mut breaker = FailureBreaker::new();
         match breaker.check(&[outcome(
             "run_shell",
             r#"{"command":"ls"}"#,
+            PLAN_GATE_BLOCKED,
+            false,
+        )]) {
+            FailureAction::Challenge {
+                status_kind,
+                message,
+            } => {
+                assert_eq!(status_kind, "plan_gate");
+                assert!(message.contains("save_plan"), "{message}");
+                assert!(!message.contains("连续失败"), "{message}");
+            }
+            other => panic!("expected challenge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_gate_stops_if_the_model_retries_a_writer() {
+        let mut breaker = FailureBreaker::new();
+        let _ = breaker.check(&[outcome(
+            "run_shell",
+            r#"{"command":"a"}"#,
+            PLAN_GATE_BLOCKED,
+            false,
+        )]);
+        match breaker.check(&[outcome(
+            "run_shell",
+            r#"{"command":"b"}"#,
             PLAN_GATE_BLOCKED,
             false,
         )]) {
@@ -375,32 +470,8 @@ mod tests {
                     reason.contains(crate::core::tools::plan_mode::PLAN_GATE_STOP_HINT),
                     "{reason}"
                 );
-                assert!(!reason.contains("连续失败"), "{reason}");
-                assert!(!reason.contains("换路径"), "{reason}");
             }
-            other => panic!("expected immediate stop, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn plan_gate_does_not_invite_a_different_shell_command() {
-        let mut breaker = FailureBreaker::new();
-        let _ = breaker.check(&[outcome(
-            "run_shell",
-            r#"{"command":"a"}"#,
-            PLAN_GATE_BLOCKED,
-            false,
-        )]);
-        // A second, different command must not even be considered — first
-        // blocked writer already stopped the turn.
-        match breaker.check(&[outcome(
-            "run_shell",
-            r#"{"command":"b"}"#,
-            PLAN_GATE_BLOCKED,
-            false,
-        )]) {
-            FailureAction::Stop { reason } => assert!(reason.contains("批准"), "{reason}"),
-            other => panic!("expected stop, got {other:?}"),
+            other => panic!("expected stop on retry, got {other:?}"),
         }
     }
 }

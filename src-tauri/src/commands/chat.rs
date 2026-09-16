@@ -99,6 +99,7 @@ pub async fn chat_history(
     )
     .await
     .unwrap_or_default();
+    let consumed_tokens = state.core.chat().conversation().consumed_tokens(&session_id);
 
     Ok(ChatHistoryResponse {
         session_id,
@@ -106,6 +107,7 @@ pub async fn chat_history(
         last_cache_usage,
         message_cache_usages,
         message_completed_at,
+        consumed_tokens,
     })
 }
 

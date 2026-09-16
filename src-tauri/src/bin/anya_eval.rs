@@ -8,7 +8,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use peek_lib::eval_harness::{run_eval, EvalOptions};
+use peek_lib::eval_harness::{run_eval, EvalOptions, LiveEvalConfig};
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -20,11 +20,21 @@ fn main() -> ExitCode {
         results_dir: PathBuf::from("eval/results"),
         filter: None,
         seeds: 1,
+        live: None,
+        include_office: false,
     };
 
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--live" => match LiveEvalConfig::from_env() {
+                Ok(config) => options.live = Some(config),
+                Err(error) => {
+                    eprintln!("{error}");
+                    return ExitCode::FAILURE;
+                }
+            },
+            "--include-office" => options.include_office = true,
             "--no-challenge" => options.challenges = false,
             "--no-compact" => options.compact = false,
             "--plan-mode" => options.plan_mode = true,
@@ -50,7 +60,7 @@ fn main() -> ExitCode {
             }
             "--help" | "-h" => {
                 eprintln!(
-                    "anya-eval [--tasks DIR] [--results DIR] [--filter ID] [--seeds N] [--no-challenge] [--no-compact] [--plan-mode]"
+                    "anya-eval [--live (ANYA_EVAL_ENDPOINT, ANYA_EVAL_MODEL, ANYA_EVAL_API_KEY)] [--tasks DIR] [--results DIR] [--filter ID] [--seeds N] [--no-challenge] [--no-compact] [--plan-mode] [--include-office]"
                 );
                 return ExitCode::SUCCESS;
             }

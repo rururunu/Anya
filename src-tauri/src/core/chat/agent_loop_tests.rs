@@ -19,6 +19,71 @@ use crate::core::tools::registry::ToolRegistry;
 use crate::runtime::ToolManager;
 
 struct NullEventBus;
+
+#[tokio::test]
+async fn transient_retry_is_bounded_and_only_applies_to_reads() {
+    struct FlakyTool {
+        read_only: bool,
+        attempts: Arc<AtomicUsize>,
+    }
+    impl Tool for FlakyTool {
+        fn name(&self) -> &str {
+            "flaky_tool"
+        }
+        fn description(&self) -> &str {
+            "transient test"
+        }
+        fn parameters_schema(&self) -> Value {
+            serde_json::json!({"type":"object"})
+        }
+        fn read_only(&self) -> bool {
+            self.read_only
+        }
+        fn execute(&self, _ctx: &ToolContext, _args: Value) -> Result<String, ToolError> {
+            if self.attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(ToolError::new("connection reset"))
+            } else {
+                Ok("recovered".into())
+            }
+        }
+    }
+    for read_only in [true, false] {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(FlakyTool {
+            read_only,
+            attempts: Arc::clone(&attempts),
+        }));
+        let tools = Arc::new(ToolManager::new(registry));
+        let (ctx, db) = make_ctx(tools.registry());
+        let mut executor = super::agent_loop::tools::ToolExecutor::new(tools, 12_000);
+        let result = executor
+            .execute_tools_serial(&[tool_call("retry", "flaky_tool")], &ctx, &ctx.cancelled)
+            .await
+            .unwrap();
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            if read_only { 2 } else { 1 }
+        );
+        assert_eq!(result[0].success, read_only);
+        let previous_attempts = attempts.load(Ordering::SeqCst);
+        executor.set_allowed_tools(Vec::<String>::new());
+        let calls = [tool_call("hidden", "flaky_tool")];
+        let serial = executor
+            .execute_tools_serial(&calls, &ctx, &ctx.cancelled)
+            .await
+            .unwrap();
+        let parallel = executor
+            .execute_tools_parallel(&calls, &ctx, &ctx.cancelled)
+            .await
+            .unwrap();
+        assert!(!serial[0].success);
+        assert!(!parallel[0].success);
+        assert_eq!(attempts.load(Ordering::SeqCst), previous_attempts);
+        drop(ctx);
+        let _ = std::fs::remove_file(db);
+    }
+}
 impl EventBus for NullEventBus {
     fn emit(&self, _event: BusEvent) {}
 }

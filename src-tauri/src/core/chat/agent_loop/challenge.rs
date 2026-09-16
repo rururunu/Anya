@@ -125,8 +125,11 @@ pub struct CompletionGate {
     goal_paths: HashSet<String>,
     /// Paths successfully mutated this turn.
     mutated_paths: HashSet<String>,
+    /// Evidence applies to the latest edit of each path, never the whole turn.
+    verified_paths: HashSet<String>,
+    workspace_root: Option<std::path::PathBuf>,
     /// Success fingerprints: tool|args → count (no-progress loop detection).
-    success_repeats: HashMap<String, u32>,
+    success_repeats: HashMap<String, (String, u32)>,
     stalled: bool,
     wrote_files: bool,
     started_local_server: bool,
@@ -154,6 +157,10 @@ impl CompletionGate {
         }
     }
 
+    pub fn set_workspace_root(&mut self, path: std::path::PathBuf) {
+        self.workspace_root = Some(path);
+    }
+
     pub fn require_image(&mut self) {
         self.require_image = true;
     }
@@ -165,16 +172,31 @@ impl CompletionGate {
     /// Capture path-like targets from the latest real user goal (skip plan-approve boilerplate).
     pub fn capture_goal_from_request(&mut self, request: &ChatRequest) {
         let Some(user) = request.messages.iter().rev().find(|message| {
-            message.role == Role::User && !is_plan_approve_boilerplate(&message.content)
+            message.role == Role::User
+                && !crate::runtime::tool::is_internal_feedback(&message.id)
+                && !is_plan_approve_boilerplate(&message.content)
         }) else {
             return;
         };
-        self.goal_paths = extract_goal_paths(&user.content);
+        if user.id.starts_with("agent-followup-") {
+            self.goal_paths.extend(extract_goal_paths(&user.content));
+        } else {
+            self.goal_paths = extract_goal_paths(&user.content);
+        }
     }
 
     /// Record a batch with mutation pass first, then verification — fixes parallel
     /// waves where a read arrives before a write in the outcome list.
     pub fn record_tool_outcomes(&mut self, tools: &ToolManager, outcomes: &[ToolOutcome]) {
+        for outcome in outcomes
+            .iter()
+            .filter(|o| o.success && provides_completion_evidence(o))
+        {
+            for path in extract_paths_from_args(&outcome.arguments) {
+                self.verified_paths
+                    .retain(|verified| !paths_match(verified, &path));
+            }
+        }
         for outcome in outcomes {
             self.record_side_effects(tools, outcome);
         }
@@ -195,13 +217,40 @@ impl CompletionGate {
             if !outcome.success || !self.mutation_succeeded {
                 continue;
             }
-            if provides_verification_evidence(outcome, &self.mutated_paths) {
-                self.verification_succeeded = true;
+            for path in &self.mutated_paths {
+                let scope_matches = outcome.tool_name != "run_shell"
+                    || self.workspace_root.as_ref().is_none_or(|root| {
+                        extract_shell_command(&outcome.arguments).is_some_and(|command| {
+                            super::post_edit_verify::check_targets_path(root, &command, path)
+                        })
+                    });
+                if scope_matches
+                    && provides_verification_evidence(outcome, &HashSet::from([path.clone()]))
+                {
+                    self.verified_paths.insert(path.clone());
+                }
             }
         }
+        self.refresh_verification();
+    }
+
+    pub fn note_verified_paths(&mut self, paths: impl IntoIterator<Item = String>) {
+        self.verified_paths.extend(paths);
+        self.refresh_verification();
+    }
+
+    fn refresh_verification(&mut self) {
+        self.verification_succeeded = self.image_succeeded
+            || (!self.mutated_paths.is_empty()
+                && self.mutated_paths.iter().all(|path| {
+                    self.verified_paths
+                        .iter()
+                        .any(|verified| paths_match(path, verified))
+                }));
     }
 
     /// Fold one tool outcome (single-item wrapper around [`Self::record_tool_outcomes`]).
+    #[cfg(test)]
     pub fn record_tool_outcome(&mut self, tools: &ToolManager, outcome: &ToolOutcome) {
         self.record_tool_outcomes(tools, std::slice::from_ref(outcome));
     }
@@ -217,6 +266,7 @@ impl CompletionGate {
             any = true;
         }
         if any {
+            self.verified_paths.clear();
             self.mutation_succeeded = true;
             self.verification_succeeded = false;
             self.wrote_files = true;
@@ -230,7 +280,22 @@ impl CompletionGate {
     }
 
     fn record_side_effects(&mut self, _tools: &ToolManager, outcome: &ToolOutcome) {
-        if outcome.tool_name == "update_tasks" {
+        if outcome.tool_name == "update_tasks" && outcome.success {
+            // Explicit acceptance criteria supersede path-name guesses (a path
+            // mentioned by the user may be a reference or a file to preserve).
+            if serde_json::from_str::<serde_json::Value>(&outcome.arguments)
+                .ok()
+                .and_then(|value| value["tasks"].as_array().cloned())
+                .is_some_and(|tasks| {
+                    tasks.iter().any(|task| {
+                        task["acceptance_criteria"]
+                            .as_array()
+                            .is_some_and(|criteria| !criteria.is_empty())
+                    })
+                })
+            {
+                self.goal_paths.clear();
+            }
             if let Some(count) = count_open_tasks_from_args(&outcome.arguments) {
                 self.open_task_count = count;
             }
@@ -254,10 +319,31 @@ impl CompletionGate {
         if !outcome.success {
             return;
         }
-        let key = format!("{}|{}", outcome.tool_name, outcome.arguments);
-        let count = self.success_repeats.entry(key).or_insert(0);
-        *count += 1;
-        if *count >= MAX_NO_PROGRESS_REPEATS {
+        let key = super::failure::failure_key(outcome);
+        let new_evidence = self
+            .success_repeats
+            .get(&key)
+            .is_none_or(|(result, _)| result != &outcome.result);
+        if new_evidence {
+            for (_, count) in self.success_repeats.values_mut() {
+                *count = 0;
+            }
+            self.stalled = false;
+        }
+        let repeated = self
+            .success_repeats
+            .entry(key)
+            .or_insert_with(|| (outcome.result.clone(), 0));
+        if repeated.0 != outcome.result {
+            *repeated = (outcome.result.clone(), 0);
+        }
+        repeated.1 += 1;
+        if repeated.1 >= MAX_NO_PROGRESS_REPEATS
+            && !matches!(
+                outcome.tool_name.as_str(),
+                "wait_for_shell" | "read_shell_output"
+            )
+        {
             self.stalled = true;
         }
         if provides_completion_evidence(outcome) {
@@ -290,6 +376,15 @@ impl CompletionGate {
         self.stalled = false;
         push_challenge_message(request, user_msg_index, STALL_CHALLENGE);
         Some("stall_loop".to_string())
+    }
+
+    pub fn repeated_without_progress(&self) -> bool {
+        !self.disabled
+            && self.success_repeats.iter().any(|(key, (_, count))| {
+                *count >= 8
+                    && !key.starts_with("wait_for_shell|")
+                    && !key.starts_with("read_shell_output|")
+            })
     }
 
     /// Evaluate a tool-call-free model answer against the honest-completion
@@ -524,7 +619,7 @@ fn looks_like_local_dev_server(tool_name: &str, arguments: &str) -> bool {
 fn paths_match(goal: &str, mutated: &str) -> bool {
     let g = normalize_path_key(goal);
     let m = normalize_path_key(mutated);
-    m == g || m.ends_with(&g) || g.ends_with(&m)
+    m == g || m.ends_with(&format!("/{g}")) || g.ends_with(&format!("/{m}"))
 }
 
 fn normalize_path_key(path: &str) -> String {
@@ -603,7 +698,7 @@ fn extract_path_from_args(arguments: &str) -> Option<String> {
     extract_paths_from_args(arguments).into_iter().next()
 }
 
-fn extract_paths_from_args(arguments: &str) -> Vec<String> {
+pub(crate) fn extract_paths_from_args(arguments: &str) -> Vec<String> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
         return Vec::new();
     };
@@ -619,7 +714,12 @@ fn extract_paths_from_args(arguments: &str) -> Vec<String> {
     }
     if let Some(input) = value.get("input").and_then(|v| v.as_str()) {
         for line in input.lines() {
-            for marker in ["*** Update File: ", "*** Add File: ", "*** Delete File: "] {
+            for marker in [
+                "*** Update File: ",
+                "*** Add File: ",
+                "*** Delete File: ",
+                "*** Move to: ",
+            ] {
                 if let Some(path) = line.strip_prefix(marker) {
                     let path = path.trim();
                     if !path.is_empty() {
@@ -641,7 +741,7 @@ pub(crate) fn push_challenge_message(
         *user_msg_index = Some(request.messages.len());
     }
     request.messages.push(ChatMessage {
-        id: format!("msg-{}", now_millis()),
+        id: format!("agent-feedback-{}", uuid::Uuid::new_v4()),
         session_id: request.session_id.clone(),
         role: Role::User,
         content: feedback.to_string(),
@@ -693,9 +793,9 @@ fn provides_verification_evidence(outcome: &ToolOutcome, mutated_paths: &HashSet
         let Some(path) = extract_path_from_args(&outcome.arguments) else {
             return false;
         };
-        return mutated_paths
-            .iter()
-            .any(|mutated| paths_match(mutated, &path));
+        return mutated_paths.iter().any(|mutated| {
+            paths_match(mutated, &path) && !super::post_edit_verify::needs_executable_check(mutated)
+        });
     }
     if outcome.tool_name != "run_shell" || !outcome.success {
         return false;
@@ -704,6 +804,14 @@ fn provides_verification_evidence(outcome: &ToolOutcome, mutated_paths: &HashSet
         return false;
     };
     let command = command.to_ascii_lowercase();
+    if !super::post_edit_verify::shell_exit_code_ok(&outcome.result) {
+        return false;
+    }
+    // A quoted check name in echo/printf is not a check. Complex shell scripts
+    // require explicit verification instead of guessing at their semantics.
+    if command.contains([';', '|', '\n', '`', '$']) {
+        return false;
+    }
     const CHECK_MARKERS: &[&str] = &[
         "cargo test",
         "cargo check",
@@ -711,6 +819,9 @@ fn provides_verification_evidence(outcome: &ToolOutcome, mutated_paths: &HashSet
         "python -m pytest",
         "python -m unittest",
         "pnpm check",
+        "pnpm run check",
+        "pnpm run test",
+        "pnpm run typecheck",
         "pnpm test",
         "pnpm build",
         "npm run check",
@@ -724,9 +835,24 @@ fn provides_verification_evidence(outcome: &ToolOutcome, mutated_paths: &HashSet
         "vue-tsc",
         "tsc --noemit",
         "tsc -p",
-        "git diff --",
+        "node --test",
     ];
-    CHECK_MARKERS.iter().any(|marker| command.contains(marker))
+    CHECK_MARKERS
+        .iter()
+        .any(|marker| command.starts_with(marker))
+        && mutated_paths.iter().all(|path| {
+            let path = path.replace('\\', "/").to_ascii_lowercase();
+            if path.ends_with(".rs") || path.ends_with("cargo.toml") || path.ends_with("cargo.lock")
+            {
+                command.starts_with("cargo ")
+            } else if path.ends_with(".py") || path.ends_with("pyproject.toml") {
+                command.starts_with("pytest") || command.starts_with("python ")
+            } else {
+                !command.starts_with("cargo ")
+                    && !command.starts_with("pytest")
+                    && !command.starts_with("python ")
+            }
+        })
 }
 
 fn extract_shell_command(arguments: &str) -> Option<String> {
@@ -856,6 +982,53 @@ fn has_completion_claim(content: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_readback_and_unrelated_or_failed_commands_do_not_verify_code() {
+        let mut outcome = ToolOutcome {
+            call_id: "1".into(),
+            tool_name: "read_file".into(),
+            arguments: r#"{"path":"src/lib.rs"}"#.into(),
+            result: "ok".into(),
+            success: true,
+            user_denied: false,
+        };
+        let paths = HashSet::from(["src/lib.rs".into()]);
+        assert!(!provides_verification_evidence(&outcome, &paths));
+        outcome.tool_name = "run_shell".into();
+        outcome.arguments = r#"{"command":"npm run check"}"#.into();
+        outcome.result = "exit_code: 0\nok".into();
+        assert!(!provides_verification_evidence(&outcome, &paths));
+        outcome.arguments = r#"{"command":"echo cargo test"}"#.into();
+        assert!(!provides_verification_evidence(&outcome, &paths));
+        outcome.arguments = r#"{"command":"cargo test"}"#.into();
+        outcome.result = "exit_code: 1\nfailed".into();
+        assert!(!provides_verification_evidence(&outcome, &paths));
+        outcome.result = "exit_code: 0\npassed".into();
+        assert!(provides_verification_evidence(&outcome, &paths));
+        assert!(!paths_match("a.rs", "data.rs"));
+    }
+
+    #[test]
+    fn verification_requires_every_changed_file_and_is_invalidated_by_edits() {
+        let tools = ToolManager::new(crate::core::tools::registry::ToolRegistry::new());
+        let mut gate = CompletionGate::new();
+        let write = |path: &str| ToolOutcome {
+            call_id: "1".into(),
+            tool_name: "write_file".into(),
+            arguments: serde_json::json!({"path":path}).to_string(),
+            result: "ok".into(),
+            success: true,
+            user_denied: false,
+        };
+        gate.record_tool_outcomes(&tools, &[write("a.rs"), write("b.rs")]);
+        gate.note_verified_paths(["a.rs".into()]);
+        assert!(!gate.verification_succeeded);
+        gate.note_verified_paths(["b.rs".into()]);
+        assert!(gate.verification_succeeded);
+        gate.record_tool_outcome(&tools, &write("a.rs"));
+        assert!(!gate.verification_succeeded);
+    }
 
     #[test]
     fn extracts_goal_paths_from_user_text() {

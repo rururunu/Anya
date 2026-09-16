@@ -26,6 +26,7 @@ pub struct ConversationManager {
     session_titles: Arc<Mutex<HashMap<String, String>>>,
     session_title_sources: Arc<Mutex<HashMap<String, SessionTitleSource>>>,
     session_archived: Arc<Mutex<HashSet<String>>>,
+    session_consumed_tokens: Arc<Mutex<HashMap<String, usize>>>,
     db_pool: sqlx::SqlitePool,
     journal: super::journal::SessionJournal,
 }
@@ -170,6 +171,14 @@ impl ConversationManager {
                     .expect("Failed to load archived chat sessions")
             }
         });
+        let session_consumed_tokens = block_on_compat({
+            let db_pool = db_pool.clone();
+            async move {
+                super::db::load_session_consumed_tokens_map(&db_pool)
+                    .await
+                    .expect("Failed to load consumed chat tokens")
+            }
+        });
 
         Self {
             sessions: Arc::new(Mutex::new(sessions)),
@@ -178,6 +187,7 @@ impl ConversationManager {
             session_titles: Arc::new(Mutex::new(session_titles)),
             session_title_sources: Arc::new(Mutex::new(session_title_sources)),
             session_archived: Arc::new(Mutex::new(session_archived)),
+            session_consumed_tokens: Arc::new(Mutex::new(session_consumed_tokens)),
             db_pool,
             journal,
         }
@@ -193,6 +203,15 @@ impl ConversationManager {
 
     pub fn inner(&self) -> Arc<Mutex<HashMap<String, Vec<ChatMessage>>>> {
         Arc::clone(&self.sessions)
+    }
+
+    /// Tokens from rewound turns; still part of this session's consumption.
+    pub fn consumed_tokens(&self, session_id: &str) -> usize {
+        self.session_consumed_tokens
+            .lock()
+            .ok()
+            .and_then(|tokens| tokens.get(session_id).copied())
+            .unwrap_or(0)
     }
 }
 
@@ -245,6 +264,7 @@ mod rewind_tests {
             .await
             .unwrap();
         assert_eq!(manager.messages(session_id), vec![first.clone()]);
+        assert!(manager.consumed_tokens(session_id) > 0);
         let journal_count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM chat_journal_events WHERE session_id = ?")
                 .bind(session_id)
@@ -260,6 +280,7 @@ mod rewind_tests {
         assert_eq!(reloaded_messages[0].id, first.id);
         assert_eq!(reloaded_messages[0].content, first.content);
         assert!(reloaded_messages[0].estimated_tokens.is_some());
+        assert!(reloaded.consumed_tokens(session_id) > 0);
         drop(reloaded);
 
         let _ = std::fs::remove_file(&db_path);

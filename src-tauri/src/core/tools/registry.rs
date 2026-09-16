@@ -233,7 +233,7 @@ impl ToolRegistry {
             if crate::core::tools::agent::is_async_runtime_tool(&name) {
                 continue;
             }
-            if name == "save_plan" {
+            if name == "save_plan" || name == "request_plan_mode" {
                 continue;
             }
             if let Some(tool) = self.get(&name) {
@@ -423,6 +423,38 @@ mod tests {
         assert!(names.contains(&"ask_user".to_string()));
         assert!(names.contains(&"update_tasks".to_string()));
         assert!(!names.contains(&"write_file".to_string()));
+    }
+
+    #[test]
+    fn request_plan_mode_is_agent_only() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(StubTool {
+            name: "request_plan_mode",
+            read_only: false,
+        }));
+        registry.register(Arc::new(StubTool {
+            name: "read_file",
+            read_only: true,
+        }));
+        registry.register(Arc::new(StubTool {
+            name: "write_file",
+            read_only: false,
+        }));
+
+        let agent = registry.filter_without_save_plan().names();
+        assert!(agent.contains(&"request_plan_mode".to_string()));
+        assert!(!registry
+            .filter_for_plan_mode()
+            .names()
+            .contains(&"request_plan_mode".to_string()));
+        assert!(!registry
+            .filter_for_ask_mode()
+            .names()
+            .contains(&"request_plan_mode".to_string()));
+        assert!(!registry
+            .filter_for_subagent(false)
+            .names()
+            .contains(&"request_plan_mode".to_string()));
     }
 
     #[test]

@@ -9,7 +9,8 @@
 <p align="center"><strong>A desktop agent you can summon anytime.</strong></p>
 
 <p align="center">
-  Press a shortcut, and Anya is there — ready to help with documents, code, and everyday work.<br />
+  Press a shortcut, and Anya is there — documents, code, and everyday work.<br />
+  Enable plugins to use the computer, a terminal, or tools you write yourself.<br />
   Connect DeepSeek, OpenAI-compatible, Responses, or Anthropic Messages providers.
 </p>
 
@@ -36,15 +37,16 @@
 
 ## At a glance
 
-|                  |                                                                                                                                                                       |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workbench**    | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                                                               |
-| **Overlay**      | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                                                              |
-| **Agent**        | Ask / Agent / Plan / Image; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                                                                |
-| **Computer use** | Official `computer-use` **agent** plugin (off until Enable): launch apps, keyboard, UIA controls, then pixel click/drag. Screenshot + control tree together. Windows. |
-| **Companion**    | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone.                                           |
-| **RAG**          | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.                                                   |
-| **Local-first**  | Keys, history, and settings stay on your machine by default.                                                                                                          |
+|                  |                                                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workbench**    | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                                            |
+| **Overlay**      | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                                           |
+| **Agent**        | Ask / Agent / Plan / Image; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                                             |
+| **Plugins**      | Deno-hosted extensions: slots, windows, Agent tools. Official: `computer-use` (off until Enable), `terminal`. Agent can create and debug plugins.  |
+| **Computer use** | Official `computer-use` **agent** plugin: launch apps, keyboard, UIA controls, then pixel click/drag. Screenshot + control tree together. Windows. |
+| **Companion**    | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone.                        |
+| **RAG**          | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.                                |
+| **Local-first**  | Keys, history, and settings stay on your machine by default.                                                                                       |
 
 **Docs:** [Architecture](./docs/architecture-overview.md) · [Plugin system](./docs/plugin-system.md) · [Computer use](./docs/computer-use.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
 

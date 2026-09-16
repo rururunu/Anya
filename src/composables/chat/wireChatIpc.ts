@@ -327,12 +327,10 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
     const active = Boolean(payload.active);
     const source = payload.source === "auto" ? "auto" : "manual";
     chatStore.setSessionPlanMode(sessionId, active);
-    // A rejected plan fingerprint still blocks countdown in MessageList until
-    // the checklist is new/updated — keep the trigger from the backend so a
-    // revised auto-plan can countdown again.
     chatStore.setSessionPlanTrigger(sessionId, active ? source : "manual");
-    // Never rewrite the user's mode chip when the writer gate flips. Auto-plan
-    // and sticky gates are independent from Agent/Ask/Plan picker choice.
+    if (active && payload.source === "request") {
+      chatStore.setCompose(sessionId, { chatMode: "plan" });
+    }
   });
 
   // Companion ↔ desktop compose / plan sync (Remote Gateway).
@@ -388,10 +386,14 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       }
       // Mirror desktop "批准并执行": leave plan gate and resume execution.
       // Approval text is persisted into history / Companion inbox.
-      void chatStore.send(tr(settingStore.language, "planModeExecuteMessage"), sessionId, {
-        resumePlan: true,
-        skipAutoPlan: true,
-      });
+      void chatStore
+        .send(tr(settingStore.language, "planModeExecuteMessage"), sessionId, {
+          resumePlan: true,
+          skipAutoPlan: true,
+        })
+        .then(() => {
+          chatStore.setCompose(sessionId, { chatMode: "agent" });
+        });
     });
   } catch (error) {
     log.warn("remote compose listeners unavailable", error);

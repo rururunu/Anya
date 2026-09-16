@@ -13,6 +13,7 @@ import {
 } from "@/services/chat/normalize";
 import { accumulateCacheUsage, estimateMessageTokens } from "@/services/chat/tokenEstimate";
 import {
+  isAskUserTool,
   normalizeAskUserAnswerItems,
   parseAskUserAnswerItems,
 } from "@/services/chat/askUserAnswer";
@@ -59,6 +60,7 @@ import {
 } from "./chatCompose";
 import {
   cacheUsagesFromHistory,
+  lastTurnUserContent,
   mergeActiveHistory,
   messagesHistoryFingerprint,
   settleInterruptedMessages,
@@ -101,6 +103,8 @@ export const useChatStore = defineStore("chat", {
     sessionCacheUsage: {} as Record<string, SessionCacheUsage | undefined>,
     /** Prompt-cache totals keyed by assistant message id. */
     messageCacheUsage: {} as Record<string, Record<string, SessionCacheUsage>>,
+    /** Tokens from rewound turns; still count toward this session's consumption. */
+    sessionConsumedTokens: {} as Record<string, number>,
     /** Live in-session task list from update_tasks. */
     sessionTasks: {} as Record<string, TaskItem[]>,
     /** Live plan proposal Markdown from save_plan. */
@@ -514,6 +518,16 @@ export const useChatStore = defineStore("chat", {
         [sessionId]: usages,
       };
     },
+    setSessionConsumedTokens(sessionId: string, tokens: number) {
+      if (!sessionId) {
+        return;
+      }
+      const next = Math.max(0, Number.isFinite(tokens) ? tokens : 0);
+      this.sessionConsumedTokens = {
+        ...this.sessionConsumedTokens,
+        [sessionId]: next,
+      };
+    },
     addPromptCacheUsage(sessionId: string, usage: SessionCacheUsage, messageId?: string) {
       if (!sessionId) {
         return;
@@ -583,7 +597,7 @@ export const useChatStore = defineStore("chat", {
         if (normalizeRole(message.role) !== "assistant") {
           continue;
         }
-        if (message.toolActivities?.some((activity) => activity.toolName === "ask_user")) {
+        if (message.toolActivities?.some((activity) => isAskUserTool(activity.toolName))) {
           targetIndex = i;
           break;
         }
@@ -625,6 +639,16 @@ export const useChatStore = defineStore("chat", {
     pushStagedMessage(sessionId: string, content: string) {
       const trimmed = content.trim();
       if (!sessionId || !trimmed) {
+        return;
+      }
+      // Double-submit while a turn is running would otherwise queue the same
+      // question, then flush/guide it as "已追加到本轮".
+      const messages = sessionsStore().sessions[sessionId] ?? [];
+      if (lastTurnUserContent(messages) === trimmed) {
+        return;
+      }
+      const queued = this.stagedMessages[sessionId] ?? [];
+      if (queued[queued.length - 1] === trimmed) {
         return;
       }
       void import("@/commands/remote").then(async ({ remotePushStaged }) => {
@@ -804,7 +828,7 @@ export const useChatStore = defineStore("chat", {
         this.removeStagedMessage(sessionId, index);
       }
       if (!content) return;
-      await this.send(content, sessionId, { fromQueue: true });
+      await this.send(content, sessionId, { fromQueue: true, guide: true });
     },
     stageSoftInject(sessionId: string, content: string) {
       const trimmed = content.trim();
@@ -1332,7 +1356,7 @@ export const useChatStore = defineStore("chat", {
       } else {
         const previous = activities[existingIndex];
         const keepAskUserResult =
-          previous.toolName === "ask_user" &&
+          isAskUserTool(previous.toolName) &&
           parseAskUserAnswerItems(previous.result).length > 0 &&
           parseAskUserAnswerItems(activity.result).length === 0;
         activities[existingIndex] = {
@@ -1558,7 +1582,7 @@ export const useChatStore = defineStore("chat", {
         const activities = message.toolActivities;
         if (
           !activities?.some(
-            (activity) => activity.toolName === "ask_user" && activity.status === "running",
+            (activity) => isAskUserTool(activity.toolName) && activity.status === "running",
           )
         ) {
           return message;
@@ -1568,7 +1592,7 @@ export const useChatStore = defineStore("chat", {
         return {
           ...message,
           toolActivities: activities.map((activity) =>
-            activity.toolName === "ask_user" && activity.status === "running"
+            isAskUserTool(activity.toolName) && activity.status === "running"
               ? {
                   ...activity,
                   status: "done" as const,
@@ -1612,6 +1636,7 @@ export const useChatStore = defineStore("chat", {
           this.setSessionMessages(sessionId, nextMessages);
         }
         const historyCache = cacheUsagesFromHistory(response.messageCacheUsages);
+        this.setSessionConsumedTokens(sessionId, response.consumedTokens ?? 0);
         if (!this.sending[sessionId] || !this.sessionCacheUsage[sessionId]) {
           this.setSessionCacheUsage(sessionId, response.lastCacheUsage);
           this.setMessageCacheUsage(sessionId, historyCache);
@@ -1652,6 +1677,8 @@ export const useChatStore = defineStore("chat", {
         /** Internal: this send comes from the staged queue (guide / auto-send
          * after the turn finishes) and must never be re-staged. */
         fromQueue?: boolean;
+        /** Inject into the running turn. Auto-flush must not set this. */
+        guide?: boolean;
         /** Skip complexity auto-plan (approve & execute follow-up). */
         skipAutoPlan?: boolean;
         /** Approve & execute continuation: unlocks writers; message is persisted. */
@@ -1675,16 +1702,24 @@ export const useChatStore = defineStore("chat", {
 
       // While a turn is executing, new user messages are staged instead of
       // being injected immediately. They reach the AI either via the guide
-      // button (flushStaged → soft-inject) or automatically when the turn
-      // finishes (flushStaged → next turn).
+      // button or automatically when the turn finishes (flushStaged → next turn).
       if (!options?.staged && !options?.fromQueue && busy) {
         this.pushStagedMessage(sessionId, trimmed);
         return true;
       }
 
-      // Queue flushes may inject into the running turn; regular sends only
-      // happen when no turn is in flight.
-      const softInject = !options?.staged && busy;
+      // Auto-flush must wait for the current turn; only explicit guide injects.
+      if (options?.fromQueue && !options?.guide && busy) {
+        return false;
+      }
+
+      const softInject = Boolean(options?.guide) && busy && !options?.staged;
+      if (
+        softInject &&
+        lastTurnUserContent(sessionsStore().sessions[sessionId] ?? []) === trimmed
+      ) {
+        return true;
+      }
 
       if (!options?.isolate) {
         this.setOverlayDraftSession(sessionId);

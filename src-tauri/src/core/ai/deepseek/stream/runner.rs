@@ -159,6 +159,12 @@ async fn post_stream_request(
         request = request
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01");
+        if crate::core::ai::deepseek::files::json_contains_file_id(body) {
+            request = request.header(
+                "anthropic-beta",
+                crate::core::ai::deepseek::files::ANTHROPIC_FILES_BETA,
+            );
+        }
     }
     let response = request
         .json(body)

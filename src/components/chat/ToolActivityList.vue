@@ -70,7 +70,7 @@
             </span>
             <span
               v-else-if="
-                item.activity.status === 'running' && item.activity.toolName === 'ask_user'
+                item.activity.status === 'running' && isAskUserTool(item.activity.toolName)
               "
               class="tool-activity-status"
             >
@@ -111,7 +111,7 @@
               {{ tr(settingStore.language, "fuzzyMatch") }}
             </span>
             <span
-              v-if="item.activity.status === 'running' && item.activity.toolName === 'ask_user'"
+              v-if="item.activity.status === 'running' && isAskUserTool(item.activity.toolName)"
               class="tool-activity-status"
             >
               {{ runningStatusLabel(item.activity) }}
@@ -215,6 +215,7 @@ import {
   FilePenLine,
   FilePlus2,
   FileX2,
+  ListChecks,
   FolderSearch,
   MoveRight,
   Terminal,
@@ -231,6 +232,7 @@ import FileDiffCard from "@/components/chat/FileDiffCard.vue";
 import TaskListCard from "@/components/chat/TaskListCard.vue";
 import type { ToolActivity } from "@/types/chat";
 import { useSettingStore } from "@/stores/setting";
+import { isAskUserTool, isPlanSwitchTool } from "@/services/chat/askUserAnswer";
 import { tr } from "@/services/i18n";
 import { SUBAGENT_TOOLS } from "@/services/chat/subagentTools";
 import {
@@ -309,7 +311,7 @@ function errorSummaryLine(activity: ToolActivity) {
 }
 
 function runningStatusLabel(activity: ToolActivity) {
-  if (activity.toolName === "ask_user") {
+  if (isAskUserTool(activity.toolName)) {
     return tr(settingStore.language, "waitingAnswer");
   }
   if (activity.preview) {
@@ -350,6 +352,7 @@ function isFuzzy(activity: ToolActivity) {
 function icon(activity: ToolActivity): Component {
   if (isRunningSubagent(activity)) return LoaderCircle;
   if (isSubagentTool(activity)) return Workflow;
+  if (isPlanSwitchTool(activity.toolName)) return ListChecks;
   switch (activity.kind) {
     case "shell":
       return Terminal;

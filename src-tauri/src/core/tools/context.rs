@@ -69,6 +69,9 @@ pub struct AskQuestion {
     pub options: Vec<AskOption>,
     #[serde(default)]
     pub multi_select: bool,
+    /// Distinguishes special pickers (e.g. `"planSwitch"`) from generic `ask_user`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 pub struct PendingAsk {

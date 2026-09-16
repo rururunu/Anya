@@ -55,6 +55,54 @@ impl ToolManager {
         self.registry.filter_without_save_plan().schemas_arc()
     }
 
+    /// Keep a stable small core; extensions are loaded by search_tools and stay
+    /// visible for the remainder of this turn. Mode filtering always runs first.
+    pub fn focused_schemas(
+        &self,
+        request: &ChatRequest,
+        session_id: &str,
+        loaded: &std::collections::HashSet<String>,
+    ) -> Arc<[Value]> {
+        let schemas = self.schemas_for_request(request, session_id);
+        if schemas.len() <= 32
+            || !schemas
+                .iter()
+                .any(|s| s["function"]["name"] == "search_tools")
+        {
+            return schemas;
+        }
+        const CORE: &[&str] = &[
+            "search_tools",
+            "read_file",
+            "list_folder",
+            "find_files",
+            "search_files",
+            "write_file",
+            "replace_in_file",
+            "apply_patch",
+            "run_shell",
+            "read_shell_output",
+            "wait_for_shell",
+            "stop_shell",
+            "ask_user",
+            "update_tasks",
+            "save_plan",
+            "request_plan_mode",
+            "generate_image",
+            "load_skill",
+        ];
+        schemas
+            .iter()
+            .filter(|s| {
+                s["function"]["name"]
+                    .as_str()
+                    .is_some_and(|name| CORE.contains(&name) || loaded.contains(name))
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+            .into()
+    }
+
     pub fn preview(
         &self,
         context: &ToolContext,
@@ -154,20 +202,91 @@ impl ToolManager {
 /// (Answer/explain/review or Diagnose): no change intent, and either
 /// question-shaped or very short.
 pub(crate) fn is_question_only_request(request: &ChatRequest) -> bool {
-    let Some(user) = request
+    if let Some(state) = request
         .messages
         .iter()
         .rev()
-        .find(|message| message.role == Role::User)
-    else {
-        return false;
-    };
-    is_question_only_text(user.content.trim())
+        .find(|message| message.id == "agent-state-current")
+    {
+        if let Some(intent) = state
+            .content
+            .lines()
+            .nth(1)
+            .and_then(|json| serde_json::from_str::<Value>(json).ok())
+            .and_then(|value| value["question_only"].as_bool())
+        {
+            return intent;
+        }
+    }
+    request
+        .messages
+        .iter()
+        .rev()
+        .filter(|message| message.role == Role::User && !is_internal_feedback(&message.id))
+        .map(|message| message.content.trim())
+        .find(|text| !matches!(*text, "继续" | "接着做" | "continue" | "Continue" | "go on"))
+        .is_some_and(is_question_only_text)
 }
 
-fn is_question_only_text(text: &str) -> bool {
+pub(crate) fn is_internal_feedback(id: &str) -> bool {
+    id.starts_with("agent-feedback-")
+        || id.starts_with("agent-state-")
+        || id.starts_with("compact-")
+}
+
+pub(crate) fn is_question_only_text(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    let text = lower.trim();
     if text.is_empty() {
         return false;
+    }
+    // Polite analysis requests remain analysis even when they mention edits.
+    let mut lead = text;
+    for prefix in ["can you ", "could you ", "please ", "帮我", "为我", "请"] {
+        if let Some(rest) = lead.strip_prefix(prefix) {
+            lead = rest.trim();
+        }
+    }
+    if [
+        "explain",
+        "review",
+        "analyze",
+        "diagnose",
+        "compare",
+        "summarize",
+        "解释",
+        "分析",
+        "评估",
+        "评审",
+        "比较",
+        "总结",
+        "排查",
+    ]
+    .iter()
+    .any(|prefix| lead.starts_with(prefix))
+    {
+        return true;
+    }
+    let explicit_action = [
+        "帮我",
+        "为我",
+        "请直接",
+        "并实现",
+        "并修改",
+        "please ",
+        "can you ",
+        "could you ",
+    ]
+    .iter()
+    .any(|prefix| text.contains(prefix));
+    let advice = ["有什么可以", "有什么能", "有哪些可以", "是否需要"]
+        .iter()
+        .any(|part| text.contains(part))
+        || ["如何", "怎么", "为什么", "what ", "why ", "how ", "should "]
+            .iter()
+            .any(|prefix| text.starts_with(prefix));
+    if advice && !explicit_action {
+        return true;
     }
     const CHANGE_MARKERS: &[&str] = &[
         "fix",
@@ -240,7 +359,14 @@ fn is_question_only_text(text: &str) -> bool {
         "继续改",
         "接着改",
     ];
-    if CHANGE_MARKERS.iter().any(|marker| text.contains(marker)) {
+    if CHANGE_MARKERS.iter().any(|marker| {
+        if marker.is_ascii() {
+            text.split(|c: char| !c.is_ascii_alphabetic())
+                .any(|word| word == *marker)
+        } else {
+            text.contains(marker)
+        }
+    }) {
         return false;
     }
     const QUESTION_MARKERS: &[&str] = &[
@@ -365,5 +491,70 @@ mod tests {
     fn explicit_questions_are_question_only() {
         assert!(is_question_only_text("这段代码是怎么工作的？"));
         assert!(is_question_only_text("What does this function do?"));
+        assert!(is_question_only_text("有什么可以优化的地方吗？"));
+        assert!(is_question_only_text("这个项目有什么可以优化的地方吗？"));
+        assert!(is_question_only_text("Can you explain how to fix this?"));
+        assert!(is_question_only_text("帮我分析这个测试为什么失败"));
+        assert!(is_question_only_text("How can I fix this test?"));
+        assert!(is_question_only_text("What is the runtime?"));
+        assert!(!is_question_only_text("Can you fix this test?"));
+        assert!(!is_question_only_text("为我优化这些问题。"));
+        assert!(!is_question_only_text("FIX the bug"));
+    }
+
+    #[test]
+    fn discovery_loads_requested_tools_without_bypassing_plan_mode() {
+        struct NamedTool(String);
+        impl Tool for NamedTool {
+            fn name(&self) -> &str {
+                &self.0
+            }
+            fn description(&self) -> &str {
+                "extension"
+            }
+            fn parameters_schema(&self) -> Value {
+                serde_json::json!({"type":"object"})
+            }
+            fn read_only(&self) -> bool {
+                self.0 != "write_file"
+            }
+            fn execute(&self, _ctx: &ToolContext, _args: Value) -> Result<String, ToolError> {
+                Ok("ok".into())
+            }
+        }
+        let mut registry = ToolRegistry::new();
+        for index in 0..40 {
+            registry.register(Arc::new(NamedTool(format!("extension_{index}"))));
+        }
+        registry.register(Arc::new(NamedTool("search_tools".into())));
+        registry.register(Arc::new(NamedTool("write_file".into())));
+        let manager = ToolManager::new(registry);
+        let sid = format!("discovery-test-{}", uuid::Uuid::new_v4());
+        let request = ChatRequest {
+            request_id: "r".into(),
+            session_id: sid.clone(),
+            messages: vec![],
+            context: RequestContext::default(),
+            provider: None,
+            stream: true,
+            tools: Arc::from([]),
+            temperature: None,
+            max_tokens: None,
+        };
+        let empty = std::collections::HashSet::new();
+        let core = manager.focused_schemas(&request, &sid, &empty);
+        assert!(core.len() < 10);
+        let loaded = std::collections::HashSet::from(["extension_12".into(), "write_file".into()]);
+        assert!(manager
+            .focused_schemas(&request, &sid, &loaded)
+            .iter()
+            .any(|schema| schema["function"]["name"] == "extension_12"));
+        let plans = crate::core::tools::plan_mode::shared_plan_mode_store();
+        plans.set_active(&sid, true);
+        assert!(!manager
+            .focused_schemas(&request, &sid, &loaded)
+            .iter()
+            .any(|schema| schema["function"]["name"] == "write_file"));
+        plans.set_active(&sid, false);
     }
 }

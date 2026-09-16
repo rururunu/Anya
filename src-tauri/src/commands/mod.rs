@@ -1,6 +1,7 @@
 pub mod app;
 pub mod ask;
 pub mod chat;
+pub mod deepseek_files;
 pub mod desktop_pet;
 pub mod diff;
 pub mod harness;

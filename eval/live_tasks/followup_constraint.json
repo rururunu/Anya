@@ -1,0 +1,26 @@
+{
+  "id": "followup_constraint",
+  "prompt": "Create report.txt with the text draft. Read it back before finishing.",
+  "followups": [
+    {
+      "afterToolCalls": 1,
+      "content": "Change the final report text to reviewed, and also create notes.txt containing follow-up applied. Verify both files."
+    }
+  ],
+  "assertions": [
+    {
+      "type": "fileEquals",
+      "path": "report.txt",
+      "text": "reviewed"
+    },
+    {
+      "type": "fileEquals",
+      "path": "notes.txt",
+      "text": "follow-up applied"
+    },
+    {
+      "type": "statusSeen",
+      "kind": "soft_injected"
+    }
+  ]
+}

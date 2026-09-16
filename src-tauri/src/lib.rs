@@ -22,8 +22,8 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use app_state::AppState;
 use commands::{
-    app, ask, chat, desktop_pet, diff, harness, icons, mcp, permission, plugins, remote, semantic,
-    settings, skills, token_usage, updater, window, workspace,
+    app, ask, chat, deepseek_files, desktop_pet, diff, harness, icons, mcp, permission, plugins,
+    remote, semantic, settings, skills, token_usage, updater, window, workspace,
 };
 use services::app_lifecycle;
 use services::overlay_native::clear_minimize_pending;
@@ -370,6 +370,11 @@ pub fn run() {
             chat::set_chat_session_workspace,
             chat::clear_all_chat_sessions,
             token_usage::get_token_usage_report,
+            token_usage::get_deepseek_balance,
+            deepseek_files::upload_deepseek_file,
+            deepseek_files::list_deepseek_files,
+            deepseek_files::retrieve_deepseek_file,
+            deepseek_files::delete_deepseek_file,
             workspace::list_workspaces,
             workspace::list_archived_workspaces,
             workspace::get_current_workspace,

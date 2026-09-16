@@ -1,10 +1,12 @@
 //! Builtin tool registration and module layout.
 
 mod chat_history;
+mod discovery;
 mod files;
 mod image_gen;
 mod memory_tools;
 mod misc;
+mod plan_request;
 mod plugin;
 mod shell;
 mod tasks;
@@ -24,6 +26,7 @@ use files::*;
 use image_gen::*;
 use memory_tools::*;
 use misc::*;
+use plan_request::*;
 use plugin::*;
 use shell::*;
 use tasks::*;
@@ -45,6 +48,7 @@ pub fn register_all(
     }
 
     reg!(ReadFileTool);
+    reg!(discovery::SearchToolsTool);
     reg!(ListFolderTool);
     reg!(FindFilesTool);
     reg!(SearchFilesTool);
@@ -76,6 +80,9 @@ pub fn register_all(
         event_bus: Arc::clone(&event_bus),
     }));
     registry.register(Arc::new(AskUserTool {
+        event_bus: Arc::clone(&event_bus),
+    }));
+    registry.register(Arc::new(RequestPlanModeTool {
         event_bus: Arc::clone(&event_bus),
     }));
 

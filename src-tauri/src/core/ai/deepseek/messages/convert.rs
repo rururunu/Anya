@@ -31,6 +31,14 @@ pub(super) fn parse_multimodal_content(content: &str) -> Value {
 
             if let Some(url_match) = cap.get(1) {
                 let raw = url_match.as_str();
+                if let Some(file_id) = super::super::files::file_id_from_ref(raw) {
+                    parts.push(json!({
+                        "type": "file",
+                        "file_id": file_id,
+                    }));
+                    last_index = mat.end();
+                    continue;
+                }
                 match crate::core::ai::image_gen::resolve_image_url_for_api(raw) {
                     Ok(url) => parts.push(json!({
                         "type": "image_url",

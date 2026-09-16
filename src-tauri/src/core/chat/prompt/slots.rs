@@ -8,7 +8,7 @@ use crate::core::runtime::{ChatMessage, MessageStatus, RequestContext, Role};
 
 use crate::core::chat::prompts::{
     COMPANION_ORIGIN_PROMPT, IMAGE_MODE_PROMPT, MINIMAL_CODING_PROMPT,
-    MULTI_MODEL_COLLABORATION_PROMPT, PLAN_MODE_PROMPT, SYSTEM_PROMPT,
+    MULTI_MODEL_COLLABORATION_PROMPT, PLAN_MODE_PROMPT, PLAN_REQUEST_HINT, SYSTEM_PROMPT,
 };
 
 /// Slot [4]: optional strategies in fixed relative order. Disabled strategies
@@ -19,6 +19,7 @@ pub(super) fn inject_optional_policy_suffix(
     collaboration_models: &[String],
     minimal_coding: bool,
     plan_mode: bool,
+    suggest_plan_request: bool,
     companion_origin: bool,
     image_mode: Option<&ImageModePolicy>,
 ) {
@@ -46,6 +47,13 @@ pub(super) fn inject_optional_policy_suffix(
     }
     if plan_mode {
         inject_system_block(messages, session_id, "plan-mode", Some(PLAN_MODE_PROMPT));
+    } else if suggest_plan_request {
+        inject_system_block(
+            messages,
+            session_id,
+            "plan-request-hint",
+            Some(PLAN_REQUEST_HINT),
+        );
     }
     if let Some(image) = image_mode {
         let style_block = if image.style_prompt.trim().is_empty() {

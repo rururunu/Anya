@@ -7,6 +7,7 @@ import { computed, ref, watch, type Ref } from "vue";
 import { tr } from "@/services/i18n";
 import type { AskDisplayOption, AskUserQuestion } from "@/types/chat";
 import type { AppLanguage } from "@/types/setting";
+import { isPlanSwitchQuestion } from "@/services/chat/askUserAnswer";
 
 export const ASK_SKIP_MARKER = "__user_supplement__";
 
@@ -58,8 +59,13 @@ export function useAskUserFlow(options: {
       slug: toAskSlug(option.label) || "option",
       description: option.description,
     }));
+    if (isPlanSwitchQuestion(activeAskQuestion.value)) {
+      return questionOptions;
+    }
     return [...questionOptions, skipAskOption.value];
   });
+
+  const askIsPlanSwitch = computed(() => isPlanSwitchQuestion(activeAskQuestion.value));
 
   const askConfirmRowIndex = computed(() =>
     activeAskQuestion.value?.multiSelect ? activeAskOptions.value.length : -1,
@@ -103,6 +109,7 @@ export function useAskUserFlow(options: {
         return {
           header: question.header,
           question: question.question,
+          kind: question.kind,
           selected: userSupplement ? [] : selected.filter((item) => item !== ASK_SKIP_MARKER),
           userSupplement,
         };
@@ -193,6 +200,7 @@ export function useAskUserFlow(options: {
     askQuestionCount,
     activeAskQuestion,
     skipAskOption,
+    askIsPlanSwitch,
     activeAskOptions,
     askConfirmRowIndex,
     askSelectedCount,

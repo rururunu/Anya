@@ -145,6 +145,14 @@ pub(crate) async fn init_chat_session_schema(pool: &SqlitePool) -> Result<(), St
             .await
             .map_err(|e| e.to_string())?;
     }
+    if !column_names.iter().any(|name| name == "consumed_tokens") {
+        sqlx::query(
+            "ALTER TABLE chat_sessions ADD COLUMN consumed_tokens INTEGER NOT NULL DEFAULT 0",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }

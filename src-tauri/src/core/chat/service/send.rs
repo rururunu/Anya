@@ -368,9 +368,8 @@ impl ChatService {
             .or_else(|| settings.as_ref().map(|settings| settings.chat_mode))
             .unwrap_or_default();
 
-        // Plan can be chosen in the mode picker, or auto-entered for complex
-        // Agent turns. Approve & execute sends skip_auto_plan so writers unlock.
-        // Approval UI lives at the end of the assistant reply (not a composer banner).
+        // Plan is only on when the user picked it, or when they accepted an
+        // in-turn `request_plan_mode` ask. Agent never silent-enters the gate.
         let plan_store = crate::core::tools::plan_mode::shared_plan_mode_store();
         let plan_was_active = plan_store.is_active(&session_id);
         if overrides.resume_plan {
@@ -397,26 +396,17 @@ impl ChatService {
                 }
                 ChatMode::Agent => {
                     if plan_was_active {
-                        // Leaving a sticky plan gate for this Agent send.
                         plan_store.set_active(&session_id, false);
                         self.emit_plan_mode_changed(&session_id, false, PlanModeSource::Manual);
-                    }
-                    // Always evaluate auto-plan for Agent turns (including after
-                    // clearing a leftover gate). Otherwise complex Agent asks
-                    // never show the approval card / countdown.
-                    if !overrides.skip_auto_plan
-                        && crate::core::tools::plan_mode::should_auto_plan(
-                            &user_message.content,
-                            chat_mode,
-                        )
-                    {
-                        plan_store.set_active(&session_id, true);
-                        self.emit_plan_mode_changed(&session_id, true, PlanModeSource::Auto);
                     }
                 }
             }
         }
         let plan_mode = plan_store.is_active(&session_id);
+        let suggest_plan_request = chat_mode == ChatMode::Agent
+            && !plan_mode
+            && !overrides.skip_auto_plan
+            && crate::core::tools::plan_mode::should_auto_plan(&user_message.content, chat_mode);
 
         let image_mode_options = if chat_mode == ChatMode::Image {
             let incoming = overrides.image_gen.clone().unwrap_or_default();
@@ -445,6 +435,7 @@ impl ChatService {
             collaboration_models,
             minimal_coding,
             plan_mode,
+            suggest_plan_request,
             companion_origin: shared_session_origin_store().is_companion(&session_id),
             image_mode: image_mode_options.as_ref().map(ImageModePolicy::from),
         };

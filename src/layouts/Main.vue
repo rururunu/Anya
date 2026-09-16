@@ -2852,7 +2852,7 @@ button {
   border-bottom: 0;
   border-radius: 10px 10px 0 0;
   background: color-mix(in srgb, var(--peek-surface) 97%, transparent);
-  box-shadow: 0 -10px 24px color-mix(in srgb, #000 16%, transparent);
+  box-shadow: 0 -2px 8px color-mix(in srgb, #000 6%, transparent);
 }
 .staged-item {
   box-sizing: border-box;

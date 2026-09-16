@@ -163,6 +163,7 @@ fn plan_mode_allowed(tool_name: &str, read_only: bool) -> bool {
             | "share_preview_url"
             | "todo_write"
             | "manage_plugin"
+            | "request_plan_mode"
     )
 }
 
@@ -171,17 +172,16 @@ pub fn shared_plan_mode_store() -> &'static PlanModeStore {
     STORE.get_or_init(PlanModeStore::new)
 }
 
-/// Decide whether a new Agent turn should automatically enter plan mode.
-///
-/// Ask mode never plans. Explicit skip/force phrases win. Otherwise a light
-/// complexity score decides — users should not have to flip a mode switch for
-/// multi-step work.
+/// Hint whether an Agent turn should *offer* Plan mode via `request_plan_mode`.
+/// Never flips the writer gate by itself. Ask mode never hints. Explicit
+/// skip/force phrases win. Otherwise a light complexity score decides.
 pub fn should_auto_plan(message: &str, chat_mode: ChatMode) -> bool {
-    // Only Agent auto-enters plan. Ask never plans; Plan is already planning.
+    // Only Agent is hinted to request Plan. Ask never plans; Plan is already on.
     if chat_mode != ChatMode::Agent {
         return false;
     }
-    let text = message.trim();
+    let owned = strip_attached_file_bodies(message);
+    let text = owned.trim();
     if text.is_empty() {
         return false;
     }
@@ -232,6 +232,34 @@ pub fn should_auto_plan(message: &str, chat_mode: ChatMode) -> bool {
     }
 
     score >= 3
+}
+
+/// Attached paste/file bodies must not trip auto-plan: a 40-line code dump
+/// has lists and path tokens even when the user only asked a short question.
+fn strip_attached_file_bodies(message: &str) -> String {
+    let mut out = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(start) = rest.find("<peek-attached-file") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        let Some(tag_end) = after.find('>') else {
+            out.push_str(after);
+            return out;
+        };
+        let opening = &after[..=tag_end];
+        if opening.ends_with("/>") {
+            rest = &after[tag_end + 1..];
+            continue;
+        }
+        if let Some(close) = after.find("</peek-attached-file>") {
+            rest = &after[close + "</peek-attached-file>".len()..];
+            continue;
+        }
+        out.push_str(after);
+        return out;
+    }
+    out.push_str(rest);
+    out
 }
 
 const COMPLEXITY_KEYWORDS: &[&str] = &[
@@ -467,6 +495,33 @@ mod tests {
     #[test]
     fn force_phrase_wins_even_if_short() {
         assert!(should_auto_plan("先规划一下这个改动", ChatMode::Agent));
+    }
+
+    #[test]
+    fn pasted_attachment_body_does_not_auto_plan() {
+        let body: String = (1..=45)
+            .map(|i| format!("{i}. src/components/foo.ts implements bar.rs"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            should_auto_plan(&body, ChatMode::Agent),
+            "numbered code dump itself is multi-step"
+        );
+        let message = format!(
+            "看看是怎么回事\n\n<peek-attached-file name=\"pasted-45lines.txt\" path=\"tmp\">\n{body}\n</peek-attached-file>"
+        );
+        assert!(!should_auto_plan(&message, ChatMode::Agent));
+    }
+
+    #[test]
+    fn force_plan_still_wins_with_an_attachment() {
+        let message = concat!(
+            "先规划一下这个改动\n\n",
+            "<peek-attached-file name=\"notes.txt\" path=\"tmp\">\n",
+            "1. add auth\n2. wire routes\n3. add tests\n",
+            "</peek-attached-file>"
+        );
+        assert!(should_auto_plan(message, ChatMode::Agent));
     }
 
     #[test]

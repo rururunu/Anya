@@ -15,7 +15,8 @@
           "name": "write_file",
           "arguments": {
             "path": "version.txt",
-            "content": "1.0.0"
+            "content": "1.0.0",
+            "allow_overwrite": true
           }
         }
       ]
@@ -41,6 +42,10 @@
       "type": "fileEquals",
       "path": "version.txt",
       "text": "1.0.0"
+    },
+    {
+      "type": "finishReason",
+      "reason": "stop"
     }
   ]
 }

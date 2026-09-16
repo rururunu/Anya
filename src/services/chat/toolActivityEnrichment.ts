@@ -1,4 +1,5 @@
 import type { TaskItem, ToolActivity } from "@/types/chat";
+import { isAskUserTool } from "@/services/chat/askUserAnswer";
 import { hunkFromPlainEdit, parseUnifiedDiffHunks, type DiffHunk } from "@/services/chat/toolDiff";
 
 const FILE_OPERATION_KINDS = new Set(["create", "edit", "delete", "move"]);
@@ -19,7 +20,7 @@ export function enrichToolActivities(
   return activities
     .filter((activity) => {
       if (activity.kind === "read" && !options.nested && !options.flat) return false;
-      return !(activity.toolName === "ask_user" && activity.status !== "running");
+      return !(isAskUserTool(activity.toolName) && activity.status !== "running");
     })
     .map((activity) => {
       const hunks = collectActivityHunks(activity);

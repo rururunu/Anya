@@ -291,7 +291,8 @@ impl ConversationManager {
                             .estimated_tokens
                             .unwrap_or_else(|| estimate_message_tokens(message))
                     })
-                    .sum();
+                    .sum::<usize>()
+                    + self.consumed_tokens(session_id);
                 let summary = ChatSessionSummary {
                     session_id: session_id.clone(),
                     workspace_id: session_workspaces.get(session_id).cloned().or_else(|| {

@@ -7,7 +7,7 @@ import { computed, ref, watch, type Ref } from "vue";
 import { useDebounceFn } from "@vueuse/core";
 import { storeToRefs } from "pinia";
 import { getContextUsage } from "@/services/ipc";
-import { estimateMessageTokens } from "@/services/chat/tokenEstimate";
+import { conversationConsumedTokens } from "@/services/chat/tokenEstimate";
 import { tr } from "@/services/i18n";
 import { useChatStore } from "@/stores/chat";
 import { useSettingStore } from "@/stores/setting";
@@ -45,12 +45,11 @@ export function useContextUsage(options: {
   let contextUsageRequestId = 0;
 
   const conversationTokenCount = computed(() => {
-    const sessionMessages = chatStore.sessions[sessionIdOf()] ?? [];
-    let total = 0;
-    for (const item of sessionMessages) {
-      total += estimateMessageTokens(item);
-    }
-    return total;
+    const sessionId = sessionIdOf();
+    return conversationConsumedTokens(
+      chatStore.sessions[sessionId] ?? [],
+      chatStore.sessionConsumedTokens[sessionId] ?? 0,
+    );
   });
 
   const conversationTokenTitle = computed(() =>

@@ -1,0 +1,33 @@
+{
+  "id": "cross_file_fix",
+  "prompt": "Fix the subtraction bug in calculator.cjs and its usage in main.cjs. Preserve the public function name and do not modify tests.test.cjs. Run the relevant tests before finishing.",
+  "setupFiles": [
+    {
+      "path": "package.json",
+      "content": "{\"scripts\": {\"test\": \"node --test tests.test.cjs\"}}"
+    },
+    {
+      "path": "calculator.cjs",
+      "content": "exports.subtract = (a, b) => a + b;\n"
+    },
+    {
+      "path": "main.cjs",
+      "content": "const { subtract } = require('./calculator.cjs');\nexports.remaining = (total, spent) => subtract(spent, total);\n"
+    },
+    {
+      "path": "tests.test.cjs",
+      "content": "const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst { remaining } = require('./main.cjs');\ntest('remaining', () => { assert.equal(remaining(10, 3), 7); assert.equal(remaining(3, 10), -7); });\n"
+    }
+  ],
+  "assertions": [
+    {
+      "type": "commandSucceeds",
+      "command": "node --test tests.test.cjs"
+    },
+    {
+      "type": "fileEquals",
+      "path": "tests.test.cjs",
+      "text": "const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst { remaining } = require('./main.cjs');\ntest('remaining', () => { assert.equal(remaining(10, 3), 7); assert.equal(remaining(3, 10), -7); });\n"
+    }
+  ]
+}

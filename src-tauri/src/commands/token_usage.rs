@@ -3,10 +3,12 @@ use std::collections::BTreeMap;
 use chrono::{Datelike, Duration, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::app_state::AppState;
+use crate::core::ai::deepseek::{self, DeepSeekBalanceReport};
 use crate::core::token::{TokenAccuracy, TokenUsage};
+use crate::services::settings_store::get_settings;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -180,4 +182,13 @@ pub async fn get_token_usage_report(
         by_model,
         timeline: timeline.into_values().collect(),
     })
+}
+
+/// DeepSeek GET /user/balance for the Token usage page.
+#[tauri::command]
+pub async fn get_deepseek_balance(app: AppHandle) -> Result<DeepSeekBalanceReport, String> {
+    let settings = get_settings(&app)?;
+    deepseek::get_user_balance(&settings.deepseek_api_key)
+        .await
+        .map_err(|error| error.to_string())
 }

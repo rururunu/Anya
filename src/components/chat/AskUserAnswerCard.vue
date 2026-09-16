@@ -1,7 +1,13 @@
 <template>
   <section class="ask-answer-card" role="status" :aria-label="label">
     <div class="ask-answer-header">
-      <Lightbulb class="ask-answer-icon" :size="14" :stroke-width="2" aria-hidden="true" />
+      <component
+        :is="planSwitch ? ListChecks : Lightbulb"
+        class="ask-answer-icon"
+        :size="14"
+        :stroke-width="2"
+        aria-hidden="true"
+      />
       <span class="ask-answer-title">{{ label }}</span>
     </div>
 
@@ -23,19 +29,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { storeToRefs } from "pinia";
-import { Lightbulb } from "@lucide/vue";
+import { Lightbulb, ListChecks } from "@lucide/vue";
 import { useSettingStore } from "@/stores/setting";
 import type { AskUserAnswerItem } from "@/types/chat";
 import { tr } from "@/services/i18n";
+import { isPlanSwitchAsk } from "@/services/chat/askUserAnswer";
 
-defineProps<{
+const props = defineProps<{
   items: AskUserAnswerItem[];
 }>();
 
 const settingStore = useSettingStore();
 const { language } = storeToRefs(settingStore);
 
-const label = computed(() => tr(language.value, "answers"));
+const planSwitch = computed(() => isPlanSwitchAsk(props.items));
+const label = computed(() =>
+  planSwitch.value ? tr(language.value, "chatModePlan") : tr(language.value, "answers"),
+);
 const supplementText = computed(() => tr(language.value, "customAnswer"));
 
 function promptFor(item: AskUserAnswerItem) {

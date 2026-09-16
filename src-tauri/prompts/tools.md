@@ -6,7 +6,7 @@ Tools adapt to the request mode:
 
 - **Answer / explain / review / Diagnose:** read-only tools **plus** `ask_user` and `update_tasks` (clarify and track work without writing files).
 - **Plan:** the above plus `save_plan` and `manage_plugin` (read actions only: `list` / `list_files` / `get_file` / `describe_contract` / `errors`); writer tools stay blocked until approval.
-- **Change / build / fix:** the full toolset except `save_plan` (that tool is plan-mode only).
+- **Change / build / fix:** the full toolset except `save_plan` (that tool is plan-mode only). `request_plan_mode` asks the user to switch to Plan; call it only when a reviewed plan is clearly better than implementing now. If they decline, stay in Agent and finish the current work.
 
 Unavailable tools (LSP/web off, MCP disconnected) are omitted entirely — do not reference or apologize for a tool that is not in the schema.
 

@@ -11,7 +11,7 @@ import {
   setChatSessionArchived,
   setChatSessionWorkspace,
 } from "@/services/ipc";
-import { estimateMessageTokens } from "@/services/chat/tokenEstimate";
+import { conversationConsumedTokens } from "@/services/chat/tokenEstimate";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import { isSubagentSessionId, rootSessionId } from "@/services/chat/subagentSession";
 import { isPluginAgentSessionId } from "@/services/chat/pluginSession";
@@ -93,9 +93,9 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
       if (withWorkspace.sessionId !== activeSessionId.value) return withWorkspace;
       return {
         ...withWorkspace,
-        estimatedTokens: messages.value.reduce(
-          (total, message) => total + estimateMessageTokens(message),
-          0,
+        estimatedTokens: conversationConsumedTokens(
+          messages.value,
+          chatStore.sessionConsumedTokens[withWorkspace.sessionId] ?? 0,
         ),
       };
     });

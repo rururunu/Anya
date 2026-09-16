@@ -92,7 +92,7 @@ import { computed, inject, reactive, ref, watch } from "vue";
 import AgentWorkSegment, { type WorkSegment } from "@/components/chat/AgentWorkSegment.vue";
 import type { ChatMessage, ToolActivity } from "@/types/chat";
 import type { AgentWorkDisplay, AppLanguage } from "@/types/setting";
-import { askUserAnswersForActivity } from "@/services/chat/askUserAnswer";
+import { askUserAnswersForActivity, isAskUserTool } from "@/services/chat/askUserAnswer";
 import { shouldHidePlanChromeActivity } from "@/services/chat/planProposal";
 import { SUBAGENT_TOOLS } from "@/services/chat/subagentTools";
 import {
@@ -145,7 +145,7 @@ const waitingForAskUser = computed(
   () =>
     props.message.toolActivities?.some(
       (activity) =>
-        activity.toolName === "ask_user" &&
+        isAskUserTool(activity.toolName) &&
         activity.status === "running" &&
         askUserAnswersForActivity(activity, props.message.askUserAnswer).length === 0,
     ) ?? false,
@@ -156,7 +156,7 @@ const recordedActivities = computed(() =>
 const visibleActivities = computed(() =>
   recordedActivities.value.filter(
     (activity) =>
-      !(activity.toolName === "ask_user" && activity.status !== "running") &&
+      !(isAskUserTool(activity.toolName) && activity.status !== "running") &&
       !shouldHidePlanChromeActivity(activity, props.message),
   ),
 );
@@ -446,7 +446,7 @@ const segments = computed<TimelineSegment[]>(() => {
       seen.add(activity.id);
       continue;
     }
-    if (activity.toolName === "ask_user") {
+    if (isAskUserTool(activity.toolName)) {
       considerAskUser(out, seen, activity);
       continue;
     }
@@ -467,7 +467,7 @@ const segments = computed<TimelineSegment[]>(() => {
       seen.add(activity.id);
       continue;
     }
-    if (activity.toolName === "ask_user") {
+    if (isAskUserTool(activity.toolName)) {
       considerAskUser(out, seen, activity);
       continue;
     }

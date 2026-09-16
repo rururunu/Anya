@@ -39,3 +39,39 @@ export interface TokenUsageReport {
     models: Record<string, number>;
   }>;
 }
+
+export interface DeepSeekBalanceInfo {
+  currency: string;
+  totalBalance: string;
+  grantedBalance: string;
+  toppedUpBalance: string;
+}
+
+export interface DeepSeekBalanceReport {
+  configured: boolean;
+  isAvailable: boolean | null;
+  balances: DeepSeekBalanceInfo[];
+}
+
+export interface DeepSeekFileObject {
+  id: string;
+  object: string;
+  bytes: number;
+  createdAt: number;
+  filename: string;
+  purpose: string;
+  expiresAt?: number | null;
+}
+
+export interface DeepSeekFileList {
+  object: string;
+  data: DeepSeekFileObject[];
+  firstId?: string | null;
+  lastId?: string | null;
+  hasMore: boolean;
+}
+
+export interface DeepSeekFileDeleteResult {
+  id: string;
+  deleted: boolean;
+}

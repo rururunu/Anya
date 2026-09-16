@@ -341,6 +341,7 @@ import {
 } from "@/services/chat/selectionAttachment";
 import { extractAttachedFileChips, type AttachedFileChip } from "@/services/chat/attachFiles";
 import { isSoftInjectContent, stripSoftInjectMarker } from "@/services/chat/softInject";
+import { isAskUserTool } from "@/services/chat/askUserAnswer";
 import { isCompactionSummary } from "@/services/chat/compactMarker";
 import {
   extractPlanTitle,
@@ -503,7 +504,12 @@ function planCardTitle(message: ChatMessage) {
 }
 
 function planCardSummary(message: ChatMessage) {
-  return planCardCopy(message, tr(settingStore.language, "planProposalTitle")).summary;
+  const copy = planCardCopy(message, tr(settingStore.language, "planProposalTitle"));
+  if (copy.summary) return copy.summary;
+  if (isPlanGateStopMessage(message) && !savePlanFromMessage(message)) {
+    return tr(settingStore.language, "planModeNoTasksYet");
+  }
+  return copy.summary;
 }
 
 function hasUserMessageAfter(messageId: string): boolean {
@@ -541,7 +547,7 @@ function isLivePlanHost(message: ChatMessage): boolean {
 }
 
 function showCreatedPlanCard(message: ChatMessage): boolean {
-  return isCreatedPlanMessage(message);
+  return isCreatedPlanMessage(message) || isPlanGateStopMessage(message);
 }
 
 function showBuildTodoCard(message: ChatMessage): boolean {
@@ -627,6 +633,7 @@ async function approvePlanMode() {
       skipAutoPlan: true,
       resumePlan: true,
     });
+    chatStore.setCompose(props.sessionId, { chatMode: "agent" });
   } catch (error) {
     log.error("approve plan mode failed", error);
   } finally {
@@ -1152,7 +1159,7 @@ function isPending(message: ChatMessage) {
 
 function isWaitingForAskUser(message: ChatMessage) {
   return (message.toolActivities ?? []).some(
-    (activity) => activity.toolName === "ask_user" && activity.status === "running",
+    (activity) => isAskUserTool(activity.toolName) && activity.status === "running",
   );
 }
 

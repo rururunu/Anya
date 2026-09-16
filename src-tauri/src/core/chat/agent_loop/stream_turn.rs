@@ -17,6 +17,24 @@ pub struct StreamTurnResult {
     pub finish_reason: Option<String>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn cancellation_does_not_wait_for_a_silent_provider() {
+        let (_provider, receiver) = mpsc::channel(1);
+        let (events, _output) = mpsc::channel(1);
+        let cancelled = Arc::new(AtomicBool::new(true));
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            collect_stream_turn(receiver, &events, &cancelled),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(result, Err(ProviderError::Cancelled)));
+    }
+}
+
 /// Drain a single provider stream turn on `turn_rx`, forwarding
 /// Delta/Reasoning/Status/Usage/UserContentPatch events to the outer `tx` as
 /// they arrive, and folding everything else into a [`StreamTurnResult`].
@@ -34,7 +52,14 @@ pub async fn collect_stream_turn(
     let mut tool_calls = Vec::new();
     let mut finish_reason = None;
 
-    while let Some(event) = turn_rx.recv().await {
+    loop {
+        let event = tokio::select! {
+            event = turn_rx.recv() => match event { Some(event) => event, None => break },
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                if cancelled.load(Ordering::Relaxed) { return Err(ProviderError::cancelled()); }
+                continue;
+            }
+        };
         if cancelled.load(Ordering::Relaxed) {
             return Err(ProviderError::cancelled());
         }

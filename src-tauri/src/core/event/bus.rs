@@ -3,14 +3,18 @@ use crate::core::runtime::ChatMessage;
 use crate::core::tools::context::TaskItem;
 use serde::{Deserialize, Serialize};
 
-/// Where a plan-mode activation came from. `Auto` plans (agent-mode complexity
-/// detection) get the 30s auto-execute window; `Manual` plans (user picked
-/// plan mode explicitly) always wait for the user.
+/// Where a plan-mode activation came from.
+///
+/// `Auto` used to silent-enter from Agent complexity detection (and got a 30s
+/// auto-execute window). Agent no longer silent-enters; the variant remains so
+/// older events deserialize. `Request` is an agent ask the user accepted.
+/// `Manual` is the mode picker. Request and Manual always wait for approval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PlanModeSource {
     Auto,
     Manual,
+    Request,
 }
 
 /// EventBus 事件 — Vue 只订阅这些，不感知 Provider。

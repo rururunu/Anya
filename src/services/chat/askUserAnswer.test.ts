@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { ToolActivity } from "@/types/chat";
 import {
   askUserAnswersForActivity,
+  isAskUserTool,
+  isPlanSwitchAsk,
+  isPlanSwitchQuestion,
+  isPlanSwitchTool,
   normalizeAskUserAnswerItems,
   parseAskUserAnswerItems,
+  PLAN_SWITCH_KIND,
 } from "./askUserAnswer";
 
 const payload = JSON.stringify({
@@ -60,6 +65,7 @@ describe("normalizeAskUserAnswerItems", () => {
       {
         header: undefined,
         question: "Skip",
+        kind: undefined,
         selected: [],
         userSupplement: true,
       },
@@ -79,5 +85,27 @@ describe("askUserAnswersForActivity", () => {
     const staged = [{ question: "Q", selected: ["A"] }];
     expect(askUserAnswersForActivity(activity({ status: "running" }), staged)).toEqual(staged);
     expect(askUserAnswersForActivity(activity({ status: "done" }), staged)).toEqual(staged);
+  });
+
+  it("treats request_plan_mode as an ask-user tool", () => {
+    expect(isAskUserTool("ask_user")).toBe(true);
+    expect(isAskUserTool("request_plan_mode")).toBe(true);
+    expect(isAskUserTool("run_shell")).toBe(false);
+    const items = askUserAnswersForActivity(
+      activity({ toolName: "request_plan_mode", result: payload, status: "done" }),
+    );
+    expect(items).toHaveLength(2);
+  });
+});
+
+describe("plan switch detection", () => {
+  it("recognizes kind, header fallback, and the request_plan_mode tool", () => {
+    expect(isPlanSwitchQuestion({ kind: PLAN_SWITCH_KIND, header: "other" })).toBe(true);
+    expect(isPlanSwitchQuestion({ header: "切换到计划" })).toBe(true);
+    expect(isPlanSwitchQuestion({ header: "Entry" })).toBe(false);
+    expect(isPlanSwitchTool("request_plan_mode")).toBe(true);
+    expect(isPlanSwitchTool("ask_user")).toBe(false);
+    expect(isPlanSwitchAsk([{ header: "切换到计划", selected: ["继续用 Agent"] }])).toBe(true);
+    expect(isPlanSwitchAsk([{ question: "普通提问", selected: ["A"] }])).toBe(false);
   });
 });

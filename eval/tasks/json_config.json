@@ -4,7 +4,7 @@
   "setupFiles": [
     {
       "path": "package.json",
-      "content": "{\"name\":\"old\"}"
+      "content": "{\"name\": \"old\", \"scripts\": {\"check\": \"node -e \\\"if(require('./package.json').name !== 'anya-eval') process.exit(1)\\\"\"}}"
     }
   ],
   "script": [
@@ -12,10 +12,11 @@
       "content": "",
       "tool_calls": [
         {
-          "name": "write_file",
+          "name": "replace_in_file",
           "arguments": {
             "path": "package.json",
-            "content": "{\"name\":\"anya-eval\"}"
+            "old_string": "\"name\": \"old\"",
+            "new_string": "\"name\": \"anya-eval\""
           }
         }
       ]
@@ -41,6 +42,10 @@
       "type": "fileContains",
       "path": "package.json",
       "text": "anya-eval"
+    },
+    {
+      "type": "finishReason",
+      "reason": "stop"
     }
   ]
 }

@@ -80,3 +80,12 @@ export function accumulateCacheUsage<
     model: delta.model ?? current?.model,
   };
 }
+
+/** Remaining transcript plus tokens from rewound turns (consumption never shrinks). */
+export function conversationConsumedTokens(messages: ChatMessage[], rewoundTokens = 0): number {
+  let total = Math.max(0, Number.isFinite(rewoundTokens) ? rewoundTokens : 0);
+  for (const item of messages) {
+    total += estimateMessageTokens(item);
+  }
+  return total;
+}

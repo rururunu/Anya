@@ -43,7 +43,7 @@ pub struct ChatSendRequest {
     /// Image-mode toolbar (size / quality / count / style). Ignored unless chatMode is image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_gen: Option<ImageGenSendOptions>,
-    /// When true, do not auto-enter plan mode for this send (e.g. approve & execute).
+    /// When true, do not hint `request_plan_mode` for this send (e.g. approve & execute).
     #[serde(default)]
     pub skip_auto_plan: bool,
     /// True when this send is the "approve plan & execute" continuation: the
@@ -262,6 +262,9 @@ pub struct ChatHistoryResponse {
     pub message_cache_usages: Vec<MessageCacheUsage>,
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub message_completed_at: std::collections::HashMap<String, u64>,
+    /// Tokens from turns removed by rewind; still count as session consumption.
+    #[serde(default)]
+    pub consumed_tokens: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,6 +344,8 @@ pub struct AskUserQuestion {
     pub options: Vec<AskUserOption>,
     #[serde(default)]
     pub multi_select: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

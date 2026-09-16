@@ -34,6 +34,10 @@ impl Tool for UpdateTasksTool {
                         "type": "object",
                         "properties": {
                             "content": { "type": "string" },
+                            "id": { "type": "string", "description": "Stable requirement ID; reuse it when updating this requirement" },
+                            "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "description": "Concrete observable conditions that prove this requirement is done" },
+                            "evidence": { "type": "array", "items": { "type": "string" }, "description": "Successful tool call IDs that support completion, from Agent task state" },
+                            "reason": { "type": "string", "description": "Why a requirement was cancelled or is blocked" },
                             "status": { "type": "string" },
                             "activeForm": { "type": "string" },
                             "level": { "type": "integer" }

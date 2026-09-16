@@ -3,10 +3,12 @@ import { computed } from "vue";
 import type { ChatMessage } from "@/types/chat";
 import type { AppLanguage } from "@/types/setting";
 import {
+  conversationConsumedTokens,
   estimateMessageTokens,
   formatTokenCount,
   promptCacheHitPercent,
 } from "@/services/chat/tokenEstimate";
+import { isAskUserTool } from "@/services/chat/askUserAnswer";
 import { tr } from "@/services/i18n";
 import { useChatStore } from "@/stores/chat";
 
@@ -69,7 +71,8 @@ export function useConversationTurnStats(options: {
     const durationMs = startedAt && endedAt && endedAt >= startedAt ? endedAt - startedAt : 0;
 
     const toolCount =
-      assistant?.toolActivities?.filter((activity) => activity.toolName !== "ask_user").length ?? 0;
+      assistant?.toolActivities?.filter((activity) => !isAskUserTool(activity.toolName)).length ??
+      0;
 
     const turnMessages = [user, assistant, ...(assistant ? [] : [])].filter(
       (message): message is ChatMessage => Boolean(message),
@@ -88,9 +91,9 @@ export function useConversationTurnStats(options: {
         : null;
 
     const sessionMessages = options.messages.value;
-    const sessionTokens = sessionMessages.reduce(
-      (total, message) => total + estimateMessageTokens(message),
-      0,
+    const sessionTokens = conversationConsumedTokens(
+      sessionMessages,
+      chatStore.sessionConsumedTokens[sessionId] ?? 0,
     );
 
     return {

@@ -1,6 +1,7 @@
 <template>
   <ul
     class="command-list ask-user-list peek-scrollbar"
+    :class="{ 'plan-switch-list': planSwitch }"
     data-tauri-drag-region="false"
     role="listbox"
     :aria-label="ariaLabel"
@@ -8,7 +9,16 @@
   >
     <li class="picker-sticky-head">
       <div class="picker-meta">
-        <span class="picker-meta-label">{{ header }}</span>
+        <span class="picker-meta-label" :class="{ 'plan-switch': planSwitch }">
+          <ListChecks
+            v-if="planSwitch"
+            class="picker-meta-icon"
+            :size="13"
+            :stroke-width="2.25"
+            aria-hidden="true"
+          />
+          {{ header }}
+        </span>
         <span v-if="questionCount > 1" class="picker-meta-progress">
           {{ questionIndex + 1 }}/{{ questionCount }}
         </span>
@@ -42,8 +52,13 @@
       >
         <Check v-if="isOptionSelected(option.label)" :size="11" :stroke-width="2.75" />
       </span>
-      <span v-else-if="option.isSkip" class="ask-leading" aria-hidden="true">
-        <PenLine :size="13" :stroke-width="2.25" />
+      <span
+        v-else-if="optionLeadingIcon(option)"
+        class="ask-leading"
+        :class="{ 'plan-accept': option.label === PLAN_SWITCH_ACCEPT_LABEL }"
+        aria-hidden="true"
+      >
+        <component :is="optionLeadingIcon(option)" :size="13" :stroke-width="2.25" />
       </span>
 
       <span class="ask-body">
@@ -75,10 +90,12 @@
 </template>
 
 <script setup lang="ts">
-import { Check, PenLine } from "@lucide/vue";
+import type { Component } from "vue";
+import { Check, ListChecks, PenLine, Sparkle } from "@lucide/vue";
 import type { AskDisplayOption } from "@/types/chat";
+import { PLAN_SWITCH_ACCEPT_LABEL, PLAN_SWITCH_DECLINE_LABEL } from "@/services/chat/askUserAnswer";
 
-defineProps<{
+const props = defineProps<{
   header?: string;
   question?: string;
   questionIndex: number;
@@ -92,7 +109,16 @@ defineProps<{
   selectedIndex: number;
   ariaLabel: string;
   isOptionSelected: (label: string) => boolean;
+  planSwitch?: boolean;
 }>();
+
+function optionLeadingIcon(option: AskDisplayOption): Component | undefined {
+  if (option.isSkip) return PenLine;
+  if (!props.planSwitch) return undefined;
+  if (option.label === PLAN_SWITCH_ACCEPT_LABEL) return ListChecks;
+  if (option.label === PLAN_SWITCH_DECLINE_LABEL) return Sparkle;
+  return undefined;
+}
 
 defineEmits<{
   hover: [index: number];
@@ -170,6 +196,20 @@ defineEmits<{
 
 .picker-meta-label {
   font-weight: 600;
+  color: var(--peek-accent);
+}
+
+.picker-meta-label.plan-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.picker-meta-icon {
+  flex: none;
+}
+
+.ask-leading.plan-accept {
   color: var(--peek-accent);
 }
 

@@ -136,6 +136,8 @@
             @toggle-disabled="toggleDeepSeekModelDisabled"
           />
 
+          <DeepSeekFilesPanel />
+
           <div class="form-actions">
             <Button size="sm" class="h-8 w-full gap-1.5" @click="saveDeepSeekAndGoBack">
               <Save class="size-3.5" />
@@ -271,6 +273,7 @@ import { Globe2, ChevronLeft, ChevronRight, Plus, Trash2, Save } from "@lucide/v
 import { openUrl } from "@tauri-apps/plugin-opener";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
 import ProviderModelList from "@/components/settings/ProviderModelList.vue";
+import DeepSeekFilesPanel from "@/components/settings/DeepSeekFilesPanel.vue";
 import { useSettingStore } from "@/stores/setting";
 import { useChatModelStore } from "@/stores/chatModel";
 import { Button } from "@/components/ui/button";

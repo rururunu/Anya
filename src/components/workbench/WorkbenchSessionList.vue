@@ -105,7 +105,7 @@
           @dragstart.prevent
         >
           <SubagentIcon :size="12" class="subagent-leading" />
-          <strong>{{ displaySubagentPreview(child) }}</strong>
+          <strong class="session-subagent-preview">{{ displaySubagentPreview(child) }}</strong>
           <span
             class="session-status"
             role="status"
@@ -383,12 +383,14 @@ function sessionStatusLabel(sessionId: string) {
 }
 .session-sublist {
   display: none;
-  margin: 0 0 2px 10px;
-  padding-left: 8px;
-  border-left: 1px solid color-mix(in srgb, var(--peek-border) 55%, transparent);
+  margin: 1px 2px 4px 6px;
+  padding: 0;
+  border-left: 0;
 }
 .session-sublist.open {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .session-row {
   position: relative;
@@ -423,8 +425,12 @@ function sessionStatusLabel(sessionId: string) {
   pointer-events: none;
 }
 .session-row-subagent {
-  height: 28px;
-  padding-left: 6px;
+  height: auto;
+  min-height: 28px;
+  align-items: flex-start;
+  padding: 6px 30px 6px 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--peek-text) 5%, transparent);
 }
 .session-row:hover {
   background: var(--peek-row-hover);
@@ -451,6 +457,9 @@ function sessionStatusLabel(sessionId: string) {
 }
 .is-quick .session-row {
   padding: 0 62px 0 9px;
+}
+.is-quick .session-row-subagent {
+  padding: 6px 30px 6px 8px;
 }
 .subagent-leading {
   flex: none;
@@ -508,10 +517,36 @@ function sessionStatusLabel(sessionId: string) {
   line-height: 14px;
   letter-spacing: 0.01em;
 }
-.session-row-subagent > strong {
-  display: block;
+.session-row-subagent .subagent-leading {
+  margin-top: 3px;
+}
+.session-row-subagent > strong,
+.session-subagent-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
   color: var(--peek-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.session-row-subagent .session-status {
+  margin-top: 3px;
+}
+.session-row-subagent .session-action {
+  top: 2px;
+  bottom: auto;
+  width: 24px;
+  height: 24px;
+}
+.session-row-subagent:hover {
+  background: var(--peek-row-hover);
+}
+.session-row-subagent.active {
+  background: var(--peek-row-active);
 }
 .session-status {
   flex: none;

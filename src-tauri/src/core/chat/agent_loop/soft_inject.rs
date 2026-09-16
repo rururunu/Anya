@@ -31,7 +31,7 @@ pub async fn drain_soft_injects(
 
     for content in injected {
         let message = ChatMessage {
-            id: format!("msg-{}", now_millis()),
+            id: format!("agent-followup-{}", uuid::Uuid::new_v4()),
             session_id: request.session_id.clone(),
             role: Role::User,
             content: format!("[Follow-up instruction while you were working]\n{content}"),

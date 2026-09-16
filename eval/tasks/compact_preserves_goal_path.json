@@ -3,8 +3,28 @@
   "prompt": "After earlier exploration, edit ONLY reports/final.md to say done.",
   "setupFiles": [
     {
-      "path": "noise.txt",
-      "content": "ignore"
+      "path": "noise-0.txt",
+      "content": "irrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\nirrelevant context 0\n"
+    },
+    {
+      "path": "noise-1.txt",
+      "content": "irrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\nirrelevant context 1\n"
+    },
+    {
+      "path": "noise-2.txt",
+      "content": "irrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\nirrelevant context 2\n"
+    },
+    {
+      "path": "noise-3.txt",
+      "content": "irrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\nirrelevant context 3\n"
+    },
+    {
+      "path": "noise-4.txt",
+      "content": "irrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\nirrelevant context 4\n"
+    },
+    {
+      "path": "noise-5.txt",
+      "content": "irrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\nirrelevant context 5\n"
     },
     {
       "path": "reports/final.md",
@@ -18,7 +38,7 @@
         {
           "name": "read_file",
           "arguments": {
-            "path": "noise.txt"
+            "path": "noise-0.txt"
           }
         }
       ]
@@ -27,10 +47,66 @@
       "content": "",
       "tool_calls": [
         {
-          "name": "write_file",
+          "name": "read_file",
+          "arguments": {
+            "path": "noise-1.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "noise-2.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "noise-3.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "noise-4.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "noise-5.txt"
+          }
+        }
+      ]
+    },
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "replace_in_file",
           "arguments": {
             "path": "reports/final.md",
-            "content": "done"
+            "old_string": "todo",
+            "new_string": "done"
           }
         }
       ]
@@ -60,6 +136,11 @@
     {
       "type": "answerContains",
       "text": "任务完成"
+    },
+    {
+      "type": "statusSeen",
+      "kind": "context_compacting"
     }
-  ]
+  ],
+  "contextWindow": 2000
 }

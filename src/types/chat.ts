@@ -155,6 +155,7 @@ export interface AskUserAnswerItem {
   question?: string;
   selected: string[];
   userSupplement?: boolean;
+  kind?: string;
 }
 
 /** 与 Rust Runtime `ChatMessage` 对齐 */
@@ -445,6 +446,7 @@ export interface ChatHistoryResponse {
   lastCacheUsage?: SessionCacheUsage;
   messageCacheUsages?: MessageCacheUsage[];
   messageCompletedAt?: Record<string, number>;
+  consumedTokens?: number;
 }
 
 export interface ChatSessionSummary {
@@ -498,6 +500,7 @@ export interface AskUserQuestion {
   question: string;
   options: AskUserOption[];
   multiSelect?: boolean;
+  kind?: string;
 }
 
 /** UI-only display shape for a rendered AskUser option row (adds slug/skip for picker use). */
@@ -574,8 +577,8 @@ export interface InteractionResolvedEvent {
 export interface PlanModeChangedEvent {
   sessionId: string;
   active: boolean;
-  /** How the plan was entered: "auto" (agent complexity detection) or "manual". */
-  source?: "auto" | "manual";
+  /** How the plan was entered: leftover "auto", mode picker "manual", or agent "request". */
+  source?: "auto" | "manual" | "request";
 }
 
 export interface CheckpointInfo {

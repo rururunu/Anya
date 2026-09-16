@@ -559,7 +559,10 @@ async fn summarize_folded(
 }
 
 fn is_compactable(message: &ChatMessage) -> bool {
-    if is_compaction_summary(message) || message.status == MessageStatus::Pending {
+    if is_compaction_summary(message)
+        || message.id.starts_with("agent-state-")
+        || message.status == MessageStatus::Pending
+    {
         return false;
     }
     matches!(message.role, Role::User | Role::Assistant | Role::Tool)
