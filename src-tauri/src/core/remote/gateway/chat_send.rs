@@ -21,6 +21,7 @@ pub(super) async fn handle_chat_send(
     chat_model: Option<String>,
     chat_model_provider: Option<String>,
     image_gen: Option<crate::core::remote::protocol::RemoteImageGenOptions>,
+    soft_inject: bool,
 ) -> Result<(), String> {
     let Some(state) = app.try_state::<AppState>() else {
         return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
@@ -105,6 +106,7 @@ pub(super) async fn handle_chat_send(
         image_gen,
         skip_auto_plan: false,
         resume_plan: false,
+        soft_inject,
     };
     let quick_ask = false;
     match state

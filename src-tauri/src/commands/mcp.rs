@@ -3,8 +3,9 @@ use tauri::{AppHandle, State};
 
 use crate::app_state::AppState;
 use crate::core::mcp::{
-    clear_saved_credentials, runtime_support, shared_mcp_manager, uses_mcp_remote,
-    McpRuntimeSupport, McpServerRuntimeStatus,
+    clear_saved_credentials, ensure_ghost_mcp as install_ghost_mcp, runtime_support,
+    shared_mcp_manager, uses_mcp_remote, GhostMcpInstallResult, McpRuntimeSupport,
+    McpServerRuntimeStatus,
 };
 
 #[tauri::command]
@@ -90,4 +91,16 @@ pub async fn reauthenticate_mcp_server(
         tool_count,
         status,
     })
+}
+
+/// Download Ghost (if needed), register it as an MCP server, and connect tools.
+#[tauri::command]
+pub async fn ensure_ghost_mcp(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<GhostMcpInstallResult, String> {
+    let registry = state.core.tools().registry();
+    tauri::async_runtime::spawn_blocking(move || install_ghost_mcp(&app, registry.as_ref()))
+        .await
+        .map_err(|error| error.to_string())?
 }

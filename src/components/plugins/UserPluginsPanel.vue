@@ -1,5 +1,6 @@
 <template>
   <section class="user-plugins">
+    <AppConfirmDialog ref="confirmDialogRef" />
     <KeepAlive :max="1">
       <PluginHomeView
         v-if="pluginsStore.selectedPluginId"
@@ -67,7 +68,7 @@
           @click="pluginsStore.setSelectedPluginId(plugin.id)"
         >
           <div class="card-icon">
-            <PluginSidebarIcon :name="iconSrc(plugin)" :size="18" />
+            <PluginSidebarIcon :name="iconSrc(plugin)" :size="44" />
           </div>
           <div class="card-main">
             <div class="card-name">
@@ -87,7 +88,7 @@
             :title="plugin.enabled ? actionCopy.disable : actionCopy.enable"
             @click.stop
           >
-            <input type="checkbox" :checked="plugin.enabled" @change="toggle(plugin)" />
+            <input type="checkbox" :checked="plugin.enabled" @change="onToggle(plugin)" />
             <span class="toggle-track"><span class="toggle-thumb" /></span>
           </label>
         </article>
@@ -97,9 +98,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { AppWindow, FolderOpen, FolderPlus, RefreshCw, Upload } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   clearPluginSafeMode,
   closeAllUserPluginWindows,
@@ -111,10 +113,12 @@ import { useSettingStore } from "@/stores/setting";
 import PluginSidebarIcon from "@/components/plugins/PluginSidebarIcon.vue";
 import PluginHomeView from "@/components/plugins/PluginHomeView.vue";
 import { usePluginActions } from "@/composables/plugins/usePluginActions";
+import type { UserPluginSummary } from "@/services/plugins/ipc";
 
 const pluginsStore = usePluginsStore();
 const settingStore = useSettingStore();
 const plugins = computed(() => pluginsStore.plugins);
+const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 const {
   copy: actionCopy,
   ensurePending,
@@ -124,6 +128,10 @@ const {
   importZip,
   importFolder,
 } = usePluginActions();
+
+async function onToggle(plugin: UserPluginSummary) {
+  await toggle(plugin, (opts) => confirmDialogRef.value?.ask(opts) ?? Promise.resolve(false));
+}
 
 const copy = computed(() =>
   settingStore.language === "zh-CN"
@@ -225,10 +233,10 @@ async function exitSafeMode() {
 .user-plugin-card {
   border: 1px solid var(--peek-border, rgba(255, 255, 255, 0.08));
   border-radius: 12px;
-  padding: 10px;
+  padding: 12px;
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
   cursor: pointer;
 }
@@ -237,13 +245,18 @@ async function exitSafeMode() {
 }
 .card-icon {
   flex: none;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  border: 1.5px solid var(--peek-border, rgba(255, 255, 255, 0.18));
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  overflow: hidden;
   display: grid;
   place-items: center;
-  opacity: 0.85;
+  background: color-mix(in srgb, var(--peek-text, #1c1915) 5%, transparent);
+}
+.card-icon :deep(.plugin-sidebar-icon-img) {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
 }
 .card-main {
   flex: 1;
@@ -251,7 +264,7 @@ async function exitSafeMode() {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-top: 1px;
+  padding-top: 0;
 }
 .card-name {
   min-width: 0;

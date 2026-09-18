@@ -7,26 +7,37 @@
         <SettingsPageHeader :title="t('settings.provider.title')" />
 
         <div class="settings-nav-list">
-          <button type="button" class="settings-nav-row" @click="startEditDeepSeek">
-            <div class="settings-nav-row-left">
-              <div class="settings-nav-row-icon">
-                <DeepSeekIcon :size="18" />
+          <div class="provider-block">
+            <button type="button" class="settings-nav-row" @click="startEditDeepSeek">
+              <div class="settings-nav-row-left">
+                <div class="settings-nav-row-icon">
+                  <DeepSeekIcon :size="18" />
+                </div>
+                <div class="settings-nav-row-copy">
+                  <h3>{{ t("settings.provider.deepseek") }}</h3>
+                  <p>DeepSeek API</p>
+                </div>
               </div>
-              <div class="settings-nav-row-copy">
-                <h3>{{ t("settings.provider.deepseek") }}</h3>
-                <p>DeepSeek API</p>
+              <div class="settings-nav-row-right">
+                <span
+                  class="settings-status-badge"
+                  :class="{ 'is-configured': isDeepSeekConfigured }"
+                >
+                  {{ statusLabel(isDeepSeekConfigured) }}
+                </span>
+                <ChevronRight class="size-4 text-muted-foreground arrow-icon" />
               </div>
-            </div>
-            <div class="settings-nav-row-right">
-              <span
-                class="settings-status-badge"
-                :class="{ 'is-configured': isDeepSeekConfigured }"
-              >
-                {{ statusLabel(isDeepSeekConfigured) }}
-              </span>
-              <ChevronRight class="size-4 text-muted-foreground arrow-icon" />
-            </div>
-          </button>
+            </button>
+            <DeepSeekBalanceCard
+              variant="row"
+              :report="deepseekBalance"
+              :loading="deepseekBalanceLoading"
+              :error="deepseekBalanceError"
+              :language="settingStore.language"
+              :copy="deepseekBalanceCopy"
+              @refresh="loadDeepSeekBalance"
+            />
+          </div>
 
           <button
             v-for="provider in settingStore.customProviders"
@@ -274,6 +285,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
 import ProviderModelList from "@/components/settings/ProviderModelList.vue";
 import DeepSeekFilesPanel from "@/components/settings/DeepSeekFilesPanel.vue";
+import DeepSeekBalanceCard from "@/components/settings/DeepSeekBalanceCard.vue";
 import { useSettingStore } from "@/stores/setting";
 import { useChatModelStore } from "@/stores/chatModel";
 import { Button } from "@/components/ui/button";
@@ -281,7 +293,7 @@ import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
-import { listCustomProviderModels, listDeepSeekModels } from "@/services/ipc";
+import { listCustomProviderModels, listDeepSeekModels, getDeepSeekBalance } from "@/services/ipc";
 import { tr } from "@/services/i18n";
 import type { SettingsI18nKey } from "@/services/locales/settings";
 import type {
@@ -290,6 +302,7 @@ import type {
   ProviderApiProtocol,
   ProviderModelEntry,
 } from "@/types/setting";
+import type { DeepSeekBalanceReport } from "@/types/tokenUsage";
 import {
   DEFAULT_PROVIDER_API_PROTOCOL,
   normalizeModelProtocol,
@@ -399,6 +412,42 @@ const canFetchDeepSeekModels = computed(() => !!deepseekKey.value.trim());
 const isDeepSeekConfigured = computed(() => {
   return !!settingStore.deepseekApiKey.trim();
 });
+
+const deepseekBalance = ref<DeepSeekBalanceReport | null>(null);
+const deepseekBalanceLoading = ref(false);
+const deepseekBalanceError = ref("");
+const deepseekBalanceCopy = computed(() => ({
+  title: tr(settingStore.language, "usage.balance.title"),
+  available: tr(settingStore.language, "usage.balance.available"),
+  granted: tr(settingStore.language, "usage.balance.granted"),
+  toppedUp: tr(settingStore.language, "usage.balance.toppedUp"),
+  ready: tr(settingStore.language, "usage.balance.ready"),
+  empty: tr(settingStore.language, "usage.balance.empty"),
+  unconfigured: tr(settingStore.language, "usage.balance.unconfigured"),
+  error: tr(settingStore.language, "usage.balance.error"),
+  loading: tr(settingStore.language, "usage.balance.loading"),
+  refresh: tr(settingStore.language, "usage.balance.refresh"),
+}));
+
+async function loadDeepSeekBalance() {
+  deepseekBalanceLoading.value = true;
+  deepseekBalanceError.value = "";
+  try {
+    deepseekBalance.value = await getDeepSeekBalance();
+  } catch (cause) {
+    deepseekBalanceError.value = String(cause);
+  } finally {
+    deepseekBalanceLoading.value = false;
+  }
+}
+
+watch(
+  [currentView, isDeepSeekConfigured],
+  ([view]) => {
+    if (view === "list") void loadDeepSeekBalance();
+  },
+  { immediate: true },
+);
 
 const isNewProvider = computed(() => {
   if (!editingProviderId.value) return true;
@@ -809,6 +858,11 @@ header.view-header p {
   flex-direction: column;
   gap: 8px;
   padding-top: 4px;
+}
+
+.provider-block {
+  display: flex;
+  flex-direction: column;
 }
 
 .arrow-icon {

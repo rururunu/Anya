@@ -172,11 +172,34 @@ pub(super) fn split_current_user(
     (history.to_vec(), None)
 }
 
+/// Stable prefix context (workspace / IDE identity). Volatile live fields are
+/// appended to the current user message via [`format_volatile_context`].
 pub(super) fn inject_context(
     messages: &mut Vec<ChatMessage>,
     session_id: &str,
     context: &RequestContext,
 ) {
+    let Some(content) = format_stable_context(context) else {
+        return;
+    };
+    messages.push(ChatMessage {
+        id: format!("context-{session_id}"),
+        session_id: session_id.to_string(),
+        role: Role::System,
+        content,
+        reasoning: None,
+        work_timeline: None,
+        tool_activities: None,
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        status: MessageStatus::Done,
+        timestamp: 0,
+        estimated_tokens: None,
+    });
+}
+
+fn format_stable_context(context: &RequestContext) -> Option<String> {
     let mut blocks = Vec::new();
 
     if let Some(ide) = &context.ide_context {
@@ -184,6 +207,25 @@ pub(super) fn inject_context(
         if let Some(workspace) = &ide.workspace {
             lines.push(format!("Workspace:\n{}", workspace.display()));
         }
+        blocks.push(format!("[IDE Context]\n{}", lines.join("\n\n")));
+    }
+    if let Some(workspace) = &context.workspace {
+        blocks.push(format!(
+            "[Current Workspace]\nName: {}\nRoot Directory: {}\nTreat this as the exact active project. All file operations must use this root via built-in workspace tools (read_file, find_files, search, shell). Do not infer another project from memory, conversation history, the application identity, the active window, or MCP filesystem allow-lists — those are not the workspace root. When asked which workspace is active, answer with this name and root.",
+            workspace.name, workspace.root
+        ));
+    }
+
+    join_context_blocks(blocks)
+}
+
+/// Per-turn live context. Appended after the user text so mid-prefix slots stay
+/// cacheable across turns (cursor / selection / git / clipboard change often).
+pub(super) fn format_volatile_context(context: &RequestContext) -> Option<String> {
+    let mut blocks = Vec::new();
+
+    if let Some(ide) = &context.ide_context {
+        let mut lines = Vec::new();
         if let Some(active_file) = &ide.active_file {
             lines.push(format!("Active File:\n{}", active_file.display()));
         }
@@ -212,17 +254,13 @@ pub(super) fn inject_context(
                 truncate_chars(selection, IDE_SELECTION_MAX_CHARS)
             ));
         }
-        blocks.push(format!("[IDE Context]\n{}", lines.join("\n\n")));
+        if !lines.is_empty() {
+            blocks.push(format!("[IDE Live Context]\n{}", lines.join("\n\n")));
+        }
     }
     if let Some(office) = &context.office_context {
         blocks.push(crate::core::office::context::format_office_context_block(
             office,
-        ));
-    }
-    if let Some(workspace) = &context.workspace {
-        blocks.push(format!(
-            "[Current Workspace]\nName: {}\nRoot Directory: {}\nTreat this as the exact active project. All file operations must use this root via built-in workspace tools (read_file, find_files, search, shell). Do not infer another project from memory, conversation history, the application identity, the active window, or MCP filesystem allow-lists — those are not the workspace root. When asked which workspace is active, answer with this name and root.",
-            workspace.name, workspace.root
         ));
     }
     if !context.selected_files.is_empty() {
@@ -252,10 +290,13 @@ pub(super) fn inject_context(
         blocks.push(format!("[Last Agent Shell Execution]\n{capped}"));
     }
 
-    if blocks.is_empty() {
-        return;
-    }
+    join_context_blocks(blocks)
+}
 
+fn join_context_blocks(blocks: Vec<String>) -> Option<String> {
+    if blocks.is_empty() {
+        return None;
+    }
     let mut content = String::new();
     for block in blocks {
         let next = if content.is_empty() {
@@ -269,23 +310,7 @@ pub(super) fn inject_context(
         }
         content = next;
     }
-
-    messages.push(ChatMessage {
-        // Stable id — never depends on message count / optional suffixes.
-        id: format!("context-{session_id}"),
-        session_id: session_id.to_string(),
-        role: Role::System,
-        content,
-        reasoning: None,
-        work_timeline: None,
-        tool_activities: None,
-        tool_calls: None,
-        tool_call_id: None,
-        name: None,
-        status: MessageStatus::Done,
-        timestamp: 0,
-        estimated_tokens: None,
-    });
+    (!content.is_empty()).then_some(content)
 }
 
 fn ide_display_name(ide: &str) -> String {

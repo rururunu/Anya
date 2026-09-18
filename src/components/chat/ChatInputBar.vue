@@ -471,6 +471,7 @@
                     data-tauri-drag-region="false"
                     :class="{ open: modelPickerOpen, confirm: modelChipConfirm }"
                     :aria-label="modelBadgeTitle"
+                    :title="modelBadgeTitle"
                     aria-haspopup="listbox"
                     :aria-expanded="modelPickerOpen"
                     @mousedown.stop
@@ -526,7 +527,10 @@
               class="model-badge footer-chip"
               data-picker-trigger
               data-tauri-drag-region="false"
-              :class="{ open: approvalPickerOpen }"
+              :class="{
+                open: approvalPickerOpen,
+                'is-full-approve': sessionToolApprovalMode === 'alwaysAllow',
+              }"
               :title="approvalBadgeTitle"
               :aria-label="approvalBadgeTitle"
               aria-haspopup="listbox"
@@ -559,14 +563,21 @@
               class="conversation-token-count"
               :title="conversationTokenTitle"
             >
-              ≈ {{ formatTokenCount(conversationTokenCount, language) }} tokens
+              {{ formatTokenCount(conversationTokenCount, language) }}
+            </span>
+            <span
+              v-if="conversationTokenCount && cacheHitPercent != null"
+              class="conversation-token-sep"
+              aria-hidden="true"
+            >
+              |
             </span>
             <span
               v-if="cacheHitPercent != null"
               class="conversation-cache-hit"
               :title="cacheHitTitle"
             >
-              {{ tr(language, "tokens.cacheHit", { percent: cacheHitPercent }) }}
+              {{ cacheHitPercent }}%
             </span>
           </span>
 
@@ -598,7 +609,7 @@
           >
             <svg v-if="!showPauseIcon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
-                d="M8 2.25L9.35 6.15L13.25 7.5L9.35 8.85L8 12.75L6.65 8.85L2.75 7.5L6.65 6.15L8 2.25Z"
+                d="M8 13V3M3.5 7.5L8 3L12.5 7.5"
                 stroke="currentColor"
                 stroke-width="1.35"
                 stroke-linejoin="round"
@@ -611,11 +622,14 @@
         </div>
       </div>
     </div>
+    <AppConfirmDialog ref="approvalConfirmDialogRef" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import { fullApprovalConfirmOptions } from "@/services/chat/fullApprovalConfirm";
 import { useEventListener } from "@vueuse/core";
 import { storeToRefs } from "pinia";
 import { gsapPickerEnter, gsapPickerLeave } from "@/services/motion/gsapPresets";
@@ -903,6 +917,7 @@ const {
 });
 
 const chatInputShellRef = ref<HTMLElement | null>(null);
+const approvalConfirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 const attachButtonRef = ref<HTMLButtonElement | null>(null);
 const chatModeButtonRef = ref<HTMLButtonElement | null>(null);
 const modelButtonRef = ref<HTMLButtonElement | null>(null);
@@ -1490,6 +1505,7 @@ const approvalPickerOptions = computed(() =>
     id: option.value,
     label: localizedOptionLabel(option, language.value),
     icon: getApprovalIcon(option.value),
+    tone: option.value === "alwaysAllow" ? ("danger" as const) : undefined,
   })),
 );
 const approvalModeLabel = computed(() => {
@@ -2171,11 +2187,19 @@ async function refreshModelList() {
   }
 }
 
-function selectApprovalMode(mode: string) {
+async function selectApprovalMode(mode: string) {
   closeApprovalPicker();
   const next = mode as ToolApprovalMode;
   if (next === sessionToolApprovalMode.value) {
     return;
+  }
+  if (next === "alwaysAllow") {
+    const confirmed = await approvalConfirmDialogRef.value?.ask(
+      fullApprovalConfirmOptions(language.value),
+    );
+    if (!confirmed) {
+      return;
+    }
   }
   updateCompose({ toolApprovalMode: next });
 }
@@ -2193,9 +2217,9 @@ function selectChatMode(mode: string) {
   if (!props.sessionId) {
     return;
   }
-  // Entering Plan turns the writer gate on. Leaving Plan only updates the mode
-  // preference — keep the pending plan/approval card until the user approves or
-  // sends a follow-up (backend clears the gate on that send).
+  // Entering Plan turns the writer gate on. Leaving Plan (Agent / Ask / Image)
+  // must clear the gate immediately — otherwise the UI shows Agent while
+  // writers still hit plan-mode "not allowed" / permission denials.
   if (next === "plan") {
     chatStore.setSessionRejectedPlanFingerprint(props.sessionId, null);
     void setPlanMode(props.sessionId, true, "manual")
@@ -2204,6 +2228,12 @@ function selectChatMode(mode: string) {
         chatStore.setSessionPlanTrigger(props.sessionId!, "manual");
       })
       .catch((error) => log.warn("sync plan mode on mode switch failed", error));
+  } else {
+    void setPlanMode(props.sessionId, false)
+      .then(() => {
+        chatStore.setSessionPlanMode(props.sessionId!, false);
+      })
+      .catch((error) => log.warn("clear plan mode on mode switch failed", error));
   }
 }
 
@@ -4076,6 +4106,7 @@ defineExpose({
   position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 /* Pickers: workbench floats them; Alt+Alt overlay keeps them in document flow
@@ -4321,6 +4352,8 @@ defineExpose({
   flex-direction: column;
   gap: 8px;
   overflow: visible;
+  container-type: inline-size;
+  container-name: composer;
 }
 
 .input-footer,
@@ -4379,6 +4412,10 @@ defineExpose({
   user-select: none;
 }
 
+.conversation-token-sep {
+  flex: none;
+  opacity: 0.45;
+}
 .conversation-token-count,
 .conversation-cache-hit {
   flex: none;
@@ -4416,7 +4453,7 @@ defineExpose({
 }
 
 /* Empty field with no selection chip: take the full row for a usable placeholder. */
-.input-content:not(.has-chips) .chat-input.is-empty {
+.input-content:not(.has-chips):not(.has-leading) .chat-input.is-empty {
   flex: 1 1 100%;
   min-width: 100%;
   width: auto;
@@ -4475,33 +4512,106 @@ defineExpose({
   --composer-line-height: 24px;
   --composer-max-lines: 4;
   --composer-max-height: calc(var(--composer-line-height) * var(--composer-max-lines));
+  --peek-control-icon: 28px;
 }
 
 .chat-input-shell.overlay-composer .input-bar {
-  min-height: 82px;
-  padding: 10px 10px 8px 12px;
+  flex-direction: row;
+  align-items: center;
+  min-height: 56px;
+  padding: 8px 10px 8px 16px;
+  gap: 8px;
   box-sizing: border-box;
 }
 
+/* Attachments need a stacked layout; keep text + actions on one row below. */
+.overlay-composer .input-bar.has-images,
+.overlay-composer .input-bar:has(> .input-files) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 8px;
+  min-height: 0;
+  padding: 10px 10px 8px 14px;
+}
+
+.overlay-composer .input-bar.has-images > .input-images,
+.overlay-composer .input-bar:has(> .input-files) > .input-files,
+.overlay-composer .input-bar.has-images > :deep(.image-gen-toolbar),
+.overlay-composer .input-bar:has(> .input-files) > :deep(.image-gen-toolbar) {
+  grid-column: 1 / -1;
+  width: auto;
+  max-width: 100%;
+}
+
+.overlay-composer .input-bar.has-images > .input-content,
+.overlay-composer .input-bar:has(> .input-files) > .input-content {
+  grid-column: 1;
+  width: auto;
+  min-height: 28px;
+  max-height: var(--composer-max-height);
+}
+
+.overlay-composer .input-bar.has-images > .input-footer,
+.overlay-composer .input-bar:has(> .input-files) > .input-footer {
+  grid-column: 2;
+  width: auto;
+  min-height: 28px;
+  align-self: center;
+}
+
+.overlay-composer .input-bar:has(.is-multiline) {
+  align-items: flex-end;
+}
+
 .overlay-composer .input-content {
-  align-items: flex-start;
-  align-content: flex-start;
+  align-items: center;
+  align-content: center;
   flex: 1 1 auto;
-  min-height: var(--composer-line-height);
+  width: auto;
+  min-width: 0;
+  min-height: 28px;
   max-height: var(--composer-max-height);
   overflow: visible;
+  line-height: var(--composer-line-height);
+}
+
+.overlay-composer .input-content:has(.is-multiline) {
+  align-items: flex-start;
+  align-content: flex-start;
+}
+
+.overlay-composer .input-footer {
+  width: auto;
+  flex: none;
+  min-height: 28px;
+  padding-top: 0;
+  gap: 6px;
+}
+
+.overlay-composer .input-footer-primary {
+  gap: 2px;
+}
+
+.overlay-composer .input-footer-actions {
+  gap: 4px;
 }
 
 .overlay-composer .composer-editable,
 .overlay-composer .composer-textarea {
-  flex: 1 1 100%;
-  width: 100%;
-  min-width: 100%;
   min-height: var(--composer-line-height);
   height: auto;
   max-height: var(--composer-max-height);
   overflow-x: clip;
   overflow-y: hidden;
+  align-self: center;
+  font-size: 15px;
+  line-height: var(--composer-line-height);
+}
+
+.overlay-composer .composer-textarea.is-multiline,
+.overlay-composer .composer-editable.is-multiline {
   align-self: flex-start;
 }
 
@@ -4531,9 +4641,7 @@ defineExpose({
   align-self: center;
 }
 
-/* Selection chip precedes textarea, or field is multi-line — take a full row. */
-.input-content.has-leading .composer-textarea,
-.input-content.has-leading .composer-editable,
+/* Multi-line input takes the full row; selection chip stays inline beside the field. */
 .input-content .composer-textarea.is-multiline,
 .input-content .composer-editable.is-multiline {
   flex: 1 1 100%;
@@ -4542,8 +4650,8 @@ defineExpose({
   field-sizing: fixed;
 }
 
-.input-content:not(.has-chips):not(.has-leading) .composer-textarea.is-empty,
-.input-content:not(.has-chips):not(.has-leading) .composer-editable.is-empty {
+.input-content:not(.has-leading) .composer-textarea.is-empty,
+.input-content:not(.has-leading) .composer-editable.is-empty {
   flex: 1 1 100%;
   min-width: 100%;
   width: auto;
@@ -4574,6 +4682,7 @@ defineExpose({
   height: var(--peek-control-icon, 28px);
   padding-right: 8px;
   padding-left: 8px;
+  font-size: 13px;
 }
 
 .workbench-composer .model-badge {
@@ -4950,11 +5059,90 @@ defineExpose({
   box-shadow: none;
 }
 
+.footer-chip.is-full-approve,
+.footer-chip.is-full-approve:hover:not(:disabled),
+.footer-chip.is-full-approve.open,
+.footer-chip.is-full-approve:focus-visible {
+  color: var(--peek-danger, #ef4444);
+}
+
+.footer-chip.is-full-approve .footer-chip-icon,
+.footer-chip.is-full-approve:hover .footer-chip-icon,
+.footer-chip.is-full-approve.open .footer-chip-icon {
+  color: var(--peek-danger, #ef4444);
+  opacity: 1;
+}
+
 .footer-chip-icon-only {
   width: 26px;
   padding: 0;
   justify-content: center;
   max-width: none;
+}
+
+@container composer (max-width: 600px) {
+  .footer-chip .model-name,
+  .footer-chip .model-tier,
+  .footer-chip .model-chevron {
+    display: none;
+  }
+  .footer-chip {
+    width: var(--peek-control-icon, 28px);
+    max-width: none;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+  .workbench-composer .footer-chip,
+  .workbench-composer .model-badge {
+    width: var(--peek-control-icon, 28px);
+    max-width: none;
+    padding: 0;
+  }
+}
+
+.overlay-composer .footer-chip .model-name,
+.overlay-composer .footer-chip .model-tier,
+.overlay-composer .footer-chip .model-chevron,
+.overlay-composer .workspace-name {
+  display: none;
+}
+
+.overlay-composer .footer-chip,
+.overlay-composer .model-badge {
+  display: inline-flex;
+  align-items: center;
+  width: var(--peek-control-icon, 26px);
+  height: var(--peek-control-icon, 26px);
+  max-width: none;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+.overlay-composer .workspace-control {
+  width: var(--peek-control-icon, 26px);
+  height: var(--peek-control-icon, 26px);
+  max-width: none;
+}
+
+.overlay-composer .send-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.overlay-composer .send-btn svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.overlay-composer .workspace-btn {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
 }
 
 .workspace-control {
@@ -5076,8 +5264,9 @@ defineExpose({
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  height: 24px;
-  margin: 1px 0;
+  align-self: center;
+  height: 22px;
+  margin: 0;
   padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--peek-accent) 28%, var(--peek-border));
   border-radius: 6px;
@@ -5085,7 +5274,7 @@ defineExpose({
   color: var(--peek-accent);
   font-size: 12px;
   font-weight: 550;
-  line-height: 24px;
+  line-height: 22px;
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -5336,6 +5525,10 @@ defineExpose({
   width: 18px;
   height: 18px;
 }
+.send-btn:focus-visible {
+  outline: 2px solid var(--peek-accent);
+  outline-offset: 3px;
+}
 
 .send-btn.active {
   background: var(--peek-send-active-bg);
@@ -5350,7 +5543,11 @@ defineExpose({
   cursor: pointer;
 }
 
-.workbench-composer .send-btn,
+.workbench-composer .send-btn {
+  width: 34px;
+  height: 34px;
+}
+
 .workbench-composer .attach-trigger-btn {
   width: var(--peek-control-icon, 28px);
   height: var(--peek-control-icon, 28px);
@@ -5394,6 +5591,19 @@ defineExpose({
   padding: 1px 0 2px;
   max-height: 84px;
   overflow-y: auto;
+}
+
+.overlay-composer .input-images {
+  width: auto;
+  max-width: 100%;
+  padding: 0;
+  max-height: 64px;
+}
+
+.overlay-composer .image-thumb-container {
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
 }
 
 .image-thumb-container {

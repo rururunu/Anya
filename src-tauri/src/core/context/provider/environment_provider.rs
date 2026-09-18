@@ -14,15 +14,29 @@ fn shell_store() -> &'static Mutex<Option<String>> {
 
 /// Enrich a request using independent, best-effort environment providers.
 pub fn collect(context: &mut RequestContext) {
+    collect_fast(context);
+    collect_deferred(context, None);
+}
+
+/// Overlay show path: in-memory only. No git subprocess and no Office COM.
+pub fn collect_fast(context: &mut RequestContext) {
     if context.active_window.is_none() {
         context.active_window = foreground_window();
     }
+    context.last_shell_execution = last_shell_execution();
+}
+
+/// After the overlay is visible: git status and optional Office COM for a known process.
+pub fn collect_deferred(context: &mut RequestContext, process_name: Option<&str>) {
     context.git_status = context
         .workspace
         .as_ref()
         .and_then(|workspace| git_status(Path::new(&workspace.root)));
-    context.last_shell_execution = last_shell_execution();
-    if let Some(office) = crate::core::office::collect_office_context() {
+    let office = match process_name {
+        Some(process) => crate::core::office::collect_office_context_for_process(process),
+        None => crate::core::office::collect_office_context(),
+    };
+    if let Some(office) = office {
         crate::core::office::enrich_request_context(context, office);
     }
 }

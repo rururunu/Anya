@@ -1,11 +1,13 @@
 //! Minimal MCP stdio JSON-RPC client (tools/list + tools/call).
 
 mod command;
+mod ghost;
 mod manager;
 mod process;
 mod remote_auth;
 mod runtime;
 
+pub use ghost::{ensure_ghost_mcp, GhostMcpInstallResult};
 pub use manager::shared_mcp_manager;
 pub use remote_auth::{
     clear_saved_credentials, init_mcp_remote_config_dir, normalize_mcp_servers, uses_mcp_remote,

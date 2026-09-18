@@ -15,6 +15,7 @@ export const IPC_COMMANDS = {
   webviewGpuDisabled: "webview_gpu_disabled",
   relaunchApp: "relaunch_app",
   buildCodeDiff: "build_code_diff",
+  workingTreeDiff: "working_tree_diff",
   chat: "chat",
   chatCancel: "chat_cancel",
   agentDebugSnapshot: "agent_debug_snapshot",
@@ -48,7 +49,10 @@ export const IPC_COMMANDS = {
   revealInExplorer: "reveal_in_explorer",
   openInDefaultApp: "open_in_default_app",
   toggleDesktopPet: "toggle_desktop_pet",
+  dismissComputerUseHud: "dismiss_computer_use_hud",
   getDesktopPetVisible: "get_desktop_pet_visible",
+  setDesktopPetSize: "set_desktop_pet_size",
+  getDesktopPetSize: "get_desktop_pet_size",
   showWorkbench: "show_workbench",
   toggleOverlayFromPet: "toggle_overlay_from_pet",
 } as const;
@@ -56,6 +60,9 @@ export const IPC_COMMANDS = {
 export const IPC_EVENTS = {
   desktopPetVisibilityChanged: "desktop-pet-visibility-changed",
   desktopPetSizeChanged: "desktop-pet-size-changed",
+  desktopPetSkinChanged: "desktop-pet-skin-changed",
+  desktopPetAppearanceChanged: "desktop-pet-appearance-changed",
+  desktopPetExpressionChanged: "desktop-pet-expression-changed",
   agentEvent: "agent-event",
   agentDebugEvent: "agent-debug-event",
   overlayShown: "overlay-shown",

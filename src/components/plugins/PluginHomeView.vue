@@ -12,16 +12,14 @@
         <ArrowLeft :size="16" />
       </button>
       <div v-if="plugin" class="home-icon">
-        <PluginSidebarIcon :name="iconSrc(plugin)" :size="22" />
+        <PluginSidebarIcon :name="iconSrc(plugin)" :size="48" />
       </div>
       <div v-if="plugin" class="home-title">
         <div class="home-name">
           <strong>{{ plugin.name }}</strong>
           <span v-if="!plugin.apiSupported" class="row-warn" :title="copy.apiUnsupported">!</span>
         </div>
-        <p class="home-meta">
-          {{ plugin.id }} · v{{ plugin.version }} · api {{ plugin.apiVersion }}
-        </p>
+        <p class="home-meta">{{ homeMeta }}</p>
       </div>
       <div v-if="plugin" class="home-side">
         <label class="row-toggle" :title="plugin.enabled ? copy.disable : copy.enable">
@@ -63,7 +61,19 @@
     <p v-if="!plugin && pluginsStore.pluginsLoaded" class="home-missing">{{ copy.missing }}</p>
 
     <template v-else-if="plugin">
-      <div v-if="!plugin.enabled" class="home-grant">
+      <div
+        v-if="plugin.id === 'computer-use'"
+        class="home-status"
+        :class="plugin.enabled ? 'is-on' : 'is-off'"
+      >
+        <span class="home-status-dot" aria-hidden="true" />
+        <div class="home-status-copy">
+          <strong>{{ plugin.enabled ? copy.cuOnTitle : copy.cuOffTitle }}</strong>
+          <p>{{ plugin.enabled ? copy.cuOnDesc : copy.cuOffDesc }}</p>
+        </div>
+      </div>
+
+      <div v-if="!plugin.enabled && !plugin.official" class="home-grant">
         <span>{{ copy.grant }}</span>
         <label v-for="perm in plugin.permissions" :key="perm" class="grant-item">
           <input v-model="pending[plugin.id]" type="checkbox" :value="perm" />
@@ -77,7 +87,11 @@
         <button type="button" @click="closeWindow(plugin.id)">{{ copy.closeWindow }}</button>
       </div>
 
-      <div v-if="plugin.hasUi" class="home-tabs" role="tablist">
+      <div
+        v-if="plugin.hasUi || plugin.id === 'computer-use' || plugin.id === 'opencli'"
+        class="home-tabs"
+        role="tablist"
+      >
         <button
           type="button"
           class="home-tab"
@@ -108,6 +122,10 @@
         <p v-else-if="activeTab === 'about'" class="home-about-plain">
           {{ plugin.description || copy.noDesc }}
         </p>
+        <ComputerUsePlaybooksPanel
+          v-else-if="plugin.id === 'computer-use' && activeTab === 'settings'"
+        />
+        <OpenCliSettingsPanel v-else-if="plugin.id === 'opencli' && activeTab === 'settings'" />
         <template v-else-if="plugin.hasUi && activeTab === 'settings'">
           <PluginHostPane
             v-if="plugin.enabled && settingsMount"
@@ -129,6 +147,8 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { ArrowLeft, Download, RefreshCw, Trash2 } from "@lucide/vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import ComputerUsePlaybooksPanel from "@/components/plugins/ComputerUsePlaybooksPanel.vue";
+import OpenCliSettingsPanel from "@/components/plugins/OpenCliSettingsPanel.vue";
 import PluginHostPane from "@/components/plugins/PluginHostPane.vue";
 import PluginSidebarIcon from "@/components/plugins/PluginSidebarIcon.vue";
 import { usePluginActions } from "@/composables/plugins/usePluginActions";
@@ -178,6 +198,13 @@ const copy = computed(() =>
         apiUnsupported: "此插件的契约版本高于/不同于当前支持版本，行为可能异常",
         enableForSettings: "启用插件后才能在这里配置。",
         noSettings: "这个插件没有可配置项。",
+        cuOnTitle: "已启用",
+        cuOnDesc: "在聊天里让 Anya 操作桌面或浏览器即可。进行中可看顶部 HUD，点「结束」立刻停止。",
+        cuOffDesc: "打开右上角开关并确认后，Agent 才能操控本机。默认关闭。",
+        cuOffTitle: "未启用",
+        metaAgent: "Agent",
+        metaWindows: "仅 Windows",
+        metaGhost: "Ghost 引擎",
       }
     : {
         back: "Back",
@@ -201,23 +228,52 @@ const copy = computed(() =>
           "This plugin targets a contract version Anya doesn't fully support; behavior may be off.",
         enableForSettings: "Enable this plugin to configure it here.",
         noSettings: "This plugin has nothing to configure.",
+        cuOnTitle: "Enabled",
+        cuOnDesc:
+          "Ask Anya in chat to operate the desktop or browser. The HUD appears while active; Stop ends it immediately.",
+        cuOffDesc:
+          "Turn on the switch and confirm to let the agent control this PC. Off by default.",
+        cuOffTitle: "Disabled",
+        metaAgent: "Agent",
+        metaWindows: "Windows only",
+        metaGhost: "Ghost engine",
       },
 );
 
+const homeMeta = computed(() => {
+  const p = plugin.value;
+  if (!p) return "";
+  if (p.id === "computer-use") {
+    return `${copy.value.metaAgent} · ${copy.value.metaWindows} · ${copy.value.metaGhost} · v${p.version}`;
+  }
+  if (p.id === "opencli") {
+    return `${copy.value.metaAgent} · OpenCLI · v${p.version}`;
+  }
+  return `${p.id} · v${p.version} · api ${p.apiVersion}`;
+});
+
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 const activeTab = ref<"about" | "settings">("about");
+
+const hasSettingsTab = computed(
+  () =>
+    Boolean(plugin.value?.hasUi) ||
+    plugin.value?.id === "computer-use" ||
+    plugin.value?.id === "opencli",
+);
 
 watch(
   plugin,
   (value) => {
     if (value) ensurePending(value);
-    if (value && !value.hasUi) activeTab.value = "about";
+    if (value && !hasSettingsTab.value) activeTab.value = "about";
   },
   { immediate: true },
 );
 
 async function onToggle() {
-  if (plugin.value) await toggle(plugin.value);
+  if (!plugin.value) return;
+  await toggle(plugin.value, (opts) => confirmDialogRef.value?.ask(opts) ?? Promise.resolve(false));
 }
 
 async function onRemove(id: string) {
@@ -247,7 +303,7 @@ watch(
       const res = await fetch(pluginAssetUrl(pluginIconUrl(value.id, value.about)));
       const text = await res.text();
       const isMarkdown = /\.md$/i.test(value.about);
-      const raw = isMarkdown ? await marked.parse(text) : text;
+      const raw = isMarkdown ? await marked.parse(text, { gfm: true, breaks: false }) : text;
       aboutHtml.value = DOMPurify.sanitize(raw);
     } catch {
       aboutHtml.value = "";
@@ -289,12 +345,18 @@ watch(
 }
 .home-icon {
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: 12px;
-  border: 1.5px solid var(--peek-border, rgba(255, 255, 255, 0.18));
+  overflow: hidden;
   display: grid;
   place-items: center;
+  background: color-mix(in srgb, var(--peek-text, #fff) 6%, transparent);
+}
+.home-icon :deep(.plugin-sidebar-icon-img) {
+  width: 48px;
+  height: 48px;
+  border-radius: 0;
 }
 .home-title {
   flex: 1;
@@ -347,6 +409,52 @@ watch(
 .home-missing {
   color: var(--peek-muted, #8b939e);
   font-size: 13px;
+}
+.home-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--peek-border, rgba(255, 255, 255, 0.1));
+  background: color-mix(in srgb, var(--peek-text, #fff) 4%, transparent);
+}
+.home-status.is-on {
+  border-color: color-mix(in srgb, var(--peek-success, #18794e) 35%, transparent);
+  background: color-mix(in srgb, var(--peek-success, #18794e) 8%, transparent);
+}
+.home-status.is-off {
+  border-color: color-mix(in srgb, var(--peek-warning, #8a6500) 30%, transparent);
+  background: color-mix(in srgb, var(--peek-warning, #8a6500) 7%, transparent);
+}
+.home-status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--peek-muted, #8b939e);
+}
+.home-status.is-on .home-status-dot {
+  background: var(--peek-success, #34c98f);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--peek-success, #34c98f) 22%, transparent);
+}
+.home-status.is-off .home-status-dot {
+  background: var(--peek-warning, #e8b86d);
+}
+.home-status-copy {
+  min-width: 0;
+}
+.home-status-copy strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+}
+.home-status-copy p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--peek-muted, #8b939e);
 }
 .row-toggle {
   position: relative;

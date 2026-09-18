@@ -887,6 +887,20 @@ function toPlainInstall(entry: CatalogEntry): McpServerConfig {
 
 async function addFromCatalog(entry: CatalogEntry) {
   if (isInstalled(entry.install.id)) return;
+  if (entry.install.id === "ghost" || entry.install.command === "__anya_ensure_ghost__") {
+    saving.value = true;
+    error.value = "";
+    try {
+      await invoke("ensure_ghost_mcp");
+      await settingStore.load();
+      void refreshServerStatuses();
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : String(err);
+    } finally {
+      saving.value = false;
+    }
+    return;
+  }
   const install = toPlainInstall(entry);
   if (!install.id || !install.command) {
     error.value = copy.value.commandRequired;

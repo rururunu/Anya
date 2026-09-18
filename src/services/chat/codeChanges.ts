@@ -21,6 +21,29 @@ export function extractCodeChanges(messages: ChatMessage[]): CodeChangeEntry[] {
   return mergeChangesByPath(changes);
 }
 
+/** Messages from the latest user turn through the current assistant reply. */
+export function lastRoundMessages(messages: ChatMessage[]): ChatMessage[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") return messages.slice(index);
+  }
+  return messages;
+}
+
+/** Parse a unified / git diff into one entry per file. */
+export function codeChangesFromUnifiedDiff(diff: string): CodeChangeEntry[] {
+  if (!diff.trim()) return [];
+  return mergeChangesByPath(
+    splitUnifiedDiff(diff, "")
+      .filter((section) => section.path)
+      .map((section, index) => ({
+        id: `git:${index}:${section.path}`,
+        path: section.path,
+        diff: section.diff,
+        ...countChanges(section.diff),
+      })),
+  );
+}
+
 function changesForActivity(messageId: string, activity: ToolActivity): CodeChangeEntry[] {
   const preview = activity.preview;
   if (!preview) return changesFromArguments(messageId, activity);
@@ -156,24 +179,27 @@ function splitUnifiedDiff(diff: string, fallbackPath: string) {
       starts.push(index);
     }
   }
-  if (!starts.length) return [{ path: fallbackPath, diff }];
+  if (!starts.length) return fallbackPath ? [{ path: fallbackPath, diff }] : [];
 
   return starts.map((start, index) => {
     const end = starts[index + 1] ?? lines.length;
     const sectionLines = lines.slice(start, end);
-    const path = diffPath(sectionLines[1] ?? "", fallbackPath);
+    const path =
+      headerPath(sectionLines[1]) || headerPath(sectionLines[0]) || sanitizeDiffPath(fallbackPath);
     return { path, diff: sectionLines.join("\n").trimEnd() };
   });
 }
 
-function diffPath(header: string, fallback: string) {
+function headerPath(line: string | undefined) {
+  if (!line) return "";
   const raw =
-    header
-      .replace(/^\+\+\+\s+/, "")
+    line
+      .replace(/^(?:---|\+\+\+)\s+/, "")
       .split("\t", 1)[0]
       ?.trim() ?? "";
-  if (!raw || raw === "/dev/null") return sanitizeDiffPath(fallback);
-  return sanitizeDiffPath(raw.replace(/^[ab]\//, ""));
+  const path = raw.replace(/^[ab]\//, "");
+  if (!path || path === "/dev/null") return "";
+  return sanitizeDiffPath(path);
 }
 
 export function sanitizeDiffPath(path: string): string {

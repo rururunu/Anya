@@ -362,13 +362,38 @@ computer.key          { keys }           // enter, tab, win+e, ctrl+c
 
 Workbench: `ctx.host.rpc("computer.screenshot")` if the plugin has UI. Official `computer-use` is `role: agent` — **no UI**; after Enable the chat agent calls `plugin_computer-use__launch` / `click_control` / `screenshot`. Windows only. Playbook: `contributes.agent.skills`.
 
+### DeepSeek balance (needs `deepseek.balance` permission)
+
+Anya calls `GET /user/balance` with the key stored in settings. The plugin never sees the key.
+
+```
+deepseek.balance  {} → { configured, isAvailable?, balances: [{ currency, totalBalance, grantedBalance, toppedUpBalance }] }
+```
+
+Example: `await ctx.host.rpc("deepseek.balance")`.
+
+### Desktop pet (needs `pet` permission)
+
+```
+pet.show / pet.hide / pet.toggle { visible? } / pet.visible
+pet.setSize { size: "small"|"medium"|"large" } / pet.getSize
+pet.setAppearance { mode: "mascot"|"companion"|"media"|"spritesheet", kind?, source?, config? } / pet.getAppearance / pet.clearAppearance
+pet.setMode { mode: "mascot"|"companion", config?: { accent?, variant?: "orb"|"pill", glow? } }
+pet.setSkin { kind: "image"|"video"|"lottie"|"svg"|"html", source } / pet.clearSkin   // legacy alias for media mode
+pet.setExpression { expression } / pet.clearExpression
+```
+
+`spritesheet` = ChatGPT/Codex atlas via `source` → `pet.json` next to `spritesheet.png` (transparent **1536×1872**, 8×9, frame 192×208). Rows: idle / runRight / runLeft / wave / jump / fail / wait / work / review. Agent expressions map to those rows; click plays `wave`.
+
+`companion` = built-in GPT-style glowing orb. `media` relative `source` → `anya-plugin://localhost/<id>/<source>`. Or `ctx.assets.register("pet.stage.atlas", { kind: "spritesheet", source: "…/pet.json" })` (also needs `pet`).
+
 ## Agent tools / hooks
 
 `agent.tools` → `host/main.ts` `describe` → `{ tools, hooks }`. Names are `plugin_<id>__<name>`. Cannot overlay core tools, approval, sandbox, or Plan. Hooks may **deny** a call; they cannot skip Anya gates.
 
 ## Permissions
 
-`storage` `ask_anya` `pty` `run` `fs.workspace` `fs.pick` `net` `agent.tools` `agent.hooks` `agent.prompt` `ui.workbench` `computer`
+`storage` `ask_anya` `pty` `run` `fs.workspace` `fs.pick` `net` `agent.tools` `agent.hooks` `agent.prompt` `ui.workbench` `computer` `deepseek.balance` `pet`
 
 Optional `capabilities` (do not invent ids — `describe_contract`):
 

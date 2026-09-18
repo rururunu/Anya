@@ -28,6 +28,8 @@
 
   <AskUserAnswerCard v-else-if="segment.type === 'ask-answer'" :items="segment.items" />
 
+  <SoftInjectCard v-else-if="segment.type === 'inject'" :content="segment.content" />
+
   <ToolActivityList
     v-else-if="segment.type === 'inline'"
     :activities="segment.activities"
@@ -80,6 +82,7 @@ import { ChevronRight } from "@lucide/vue";
 import AskUserAnswerCard from "@/components/chat/AskUserAnswerCard.vue";
 import Markdown from "@/components/chat/Markdown.vue";
 import ReasoningBlock from "@/components/chat/ReasoningBlock.vue";
+import SoftInjectCard from "@/components/chat/SoftInjectCard.vue";
 import ToolActivityList from "@/components/chat/ToolActivityList.vue";
 import type { AskUserAnswerItem, ToolActivity } from "@/types/chat";
 import type { AppLanguage } from "@/types/setting";
@@ -88,6 +91,7 @@ export type WorkSegment =
   | { type: "reasoning"; id: string; content: string }
   | { type: "narration"; id: string; content: string }
   | { type: "content"; id: string; content: string }
+  | { type: "inject"; id: string; content: string }
   | { type: "ask-answer"; id: string; items: AskUserAnswerItem[] }
   | { type: "inline"; id: string; activities: ToolActivity[]; operations: boolean }
   | { type: "process"; id: string; activities: ToolActivity[]; operations: boolean };
@@ -135,7 +139,7 @@ const emit = defineEmits<{
   background: transparent;
   color: var(--peek-muted);
   font-size: var(--peek-font-sm, 12px);
-  font-weight: 400;
+  font-weight: 500;
   line-height: 24px;
   cursor: pointer;
   text-align: left;

@@ -61,13 +61,16 @@ import {
 import {
   cacheUsagesFromHistory,
   lastTurnUserContent,
+  lastSoftInjectContent,
   mergeActiveHistory,
   messagesHistoryFingerprint,
   settleInterruptedMessages,
 } from "./chatHistory";
-import { appendTimelineText, findLastMessageIndex } from "./chatStream";
+import { appendTimelineText, appendTimelineInject, findLastMessageIndex } from "./chatStream";
 import { useChatSessionsStore } from "./chatSessions";
 import { planFromHistory, tasksFromHistory } from "@/services/chat/planProposal";
+import { optimisticUserMatchesServer } from "@/services/chat/optimisticMatch";
+import { serializeStaged } from "@/services/chat/stagedOperations";
 
 function sessionsStore() {
   return useChatSessionsStore();
@@ -97,6 +100,8 @@ export const useChatStore = defineStore("chat", {
     stagedMessages: {} as Record<string, string[]>,
     /** Prevent duplicate finish events from dispatching multiple queued turns. */
     stagedDispatching: {} as Record<string, boolean>,
+    stagedSyncVersion: {} as Record<string, number>,
+    stagedSyncFailed: {} as Record<string, boolean>,
     contextNotices: {} as Record<string, string | undefined>,
     contextUsage: {} as Record<string, ContextUsageSnapshot | undefined>,
     /** Aggregated DeepSeek prompt-cache snapshot per conversation. */
@@ -636,6 +641,48 @@ export const useChatStore = defineStore("chat", {
         timestamp: Date.now(),
       });
     },
+    /** Local mirror of the staged queue. Prefer this over invoke return values:
+     * a late push/insert resolve must not resurrect items already popped/guided. */
+    setStagedLocal(sessionId: string, messages: string[]) {
+      if (!messages.length) {
+        this.clearStagedLocal(sessionId);
+        return;
+      }
+      this.stagedMessages = {
+        ...this.stagedMessages,
+        [sessionId]: [...messages],
+      };
+    },
+    dropStagedFrontIf(sessionId: string, content: string) {
+      const remaining = this.stagedMessages[sessionId] ?? [];
+      if (remaining[0] !== content) {
+        return;
+      }
+      this.setStagedLocal(sessionId, remaining.slice(1));
+    },
+    dropStagedAt(sessionId: string, index: number) {
+      const queue = this.stagedMessages[sessionId];
+      if (!queue || index < 0 || index >= queue.length) {
+        return;
+      }
+      this.setStagedLocal(
+        sessionId,
+        queue.filter((_, itemIndex) => itemIndex !== index),
+      );
+    },
+    /** Remove one queued item by value. Prefer `index` when it still matches so
+     * a concurrent remote-staged-changed cannot make us delete the next chip. */
+    dropStagedContentOnce(sessionId: string, content: string, preferIndex?: number) {
+      const queue = this.stagedMessages[sessionId] ?? [];
+      if (preferIndex != null && queue[preferIndex] === content) {
+        this.dropStagedAt(sessionId, preferIndex);
+        return;
+      }
+      const at = queue.indexOf(content);
+      if (at !== -1) {
+        this.dropStagedAt(sessionId, at);
+      }
+    },
     pushStagedMessage(sessionId: string, content: string) {
       const trimmed = content.trim();
       if (!sessionId || !trimmed) {
@@ -651,20 +698,12 @@ export const useChatStore = defineStore("chat", {
       if (queued[queued.length - 1] === trimmed) {
         return;
       }
-      void import("@/commands/remote").then(async ({ remotePushStaged }) => {
-        try {
-          const messages = await remotePushStaged(sessionId, trimmed);
-          this.stagedMessages = {
-            ...this.stagedMessages,
-            [sessionId]: messages,
-          };
-        } catch {
-          // Offline / command missing: keep a local fallback so typing isn't lost.
-          this.stagedMessages = {
-            ...this.stagedMessages,
-            [sessionId]: [...(this.stagedMessages[sessionId] ?? []), trimmed],
-          };
-        }
+      // Optimistic local append so the chip appears immediately. Do not apply the
+      // invoke return later — flush/guide may have already drained this item.
+      this.setStagedLocal(sessionId, [...queued, trimmed]);
+      return this.syncStagedOperation(sessionId, async () => {
+        const { remotePushStaged } = await import("@/commands/remote");
+        return remotePushStaged(sessionId, trimmed);
       });
     },
     /** Insert a message back into the queue at (clamped) index, preserving the
@@ -674,51 +713,20 @@ export const useChatStore = defineStore("chat", {
       if (!sessionId || !trimmed) {
         return;
       }
-      void import("@/commands/remote").then(async ({ remoteInsertStaged }) => {
-        try {
-          const messages = await remoteInsertStaged(sessionId, index, trimmed);
-          this.stagedMessages = {
-            ...this.stagedMessages,
-            [sessionId]: messages,
-          };
-        } catch {
-          const queue = [...(this.stagedMessages[sessionId] ?? [])];
-          const at = Math.max(0, Math.min(index, queue.length));
-          queue.splice(at, 0, trimmed);
-          this.stagedMessages = {
-            ...this.stagedMessages,
-            [sessionId]: queue,
-          };
-        }
+      const queue = [...(this.stagedMessages[sessionId] ?? [])];
+      const at = Math.max(0, Math.min(index, queue.length));
+      queue.splice(at, 0, trimmed);
+      this.setStagedLocal(sessionId, queue);
+      return this.syncStagedOperation(sessionId, async () => {
+        const { remoteInsertStaged } = await import("@/commands/remote");
+        return remoteInsertStaged(sessionId, index, trimmed);
       });
     },
     removeStagedMessage(sessionId: string, index: number) {
-      void import("@/commands/remote").then(async ({ remoteRemoveStaged }) => {
-        try {
-          const messages = await remoteRemoveStaged(sessionId, index);
-          if (messages.length === 0) {
-            this.clearStagedLocal(sessionId);
-          } else {
-            this.stagedMessages = {
-              ...this.stagedMessages,
-              [sessionId]: messages,
-            };
-          }
-        } catch {
-          const queue = this.stagedMessages[sessionId];
-          if (!queue || index < 0 || index >= queue.length) {
-            return;
-          }
-          const next = queue.filter((_, itemIndex) => itemIndex !== index);
-          if (next.length === 0) {
-            this.clearStagedLocal(sessionId);
-          } else {
-            this.stagedMessages = {
-              ...this.stagedMessages,
-              [sessionId]: next,
-            };
-          }
-        }
+      this.dropStagedAt(sessionId, index);
+      return this.syncStagedOperation(sessionId, async () => {
+        const { remoteRemoveStaged } = await import("@/commands/remote");
+        return remoteRemoveStaged(sessionId, index);
       });
     },
     clearStagedLocal(sessionId: string) {
@@ -731,20 +739,32 @@ export const useChatStore = defineStore("chat", {
     },
     clearStaged(sessionId: string) {
       this.clearStagedLocal(sessionId);
-      void import("@/commands/remote").then(({ remoteClearStaged }) => {
-        void remoteClearStaged(sessionId).catch(() => undefined);
+      return this.syncStagedOperation(sessionId, async () => {
+        const { remoteClearStaged } = await import("@/commands/remote");
+        await remoteClearStaged(sessionId);
+        return [];
       });
     },
-    applyStagedFromRemote(sessionId: string, messages: string[]) {
-      if (!sessionId) return;
-      if (!messages.length) {
-        this.clearStagedLocal(sessionId);
-        return;
+    async syncStagedOperation(sessionId: string, operation: () => Promise<string[]>) {
+      const version = (this.stagedSyncVersion[sessionId] ?? 0) + 1;
+      this.stagedSyncVersion[sessionId] = version;
+      try {
+        const messages = await serializeStaged(sessionId, operation);
+        this.stagedSyncFailed[sessionId] = false;
+        if (this.stagedSyncVersion[sessionId] === version) this.setStagedLocal(sessionId, messages);
+      } catch (error) {
+        this.stagedSyncFailed[sessionId] = true;
+        log.warn("staged queue sync failed", error);
       }
-      this.stagedMessages = {
-        ...this.stagedMessages,
-        [sessionId]: [...messages],
-      };
+    },
+    refreshStagedFromRemote(sessionId: string) {
+      return this.syncStagedOperation(sessionId, async () => {
+        const { remoteListStaged } = await import("@/commands/remote");
+        return remoteListStaged(sessionId);
+      });
+    },
+    applyStagedFromRemote(sessionId: string, _messages: string[]) {
+      if (sessionId) return this.refreshStagedFromRemote(sessionId);
     },
     /** Dispatch exactly one queued message. The next one is dispatched by the
      * next chat-finished event, so queued turns never merge into one another. */
@@ -752,11 +772,10 @@ export const useChatStore = defineStore("chat", {
       if (this.stagedDispatching[sessionId] || this.sending[sessionId]) {
         return;
       }
-      // 用户停止后 sending 可能已清，但助手行仍是 pending/streaming；先落定再发队列。
+      // Wait for the live turn to finish (ChatFinished). Do not settle+send here:
+      // pausing used to flush while the backend agent was still cancelling, which
+      // soft-injected the next queue item onto a dying turn and/or double-sent.
       if (this.hasActiveAssistantResponse(sessionId)) {
-        this.settleInterruptedSession(sessionId);
-      }
-      if (this.hasActiveAssistantResponse(sessionId) || this.sending[sessionId]) {
         return;
       }
       this.stagedDispatching = {
@@ -764,47 +783,31 @@ export const useChatStore = defineStore("chat", {
         [sessionId]: true,
       };
       try {
-        const { remotePopStaged } = await import("@/commands/remote");
         let content: string | null = null;
         try {
-          content = await remotePopStaged(sessionId);
-        } catch {
-          const queue = this.stagedMessages[sessionId];
-          if (!queue?.length) return;
-          content = queue[0] ?? null;
-          this.stagedMessages = {
-            ...this.stagedMessages,
-            [sessionId]: queue.slice(1),
-          };
-        }
-        if (!content) {
-          this.clearStagedLocal(sessionId);
+          content = await serializeStaged(sessionId, async () => {
+            if (this.stagedSyncFailed[sessionId]) throw new Error("Queue synchronization failed");
+            const { remotePopStaged } = await import("@/commands/remote");
+            return remotePopStaged(sessionId);
+          });
+        } catch (error) {
+          // A failed IPC response does not prove the backend removed the item.
+          // Sending the local mirror here can leave the same item queued remotely.
+          log.warn("staged dequeue failed; not sending local mirror", error);
           return;
         }
-        const remaining = this.stagedMessages[sessionId] ?? [];
-        // Mirror may lag; refresh from remaining after pop when event hasn't arrived yet.
-        if (remaining[0] === content) {
-          this.stagedMessages = {
-            ...this.stagedMessages,
-            [sessionId]: remaining.slice(1),
-          };
+        await this.refreshStagedFromRemote(sessionId);
+        if (!content) {
+          return;
         }
-        const sent = await this.send(content, sessionId, { fromQueue: true });
-        if (!sent) {
-          const { remoteInsertStaged } = await import("@/commands/remote");
-          try {
-            const messages = await remoteInsertStaged(sessionId, 0, content);
-            this.stagedMessages = {
-              ...this.stagedMessages,
-              [sessionId]: messages,
-            };
-          } catch {
-            this.stagedMessages = {
-              ...this.stagedMessages,
-              [sessionId]: [content, ...(this.stagedMessages[sessionId] ?? [])],
-            };
-          }
+        // Re-check after the async pop: a new turn may have started meanwhile.
+        if (this.sending[sessionId] || this.hasActiveAssistantResponse(sessionId)) {
+          await this.insertStagedMessage(sessionId, 0, content);
+          return;
         }
+        // send() preserves the attempted message and marks a failure in history.
+        // Never auto-enqueue an ambiguous send failure: the backend may have accepted it.
+        await this.send(content, sessionId, { fromQueue: true });
       } finally {
         const next = { ...this.stagedDispatching };
         delete next[sessionId];
@@ -815,40 +818,53 @@ export const useChatStore = defineStore("chat", {
      * message is removed from the queue and soft-injected; the rest of the
      * queue stays put. */
     async guideStagedMessage(sessionId: string, index: number) {
-      const { remoteTakeStaged } = await import("@/commands/remote");
-      let content: string | null = null;
+      if (this.stagedDispatching[sessionId]) return;
+      this.stagedDispatching[sessionId] = true;
       try {
-        content = await remoteTakeStaged(sessionId, index);
-      } catch {
-        const queue = this.stagedMessages[sessionId];
-        if (!queue || index < 0 || index >= queue.length) {
-          return;
-        }
-        content = queue[index] ?? null;
-        this.removeStagedMessage(sessionId, index);
+        const content = await serializeStaged(sessionId, async () => {
+          if (this.stagedSyncFailed[sessionId]) throw new Error("Queue synchronization failed");
+          const { remoteTakeStaged } = await import("@/commands/remote");
+          return remoteTakeStaged(sessionId, index);
+        });
+        await this.refreshStagedFromRemote(sessionId);
+        if (content) await this.send(content, sessionId, { fromQueue: true, guide: true });
+      } catch (error) {
+        log.warn("staged guide failed; not sending local mirror", error);
+      } finally {
+        delete this.stagedDispatching[sessionId];
       }
-      if (!content) return;
-      await this.send(content, sessionId, { fromQueue: true, guide: true });
     },
     stageSoftInject(sessionId: string, content: string) {
       const trimmed = content.trim();
       if (!trimmed) return;
       const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const messages = sessionsStore().sessions[sessionId] ?? [];
-      // Place the inject after the active assistant so MessageList can fold it
-      // into that turn (not as a new unanswered user bubble).
-      this.setSessionMessages(sessionId, [
-        ...messages,
-        {
-          id: `local-user-${token}`,
-          sessionId,
-          role: "user",
-          content: trimmed,
-          injected: true,
-          status: "done",
-          timestamp: Date.now(),
-        },
-      ]);
+      const injectId = `local-user-${token}`;
+      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
+      const liveIndex = findLastMessageIndex(
+        messages,
+        (item) =>
+          normalizeRole(item.role) === "assistant" &&
+          (item.status === "pending" || item.status === "streaming"),
+      );
+      // Never decorate a finished assistant — queue-continue / late guide must
+      // open a new turn instead of looking like "已追加到本轮" on a dead agent.
+      if (liveIndex !== -1) {
+        const assistant = messages[liveIndex]!;
+        messages[liveIndex] = {
+          ...assistant,
+          workTimeline: appendTimelineInject(assistant.workTimeline, injectId, trimmed),
+        };
+      }
+      messages.push({
+        id: injectId,
+        sessionId,
+        role: "user",
+        content: trimmed,
+        injected: true,
+        status: "done",
+        timestamp: Date.now(),
+      });
+      this.setSessionMessages(sessionId, messages);
     },
     stageTurn(sessionId: string, content: string) {
       const trimmed = content.trim();
@@ -915,9 +931,17 @@ export const useChatStore = defineStore("chat", {
       const messages = [...(sessionsStore().sessions[targetSessionId] ?? [])];
 
       // Always surface the user turn (including plan approve) in the thread.
+      // Match the optimistic bubble even when the server rewrites/appends
+      // (e.g. legacy checklist-on-persist) so we never show a duplicate.
       const localUserIndex = findLastMessageIndex(
         messages,
-        (item) => item.id.startsWith("local-user-") && item.content === userMessage.content,
+        (item) =>
+          item.id.startsWith("local-user-") &&
+          optimisticUserMatchesServer(
+            item.content,
+            userMessage.content,
+            normalized.resumePlan === true,
+          ),
       );
       if (localUserIndex !== -1) {
         messages[localUserIndex] = userMessage;
@@ -959,7 +983,28 @@ export const useChatStore = defineStore("chat", {
       );
       let changed = false;
       if (localUserIndex !== -1) {
+        const previousId = messages[localUserIndex]!.id;
         messages[localUserIndex] = { ...messages[localUserIndex], id: userMessageId };
+        if (previousId !== userMessageId) {
+          for (let index = 0; index < messages.length; index += 1) {
+            const message = messages[index];
+            if (
+              !message?.workTimeline?.some(
+                (item) => item.type === "inject" && item.id === previousId,
+              )
+            ) {
+              continue;
+            }
+            messages[index] = {
+              ...message,
+              workTimeline: message.workTimeline.map((item) =>
+                item.type === "inject" && item.id === previousId
+                  ? { ...item, id: userMessageId }
+                  : item,
+              ),
+            };
+          }
+        }
         changed = true;
       }
       if (localAssistantIndex !== -1) {
@@ -986,15 +1031,10 @@ export const useChatStore = defineStore("chat", {
       this.setSessionMessages(sessionId, messages);
     },
     failOptimisticSend(sessionId: string, error: unknown, softInject = false) {
-      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
       if (softInject) {
-        const index = findLastMessageIndex(messages, (item) => item.id.startsWith("local-user-"));
-        if (index !== -1) {
-          messages.splice(index, 1);
-          this.setSessionMessages(sessionId, messages);
-        }
         return;
       }
+      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
       const index = findLastMessageIndex(
         messages,
         (item) => normalizeRole(item.role) === "assistant" && item.status === "pending",
@@ -1700,10 +1740,9 @@ export const useChatStore = defineStore("chat", {
         return false;
       }
 
-      // While a turn is executing, new user messages are staged instead of
-      // being injected immediately. They reach the AI either via the guide
-      // button or automatically when the turn finishes (flushStaged → next turn).
-      if (!options?.staged && !options?.fromQueue && busy) {
+      // Composer send while a turn is running always queues. Only the staged
+      // chip 追加 button (guide: true) injects into the current turn.
+      if (!options?.staged && !options?.fromQueue && !options?.guide && busy) {
         this.pushStagedMessage(sessionId, trimmed);
         return true;
       }
@@ -1713,10 +1752,13 @@ export const useChatStore = defineStore("chat", {
         return false;
       }
 
-      const softInject = Boolean(options?.guide) && busy && !options?.staged;
+      // Soft-inject only while an assistant is actually live. `sending` alone
+      // (e.g. stuck flag after cancel) must not append onto a finished agent.
+      const softInject =
+        Boolean(options?.guide) && this.hasActiveAssistantResponse(sessionId) && !options?.staged;
       if (
         softInject &&
-        lastTurnUserContent(sessionsStore().sessions[sessionId] ?? []) === trimmed
+        lastSoftInjectContent(sessionsStore().sessions[sessionId] ?? []) === trimmed
       ) {
         return true;
       }
@@ -1733,7 +1775,9 @@ export const useChatStore = defineStore("chat", {
         }
       }
 
-      this.sending[sessionId] = true;
+      if (!softInject) {
+        this.sending[sessionId] = true;
+      }
       try {
         const chatModelStore = useChatModelStore();
         if (chatModelStore.models.length === 0 && !chatModelStore.loading) {
@@ -1802,6 +1846,7 @@ export const useChatStore = defineStore("chat", {
               : undefined,
           skipAutoPlan: options?.skipAutoPlan,
           resumePlan: options?.resumePlan,
+          softInject: softInject || undefined,
         });
         this.reconcileOptimisticIds(sessionId, response.userMessageId, response.assistantMessageId);
         if (softInject) {
@@ -1809,7 +1854,9 @@ export const useChatStore = defineStore("chat", {
         }
         if (response.sessionId && response.sessionId !== sessionId) {
           this.mergeSession(response.sessionId, sessionId);
-          this.sending[sessionId] = true;
+          if (!softInject) {
+            this.sending[sessionId] = true;
+          }
         }
         return true;
       } catch (error) {

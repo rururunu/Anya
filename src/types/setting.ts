@@ -247,6 +247,12 @@ export interface AppSettings {
   showReasoning: boolean;
   /** detailed = shell/diff inline; compact = fold into process details. */
   agentWorkDisplay: AgentWorkDisplay;
+  /** Chinese UI font family. Empty = Microsoft YaHei stack. */
+  fontCjk: string;
+  /** Latin UI font family. Empty = Source Sans 3. */
+  fontLatin: string;
+  /** Code / monospace font family. Empty = Cascadia Code stack. */
+  fontMono: string;
   multiModelCollaboration: boolean;
   collaborationModels: string[];
   /** Prefer YAGNI / minimal diffs via an optional system prompt block. */
@@ -318,6 +324,9 @@ export interface AppSettingsPatch {
   continueThinkingAfterTools?: boolean;
   showReasoning?: boolean;
   agentWorkDisplay?: AgentWorkDisplay;
+  fontCjk?: string;
+  fontLatin?: string;
+  fontMono?: string;
   multiModelCollaboration?: boolean;
   collaborationModels?: string[];
   minimalCoding?: boolean;
@@ -561,7 +570,7 @@ export const semanticSearchModelOptions: SelectOption<SemanticSearchModel>[] = [
 export const toolApprovalModeOptions: SelectOption<ToolApprovalMode>[] = [
   {
     value: "ask",
-    label: { "zh-CN": "询问", "en-US": "Ask" },
+    label: { "zh-CN": "请求", "en-US": "Ask" },
   },
   {
     value: "auto",
@@ -569,7 +578,7 @@ export const toolApprovalModeOptions: SelectOption<ToolApprovalMode>[] = [
   },
   {
     value: "alwaysAllow",
-    label: { "zh-CN": "全开", "en-US": "Always" },
+    label: { "zh-CN": "完全批准", "en-US": "Full approve" },
   },
 ];
 

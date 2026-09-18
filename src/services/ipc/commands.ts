@@ -356,6 +356,11 @@ export function rewindSession(request: RewindSessionRequest) {
   });
 }
 
+/** Return the current workspace's uncommitted unified diff (staged, unstaged, untracked). */
+export function workingTreeDiff() {
+  return ipcInvoke<string>(IPC_COMMANDS.workingTreeDiff);
+}
+
 export function revealInExplorer(path: string) {
   return ipcInvoke<void>(IPC_COMMANDS.revealInExplorer, { path });
 }
@@ -372,9 +377,24 @@ export function toggleDesktopPet(visible?: boolean) {
   );
 }
 
+/** 结束 Computer Use HUD，并取消进行中的对话流。 */
+export function dismissComputerUseHud() {
+  return ipcInvoke<void>(IPC_COMMANDS.dismissComputerUseHud);
+}
+
 /** 查询桌面宠物当前是否处于可见状态。 */
 export function getDesktopPetVisible() {
   return ipcInvoke<boolean>(IPC_COMMANDS.getDesktopPetVisible);
+}
+
+/** 设置桌面宠物尺寸。 */
+export function setDesktopPetSize(size: "small" | "medium" | "large") {
+  return ipcInvoke<string>(IPC_COMMANDS.setDesktopPetSize, { size });
+}
+
+/** 查询桌面宠物尺寸。 */
+export function getDesktopPetSize() {
+  return ipcInvoke<"small" | "medium" | "large">(IPC_COMMANDS.getDesktopPetSize);
 }
 
 /** 显示并激活 Anya 主工作台窗口。 */

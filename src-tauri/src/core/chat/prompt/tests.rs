@@ -1,5 +1,5 @@
 use super::language::inject_language_blocks;
-use super::slots::inject_context;
+use super::slots::{format_volatile_context, inject_context};
 use super::*;
 
 use crate::core::chat::limits::{CLIPBOARD_MAX_CHARS, CONTEXT_BLOCKS_TOTAL_MAX_CHARS};
@@ -151,7 +151,7 @@ fn minimal_coding_is_injected_only_when_enabled() {
 }
 
 #[test]
-fn plan_request_hint_is_injected_only_when_suggested() {
+fn plan_request_hint_is_injected_when_suggested() {
     let context = RequestContext::default();
     let enabled = PromptPreferences {
         suggest_plan_request: true,
@@ -179,7 +179,7 @@ fn plan_request_hint_is_injected_only_when_suggested() {
         suggest_plan_request: true,
         ..PromptPreferences::default()
     };
-    let planned = PromptBuilder::build(PromptBuildInput {
+    let planning = PromptBuilder::build(PromptBuildInput {
         request_id: "request",
         session_id: "session",
         history: &[],
@@ -190,14 +190,14 @@ fn plan_request_hint_is_injected_only_when_suggested() {
         provider: None,
         preferences: &already_planning,
     });
-    assert!(!planned
-        .messages
-        .iter()
-        .any(|message| message.id.starts_with("plan-request-hint-")));
-    assert!(planned
+    assert!(planning
         .messages
         .iter()
         .any(|message| message.id.starts_with("plan-mode-")));
+    assert!(!planning
+        .messages
+        .iter()
+        .any(|message| message.id.starts_with("plan-request-hint-")));
 }
 
 #[test]
@@ -271,6 +271,9 @@ fn workspace_context_identifies_the_exact_active_directory() {
     ));
     assert!(content.contains("Do not infer another project"));
     assert!(content.contains("MCP filesystem allow-lists"));
+    assert!(!content.contains("[Active Window]"));
+    let live = format_volatile_context(&context).expect("live context");
+    assert!(live.contains("[Active Window]\nPeek - source code"));
 }
 
 #[test]
@@ -285,12 +288,11 @@ fn injects_environment_context_into_agent_prompt() {
     let mut messages = Vec::new();
 
     inject_context(&mut messages, "session-environment", &context);
+    assert!(messages.is_empty());
 
-    assert_eq!(messages.len(), 1);
-    assert!(messages[0].content.contains("[Git Status]\n## main"));
-    assert!(messages[0]
-        .content
-        .contains("[Last Agent Shell Execution]\nCommand: cargo test"));
+    let live = format_volatile_context(&context).expect("live context");
+    assert!(live.contains("[Git Status]\n## main"));
+    assert!(live.contains("[Last Agent Shell Execution]\nCommand: cargo test"));
 }
 
 #[test]
@@ -316,12 +318,65 @@ fn injects_ide_context_into_agent_prompt() {
 
     inject_context(&mut messages, "session-ide", &context);
 
-    let content = &messages[0].content;
-    assert!(content.contains("[IDE Context]"));
-    assert!(content.contains("IDE:\nVSCode"));
-    assert!(content.contains("Language:\nrust"));
-    assert!(content.contains("Line 15, Column 5"));
-    assert!(content.contains("Selection:\nfn main() {}"));
+    let stable = &messages[0].content;
+    assert!(stable.contains("[IDE Context]"));
+    assert!(stable.contains("IDE:\nVSCode"));
+    assert!(stable.contains("Workspace:\n"));
+    assert!(!stable.contains("Line 15"));
+    assert!(!stable.contains("Selection:"));
+
+    let live = format_volatile_context(&context).expect("live ide");
+    assert!(live.contains("[IDE Live Context]"));
+    assert!(live.contains("Language:\nrust"));
+    assert!(live.contains("Line 15, Column 5"));
+    assert!(live.contains("Selection:\nfn main() {}"));
+}
+
+#[test]
+fn volatile_context_appends_to_current_user_message() {
+    let message = |id: &str, role: Role, content: &str| ChatMessage {
+        id: id.to_string(),
+        session_id: "session-1".to_string(),
+        role,
+        content: content.to_string(),
+        reasoning: None,
+        work_timeline: None,
+        tool_activities: None,
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        status: MessageStatus::Done,
+        timestamp: 1,
+        estimated_tokens: None,
+    };
+    let history = vec![message("current-user", Role::User, "fix the bug")];
+    let context = RequestContext {
+        workspace: Some(crate::core::runtime::request::WorkspaceContext {
+            name: "Peek".to_string(),
+            root: r"D:\Code\Peek".to_string(),
+        }),
+        git_status: Some("## main\n M a.rs".to_string()),
+        clipboard: Some("copied".to_string()),
+        ..RequestContext::default()
+    };
+    let request = PromptBuilder::build(PromptBuildInput {
+        request_id: "request-1",
+        session_id: "session-1",
+        history: &history,
+        context: &context,
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: None,
+        provider: None,
+        preferences: &PromptPreferences::default(),
+    });
+    assert!(request.messages[1].id.starts_with("context-"));
+    assert!(!request.messages[1].content.contains("[Git Status]"));
+    let user = request.messages.last().unwrap();
+    assert_eq!(user.id, "current-user");
+    assert!(user.content.contains("fix the bug"));
+    assert!(user.content.contains("[Git Status]\n## main"));
+    assert!(user.content.contains("[Clipboard]\ncopied"));
 }
 
 #[test]
@@ -472,13 +527,62 @@ fn clipboard_context_is_hard_capped() {
         clipboard: Some("Z".repeat(CLIPBOARD_MAX_CHARS + 500)),
         ..RequestContext::default()
     };
-    let mut messages = Vec::new();
-    inject_context(&mut messages, "session-1", &context);
-    let content = &messages[0].content;
-    assert!(content.chars().count() <= CONTEXT_BLOCKS_TOTAL_MAX_CHARS);
-    assert!(content.contains('…') || content.contains("[Clipboard]"));
-    let clipboard_body = content.split("[Clipboard]\n").nth(1).unwrap_or_default();
+    let live = format_volatile_context(&context).expect("clipboard live");
+    assert!(live.chars().count() <= CONTEXT_BLOCKS_TOTAL_MAX_CHARS);
+    assert!(live.contains('…') || live.contains("[Clipboard]"));
+    let clipboard_body = live.split("[Clipboard]\n").nth(1).unwrap_or_default();
     assert!(clipboard_body.chars().count() <= CLIPBOARD_MAX_CHARS + 1);
+}
+
+#[test]
+fn preferred_resources_append_to_user_message_not_system_prefix() {
+    let history = [ChatMessage {
+        id: "u1".into(),
+        session_id: "s".into(),
+        role: Role::User,
+        content: "do the thing".into(),
+        reasoning: None,
+        work_timeline: None,
+        tool_activities: None,
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        status: MessageStatus::Done,
+        timestamp: 1,
+        estimated_tokens: None,
+    }];
+    let without = PromptBuilder::build(PromptBuildInput {
+        request_id: "r",
+        session_id: "s",
+        history: &history,
+        context: &RequestContext::default(),
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: None,
+        provider: None,
+        preferences: &PromptPreferences::default(),
+    });
+    let with = PromptBuilder::build(PromptBuildInput {
+        request_id: "r",
+        session_id: "s",
+        history: &history,
+        context: &RequestContext::default(),
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: Some("#skill:foo"),
+        provider: None,
+        preferences: &PromptPreferences::default(),
+    });
+    assert!(!with
+        .messages
+        .iter()
+        .any(|m| m.id.starts_with("preferred-resources-")));
+    assert_eq!(without.messages.len(), with.messages.len());
+    let user = with.messages.last().expect("user");
+    assert_eq!(user.role, Role::User);
+    assert!(user.content.contains("do the thing"));
+    assert!(user.content.contains("#skill:foo"));
+    assert_eq!(without.messages[0].id, with.messages[0].id);
 }
 
 #[test]
@@ -520,8 +624,8 @@ fn optional_policies_never_shift_stable_prefix_slots() {
         },
     });
 
-    // Slots [0]–[3] keep the same ids and relative order regardless of toggles.
-    for i in 0..4 {
+    // Slots [0]–[2] keep the same ids and relative order regardless of toggles.
+    for i in 0..3 {
         assert_eq!(baseline.messages[i].id, with_optional.messages[i].id);
     }
     assert!(baseline.messages[0].id.starts_with("system-"));
@@ -533,7 +637,7 @@ fn optional_policies_never_shift_stable_prefix_slots() {
     let optional_ids: Vec<_> = with_optional
         .messages
         .iter()
-        .skip(4)
+        .skip(3)
         .map(|m| m.id.as_str())
         .collect();
     assert!(optional_ids
@@ -562,8 +666,42 @@ fn office_context_is_injected_into_prompt() {
     };
     let mut messages = Vec::new();
     inject_context(&mut messages, "session-1", &context);
-    let content = &messages[0].content;
-    assert!(content.contains("[Microsoft Word Context]"));
-    assert!(content.contains("Report.docx"));
-    assert!(content.contains("word_get_selection"));
+    assert!(messages.is_empty());
+    let live = format_volatile_context(&context).expect("office live");
+    assert!(live.contains("[Microsoft Word Context]"));
+    assert!(live.contains("Report.docx"));
+    assert!(live.contains("word_get_selection"));
+}
+
+#[test]
+fn changing_recalled_memory_preserves_prior_history_prefix() {
+    let context = RequestContext::default();
+    let preferences = PromptPreferences::default();
+    let history = vec![super::slots::system_message("old")];
+    let build = |memory| {
+        PromptBuilder::build(PromptBuildInput {
+            request_id: "r",
+            session_id: "s",
+            history: &history,
+            context: &context,
+            project_rules: None,
+            recalled_memories: Some(memory),
+            preferred_resources: None,
+            provider: None,
+            preferences: &preferences,
+        })
+    };
+    let first = build("memory one");
+    let second = build("memory two");
+    let index = first
+        .messages
+        .iter()
+        .position(|m| m.id == "memories-s")
+        .unwrap();
+    assert!(first.messages[..index].iter().any(|m| m.id == "system-old"));
+    assert_eq!(first.messages[..index], second.messages[..index]);
+    assert_ne!(
+        first.messages[index].content,
+        second.messages[index].content
+    );
 }

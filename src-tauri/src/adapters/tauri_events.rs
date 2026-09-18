@@ -129,6 +129,7 @@ impl EventBus for TauriEventBus {
                 reasoning,
                 finish_reason,
             } => {
+                crate::services::computer_use_hud::force_dismiss();
                 let _ = self.app.emit(
                     "chat-finished",
                     ChatFinishedEvent {
@@ -151,6 +152,7 @@ impl EventBus for TauriEventBus {
                 message_id,
                 message,
             } => {
+                crate::services::computer_use_hud::force_dismiss();
                 let _ = self.app.emit(
                     "chat-error",
                     ChatErrorEvent {
@@ -319,6 +321,9 @@ impl EventBus for TauriEventBus {
                 arguments,
                 preview,
             } => {
+                if tool_name.starts_with("plugin_computer-use__") {
+                    crate::services::computer_use_hud::open();
+                }
                 let _ = self.app.emit(
                     "tool-started",
                     ToolActivityEvent {

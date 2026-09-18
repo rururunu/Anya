@@ -58,6 +58,7 @@ export const uiEn = {
   "usage.balance.unconfigured": "Add a DeepSeek API key in Settings to view balance.",
   "usage.balance.error": "Could not load DeepSeek balance",
   "usage.balance.loading": "Loading DeepSeek balance…",
+  "usage.balance.refresh": "Refresh balance",
   "files.title": "Files API",
   "files.hint":
     "Images sent with DeepSeek models are uploaded here and cited by file id. JPEG, PNG, GIF, and WebP, up to 64 MiB.",
@@ -328,6 +329,7 @@ const zhCN: UiLocale = {
   "usage.balance.unconfigured": "在设置中填写 DeepSeek API Key 后可查询余额。",
   "usage.balance.error": "无法加载 DeepSeek 余额",
   "usage.balance.loading": "正在查询 DeepSeek 余额…",
+  "usage.balance.refresh": "刷新余额",
   "files.title": "Files API",
   "files.hint":
     "使用 DeepSeek 模型时，对话中的图片会先上传到这里，再以 file_id 引用。支持 JPEG、PNG、GIF、WebP，单个不超过 64 MiB。",

@@ -1,6 +1,6 @@
 import { reactive } from "vue";
 
-export type AssetKind = "image" | "video" | "lottie";
+export type AssetKind = "image" | "video" | "lottie" | "svg" | "html" | "spritesheet";
 
 export type AssetOverride = {
   pluginId: string;
@@ -24,7 +24,8 @@ const KEY_CONSTRAINTS: Record<string, AssetKeyConstraint> = {
   "mascot.idle": { allowedKinds: ["image", "video", "lottie"] },
   "tray.icon": { allowedKinds: ["image"] },
   "workbench.backdrop": { allowedKinds: ["image", "video", "lottie"] },
-  "pet.stage.skin": { allowedKinds: ["image", "video", "lottie"] },
+  "pet.stage.skin": { allowedKinds: ["image", "video", "lottie", "svg", "html", "spritesheet"] },
+  "pet.stage.atlas": { allowedKinds: ["spritesheet"] },
 };
 
 const overrides = reactive(new Map<string, AssetOverride>());

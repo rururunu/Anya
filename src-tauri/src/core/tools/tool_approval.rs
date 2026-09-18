@@ -165,11 +165,10 @@ impl ToolApprovalStore {
             return Ok(());
         }
         let mode = self.mode_for_session(&ctx.root_session_id().to_string());
-        if mode == ToolApprovalMode::AlwaysAllow {
-            return Ok(());
-        }
-        // Auto still asks for write tools (per plan): write ops always prompt unless AlwaysAllow
-        if mode == ToolApprovalMode::Auto && tool.read_only() {
+        // Auto: 工作区内自动批准 — skip interactive tool prompts (workspace ops).
+        // AlwaysAllow: 最高级 — same for tools; also auto-passes outside-workspace
+        // path/shell gates in path.rs / shell.rs.
+        if mode == ToolApprovalMode::AlwaysAllow || mode == ToolApprovalMode::Auto {
             return Ok(());
         }
         let session_id = ctx.root_session_id();

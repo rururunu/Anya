@@ -151,152 +151,147 @@
             @preview-plan="$emit('reviewPlan')"
           />
         </div>
-        <article
-          v-for="item in turn.assistants"
-          :key="item.key"
-          class="message-item assistant"
-          :data-message-id="item.message.id"
-        >
-          <div class="assistant-bubble">
-            <AgentWorkDetails
-              :message="item.message"
-              :language="settingStore.language"
-              :show-reasoning="settingStore.showReasoning"
-              :display-mode="settingStore.agentWorkDisplay"
-              :suppress-content="needsProviderSetup(item.message)"
-              @inspect-subagent="emit('inspectSubagent', $event)"
-              @preview-image="emit('previewImage', $event)"
-              @edit-from-image="emit('editFromImage', $event)"
-            />
-            <PlanApprovalCard
-              v-if="showCreatedPlanCard(item.message)"
-              variant="proposal"
-              :title="planCardTitle(item.message)"
-              :summary="planCardSummary(item.message)"
-              :busy="planBusy || isSessionSending"
-              :show-actions="canApprovePlan(item.message)"
-              @approve="approvePlanMode"
-              @reject="rejectPlanMode"
-              @preview-plan="$emit('reviewPlan')"
-            />
-            <ImageAnalysisDetails
-              v-for="(analysis, idx) in imageAnalysesForAssistant(item.message)"
-              :key="`${item.message.id}-analysis-${idx}`"
-              :model="analysis.model"
-              :text="analysis.text"
-            />
-            <EnvironmentContextCard
-              v-if="item.message.environmentContext"
-              :context="item.message.environmentContext"
-            />
-            <div v-else-if="needsProviderSetup(item.message)" class="provider-setup-card">
-              <p class="provider-setup-text">
-                {{ providerSetupText(item.message) }}
-              </p>
-              <button type="button" class="provider-setup-btn" @click="openProviderSettings">
-                {{ tr(settingStore.language, "configureProviderAction") }}
-              </button>
-            </div>
-            <div v-if="item.injects.length" class="soft-inject-list">
+        <template v-for="item in turn.body" :key="item.key">
+          <article
+            v-if="item.kind === 'inject'"
+            class="message-item inject"
+            :data-message-id="item.message.id"
+          >
+            <SoftInjectCard :message="item.message" />
+          </article>
+          <article v-else class="message-item assistant" :data-message-id="item.message.id">
+            <div class="assistant-bubble">
+              <AgentWorkDetails
+                :message="item.message"
+                :language="settingStore.language"
+                :show-reasoning="settingStore.showReasoning"
+                :display-mode="settingStore.agentWorkDisplay"
+                :suppress-content="needsProviderSetup(item.message)"
+                @inspect-subagent="emit('inspectSubagent', $event)"
+                @preview-image="emit('previewImage', $event)"
+                @edit-from-image="emit('editFromImage', $event)"
+              />
+              <PlanApprovalCard
+                v-if="showCreatedPlanCard(item.message)"
+                variant="proposal"
+                :title="planCardTitle(item.message)"
+                :summary="planCardSummary(item.message)"
+                :busy="planBusy || isSessionSending"
+                :show-actions="canApprovePlan(item.message)"
+                @approve="approvePlanMode"
+                @reject="rejectPlanMode"
+                @preview-plan="$emit('reviewPlan')"
+              />
+              <ImageAnalysisDetails
+                v-for="(analysis, idx) in imageAnalysesForAssistant(item.message)"
+                :key="`${item.message.id}-analysis-${idx}`"
+                :model="analysis.model"
+                :text="analysis.text"
+              />
+              <EnvironmentContextCard
+                v-if="item.message.environmentContext"
+                :context="item.message.environmentContext"
+              />
+              <div v-else-if="needsProviderSetup(item.message)" class="provider-setup-card">
+                <p class="provider-setup-text">
+                  {{ providerSetupText(item.message) }}
+                </p>
+                <button type="button" class="provider-setup-btn" @click="openProviderSettings">
+                  {{ tr(settingStore.language, "configureProviderAction") }}
+                </button>
+              </div>
+              <AssistantActivityIndicator
+                v-if="activityLabel(item.message)"
+                :label="activityLabel(item.message)!"
+                :icon="activityIcon(item.message)"
+              />
+              <CodeChangesSummary
+                v-if="item.message.status === 'done'"
+                :message="item.message"
+                :can-undo="Boolean(checkpointForAssistant(item.message))"
+                :busy="rewindBusy"
+                @undo="confirmAssistantRewind(item.message)"
+                @review="$emit('reviewChanges')"
+                @review-file="$emit('reviewFile', $event)"
+              />
               <div
-                v-for="inject in item.injects"
-                :key="inject.id"
-                class="soft-inject-chip"
-                :data-message-id="inject.id"
+                v-if="
+                  item.message.content.trim() ||
+                  processingDuration(item.message) ||
+                  turnTokenCount(item) ||
+                  turnCacheHit(item) != null ||
+                  canBranchMessage(item.message)
+                "
+                class="message-actions assistant-message-actions"
               >
-                <span class="soft-inject-label">
-                  {{ tr(settingStore.language, "softInjected") }}
+                <template v-if="processingDuration(item.message)">
+                  <span
+                    class="turn-mascot"
+                    :title="turnMascotTitle(item.message)"
+                    aria-hidden="true"
+                  >
+                    <MascotFace :state="turnMascotState(item.message)" :follow-pointer="false" />
+                  </span>
+                  <span v-if="turnMascotLabel(item.message)" class="turn-state">
+                    {{ turnMascotLabel(item.message) }}
+                  </span>
+                </template>
+                <span v-if="processingDuration(item.message)" class="processing-duration">
+                  {{
+                    tr(settingStore.language, "processedFor", {
+                      duration: processingDuration(item.message)!,
+                    })
+                  }}
                 </span>
-                <span class="soft-inject-text">{{ softInjectText(inject) }}</span>
+                <span
+                  v-if="turnTokenCount(item)"
+                  class="token-usage"
+                  :title="tokenEstimateTitle(turnTokenCount(item))"
+                >
+                  ≈ {{ formatTokenCount(turnTokenCount(item), settingStore.language) }} tokens
+                </span>
+                <span
+                  v-if="turnCacheHit(item) != null"
+                  class="cache-hit"
+                  :title="turnCacheHitTitle(item)"
+                >
+                  {{
+                    tr(settingStore.language, "tokens.cacheHit", {
+                      percent: turnCacheHit(item) ?? 0,
+                    })
+                  }}
+                </span>
+                <button
+                  v-if="item.message.content.trim()"
+                  type="button"
+                  class="message-action-btn"
+                  :class="copyButtonClass(item.message.id)"
+                  :aria-label="copyButtonLabel(item.message.id)"
+                  :title="copyButtonLabel(item.message.id)"
+                  @click.stop="copyMessage(item.message, 'assistant')"
+                >
+                  <Check
+                    v-if="copyStatus?.id === item.message.id && copyStatus.state === 'copied'"
+                    :size="14"
+                    :stroke-width="2"
+                    aria-hidden="true"
+                  />
+                  <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="canBranchMessage(item.message)"
+                  type="button"
+                  class="message-action-btn"
+                  :aria-label="tr(settingStore.language, 'branchConversation')"
+                  :title="tr(settingStore.language, 'branchConversation')"
+                  @click.stop="branchFromMessage(item)"
+                >
+                  <GitBranch :size="14" :stroke-width="2" aria-hidden="true" />
+                </button>
               </div>
             </div>
-            <AssistantActivityIndicator
-              v-if="activityLabel(item.message)"
-              :label="activityLabel(item.message)!"
-              :icon="activityIcon(item.message)"
-            />
-            <CodeChangesSummary
-              v-if="item.message.status === 'done'"
-              :message="item.message"
-              :can-undo="Boolean(checkpointForAssistant(item.message))"
-              :busy="rewindBusy"
-              @undo="confirmAssistantRewind(item.message)"
-              @review="$emit('reviewChanges')"
-              @review-file="$emit('reviewFile', $event)"
-            />
-            <div
-              v-if="
-                item.message.content.trim() ||
-                processingDuration(item.message) ||
-                turnTokenCount(item) ||
-                turnCacheHit(item) != null ||
-                canBranchMessage(item.message)
-              "
-              class="message-actions assistant-message-actions"
-            >
-              <template v-if="processingDuration(item.message)">
-                <span class="turn-mascot" :title="turnMascotTitle(item.message)" aria-hidden="true">
-                  <MascotFace :state="turnMascotState(item.message)" :follow-pointer="false" />
-                </span>
-                <span v-if="turnMascotLabel(item.message)" class="turn-state">
-                  {{ turnMascotLabel(item.message) }}
-                </span>
-              </template>
-              <span v-if="processingDuration(item.message)" class="processing-duration">
-                {{
-                  tr(settingStore.language, "processedFor", {
-                    duration: processingDuration(item.message)!,
-                  })
-                }}
-              </span>
-              <span
-                v-if="turnTokenCount(item)"
-                class="token-usage"
-                :title="tokenEstimateTitle(turnTokenCount(item))"
-              >
-                ≈ {{ formatTokenCount(turnTokenCount(item), settingStore.language) }} tokens
-              </span>
-              <span
-                v-if="turnCacheHit(item) != null"
-                class="cache-hit"
-                :title="turnCacheHitTitle(item)"
-              >
-                {{
-                  tr(settingStore.language, "tokens.cacheHit", {
-                    percent: turnCacheHit(item) ?? 0,
-                  })
-                }}
-              </span>
-              <button
-                v-if="item.message.content.trim()"
-                type="button"
-                class="message-action-btn"
-                :class="copyButtonClass(item.message.id)"
-                :aria-label="copyButtonLabel(item.message.id)"
-                :title="copyButtonLabel(item.message.id)"
-                @click.stop="copyMessage(item.message, 'assistant')"
-              >
-                <Check
-                  v-if="copyStatus?.id === item.message.id && copyStatus.state === 'copied'"
-                  :size="14"
-                  :stroke-width="2"
-                  aria-hidden="true"
-                />
-                <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
-              </button>
-              <button
-                v-if="canBranchMessage(item.message)"
-                type="button"
-                class="message-action-btn"
-                :aria-label="tr(settingStore.language, 'branchConversation')"
-                :title="tr(settingStore.language, 'branchConversation')"
-                @click.stop="branchFromMessage(item)"
-              >
-                <GitBranch :size="14" :stroke-width="2" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        </article>
+          </article>
+        </template>
       </div>
       <div class="turn-spacer" aria-hidden="true" />
     </div>
@@ -325,6 +320,7 @@ import MascotFace, { type MascotState } from "@/components/icons/MascotFace.vue"
 import ImageAnalysisDetails from "@/components/chat/ImageAnalysisDetails.vue";
 import EnvironmentContextCard from "@/components/chat/EnvironmentContextCard.vue";
 import UserMessageCard from "@/components/chat/UserMessageCard.vue";
+import SoftInjectCard from "@/components/chat/SoftInjectCard.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   chatCancel,
@@ -341,6 +337,7 @@ import {
 } from "@/services/chat/selectionAttachment";
 import { extractAttachedFileChips, type AttachedFileChip } from "@/services/chat/attachFiles";
 import { isSoftInjectContent, stripSoftInjectMarker } from "@/services/chat/softInject";
+import { withTimelineInject } from "@/stores/chatStream";
 import { isAskUserTool } from "@/services/chat/askUserAnswer";
 import { isCompactionSummary } from "@/services/chat/compactMarker";
 import {
@@ -376,13 +373,20 @@ import { storeToRefs } from "pinia";
 
 type DisplayItem =
   | { kind: "user"; key: string; message: ChatMessage }
-  | { kind: "assistant"; key: string; message: ChatMessage; injects: ChatMessage[] };
+  | { kind: "assistant"; key: string; message: ChatMessage }
+  | { kind: "inject"; key: string; message: ChatMessage };
 
 type DisplayTurn = {
   key: string;
   user: Extract<DisplayItem, { kind: "user" }> | null;
-  assistants: Array<Extract<DisplayItem, { kind: "assistant" }>>;
+  body: Array<Extract<DisplayItem, { kind: "assistant" | "inject" }>>;
 };
+
+function turnAssistants(turn: DisplayTurn) {
+  return turn.body.filter(
+    (item): item is Extract<DisplayItem, { kind: "assistant" }> => item.kind === "assistant",
+  );
+}
 function previewImage(url: string) {
   emit("previewImage", url);
 }
@@ -556,12 +560,13 @@ function showBuildTodoCard(message: ChatMessage): boolean {
 }
 
 function turnBuildHost(turn: DisplayTurn) {
-  const live = turn.assistants.find(
+  const assistants = turnAssistants(turn);
+  const live = assistants.find(
     (item) => showBuildTodoCard(item.message) && isLivePlanHost(item.message),
   );
   if (live) return live;
-  for (let i = turn.assistants.length - 1; i >= 0; i -= 1) {
-    const item = turn.assistants[i];
+  for (let i = assistants.length - 1; i >= 0; i -= 1) {
+    const item = assistants[i];
     if (item && showBuildTodoCard(item.message)) return item;
   }
   return null;
@@ -662,30 +667,17 @@ const displayItems = computed((): DisplayItem[] => {
   const items: DisplayItem[] = [];
   for (const message of visibleMessages.value) {
     if (isUserMessage(message)) {
-      if (isSoftInjectMessage(message)) {
-        let folded = false;
-        for (let i = items.length - 1; i >= 0; i -= 1) {
-          const item = items[i];
-          if (item?.kind === "assistant") {
-            item.injects.push(message);
-            folded = true;
-            break;
-          }
-        }
-        // Mis-tagged first message (no prior assistant): show as a normal bubble.
-        if (!folded) {
-          items.push({ kind: "user", key: message.id, message });
-        }
-        continue;
-      }
-      items.push({ kind: "user", key: message.id, message });
+      items.push({
+        kind: isSoftInjectMessage(message) ? "inject" : "user",
+        key: message.id,
+        message,
+      });
       continue;
     }
     items.push({
       kind: "assistant",
       key: message.id,
       message,
-      injects: [],
     });
   }
   return items;
@@ -704,13 +696,36 @@ const displayTurns = computed((): DisplayTurn[] => {
   for (const item of displayItems.value) {
     if (item.kind === "user") {
       if (current) turns.push(current);
-      current = { key: `turn-${item.key}`, user: item, assistants: [] };
+      current = { key: `turn-${item.key}`, user: item, body: [] };
+      continue;
+    }
+    if (item.kind === "inject") {
+      if (current) {
+        let assistantIndex = -1;
+        for (let index = current.body.length - 1; index >= 0; index -= 1) {
+          if (current.body[index]?.kind === "assistant") {
+            assistantIndex = index;
+            break;
+          }
+        }
+        if (assistantIndex !== -1) {
+          const assistant = current.body[assistantIndex]!;
+          current.body[assistantIndex] = {
+            ...assistant,
+            message: withTimelineInject(assistant.message, item.message),
+          };
+          continue;
+        }
+        current.body.push(item);
+      } else {
+        current = { key: `turn-${item.key}`, user: null, body: [item] };
+      }
       continue;
     }
     if (!current) {
-      current = { key: `turn-${item.key}`, user: null, assistants: [item] };
+      current = { key: `turn-${item.key}`, user: null, body: [item] };
     } else {
-      current.assistants.push(item);
+      current.body.push(item);
     }
   }
   if (current) turns.push(current);
@@ -736,7 +751,6 @@ function messageMemoDeps(item: DisplayItem) {
     message.workTimeline?.length ?? 0,
     tools,
     asks,
-    item.kind === "assistant" ? item.injects.map((inject) => inject.id).join(",") : "",
     copyStatus.value?.id === message.id ? copyStatus.value.state : "",
     rewindBusy.value ? 1 : 0,
     item.kind === "user" && checkpointFor(item.message) ? 1 : 0,
@@ -764,7 +778,7 @@ function turnMemoDeps(turn: DisplayTurn, turnIndex = 0) {
     turnIndex === 0 ? 1 : 0,
     isTurnHeadStuck(turn.key) ? 1 : 0,
     ...(turn.user ? messageMemoDeps(turn.user) : []),
-    ...turn.assistants.flatMap((item) => messageMemoDeps(item)),
+    ...turn.body.flatMap((item) => messageMemoDeps(item)),
   ];
 }
 
@@ -930,9 +944,6 @@ function isUserMessage(message: ChatMessage) {
 function isSoftInjectMessage(message: ChatMessage) {
   return message.injected === true || isSoftInjectContent(message.content);
 }
-function softInjectText(message: ChatMessage) {
-  return parseSelectionAttachment(stripSoftInjectMarker(message.content)).message;
-}
 function userContent(message: ChatMessage) {
   return parseSelectionAttachment(stripSoftInjectMarker(message.content));
 }
@@ -993,8 +1004,8 @@ function canBranchMessage(message: ChatMessage) {
 
 function branchFromMessage(item: Extract<DisplayItem, { kind: "assistant" }>) {
   if (!canBranchMessage(item.message)) return;
-  const lastInject = item.injects[item.injects.length - 1];
-  emit("branch", lastInject?.id || item.message.id);
+  const following = injectsFollowing(item.message);
+  emit("branch", following[following.length - 1]?.id || item.message.id);
 }
 
 /** Image analyses are persisted on the preceding user message; show them on the assistant turn. */
@@ -1020,9 +1031,22 @@ function checkpointFor(message: ChatMessage) {
   return (props.checkpoints ?? []).find((item) => item.userMessageId === message.id);
 }
 
+function injectsFollowing(assistant: ChatMessage): ChatMessage[] {
+  const list = visibleMessages.value;
+  const index = list.findIndex((item) => item.id === assistant.id);
+  if (index < 0) return [];
+  const found: ChatMessage[] = [];
+  for (let i = index + 1; i < list.length; i += 1) {
+    const next = list[i];
+    if (!next || !isUserMessage(next) || !isSoftInjectMessage(next)) break;
+    found.push(next);
+  }
+  return found;
+}
+
 function turnTokenCount(item: Extract<DisplayItem, { kind: "assistant" }>) {
   const user = precedingUserMessage(item.message);
-  return [user, item.message, ...item.injects]
+  return [user, item.message, ...injectsFollowing(item.message)]
     .filter((message): message is ChatMessage => Boolean(message))
     .reduce((total, message) => total + estimateMessageTokens(message), 0);
 }
@@ -1121,7 +1145,8 @@ async function resendUserMessage(message: ChatMessage, visibleText: string) {
     title: tr(settingStore.language, "resendConfirmTitle"),
     description: tr(settingStore.language, "resendConfirm"),
     confirmLabel: tr(settingStore.language, "resendConfirmAction"),
-    cancelLabel: tr(settingStore.language, "rewindCancel"),
+    cancelLabel: "esc",
+    confirmOnEnter: true,
   });
   if (!confirmed) return;
 
@@ -1732,7 +1757,7 @@ defineExpose({ openFind, closeFind });
 }
 .assistant-bubble :deep(.markdown-body) {
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 .assistant-bubble :deep(.agent-work),
 .assistant-bubble :deep(.tool-activity-list),
@@ -1743,40 +1768,15 @@ defineExpose({ openFind, closeFind });
   box-sizing: border-box;
 }
 
-.soft-inject-list {
+.message-item.inject {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 2px;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.inject-card,
+.message-item.inject :deep(.inject-card) {
+  width: 100%;
   max-width: 100%;
-}
-
-.soft-inject-chip {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: fit-content;
-  max-width: 100%;
-  padding: 6px 10px;
-  border: 1px dashed color-mix(in srgb, var(--peek-accent) 35%, var(--peek-border));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--peek-accent) 8%, transparent);
-  color: var(--peek-text);
-}
-
-.soft-inject-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--peek-accent) 75%, var(--peek-muted));
-}
-
-.soft-inject-text {
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: color-mix(in srgb, var(--peek-text) 88%, var(--peek-muted));
 }
 </style>

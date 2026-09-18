@@ -34,6 +34,8 @@
     "allow-chat-commands",
     "allow-remote-commands",
     "allow-plugin-host-commands",
+    "allow-computer-use-commands",
+    "allow-opencli-commands",
     "updater:default",
     "process:default"
   ]

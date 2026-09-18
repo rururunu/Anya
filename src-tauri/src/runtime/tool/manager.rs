@@ -32,75 +32,33 @@ impl ToolManager {
         self.registry.schemas_arc()
     }
 
-    /// Model-facing schemas for one request, derived from its mode.
+    /// Model-facing schemas for one request.
     ///
-    /// Defense in depth with `ChatService` tool-set selection:
-    /// - Image mode for `session_id` → only `generate_image` (also set via
-    ///   `tools.image_mode()` when the turn starts).
-    /// - Plan mode active for `session_id` → read-only tools plus the
-    ///   planning/interaction tools plan mode allows.
-    /// - Question-only request (Answer/explain/review, Diagnose) → read-only
-    ///   tools plus `ask_user` / `update_tasks`.
-    /// - Otherwise → the full toolset.
+    /// Image mode → only `generate_image`. Otherwise the registry behind this
+    /// manager (Ask spawn already uses `ask_mode()`, Agent/Plan use the full
+    /// set). Do **not** shrink Agent schemas via `is_question_only_request`:
+    /// that froze a read-only allowlist while the system prompt still told the
+    /// model to `write_file` / `run_shell`, producing `not allowed in the
+    /// current tool set` on every write channel.
     pub fn schemas_for_request(&self, request: &ChatRequest, session_id: &str) -> Arc<[Value]> {
+        let _ = request;
         if crate::core::tools::image_mode::is_image_mode(session_id) {
             return self.registry.filter_for_image_mode().schemas_arc();
         }
-        if crate::core::tools::plan_mode::shared_plan_mode_store().is_active(session_id) {
-            return self.registry.filter_for_plan_mode().schemas_arc();
-        }
-        if is_question_only_request(request) {
-            return self.ask_mode().schemas_arc();
-        }
-        self.registry.filter_without_save_plan().schemas_arc()
+        self.registry.schemas_arc()
     }
 
-    /// Keep a stable small core; extensions are loaded by search_tools and stay
-    /// visible for the remainder of this turn. Mode filtering always runs first.
+    /// Always returns the mode-filtered toolset captured for this request.
+    /// An earlier "core + search_tools" shrink was removed, and the agent loop
+    /// freezes the first step's schemas for the whole turn: growing/shrinking
+    /// `tools` mid-turn invalidates DeepSeek prompt-cache prefixes.
     pub fn focused_schemas(
         &self,
         request: &ChatRequest,
         session_id: &str,
-        loaded: &std::collections::HashSet<String>,
+        _loaded: &std::collections::HashSet<String>,
     ) -> Arc<[Value]> {
-        let schemas = self.schemas_for_request(request, session_id);
-        if schemas.len() <= 32
-            || !schemas
-                .iter()
-                .any(|s| s["function"]["name"] == "search_tools")
-        {
-            return schemas;
-        }
-        const CORE: &[&str] = &[
-            "search_tools",
-            "read_file",
-            "list_folder",
-            "find_files",
-            "search_files",
-            "write_file",
-            "replace_in_file",
-            "apply_patch",
-            "run_shell",
-            "read_shell_output",
-            "wait_for_shell",
-            "stop_shell",
-            "ask_user",
-            "update_tasks",
-            "save_plan",
-            "request_plan_mode",
-            "generate_image",
-            "load_skill",
-        ];
-        schemas
-            .iter()
-            .filter(|s| {
-                s["function"]["name"]
-                    .as_str()
-                    .is_some_and(|name| CORE.contains(&name) || loaded.contains(name))
-            })
-            .cloned()
-            .collect::<Vec<_>>()
-            .into()
+        self.schemas_for_request(request, session_id)
     }
 
     pub fn preview(
@@ -206,7 +164,7 @@ pub(crate) fn is_question_only_request(request: &ChatRequest) -> bool {
         .messages
         .iter()
         .rev()
-        .find(|message| message.id == "agent-state-current")
+        .find(|message| message.id.starts_with("agent-state-"))
     {
         if let Some(intent) = state
             .content
@@ -417,9 +375,11 @@ mod tests {
 
     use crate::core::chat::conversation_manager::ConversationManager;
     use crate::core::event::{BusEvent, EventBus};
-    use crate::core::runtime::RequestContext;
-    use crate::core::tools::context::{AskStore, PathPermissionStore};
+    use crate::core::runtime::{RequestContext, Role};
+    use crate::core::tools::context::{AskStore, PathPermissionStore, ToolContext};
     use crate::core::tools::error::ToolError;
+    use crate::core::tools::registry::ToolRegistry;
+    use crate::core::tools::Tool;
 
     struct NullEventBus;
     impl EventBus for NullEventBus {
@@ -503,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn discovery_loads_requested_tools_without_bypassing_plan_mode() {
+    fn focused_schemas_keeps_full_mode_filtered_set_for_cache_stability() {
         struct NamedTool(String);
         impl Tool for NamedTool {
             fn name(&self) -> &str {
@@ -542,19 +502,85 @@ mod tests {
             max_tokens: None,
         };
         let empty = std::collections::HashSet::new();
-        let core = manager.focused_schemas(&request, &sid, &empty);
-        assert!(core.len() < 10);
-        let loaded = std::collections::HashSet::from(["extension_12".into(), "write_file".into()]);
-        assert!(manager
-            .focused_schemas(&request, &sid, &loaded)
+        let full = manager.focused_schemas(&request, &sid, &empty);
+        assert!(full.len() >= 40);
+        assert!(full
             .iter()
             .any(|schema| schema["function"]["name"] == "extension_12"));
+        assert!(full
+            .iter()
+            .any(|schema| schema["function"]["name"] == "write_file"));
+        // Plan gate must not shrink schemas (authorize blocks writers instead).
         let plans = crate::core::tools::plan_mode::shared_plan_mode_store();
         plans.set_active(&sid, true);
-        assert!(!manager
-            .focused_schemas(&request, &sid, &loaded)
+        assert!(manager
+            .focused_schemas(&request, &sid, &empty)
             .iter()
             .any(|schema| schema["function"]["name"] == "write_file"));
         plans.set_active(&sid, false);
+    }
+
+    #[test]
+    fn question_shaped_agent_request_keeps_writers_in_focused_schemas() {
+        struct NamedTool(&'static str, bool);
+        impl Tool for NamedTool {
+            fn name(&self) -> &str {
+                self.0
+            }
+            fn description(&self) -> &str {
+                "t"
+            }
+            fn parameters_schema(&self) -> Value {
+                serde_json::json!({"type":"object"})
+            }
+            fn read_only(&self) -> bool {
+                self.1
+            }
+            fn execute(&self, _ctx: &ToolContext, _args: Value) -> Result<String, ToolError> {
+                Ok("ok".into())
+            }
+        }
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(NamedTool("write_file", false)));
+        registry.register(Arc::new(NamedTool("run_shell", false)));
+        registry.register(Arc::new(NamedTool("read_file", true)));
+        let manager = ToolManager::new(registry);
+        let sid = "q-only-agent".to_string();
+        let request = ChatRequest {
+            request_id: "r".into(),
+            session_id: sid.clone(),
+            messages: vec![crate::core::runtime::ChatMessage {
+                id: "u1".into(),
+                session_id: sid.clone(),
+                role: Role::User,
+                content: "这段代码是怎么工作的？".into(),
+                reasoning: None,
+                work_timeline: None,
+                tool_activities: None,
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+                status: crate::core::runtime::MessageStatus::Done,
+                timestamp: 1,
+                estimated_tokens: None,
+            }],
+            context: RequestContext::default(),
+            provider: None,
+            stream: true,
+            tools: Arc::from([]),
+            temperature: None,
+            max_tokens: None,
+        };
+        assert!(
+            is_question_only_request(&request),
+            "fixture should still classify as question-only for challenges"
+        );
+        let schemas = manager.focused_schemas(&request, &sid, &std::collections::HashSet::new());
+        assert!(schemas
+            .iter()
+            .any(|schema| schema["function"]["name"] == "write_file"));
+        assert!(schemas
+            .iter()
+            .any(|schema| schema["function"]["name"] == "run_shell"));
     }
 }

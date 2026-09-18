@@ -23,6 +23,14 @@ const router = createRouter({
       path: "/desktop-pet",
       component: () => import("@/pages/DesktopPet.vue"),
     },
+    {
+      path: "/computer-use-hud",
+      component: () => import("@/pages/ComputerUseHud.vue"),
+    },
+    {
+      path: "/computer-use-banner",
+      component: () => import("@/pages/ComputerUseBanner.vue"),
+    },
   ],
 });
 

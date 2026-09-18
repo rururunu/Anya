@@ -248,6 +248,10 @@ impl AgentRuntime {
         self.stream_manager.active_assistant_for_session(session_id)
     }
 
+    pub fn active_message_ids(&self) -> Vec<String> {
+        self.stream_manager.active_message_ids()
+    }
+
     pub fn soft_inject(&self, session_id: &str, content: String) -> Result<String, ChatError> {
         self.stream_manager.soft_inject(session_id, content)
     }

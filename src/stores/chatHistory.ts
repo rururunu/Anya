@@ -99,3 +99,16 @@ export function lastTurnUserContent(messages: ChatMessage[]): string {
   }
   return "";
 }
+
+/** Latest mid-turn inject text, or empty if the newest user message is a real turn. */
+export function lastSoftInjectContent(messages: ChatMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || String(message.role).toLowerCase() !== "user") continue;
+    if (message.injected === true || isSoftInjectContent(message.content)) {
+      return stripSoftInjectMarker(message.content).trim();
+    }
+    return "";
+  }
+  return "";
+}

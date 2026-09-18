@@ -6,51 +6,56 @@
   <a href="./computer-use.zh-CN.md">简体中文</a>
 </p>
 
-官方 **Agent** 插件 `computer-use`（仅 Windows，**默认关闭**）。没有工作台界面——授予 `computer` 后在聊天里让 Anya 去做，或输入 `#plugin:computer-use`。会改桌面的工具走现有审批；选 **本会话允许** 才不会每点一次都弹确认。
+官方 **Agent** 插件 `computer-use`（仅 Windows，**默认关闭**）。没有工作台界面——授予 `computer` 后在聊天里让 Anya 去做，或输入 `#plugin:computer-use`。会改桌面/浏览器的工具走现有审批；选 **本会话允许** 才不会每步都弹确认。
 
-它不是「只看截图猜坐标」的 VLM。截图是眼睛，UI Automation 是骨骼，`launch` / 快捷键是快通道。
+执行引擎：进程内嵌入 **[Ghost](https://github.com/NORTHTEKDevs/ghost)**（`ghost-session` v0.23.4，MIT）。Anya 保留权限、工具审批与 Computer Use HUD；Ghost 负责 UIA、后台焦点策略、动作校验（`verified`）与浏览器 CDP。
 
-## 1. 混合执行优先级
+## 1. Ghost 风格流水线
 
-插件提示词 + 内置 playbook 要求模型按这层梯子走，越靠上越快、越准：
+| 步骤 | 工具                            | 说明                                                |
+| ---- | ------------------------------- | --------------------------------------------------- |
+| 1    | `window`                        | `launch` / `focus` / `anchor`——会话锚定目标窗       |
+| 2    | `see`                           | 优先 `mode=text`；否则 name/role/enabled/中心点列表 |
+| 3    | `act`                           | 按 name/role 点击或输入；读返回里的 **`verified`**  |
+| 4    | `wait` / `assert`               | 等元素/值/空闲——少用纯 sleep                        |
+| 5    | `browser` + `tab`               | 网页走 CDP，不要像素点网页                          |
+| 兜底 | `screenshot` / `click` / `drag` | 仅画布、框选、无名区域                              |
 
-| 层级 | 方式                               | 典型工具                                                                           |
-| ---- | ---------------------------------- | ---------------------------------------------------------------------------------- |
-| 1    | ShellExecute：打开应用、文件或 URI | `launch`（`mspaint`、`notepad`、`C:\doc.docx`、`ms-settings:display`）             |
-| 2    | 应用 / 系统快捷键                  | `key`（`ctrl+s`、`win+e`、`alt+f4`）                                               |
-| 3    | UIA 语义                           | `click_control`（优先 InvokePattern，否则点可点中心）、`set_value`（ValuePattern） |
-| 4    | 像素兜底                           | 画布、框选、没有名字的区域用 `click` / `drag` / `scroll`                           |
+默认后台优先（Ghost focus policy / `GHOST_FOCUS_LOCK`）：尽量不抢用户鼠标。
 
-不要在开始菜单里找图标。不要每点一次就截一张图。截一次用来瞄准，其余调用放在**同一轮**发出（会改桌面的工具按顺序执行）。
+## 2. 工具面
 
-## 2. 双通道：JPEG + UIA 树
+**桌面：** `see`、`act`、`wait`、`assert`、`window`、`key`/`hotkey`、`scroll`、`drag`、`clipboard`、`screenshot`、`screen_info`。
 
-`screenshot` 默认截**前台窗口**（`scope: desktop` 为整个虚拟屏）。工具结果包含：
+**浏览器：** `browser`（`launch` \| `attach` \| `tabs` \| `close`）、`tab`（`open` \| `navigate` \| `click` \| `type` \| `text` \| `eval` \| `wait` …）。
 
-1. JPEG（长边缩到 1280px）。`click` / `move` / `scroll` 的 `x,y` 是**这张图**里的像素，原点左上。
-2. 最多 40 个可交互 UIA 控件：名称、AutomationId、**图像坐标**矩形。`click_control` 的 `index` / `name` / `id` 用这份列表。
+**旧名别名：** `list_windows`、`focus_window`、`find_control`、`click_control`、`set_value`、`launch`、`click`、`type`。
 
-列表被截断时再用 `find_control`（匹配 Name **或** AutomationId）。具名点击的坐标来自 UIA 边界框 / `GetClickablePoint`，不是模型估像素。
+只读类（`see` / `assert` / `wait` / `screenshot` / `list_windows` / `find_control` …）免批；改桌面/浏览器的 `act` / `window` / `key` / `browser` / `tab` 等需批（会话允许仍一次放行整类）。
 
-JPEG → 屏幕：`screen = image / scale + 窗口原点`，`scale = image_w / window_w`。截图、UIA 矩形、SendInput 都用**物理像素**。结果里带窗口 **DPI**，避免把 125%/150%/4K 当成 CSS 像素。
+## 3. HUD 与停止
 
-`click` / `click_control` 之后用 `ElementFromPoint` 和前台窗口标题做反馈（不再整窗重编码 JPEG）。若前台像 Anya，结果会写明——应 `focus_window` 目标应用，而不是继续盲点。
+本轮对话首次调用 `plugin_computer-use__*` 时打开辉光 + 顶栏；对话结束或 HUD **结束** 会触发 Ghost 紧急停止、清空窗口锚点并关闭 HUD。
 
-## 3. 内置 Windows playbook
+## 4. 内置 playbook 与学习库
 
-`plugin.json` 的 `contributes.agent.skills: ["skills/windows.md"]` 在授予 `agent.prompt` 时追加到系统提示（不必再 `load_skill`）。覆盖画图、记事本、资源管理器、设置、计算器、截图、任务管理器与常见对话框（中英控件名）。
+`plugin.json` 的 `contributes.agent.skills: ["skills/windows.md"]` 在授予 `agent.prompt` 时追加到系统提示。覆盖记事本、资源管理器、画图、设置、计算器、对话框与 CDP 浏览器流程（中英控件名）。
 
-源文件：[`src-tauri/plugins/computer-use/skills/windows.md`](../src-tauri/plugins/computer-use/skills/windows.md)。官方插件启动时复制进 AppData。
+此外提供 **`playbook` 工具**（Agent S2 检索/写入 + EchoPath 可执行步骤）：成功后把语义步骤存到 `%APPDATA%/Anya/computer-use/playbooks/*.json`；下次 `lookup` 复用；某步 `verified` 失败则 `fail` 降权/隔离，再探索并用同 `id` `save` 打补丁。启用插件时会把本地 playbook 目录索引注入 prompt。
 
-## 4. 代码地图
+源文件：[`src-tauri/plugins/computer-use/skills/windows.md`](../src-tauri/plugins/computer-use/skills/windows.md)；实现：`core/plugins/computer/playbook/`。
 
-| 部分                        | 路径                                                                                    |
-| --------------------------- | --------------------------------------------------------------------------------------- |
-| 清单、工具 schema、playbook | `src-tauri/plugins/computer-use/`                                                       |
-| 分发与实现                  | `core/plugins/computer/`（`ops.rs`、`win/{capture,uia,snapshot,launch,observe,input}`） |
-| 提示词拼接（`skills` 文件） | `core/plugins/prompt.rs`                                                                |
-| Agent 工具名                | `plugin_computer-use__*`                                                                |
+## 5. 代码地图
 
-有 UI 且授予 `computer` 的插件也可走同一套 `computer.*` host RPC。官方插件是 `role: agent`——对话里的 Agent 直接调工具。
+| 部分                        | 路径                                                             |
+| --------------------------- | ---------------------------------------------------------------- |
+| 清单、工具 schema、playbook | `src-tauri/plugins/computer-use/`                                |
+| Ghost 桥与分发              | `core/plugins/computer/{ghost_bridge,ghost_ops,playbook,mod}.rs` |
+| 依赖                        | `Cargo.toml` → `ghost-session`（仅 Windows，`git` tag 锁定）     |
+| Agent 工具名                | `plugin_computer-use__*`                                         |
+
+跟随 upstream 需显式 bump tag 并记变更。进程内嵌入会增加二进制体积与首次 COM 初始化成本，属预期。
+
+同一会话不要再开 Ghost MCP，避免双轨抢桌面。已登录网页优先考虑官方插件 [OpenCLI](./opencli.zh-CN.md)，且不要与 Ghost CDP 同时驱动同一 Chrome。
 
 相关：[插件系统](./plugin-system.zh-CN.md)（`contributes.agent.skills`、权限 `computer`）。

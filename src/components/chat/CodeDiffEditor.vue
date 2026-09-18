@@ -2,13 +2,13 @@
   <div class="code-diff-editor" :class="`is-${viewMode}`">
     <div v-if="loading" class="code-diff-loading" />
     <div v-else-if="error" class="code-diff-error">{{ error }}</div>
-    <template v-else-if="document">
-      <div v-if="viewMode === 'split'" class="split-editors">
-        <div ref="leftHost" class="editor-pane" />
-        <div ref="rightHost" class="editor-pane editor-pane-right" />
-      </div>
-      <div v-else ref="unifiedHost" class="editor-pane unified-editor" />
-    </template>
+    <SplitDiffView
+      v-else-if="document && viewMode === 'split'"
+      ref="splitViewRef"
+      :rows="document.rows"
+      :wrap-lines="wrapLines"
+    />
+    <div v-else-if="document" ref="unifiedHost" class="editor-pane unified-editor" />
   </div>
 </template>
 
@@ -19,12 +19,17 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
 import { tags } from "@lezer/highlight";
+import SplitDiffView from "@/components/chat/SplitDiffView.vue";
 import {
   buildCodeDiff,
+  inlineRangesForRow,
   type CodeDiffDocument,
+  type CodeDiffInlineRange,
   type CodeDiffLine,
   type CodeDiffLineKind,
 } from "@/services/chat/codeDiff";
+import { tr } from "@/services/i18n";
+import { useSettingStore } from "@/stores/setting";
 
 type DiffViewMode = "split" | "unified";
 
@@ -37,19 +42,16 @@ const props = defineProps<{
   wrapLines: boolean;
 }>();
 
-const leftHost = ref<HTMLElement | null>(null);
-const rightHost = ref<HTMLElement | null>(null);
 const unifiedHost = ref<HTMLElement | null>(null);
+const splitViewRef = ref<{ nextChange: () => void } | null>(null);
 const document = ref<CodeDiffDocument | null>(null);
 const loading = ref(false);
 const error = ref("");
+const settingStore = useSettingStore();
 const wrapCompartment = new Compartment();
-let leftView: EditorView | null = null;
-let rightView: EditorView | null = null;
 let unifiedView: EditorView | null = null;
 let requestVersion = 0;
 let editorVersion = 0;
-let syncingScroll = false;
 let resizeObserver: ResizeObserver | null = null;
 
 const requestKey = computed(() =>
@@ -107,22 +109,11 @@ async function loadDocument() {
 async function rebuildEditors() {
   const version = ++editorVersion;
   destroyEditors();
-  if (!document.value) return;
+  if (!document.value || props.viewMode === "split") return;
   const language = await languageExtension(props.language);
-  if (version !== editorVersion || !document.value) return;
-  if (props.viewMode === "split") {
-    if (!leftHost.value || !rightHost.value) return;
-    leftView = createEditor(leftHost.value, splitSide("left"), language);
-    rightView = createEditor(rightHost.value, splitSide("right"), language);
-    linkVerticalScroll(leftView, rightView);
-    linkVerticalScroll(rightView, leftView);
-    observeEditorResize([leftView, rightView]);
-    return;
-  }
-  if (unifiedHost.value) {
-    unifiedView = createEditor(unifiedHost.value, unifiedLines(), language);
-    observeEditorResize([unifiedView]);
-  }
+  if (version !== editorVersion || !document.value || !unifiedHost.value) return;
+  unifiedView = createEditor(unifiedHost.value, unifiedLines(), language);
+  observeEditorResize([unifiedView]);
 }
 
 function observeEditorResize(views: EditorView[]) {
@@ -138,35 +129,42 @@ function observeEditorResize(views: EditorView[]) {
 }
 
 function destroyEditors() {
-  leftView?.destroy();
-  rightView?.destroy();
   unifiedView?.destroy();
-  leftView = null;
-  rightView = null;
   unifiedView = null;
 }
 
 function updateWrap(wrapLines: boolean) {
-  const extension = wrapLines ? EditorView.lineWrapping : [];
-  for (const view of [leftView, rightView, unifiedView]) {
-    view?.dispatch({ effects: wrapCompartment.reconfigure(extension) });
-  }
+  if (!unifiedView) return;
+  unifiedView.dispatch({
+    effects: wrapCompartment.reconfigure(wrapLines ? EditorView.lineWrapping : []),
+  });
 }
 
 function createEditor(parent: HTMLElement, lines: DisplayLine[], language: Extension) {
-  const lineNumbersByDisplayLine = lines.map((line) => line.lineNumber);
+  const display = lines.map((line) =>
+    line.kind === "skip"
+      ? {
+          ...line,
+          text: tr(settingStore.language, "diffUnmodifiedLines", { count: line.skipped ?? 0 }),
+        }
+      : line,
+  );
+  const lineNumbersByDisplayLine = display.map((line) =>
+    line.kind === "skip" ? "⋯" : String(line.lineNumber ?? ""),
+  );
   const state = EditorState.create({
-    doc: lines.map((line) => line.text).join("\n"),
+    doc: display.map((line) => line.text).join("\n"),
     extensions: [
       keymap.of(defaultKeymap),
       EditorState.readOnly.of(true),
       EditorView.editable.of(false),
-      lineNumbers({ formatNumber: (line) => String(lineNumbersByDisplayLine[line - 1] ?? "") }),
+      lineNumbers({ formatNumber: (line) => lineNumbersByDisplayLine[line - 1] ?? "" }),
       wrapCompartment.of(props.wrapLines ? EditorView.lineWrapping : []),
       language,
       syntaxHighlighting(diffHighlightStyle, { fallback: true }),
       diffTheme,
-      lineClasses(lines),
+      lineClasses(display),
+      inlineMarks(display),
     ],
   });
   const view = new EditorView({ state, parent });
@@ -175,22 +173,32 @@ function createEditor(parent: HTMLElement, lines: DisplayLine[], language: Exten
   return view;
 }
 
-type DisplayLine = { text: string; lineNumber?: number; kind?: CodeDiffLineKind };
-
-function splitSide(side: "left" | "right"): DisplayLine[] {
-  return document.value!.rows.map((row) => displayLine(row[side]));
-}
+type DisplayLine = {
+  text: string;
+  lineNumber?: number;
+  kind?: CodeDiffLineKind;
+  skipped?: number;
+  inline?: CodeDiffInlineRange;
+};
 
 function unifiedLines(): DisplayLine[] {
   return document.value!.rows.flatMap((row) => {
-    if (row.left?.kind === "deletion") return [displayLine(row.left), displayLine(row.right)];
-    if (row.right?.kind === "addition") return [displayLine(row.right)];
+    const ranges = inlineRangesForRow(row);
+    if (row.left?.kind === "deletion") {
+      const deleted = { ...displayLine(row.left), inline: ranges.left };
+      if (!row.right) return [deleted];
+      return [deleted, { ...displayLine(row.right), inline: ranges.right }];
+    }
+    if (row.right?.kind === "addition")
+      return [{ ...displayLine(row.right), inline: ranges.right }];
     return [displayLine(row.left ?? row.right)];
   });
 }
 
 function displayLine(line: CodeDiffLine | null | undefined): DisplayLine {
-  return line ? { text: line.text, lineNumber: line.lineNumber, kind: line.kind } : { text: "" };
+  return line
+    ? { text: line.text, lineNumber: line.lineNumber, kind: line.kind, skipped: line.skipped }
+    : { text: "" };
 }
 
 function lineClasses(lines: DisplayLine[]): Extension {
@@ -208,16 +216,46 @@ function lineClasses(lines: DisplayLine[]): Extension {
   return EditorView.decorations.of(builder.finish());
 }
 
-function linkVerticalScroll(source: EditorView, target: EditorView) {
-  source.scrollDOM.addEventListener("scroll", () => {
-    if (syncingScroll || target.scrollDOM.scrollTop === source.scrollDOM.scrollTop) return;
-    syncingScroll = true;
-    target.scrollDOM.scrollTop = source.scrollDOM.scrollTop;
-    requestAnimationFrame(() => {
-      syncingScroll = false;
-    });
+function inlineMarks(lines: DisplayLine[]): Extension {
+  const builder = new RangeSetBuilder<Decoration>();
+  let position = 0;
+  for (const line of lines) {
+    if (line.inline && line.inline.to > line.inline.from) {
+      builder.add(
+        position + line.inline.from,
+        position + line.inline.to,
+        Decoration.mark({ class: "diff-inline" }),
+      );
+    }
+    position += line.text.length + 1;
+  }
+  return EditorView.decorations.of(builder.finish());
+}
+
+let changeIndex = -1;
+function nextChange() {
+  if (props.viewMode === "split") {
+    splitViewRef.value?.nextChange();
+    return;
+  }
+  if (!document.value || !unifiedView) return;
+  const lines = unifiedLines();
+  const changed = (index: number) => ["addition", "deletion"].includes(lines[index]?.kind ?? "");
+  const starts = lines.flatMap((_, index) =>
+    changed(index) && !changed(index - 1) ? [index + 1] : [],
+  );
+  if (!starts.length) return;
+  changeIndex = (changeIndex + 1) % starts.length;
+  unifiedView.dispatch({
+    effects: EditorView.scrollIntoView(unifiedView.state.doc.line(starts[changeIndex]).from, {
+      y: "center",
+    }),
   });
 }
+watch(requestKey, () => {
+  changeIndex = -1;
+});
+defineExpose({ nextChange });
 
 /** Language packs are loaded on demand so Diff does not pull every grammar into one chunk. */
 async function languageExtension(language: string): Promise<Extension> {
@@ -352,7 +390,7 @@ const diffTheme = EditorView.theme({
     height: "100%",
     maxHeight: "100%",
     fontFamily: "var(--font-mono)",
-    fontSize: "11px",
+    fontSize: "12px",
     lineHeight: "1.65",
   },
   ".cm-content": {
@@ -373,12 +411,27 @@ const diffTheme = EditorView.theme({
     backgroundColor: "var(--peek-code-selection, var(--peek-list-active)) !important",
   },
   ".cm-line.diff-addition": {
-    backgroundColor: "color-mix(in srgb, #2ea043 15%, transparent)",
+    backgroundColor: "color-mix(in srgb, #2ea043 16%, transparent)",
     boxShadow: "inset 3px 0 0 #2ea043",
   },
   ".cm-line.diff-deletion": {
-    backgroundColor: "color-mix(in srgb, #f85149 14%, transparent)",
+    backgroundColor: "color-mix(in srgb, #f85149 15%, transparent)",
     boxShadow: "inset 3px 0 0 #f85149",
+  },
+  ".cm-line.diff-skip": {
+    backgroundColor: "color-mix(in srgb, var(--peek-text) 4%, transparent)",
+    color: "var(--peek-muted)",
+    fontStyle: "italic",
+    boxShadow: "inset 0 1px 0 color-mix(in srgb, var(--peek-text) 8%, transparent)",
+  },
+  ".diff-inline": {
+    borderRadius: "2px",
+  },
+  ".cm-line.diff-addition .diff-inline": {
+    backgroundColor: "color-mix(in srgb, #2ea043 38%, transparent)",
+  },
+  ".cm-line.diff-deletion .diff-inline": {
+    backgroundColor: "color-mix(in srgb, #f85149 36%, transparent)",
   },
 });
 </script>
@@ -393,15 +446,10 @@ const diffTheme = EditorView.theme({
   overflow: hidden;
   background: transparent;
 }
-.split-editors {
-  box-sizing: border-box;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 6px;
-  padding: 0 6px 6px;
+.code-diff-editor.is-split {
+  flex: none;
+  min-height: 48px;
+  overflow: visible;
 }
 .editor-pane {
   min-width: 0;

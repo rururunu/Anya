@@ -17,6 +17,7 @@ commands.allow = [
   "list_mcp_server_statuses",
   "connect_mcp_server",
   "reauthenticate_mcp_server",
+  "ensure_ghost_mcp",
   "cache_install_icon",
   "lookup_install_icon",
   "lookup_install_icons",

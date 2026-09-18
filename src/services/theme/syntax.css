@@ -1,76 +1,97 @@
 /* Highlight.js — colors from theme tokens only. */
 
-.markdown-body :deep(.hljs-comment),
-.markdown-body :deep(.hljs-quote),
-.file-diff-body :deep(.hljs-comment),
-.file-diff-body :deep(.hljs-quote) {
+.markdown-body .hljs-comment,
+.markdown-body .hljs-quote,
+.file-diff-body .hljs-comment,
+.file-diff-body .hljs-quote {
   color: var(--peek-syntax-comment);
   font-style: italic;
 }
 
-.markdown-body :deep(.hljs-keyword),
-.markdown-body :deep(.hljs-selector-tag),
-.markdown-body :deep(.hljs-literal),
-.markdown-body :deep(.hljs-type),
-.file-diff-body :deep(.hljs-keyword),
-.file-diff-body :deep(.hljs-selector-tag),
-.file-diff-body :deep(.hljs-type),
-.file-diff-body :deep(.hljs-literal) {
+.markdown-body .hljs-keyword,
+.markdown-body .hljs-selector-tag,
+.markdown-body .hljs-literal,
+.markdown-body .hljs-type,
+.file-diff-body .hljs-keyword,
+.file-diff-body .hljs-selector-tag,
+.file-diff-body .hljs-type,
+.file-diff-body .hljs-literal {
   color: var(--peek-syntax-keyword);
 }
 
-.markdown-body :deep(.hljs-string),
-.markdown-body :deep(.hljs-regexp),
-.markdown-body :deep(.hljs-addition),
-.markdown-body :deep(.hljs-attribute),
-.file-diff-body :deep(.hljs-string),
-.file-diff-body :deep(.hljs-regexp),
-.file-diff-body :deep(.hljs-attribute) {
+.markdown-body .hljs-string,
+.markdown-body .hljs-regexp,
+.markdown-body .hljs-addition,
+.markdown-body .hljs-attribute,
+.file-diff-body .hljs-string,
+.file-diff-body .hljs-regexp,
+.file-diff-body .hljs-attribute {
   color: var(--peek-syntax-string);
 }
 
-.markdown-body :deep(.hljs-number),
-.markdown-body :deep(.hljs-symbol),
-.markdown-body :deep(.hljs-bullet),
-.file-diff-body :deep(.hljs-number),
-.file-diff-body :deep(.hljs-symbol) {
+.markdown-body .hljs-number,
+.markdown-body .hljs-symbol,
+.markdown-body .hljs-bullet,
+.file-diff-body .hljs-number,
+.file-diff-body .hljs-symbol {
   color: var(--peek-syntax-number);
 }
 
-.markdown-body :deep(.hljs-title),
-.markdown-body :deep(.hljs-section),
-.markdown-body :deep(.hljs-function .hljs-title),
-.file-diff-body :deep(.hljs-title),
-.file-diff-body :deep(.hljs-section),
-.file-diff-body :deep(.hljs-built_in) {
+.markdown-body .hljs-title,
+.markdown-body .hljs-section,
+.markdown-body .hljs-name,
+.markdown-body .hljs-function .hljs-title,
+.file-diff-body .hljs-title,
+.file-diff-body .hljs-section,
+.file-diff-body .hljs-built_in,
+.file-diff-body .hljs-name {
   color: var(--peek-syntax-function);
 }
 
-.markdown-body :deep(.hljs-variable),
-.markdown-body :deep(.hljs-template-variable),
-.markdown-body :deep(.hljs-params),
-.file-diff-body :deep(.hljs-variable),
-.file-diff-body :deep(.hljs-params) {
+.markdown-body .hljs-variable,
+.markdown-body .hljs-template-variable,
+.markdown-body .hljs-params,
+.file-diff-body .hljs-variable,
+.file-diff-body .hljs-params {
   color: var(--peek-syntax-variable);
 }
 
-.markdown-body :deep(.hljs-built_in),
-.markdown-body :deep(.hljs-meta),
-.markdown-body :deep(.hljs-link) {
+.markdown-body .hljs-built_in,
+.markdown-body .hljs-meta,
+.markdown-body .hljs-link,
+.markdown-body .hljs-attr,
+.markdown-body .hljs-selector-attr,
+.markdown-body .hljs-selector-class,
+.markdown-body .hljs-selector-id,
+.file-diff-body .hljs-meta,
+.file-diff-body .hljs-link,
+.file-diff-body .hljs-attr {
   color: var(--peek-syntax-type);
 }
 
-.markdown-body :deep(.hljs-deletion) {
+.markdown-body .hljs-punctuation,
+.markdown-body .hljs-operator,
+.file-diff-body .hljs-punctuation,
+.file-diff-body .hljs-operator {
+  color: var(--peek-syntax-operator);
+}
+
+.markdown-body .hljs-property,
+.file-diff-body .hljs-property {
+  color: var(--peek-syntax-property);
+}
+
+.markdown-body .hljs-deletion {
   color: var(--peek-danger);
 }
 
-.markdown-body :deep(pre code.language-diff .hljs-addition) {
+.markdown-body pre code.language-diff .hljs-addition {
   display: inline-block;
   min-width: 100%;
   background: color-mix(in srgb, var(--peek-success) 18%, transparent);
 }
 
-.markdown-body :deep(pre code.language-diff .hljs-deletion) {
+.markdown-body pre code.language-diff .hljs-deletion {
   display: inline-block;
   min-width: 100%;
   background: color-mix(in srgb, var(--peek-danger) 18%, transparent);

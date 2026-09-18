@@ -39,10 +39,15 @@ impl Tool for RunShellTool {
     fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
         let command = args["command"].as_str().unwrap_or("");
         crate::core::tools::sandbox::reject_source_file_shell_writes(command)?;
-        crate::core::tools::sandbox::reject_workspace_escape_writes(
-            command,
-            Some(&ctx.workspace_root),
-        )?;
+        let pass_all = crate::core::tools::tool_approval::shared_tool_approval_store()
+            .mode_for_session(ctx.root_session_id())
+            == crate::models::settings::ToolApprovalMode::AlwaysAllow;
+        if !pass_all {
+            crate::core::tools::sandbox::reject_workspace_escape_writes(
+                command,
+                Some(&ctx.workspace_root),
+            )?;
+        }
         crate::core::tools::sandbox::reject_user_plugin_hunt(command)?;
         if args["run_in_background"].as_bool().unwrap_or(false) && background_allowed(command) {
             return self.jobs.spawn_background(

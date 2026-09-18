@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-computer-use-commands"
+description = "Enables Computer Use HUD dismiss and playbook settings commands."
+commands.allow = [
+  "dismiss_computer_use_hud",
+  "list_computer_use_playbooks",
+  "get_computer_use_playbook",
+  "delete_computer_use_playbook",
+]

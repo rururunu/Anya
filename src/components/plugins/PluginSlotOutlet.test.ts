@@ -155,4 +155,29 @@ describe("PluginSlotOutlet", () => {
     expect(mounts).toBe(2);
     wrapper.unmount();
   });
+
+  it("collapses when the active review tab is not a plugin view", async () => {
+    mountSlot("sidebar.tabs", {
+      id: "b:term",
+      pluginId: "plugin-b",
+      mount: (el) => {
+        el.textContent = "term";
+      },
+      chrome: ["views"],
+    });
+    const wrapper = mount(PluginSlotOutlet, {
+      props: {
+        anchorId: "sidebar.tabs",
+        chrome: "views",
+        activeId: "diff",
+        hostActive: true,
+      },
+    });
+    await flush();
+    expect(wrapper.get(".plugin-slot-outlet").classes()).toContain("is-idle");
+    await wrapper.setProps({ activeId: "b:term" });
+    await flush();
+    expect(wrapper.get(".plugin-slot-outlet").classes()).not.toContain("is-idle");
+    wrapper.unmount();
+  });
 });

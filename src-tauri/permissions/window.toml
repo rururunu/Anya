@@ -19,6 +19,8 @@ commands.allow = [
     "get_preview_image",
     "toggle_desktop_pet",
     "get_desktop_pet_visible",
+    "set_desktop_pet_size",
+    "get_desktop_pet_size",
     "show_workbench",
     "toggle_overlay_from_pet",
 ]

@@ -7,13 +7,13 @@ mod slots;
 #[path = "tests.rs"]
 mod tests;
 
-use crate::core::runtime::{ChatMessage, ChatRequest, RequestContext};
+use crate::core::runtime::{ChatMessage, ChatRequest, MessageStatus, RequestContext, Role};
 use crate::models::settings::{AppLanguage, ReasoningLanguage};
 
 use language::inject_language_blocks;
 use slots::{
-    inject_context, inject_memories, inject_optional_policy_suffix, inject_system_block,
-    split_current_user, system_message,
+    format_volatile_context, inject_context, inject_memories, inject_optional_policy_suffix,
+    inject_system_block, split_current_user, system_message,
 };
 
 /// Prompt 组装偏好 — 来自设置，不进入稳定 system。
@@ -71,18 +71,18 @@ pub struct PromptBuildInput<'a> {
 ///
 /// ```text
 /// [0] SYSTEM_PROMPT
-/// [1] workspace / captured context
+/// [1] stable workspace / IDE identity
 /// [2] project rules (agent.md / AGENTS.md)
-/// [3] recalled memories
-/// [4] preferred #skill / #mcp resources (per-turn)
-/// [5] optional policy suffix (collab / minimal-coding / …)
-/// [6..] history + current user
+/// [3] optional policy suffix (collab / minimal-coding / plan hint / …)
+/// [4] plugin prompt suffix (deterministic order)
+/// [5..] history + recalled memories + current user
+///        └─ preferred #skill/#mcp chips + live context appended to user text
 /// ```
 ///
 /// Optional strategy toggles only populate the policy suffix slot; they never
-/// insert ahead of context/rules/memories, so enabling/disabling them cannot
-/// shift the stable prefix. Preferred resources sit after memories because they
-/// change per user turn.
+/// insert ahead of context/rules, so enabling/disabling them cannot
+/// shift the stable prefix. Per-turn chips and volatile capture fields hang off
+/// the current user message so they do not invalidate the cached prefix.
 pub struct PromptBuilder;
 
 impl PromptBuilder {
@@ -109,20 +109,11 @@ impl PromptBuilder {
             messages.push(system_message(session_id));
         }
 
-        // [1]–[3] Core context slots (order locked).
+        // [1]–[2] Core context slots (order locked).
         inject_context(&mut messages, session_id, context);
         inject_system_block(&mut messages, session_id, "rules", project_rules);
-        inject_memories(&mut messages, session_id, recalled_memories);
 
-        // [4] Per-turn resource preferences from `#skill:` / `#mcp:` / `#plugin:` chips.
-        inject_system_block(
-            &mut messages,
-            session_id,
-            "preferred-resources",
-            preferred_resources,
-        );
-
-        // [5] Optional policy suffix — toggles only hang here.
+        // [3] Optional policy suffix — toggles only hang here.
         inject_optional_policy_suffix(
             &mut messages,
             session_id,
@@ -148,11 +139,45 @@ impl PromptBuilder {
         // [5..] History（排除 pending 的空 assistant）
         let (prior, current_user) = split_current_user(history);
         messages.extend(prior.into_iter().filter(ChatMessage::contributes_to_api));
+        // Query-dependent retrieval must not invalidate the historical prefix.
+        inject_memories(&mut messages, session_id, recalled_memories);
 
-        // 当前用户输入（含 transient 语言块）
+        // 当前用户输入（含 transient 语言块 + per-turn chips + 本轮易变语境）
+        let mut user_tail = String::new();
+        if let Some(resources) = preferred_resources
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            user_tail.push_str(resources);
+        }
+        if let Some(live) = format_volatile_context(context) {
+            if !user_tail.is_empty() {
+                user_tail.push_str("\n\n");
+            }
+            user_tail.push_str(&live);
+        }
         if let Some(mut user_message) = current_user {
             user_message.content = inject_language_blocks(&user_message.content, preferences);
+            if !user_tail.is_empty() {
+                user_message.content = format!("{}\n\n{user_tail}", user_message.content);
+            }
             messages.push(user_message);
+        } else if !user_tail.is_empty() {
+            messages.push(ChatMessage {
+                id: format!("context-live-{session_id}"),
+                session_id: session_id.to_string(),
+                role: Role::User,
+                content: user_tail,
+                reasoning: None,
+                work_timeline: None,
+                tool_activities: None,
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+                status: MessageStatus::Done,
+                timestamp: 0,
+                estimated_tokens: None,
+            });
         }
 
         ChatRequest {

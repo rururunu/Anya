@@ -1,4 +1,5 @@
 import { computed, reactive } from "vue";
+import type { ConfirmDialogOptions } from "@/components/ui/confirm-dialog";
 import { displayPluginIcon } from "@/composables/plugins/pluginIcon";
 import { afterPluginDisabled, syncEnabledPluginUi } from "@/composables/plugins/sdk";
 import {
@@ -17,6 +18,8 @@ import { usePluginsStore } from "@/stores/plugins";
 import { useSettingStore } from "@/stores/setting";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
+type AskConfirm = (options: ConfirmDialogOptions) => Promise<boolean | undefined>;
+
 /** What the plugin is for: workbench chrome, a host/OS service, or chat-agent tools. */
 export function pluginRole(plugin: UserPluginSummary): "ui" | "service" | "agent" {
   const role = plugin.role?.trim();
@@ -28,6 +31,16 @@ export function pluginRole(plugin: UserPluginSummary): "ui" | "service" | "agent
   if (contributes.agent?.tools && !chrome) return "agent";
   if (chrome) return "ui";
   return "service";
+}
+
+/** Plugins that can drive the OS desktop need an explicit enable consent. */
+export function requiresComputerConsent(plugin: UserPluginSummary): boolean {
+  return plugin.id === "computer-use" || plugin.permissions.includes("computer");
+}
+
+/** OpenCLI can control the user's logged-in Chrome via Browser Bridge. */
+export function requiresOpenCliConsent(plugin: UserPluginSummary): boolean {
+  return plugin.id === "opencli" || plugin.permissions.includes("opencli");
 }
 
 /**
@@ -61,6 +74,16 @@ export function usePluginActions() {
           typeUi: "界面",
           typeService: "功能",
           typeAgent: "Agent",
+          computerConsentTitle: "启用电脑操控？",
+          computerConsentDesc:
+            "启用后，聊天里的 Agent 可在本机查看窗口、点击、输入、滚动，并操控已打开的应用与浏览器（后台优先）。请只在你本人控制的电脑上启用；可随时停用。敏感操作仍会走工具审批，HUD「结束」可立即停止。",
+          computerConsentConfirm: "我了解，启用",
+          computerConsentCancel: "取消",
+          opencliConsentTitle: "启用 OpenCLI？",
+          opencliConsentDesc:
+            "启用后，Agent 可通过本机 OpenCLI 调用站点适配器，并经 Browser Bridge 操控你已登录的 Chrome。请先安装 opencli 与扩展，并确认 doctor 通过。请只在本人控制的电脑上启用；可随时停用。",
+          opencliConsentConfirm: "我了解，启用",
+          opencliConsentCancel: "取消",
         }
       : {
           noDesc: "No description",
@@ -82,6 +105,16 @@ export function usePluginActions() {
           typeUi: "UI",
           typeService: "Service",
           typeAgent: "Agent",
+          computerConsentTitle: "Enable Computer Use?",
+          computerConsentDesc:
+            "Once enabled, the chat agent can view windows, click, type, scroll, and control open apps and browsers on this PC (background-preferred). Only enable on a machine you control. You can disable anytime. Sensitive actions still go through tool approval; HUD Stop ends the session immediately.",
+          computerConsentConfirm: "I understand — Enable",
+          computerConsentCancel: "Cancel",
+          opencliConsentTitle: "Enable OpenCLI?",
+          opencliConsentDesc:
+            "Once enabled, the agent can run OpenCLI site adapters and drive your logged-in Chrome via Browser Bridge. Install opencli + the extension and confirm doctor is green first. Only enable on a machine you control; you can disable anytime.",
+          opencliConsentConfirm: "I understand — Enable",
+          opencliConsentCancel: "Cancel",
         },
   );
 
@@ -105,11 +138,43 @@ export function usePluginActions() {
     }
   }
 
-  async function enable(plugin: UserPluginSummary) {
+  function computerConsentOptions(): ConfirmDialogOptions {
+    return {
+      title: copy.value.computerConsentTitle,
+      description: copy.value.computerConsentDesc,
+      confirmLabel: copy.value.computerConsentConfirm,
+      cancelLabel: copy.value.computerConsentCancel,
+      tone: "danger",
+    };
+  }
+
+  function opencliConsentOptions(): ConfirmDialogOptions {
+    return {
+      title: copy.value.opencliConsentTitle,
+      description: copy.value.opencliConsentDesc,
+      confirmLabel: copy.value.opencliConsentConfirm,
+      cancelLabel: copy.value.opencliConsentCancel,
+      tone: "danger",
+    };
+  }
+
+  async function enable(plugin: UserPluginSummary, askConfirm?: AskConfirm) {
+    if (requiresComputerConsent(plugin)) {
+      const confirmed = askConfirm
+        ? await askConfirm(computerConsentOptions())
+        : window.confirm(`${copy.value.computerConsentTitle}\n\n${copy.value.computerConsentDesc}`);
+      if (!confirmed) return false;
+    } else if (requiresOpenCliConsent(plugin)) {
+      const confirmed = askConfirm
+        ? await askConfirm(opencliConsentOptions())
+        : window.confirm(`${copy.value.opencliConsentTitle}\n\n${copy.value.opencliConsentDesc}`);
+      if (!confirmed) return false;
+    }
     const selected = pending[plugin.id]?.length ? pending[plugin.id] : plugin.permissions;
     await enableUserPlugin(plugin.id, selected);
     await syncEnabledPluginUi();
     await pluginsStore.refresh();
+    return true;
   }
 
   async function disable(id: string) {
@@ -117,12 +182,12 @@ export function usePluginActions() {
     await afterPluginDisabled(id);
   }
 
-  async function toggle(plugin: UserPluginSummary) {
+  async function toggle(plugin: UserPluginSummary, askConfirm?: AskConfirm) {
     if (plugin.enabled) {
       await disable(plugin.id);
-    } else {
-      await enable(plugin);
+      return true;
     }
+    return enable(plugin, askConfirm);
   }
 
   async function reload(id: string) {
@@ -218,5 +283,6 @@ export function usePluginActions() {
     importFolder,
     exportPack,
     remove,
+    computerConsentOptions,
   };
 }

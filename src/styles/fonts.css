@@ -1,7 +1,8 @@
 /*
- * 全部字体本地打包（@fontsource），不再依赖 Google Fonts 网络加载。
- * 拉丁字符优先走 Inter，CJK 回退到 Noto Sans SC；等宽走 JetBrains Mono。
+ * 西文用 Source Sans 3（正式 Grotesk），汉字用微软雅黑。
+ * Source Sans 3 的 @font-face 只覆盖拉丁区，CJK 会落到雅黑。
  */
+@import "@fontsource-variable/source-sans-3";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 @import "@fontsource/noto-sans-sc/400.css";
@@ -10,19 +11,16 @@
 
 :root {
   --font-sans-latin:
-    "Inter Variable", "Segoe UI Variable Text", "Segoe UI", "Noto Sans SC", sans-serif;
+    "Source Sans 3 Variable", "Source Sans 3", Calibri, Aptos, "Segoe UI", "Helvetica Neue", Arial,
+    sans-serif;
   --font-sans-cjk:
-    "Inter Variable", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "微软雅黑", sans-serif;
-  --peek-font-sans: var(--font-sans-cjk);
-  --font-mono: "JetBrains Mono Variable", "Cascadia Mono", "Consolas", "Noto Sans SC", monospace;
-}
-
-html[lang="en-US"] {
-  --peek-font-sans: var(--font-sans-latin);
-}
-
-html[lang="zh-CN"] {
-  --peek-font-sans: var(--font-sans-cjk);
+    "Microsoft YaHei", "微软雅黑", "Microsoft YaHei UI", "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans SC", sans-serif;
+  --peek-font-sans: var(--font-sans-latin), var(--font-sans-cjk), sans-serif;
+  --font-mono:
+    "Cascadia Code", "Cascadia Mono", "JetBrains Mono Variable", Consolas, "SF Mono", Menlo,
+    ui-monospace, monospace;
+  --peek-font-mono: var(--font-mono);
 }
 
 html {
@@ -30,11 +28,9 @@ html {
 }
 
 body {
-  /* Inter 可变字体按字号自动调整视觉尺寸；cv05 让 l 带尾以区分 I/l。 */
   font-optical-sizing: auto;
-  font-feature-settings:
-    "kern" 1,
-    "cv05" 1;
+  font-weight: 500;
+  font-feature-settings: "kern" 1;
 }
 
 html[lang="zh-CN"] {
@@ -45,8 +41,4 @@ html[lang="zh-CN"] {
 html[lang="en-US"] {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-html[lang="zh-CN"] body {
-  letter-spacing: 0.01em;
 }

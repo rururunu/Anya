@@ -58,6 +58,13 @@ pub(crate) fn serialize_work_timeline(timeline: Option<&Vec<WorkTimelineItem>>) 
                     crate::core::chat::limits::STORED_TIMELINE_ITEM_MAX_CHARS,
                 ),
             },
+            WorkTimelineItem::Inject { id, content } => WorkTimelineItem::Inject {
+                id: id.clone(),
+                content: crate::core::chat::limits::truncate_chars(
+                    content,
+                    crate::core::chat::limits::STORED_TIMELINE_ITEM_MAX_CHARS,
+                ),
+            },
             other => other.clone(),
         })
         .collect();

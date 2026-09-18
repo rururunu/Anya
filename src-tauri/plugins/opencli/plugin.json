@@ -1,0 +1,19 @@
+{
+  "id": "opencli",
+  "name": "OpenCLI",
+  "version": "0.1.0",
+  "apiVersion": "1.0",
+  "role": "agent",
+  "description": "Site adapters + Browser Bridge on your logged-in Chrome via OpenCLI. Requires a local opencli install. Ships disabled.",
+  "icon": "ui/icon.svg",
+  "about": "ui/about.md",
+  "host": { "entry": "host/main.ts" },
+  "contributes": {
+    "agent": {
+      "tools": true,
+      "prompt": "Prefer OpenCLI for logged-in websites and known site adapters. Pipeline: (1) doctor if unsure setup (2) list or run site commands with --json when available (3) for ad-hoc pages use browser with a session name (e.g. work): open → state → click/type/fill/extract. Do NOT also drive the same Chrome with Computer Use Ghost CDP in the same turn. Desktop/non-Chrome apps stay on Computer Use.",
+      "skills": ["skills/browser.md", "skills/usage.md"]
+    }
+  },
+  "permissions": ["opencli", "agent.tools", "agent.prompt"]
+}

@@ -303,11 +303,29 @@ export function createPluginContext(
       list: () => listAssetKeys(),
       register(key, asset) {
         const ok = registerAsset(key, pluginId, asset);
-        if (ok) record.cleanups.push(() => unregisterAsset(key, pluginId));
+        if (ok) {
+          record.cleanups.push(() => unregisterAsset(key, pluginId));
+          if (key === "pet.stage.skin" || key === "pet.stage.atlas") {
+            const mode = asset.kind === "spritesheet" ? "spritesheet" : "media";
+            void pluginHostRpc(pluginId, "pet.setAppearance", {
+              mode,
+              kind: asset.kind,
+              source: asset.source,
+            }).catch(() => {
+              /* pet permission may be missing — asset still registered for diagnostics */
+            });
+            record.cleanups.push(() => {
+              void pluginHostRpc(pluginId, "pet.clearAppearance", {}).catch(() => {});
+            });
+          }
+        }
         return ok;
       },
       unregister(key) {
         unregisterAsset(key, pluginId);
+        if (key === "pet.stage.skin" || key === "pet.stage.atlas") {
+          void pluginHostRpc(pluginId, "pet.clearAppearance", {}).catch(() => {});
+        }
       },
     },
     bus: {

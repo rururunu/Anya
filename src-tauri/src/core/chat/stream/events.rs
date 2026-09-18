@@ -73,7 +73,7 @@ pub(crate) fn enrich_from_work_timeline(
         match item {
             WorkTimelineItem::Content { content: text, .. } => timeline_content.push_str(text),
             WorkTimelineItem::Reasoning { content: text, .. } => timeline_reasoning.push_str(text),
-            WorkTimelineItem::Tool { .. } => {}
+            WorkTimelineItem::Tool { .. } | WorkTimelineItem::Inject { .. } => {}
         }
     }
 

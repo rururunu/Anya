@@ -419,6 +419,15 @@ pub struct AppSettings {
     /// Frosted-glass titlebar and sidebars on the workbench.
     #[serde(default)]
     pub chrome_frosted_glass: bool,
+    /// Chinese UI font family. Empty = Microsoft YaHei stack.
+    #[serde(default)]
+    pub font_cjk: String,
+    /// Latin UI font family. Empty = system UI stack.
+    #[serde(default)]
+    pub font_latin: String,
+    /// Monospace / code font family. Empty = Cascadia Code stack.
+    #[serde(default)]
+    pub font_mono: String,
     #[serde(default = "default_chat_model")]
     pub chat_model: String,
     #[serde(default)]
@@ -452,7 +461,7 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub continue_thinking_after_tools: bool,
     /// Controls whether reasoning supplied by the model is rendered in chat.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub show_reasoning: bool,
     /// detailed = shell/diff inline in chat; compact = fold into process details.
     #[serde(default)]
@@ -621,6 +630,9 @@ pub struct AppSettingsPatch {
     pub enabled_builtin_skills: Option<Vec<String>>,
     pub opacity: Option<u32>,
     pub chrome_frosted_glass: Option<bool>,
+    pub font_cjk: Option<String>,
+    pub font_latin: Option<String>,
+    pub font_mono: Option<String>,
     pub chat_model: Option<String>,
     pub chat_model_provider: Option<String>,
     pub multimodal_model: Option<String>,
@@ -693,6 +705,9 @@ impl Default for AppSettings {
             enabled_builtin_skills: Vec::new(),
             opacity: 100,
             chrome_frosted_glass: false,
+            font_cjk: String::new(),
+            font_latin: String::new(),
+            font_mono: String::new(),
             chat_model: default_chat_model(),
             chat_model_provider: String::new(),
             multimodal_model: default_multimodal_model(),
@@ -705,7 +720,7 @@ impl Default for AppSettings {
             reasoning_language: ReasoningLanguage::default(),
             pass_tool_reasoning: true,
             continue_thinking_after_tools: true,
-            show_reasoning: true,
+            show_reasoning: false,
             agent_work_display: AgentWorkDisplay::default(),
             multi_model_collaboration: false,
             collaboration_models: Vec::new(),
@@ -855,6 +870,9 @@ impl AppSettings {
             chrome_frosted_glass: patch
                 .chrome_frosted_glass
                 .unwrap_or(self.chrome_frosted_glass),
+            font_cjk: patch.font_cjk.unwrap_or_else(|| self.font_cjk.clone()),
+            font_latin: patch.font_latin.unwrap_or_else(|| self.font_latin.clone()),
+            font_mono: patch.font_mono.unwrap_or_else(|| self.font_mono.clone()),
             chat_model: patch.chat_model.unwrap_or_else(|| self.chat_model.clone()),
             chat_model_provider: patch
                 .chat_model_provider
@@ -996,7 +1014,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_settings_default_to_showing_reasoning() {
+    fn legacy_settings_default_to_hiding_reasoning() {
         let settings: AppSettings = serde_json::from_value(serde_json::json!({
             "colorScheme": "blue-black",
             "language": "zh-CN"
@@ -1004,7 +1022,7 @@ mod tests {
         .expect("legacy settings should deserialize");
 
         assert_eq!(settings.color_scheme, ColorScheme::Dark);
-        assert!(settings.show_reasoning);
+        assert!(!settings.show_reasoning);
         assert!(settings.continue_thinking_after_tools);
         assert!(!settings.multi_model_collaboration);
         assert!(settings.collaboration_models.is_empty());
@@ -1141,13 +1159,13 @@ mod tests {
     #[test]
     fn show_reasoning_patch_is_optional_and_mergeable() {
         let settings = AppSettings::default();
-        assert!(settings.merge(AppSettingsPatch::default()).show_reasoning);
+        assert!(!settings.merge(AppSettingsPatch::default()).show_reasoning);
 
         let patch = AppSettingsPatch {
-            show_reasoning: Some(false),
+            show_reasoning: Some(true),
             ..AppSettingsPatch::default()
         };
-        assert!(!settings.merge(patch).show_reasoning);
+        assert!(settings.merge(patch).show_reasoning);
     }
 
     #[test]

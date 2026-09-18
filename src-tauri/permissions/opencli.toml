@@ -1,0 +1,8 @@
+[[permission]]
+identifier = "allow-opencli-commands"
+description = "Enables OpenCLI setup status, doctor, and one-click CLI install."
+commands.allow = [
+  "get_opencli_setup_status",
+  "install_opencli_cli",
+  "run_opencli_doctor",
+]

@@ -543,7 +543,7 @@ watch(
   line-height: 24px;
 }
 .tool-activity-list.flat .tool-activity-status {
-  font-size: 10px;
+  font-size: 12px;
 }
 .tool-activity-list.nested {
   gap: 2px;
@@ -637,7 +637,7 @@ watch(
 .tool-activity-variant {
   flex: none;
   color: var(--peek-text);
-  font-weight: 400;
+  font-weight: 500;
 }
 .tool-activity-separator {
   flex: none;
@@ -716,7 +716,7 @@ watch(
 .tool-activity-status {
   flex: none;
   color: var(--peek-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .tool-activity-status.error {
   color: var(--destructive);
@@ -770,7 +770,7 @@ watch(
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -783,7 +783,7 @@ watch(
 }
 .tool-activity-detail {
   padding: 2px 6px 8px 28px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--peek-muted);
 }
 .tool-activity-detail :deep(pre) {

@@ -230,8 +230,8 @@ pub(crate) fn message_to_api_json(
                 let reasoning = message
                     .reasoning
                     .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
+                    .map(|value| if is_deepseek { value } else { value.trim() })
+                    .filter(|value| is_deepseek || !value.is_empty())
                     .unwrap_or(" ");
                 payload
                     .as_object_mut()
@@ -242,10 +242,16 @@ pub(crate) fn message_to_api_json(
         }
     }
 
-    json!({
+    let mut payload = json!({
         "role": role_to_api(message.role),
         "content": parse_multimodal_content(&message.content),
-    })
+    });
+    if is_deepseek && pass_tool_reasoning && message.role == Role::Assistant {
+        if let Some(reasoning) = &message.reasoning {
+            payload["reasoning_content"] = json!(reasoning);
+        }
+    }
+    payload
 }
 
 fn role_to_api(role: Role) -> &'static str {

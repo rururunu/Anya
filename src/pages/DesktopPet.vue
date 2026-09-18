@@ -28,6 +28,7 @@
       @dblclick="onPetDoubleClick"
     >
       <MascotPetView
+        v-if="appearance.mode === 'mascot'"
         :expression="expression"
         :action="currentAction"
         :autonomous-action="autonomousAction"
@@ -39,6 +40,20 @@
         :follow-pointer="true"
         class="pet-mascot"
       />
+      <DesktopPetCompanion
+        v-else-if="appearance.mode === 'companion'"
+        :expression="expression"
+        :config="companionConfig"
+        class="pet-mascot"
+      />
+      <DesktopPetSpritesheet
+        v-else-if="appearance.mode === 'spritesheet' && appearance.source"
+        :manifest-url="appearance.source"
+        :expression="expression"
+        :gesture="spriteGesture"
+        class="pet-mascot"
+      />
+      <DesktopPetMediaStage v-else-if="appearance.mode === 'media'" :appearance="appearance" />
     </div>
   </main>
 </template>
@@ -47,7 +62,11 @@
 import { computed, onMounted } from "vue";
 import MascotPetView from "@/components/icons/MascotPetView.vue";
 import DesktopPetInteractionCard from "@/components/pet/DesktopPetInteractionCard.vue";
+import DesktopPetCompanion from "@/components/pet/DesktopPetCompanion.vue";
+import DesktopPetMediaStage from "@/components/pet/DesktopPetMediaStage.vue";
+import DesktopPetSpritesheet from "@/components/pet/DesktopPetSpritesheet.vue";
 import { PET_SIZES, useDesktopPet } from "@/composables/useDesktopPet";
+import type { PetCompanionConfig } from "@/services/pet/appearance";
 
 onMounted(() => {
   if (typeof document !== "undefined") {
@@ -66,6 +85,8 @@ const {
   isCombo,
   size,
   locked,
+  appearance,
+  spriteGesture,
   activeInteraction,
   interactionCount,
   currentInteractionIndex,
@@ -79,6 +100,11 @@ const {
   submitToolApproval,
   dismissInteraction,
 } = useDesktopPet();
+
+const companionConfig = computed(() => {
+  if (appearance.value.mode !== "companion" || !appearance.value.config) return undefined;
+  return appearance.value.config as PetCompanionConfig;
+});
 
 const avatarStyle = computed(() => {
   const conf = PET_SIZES[size.value];

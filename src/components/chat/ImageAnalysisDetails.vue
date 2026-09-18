@@ -29,9 +29,7 @@ const props = defineProps<{
 
 const settingStore = useSettingStore();
 const title = computed(() => tr(settingStore.language, "imageAnalysis"));
-const ariaLabel = computed(() =>
-  props.model ? `${title.value} · ${props.model}` : title.value,
-);
+const ariaLabel = computed(() => (props.model ? `${title.value} · ${props.model}` : title.value));
 </script>
 
 <style scoped>
@@ -58,7 +56,9 @@ const ariaLabel = computed(() =>
   list-style: none;
   user-select: none;
   border-radius: 6px;
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .image-analysis-header:hover {
@@ -94,7 +94,7 @@ const ariaLabel = computed(() =>
   margin-left: auto;
   color: var(--peek-faint);
   font-size: 10px;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .image-analysis-body {

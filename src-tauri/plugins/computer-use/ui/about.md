@@ -1,19 +1,50 @@
-# Computer Use
+# 电脑操控
 
-Agent plugin. After you **Enable** it (grant `computer`), ask Anya in chat to look at the screen or click/type. There is no sidebar.
+让聊天里的 Anya **操作本机桌面与浏览器**。没有侧栏窗口——启用后直接在对话里用。
 
-The agent can:
+仅 **Windows**。默认关闭；首次启用会弹出确认。请只在你本人控制的电脑上打开。
 
-1. **Launch** an app, file, or URI (`launch`) — faster than clicking Start
-2. List and focus windows (`list_windows`, `focus_window`)
-3. See a **screenshot + UI Automation control list** together, then Invoke/`click_control` / `set_value` by name, AutomationId, or index
-4. Click, **drag**, hover, scroll, or type when there is no named control (canvas, snip region)
-5. Type text and press keys (`enter`, `tab`, `ctrl+c`, `win+e`, …)
+## 怎么用
 
-Prefer launch → keyboard → named UIA controls over guessing pixels. Do not screenshot after every click.
+1. 右上角打开开关（确认弹窗点「我了解，启用」）。
+2. 回到聊天，可输入 `#plugin:computer-use`，或直接说「打开记事本输入 hello」。
+3. 首次改桌面的操作会走**工具审批**；选「本会话允许」可少点确认。
+4. 操控进行中顶部会出现 HUD；点 **结束** 立刻停掉。
 
-When enabled, a **Windows apps playbook** is attached to the agent prompt.
+## 它怎么工作
 
-Windows only. Mutating actions go through Anya's existing tool-approval picker. For speed, choose **Allow for session**. The plugin ships **disabled**.
+进程内嵌入 [Ghost](https://github.com/NORTHTEKDevs/ghost)（MIT）：优先读控件名/角色再点击或输入，并回报是否 `verified`。默认**后台优先**，尽量不抢你的鼠标。截图只作画布等兜底，不是主路径。
 
-Do not use this on a machine you do not control.
+典型顺序：`window` 锚定 → `see` → `act` → 读 `verified`；网页用 `browser` / `tab`（CDP），不要像素点网页。
+
+## 能力一览
+
+| 能力 | 说明 |
+| --- | --- |
+| 窗口 | 列出、启动、锚定目标应用 |
+| 看见 / 操作 | 控件列表与按名点击、输入 |
+| 等待 / 断言 | 等元素出现或值变化 |
+| 键盘 / 剪贴板 | 快捷键、复制粘贴 |
+| 浏览器 | 开标签、导航、DOM 点击、取文本、执行 JS |
+| HUD | 会话级提示条；结束即停 |
+
+## 设置
+
+本页「设置」可查看、搜索、删除本机已保存的学习 playbook（`%APPDATA%/Anya/computer-use/playbooks`）。
+
+## 安全
+
+- 可随时关掉本页开关。
+- 敏感工具仍需审批；HUD「结束」会紧急停止 Ghost。
+- 不要对他人电脑或无人值守机器启用。
+- Agent **不能**通过 `manage_plugin` 自行打开本插件，必须由你在此确认。
+
+## 权限
+
+| 权限 | 用途 |
+| --- | --- |
+| `computer` | 桌面与浏览器操控 |
+| `agent.tools` | 把工具挂进对话 |
+| `agent.prompt` | 附带 Windows 操作说明 |
+
+停用后对话里不再出现 `plugin_computer-use__*` 工具。

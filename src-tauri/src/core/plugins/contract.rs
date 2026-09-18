@@ -177,7 +177,11 @@ const ASSET_KEYS: &[AssetKeyInfo] = &[
     },
     AssetKeyInfo {
         key: "pet.stage.skin",
-        allowed_kinds: &["image", "video", "lottie"],
+        allowed_kinds: &["image", "video", "lottie", "svg", "html", "spritesheet"],
+    },
+    AssetKeyInfo {
+        key: "pet.stage.atlas",
+        allowed_kinds: &["spritesheet"],
     },
 ];
 

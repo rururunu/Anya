@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.21                                            |
+| **Version** | v0.2.22                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -319,37 +319,37 @@ sequenceDiagram
 
 ### 5.1 Rust domain (`src-tauri/src/core`)
 
-| Module              | Path                                       | Role                                                                                                         |
-| ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Chat service        | `core/chat/service/`                       | Entry: persist messages, resolve context/model, start or soft-inject (`mod.rs` façade)                       |
-| Stream manager      | `core/chat/stream/`                        | Background task, cancel, stream aggregation, UI events, timeline text                                        |
-| Agent runner        | `core/chat/agent.rs`                       | **Primary** model↔tools loop                                                                                 |
-| Agent loop policies | `core/chat/agent_loop/`                    | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure                               |
-| Conversation store  | `core/chat/conversation_manager/`          | Façade + `messages` / `activity` / `session` / `branch` / `helpers`; SQLite + work timeline                  |
-| DB / journal        | `core/chat/db/`, `core/chat/journal.rs`    | Schema, save/load, crash recovery (`db/{schema,messages,sessions,tool_activity}`)                            |
-| Prompts (markdown)  | `core/chat/prompts/`, `prompts/*.md`       | System / tools / policies / skills markdown (`include_str!`)                                                 |
-| Prompt builder      | `core/chat/prompt/`                        | Slot assembly (`PromptBuilder` + `slots`) for KV-cache-stable prefixes                                       |
-| Agent runtime       | `core/agent/runtime/`                      | Run state machine, cancel, soft-inject queue, debug                                                          |
-| AI providers        | `core/ai/`                                 | Chat provider registry, DeepSeek/Gemini, multimodal; **Images API** is separate (`image_gen`)                |
-| DeepSeek / OpenAI   | `core/ai/deepseek/`                        | `provider`, `messages/`, `stream/`, `anthropic`, `models`, `multimodal`                                      |
-| Shell jobs          | `core/tools/shell_jobs/`                   | Foreground/background shell process lifecycle and output                                                     |
-| Workspace registry  | `core/workspace/`                          | SQLite-backed workspace list (`manager/`, `db`, `helpers`)                                                   |
-| MCP client          | `core/mcp/`                                | stdio JSON-RPC (`manager`, `process`, `runtime`, `command`, `remote_auth`)                                   |
-| Images API          | `core/ai/image_gen.rs`                     | `POST /v1/images/generations` / `edits` via Settings → Image (`image_providers`)                             |
-| Image markdown      | `core/ai/image_markdown.rs`                | Extract / strip `![edit-region]` refs shared by chat, vision, and Images                                     |
-| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs` | Optional retrieve-then-rerank; API or local ONNX                                                             |
-| Tools               | `core/tools/`                              | Registry, approval, plan/image mode gates, files, shell, skills, agent tools                                 |
-| Workspace index     | `core/tools/workspace_index.rs`            | Chunked keyword index under `.anya/index` (incremental JSONL); skips `.anya` via `fs_skip`                   |
-| Plan mode           | `core/tools/plan_mode.rs`                  | Session write gate; Agent auto-enter heuristic for complex tasks                                             |
-| Image mode          | `core/tools/image_mode.rs`                 | Per-session toolbar options for `generate_image`; tool whitelist + challenge                                 |
-| Context             | `core/context/`                            | IDE, selection, clipboard, environment, Office hints                                                         |
-| Checkpoint          | `core/checkpoint/`                         | Undo / review of applied file changes                                                                        |
-| Token               | `core/token/`                              | Accounting (incl. cache-read / reasoning tokens), usage persistence                                          |
-| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                                                   |
-| Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                                             |
-| Event bus           | `core/event/`                              | Domain events                                                                                                |
-| Plugins             | `core/plugins/`                            | Manifest, grants, Deno host, official bundles; **computer-use** in `computer/` (UIA, capture, launch)        |
-| Remote gateway      | `core/remote/`                             | WS `/remote/v1`; `gateway/`, `state/`, `bridge/`, pairing, tunnel, upload, **download `/f/`**, preview `/p/` |
+| Module              | Path                                       | Role                                                                                                                                                                                                             |
+| ------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chat service        | `core/chat/service/`                       | Entry: persist messages, resolve context/model, start or soft-inject (`mod.rs` façade)                                                                                                                           |
+| Stream manager      | `core/chat/stream/`                        | Background task, cancel, stream aggregation, UI events, timeline text                                                                                                                                            |
+| Agent runner        | `core/chat/agent.rs`                       | **Primary** model↔tools loop                                                                                                                                                                                     |
+| Agent loop policies | `core/chat/agent_loop/`                    | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure                                                                                                                                   |
+| Conversation store  | `core/chat/conversation_manager/`          | Façade + `messages` / `activity` / `session` / `branch` / `helpers`; SQLite + work timeline                                                                                                                      |
+| DB / journal        | `core/chat/db/`, `core/chat/journal.rs`    | Schema, save/load, crash recovery (`db/{schema,messages,sessions,tool_activity}`)                                                                                                                                |
+| Prompts (markdown)  | `core/chat/prompts/`, `prompts/*.md`       | System / tools / policies / skills markdown (`include_str!`)                                                                                                                                                     |
+| Prompt builder      | `core/chat/prompt/`                        | Slot assembly (`PromptBuilder` + `slots`) for KV-cache-stable prefixes; volatile + `#skill` chips on user tail; agent-state append-only; tool schemas frozen per turn (DeepSeek disk cache = exact prefix units) |
+| Agent runtime       | `core/agent/runtime/`                      | Run state machine, cancel, soft-inject queue, debug                                                                                                                                                              |
+| AI providers        | `core/ai/`                                 | Chat provider registry, DeepSeek/Gemini, multimodal; **Images API** is separate (`image_gen`)                                                                                                                    |
+| DeepSeek / OpenAI   | `core/ai/deepseek/`                        | `provider`, `messages/`, `stream/`, `anthropic`, `models`, `multimodal`                                                                                                                                          |
+| Shell jobs          | `core/tools/shell_jobs/`                   | Foreground/background shell process lifecycle and output                                                                                                                                                         |
+| Workspace registry  | `core/workspace/`                          | SQLite-backed workspace list (`manager/`, `db`, `helpers`)                                                                                                                                                       |
+| MCP client          | `core/mcp/`                                | stdio JSON-RPC (`manager`, `process`, `runtime`, `command`, `remote_auth`)                                                                                                                                       |
+| Images API          | `core/ai/image_gen.rs`                     | `POST /v1/images/generations` / `edits` via Settings → Image (`image_providers`)                                                                                                                                 |
+| Image markdown      | `core/ai/image_markdown.rs`                | Extract / strip `![edit-region]` refs shared by chat, vision, and Images                                                                                                                                         |
+| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs` | Optional retrieve-then-rerank; API or local ONNX                                                                                                                                                                 |
+| Tools               | `core/tools/`                              | Registry, approval, plan/image mode gates, files, shell, skills, agent tools                                                                                                                                     |
+| Workspace index     | `core/tools/workspace_index.rs`            | Chunked keyword index under `.anya/index` (incremental JSONL); skips `.anya` via `fs_skip`                                                                                                                       |
+| Plan mode           | `core/tools/plan_mode.rs`                  | Session write gate; Agent may ask via `request_plan_mode`                                                                                                                                                        |
+| Image mode          | `core/tools/image_mode.rs`                 | Per-session toolbar options for `generate_image`; tool whitelist + challenge                                                                                                                                     |
+| Context             | `core/context/`                            | IDE, selection, clipboard, environment, Office hints                                                                                                                                                             |
+| Checkpoint          | `core/checkpoint/`                         | Undo / review of applied file changes                                                                                                                                                                            |
+| Token               | `core/token/`                              | Accounting (incl. cache-read / reasoning tokens), usage persistence                                                                                                                                              |
+| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                                                                                                                                                       |
+| Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                                                                                                                                                 |
+| Event bus           | `core/event/`                              | Domain events                                                                                                                                                                                                    |
+| Plugins             | `core/plugins/`                            | Manifest, grants, Deno host, official bundles; **computer-use** in `computer/` (UIA, capture, launch)                                                                                                            |
+| Remote gateway      | `core/remote/`                             | WS `/remote/v1`; `gateway/`, `state/`, `bridge/`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`                                                                                                     |
 
 ### 5.2 Naming: three “runtime” modules
 
@@ -484,10 +484,18 @@ stateDiagram-v2
 | `stream_turn`      | Fold one provider stream into content / reasoning / tool_calls; forward UI events                                                                                |
 | `tools`            | Serial vs parallel dispatch; tool activity events                                                                                                                |
 | `challenge`        | Empty completion / all goal paths / unverified mutation / open checklist / stall; verification requires read-back of mutated paths or a successful check command |
-| `mid_turn_compact` | Context-window pressure compaction (mechanical summary pins goals/paths)                                                                                         |
+| `mid_turn_compact` | Context-window pressure compaction (mechanical summary pins goals/paths; may fold append-only agent-state)                                                       |
+| `task_state`       | Runtime task memory; injects append-only `agent-state-*` user tips (never relocate mid-history)                                                                  |
 | `post_edit_verify` | After a successful file mutation, run a light check; **only `exit_code=0` counts**; feed result as **system text** (not `role=tool`)                             |
-| `soft_inject`      | Merge queued user follow-ups at a safe boundary                                                                                                                  |
+| `soft_inject`      | Merge queued user follow-ups at a safe boundary (append-only)                                                                                                    |
 | `failure`          | Consecutive / identical tool-error circuit breaker                                                                                                               |
+
+Tool schemas for the turn are **frozen on the first provider step** (`AgentRunner`
+keeps the initial `focused_schemas` `Arc`). Mid-turn Plan accept / question-only
+flips must not rebuild `tools` — that would invalidate provider prefix caches
+(especially DeepSeek disk cache). Writers stay blocked by `PlanModeStore::authorize`
+even when still present in the frozen Agent schema set; Agent schemas keep
+`save_plan` so Plan can be accepted mid-turn without a schema rebuild.
 
 ### Ask / Agent / Plan / Image
 
@@ -497,8 +505,8 @@ Enforced at **tool schema exposure**, **approval policy**, the **plan gate**, an
 | Mode      | Behavior                                                                                             |
 | --------- | ---------------------------------------------------------------------------------------------------- |
 | **Ask**   | Withholds write / shell / git                                                                        |
-| **Agent** | Enables writes under approval; complex requests may **auto-enter** the plan gate                     |
-| **Plan**  | User-selected or Agent auto-entered; write tools blocked until the user approves                     |
+| **Agent** | Enables writes under approval; may call `request_plan_mode` (never silent-enters the gate)           |
+| **Plan**  | User-selected or accepted after `request_plan_mode`; write tools blocked until the user approves     |
 | **Image** | Only `generate_image` is exposed; toolbar size/quality/style pinned; challenge requires a real image |
 
 ### Plan gate
@@ -512,10 +520,11 @@ flowchart TB
   Send[ChatService::send] --> Mode{chat_mode?}
   Mode -->|Ask| Clear[Clear gate]
   Mode -->|Plan| On[Open gate]
-  Mode -->|Agent| Auto{Complex task<br/>should_auto_plan?}
-  Auto -->|yes and not skip_auto_plan| On
-  Auto -->|no| Off[Leave / do not force open]
-  On --> Prompt[Inject plan-mode.md<br/>read-only tools + update_tasks]
+  Mode -->|Agent| Hint[Inject plan-request-hint.md<br/>unless skip_auto_plan]
+  Hint --> AskPlan{Model calls<br/>request_plan_mode?}
+  AskPlan -->|user accepts| On
+  AskPlan -->|decline / skip| Off[Stay in Agent]
+  On --> Prompt[Inject plan-mode.md<br/>gate blocks writers]
   Prompt --> Draft[Assistant drafts plan and stops]
   Draft --> UI[MessageList footer<br/>PlanApprovalCard]
   UI -->|Exit plan| Clear
@@ -523,14 +532,18 @@ flowchart TB
   Exec --> Writers[Write tools available]
 ```
 
-| Piece                | Location                                                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Auto-enter heuristic | `plan_mode::should_auto_plan` (Agent + complexity)                                                                |
-| Gate authorize       | `PlanModeStore::authorize` (deny non-read-only writes)                                                            |
-| Prompt               | `prompts/plan-mode.md`                                                                                            |
-| Plan steps           | tools `update_tasks` / `todo_write` → `task-list-updated` / message `toolActivities`                              |
-| Approval UI          | `PlanApprovalCard.vue` at the **end of the last completed assistant message** (same tier as `CodeChangesSummary`) |
-| Approve action       | clear gate → compose back to Agent → `send(..., skipAutoPlan: true)`                                              |
+| Piece              | Location                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan ask hint      | `prompts/plan-request-hint.md` (Agent turns; stable policy-suffix slot)                                                                                                   |
+| Request tool       | `request_plan_mode` → user accept/decline                                                                                                                                 |
+| Turn-start schemas | Manager registry as-is (Ask spawn already uses `ask_mode()`). No question-only shrink. Plan does **not** shrink schemas; `authorize` blocks writers. Frozen for the turn. |
+| Gate authorize     | `PlanModeStore::authorize` (deny non-read-only writes; primary enforcement)                                                                                               |
+| Prompt             | `prompts/plan-mode.md` (+ `ensure_plan_mode_prompt` if accepted mid-turn)                                                                                                 |
+| Plan steps         | tools `update_tasks` / `todo_write` → `task-list-updated` / message `toolActivities`                                                                                      |
+| Approval UI        | `PlanApprovalCard.vue` at the **end of the last completed assistant message** (same tier as `CodeChangesSummary`)                                                         |
+| Approve action     | clear gate → compose back to Agent → `send(..., skipAutoPlan/resumePlan)`; short approve text persisted; checklist injected into the API request only                     |
+
+There is **no** `should_auto_plan` heuristic: Agent never silent-opens the gate.
 
 The approval card is **not** an input-bar banner (avoids pushing the composer);
 steps sit alongside the code-changes summary.
@@ -633,24 +646,60 @@ and settled to a terminal state so the UI cannot stick on “executing”.
 
 ---
 
-## 10. Context assembly
+## 10. Context assembly & prompt-cache stability
 
-Before a turn streams, the prompt stack is assembled (system → rules/memories →
-context block → history → current user):
+Before a turn streams, `PromptBuilder` assembles fixed slots so provider
+**prefix caches** (DeepSeek disk KV cache and similar) can reuse an exact
+leading unit across steps and turns.
+
+```text
+[0] SYSTEM_PROMPT
+[1] stable workspace / IDE identity
+[2] project rules (agent.md / AGENTS.md)
+[3] recalled memories
+[4] optional policy suffix (collab / minimal-coding / plan hint / plan-mode / …)
+[5] plugin prompt suffix (blocks sorted for determinism)
+[6..] history + current user
+       └─ preferred #skill / #mcp chips + live IDE/git/clipboard/office
+          appended to the **current user** text (never mid-prefix system slots)
+```
 
 ```mermaid
 flowchart LR
-  SYS[System prompt md] --> SLOT[prompt/slots]
-  RULE[Workspace rules] --> SLOT
-  MEM[Memories] --> SLOT
-  IDE[IDE / selection / Office] --> SLOT
-  HIST[Prior messages] --> SLOT
-  USER[Current user turn] --> SLOT
-  SLOT --> REQ[ChatRequest.messages]
+  SYS[System + stable slots] --> HIST[Prior messages]
+  HIST --> USER[Current user + volatile tail]
+  TOOLS[Tool schemas frozen per turn] --> REQ[Provider request]
+  SYS --> REQ
+  HIST --> REQ
+  USER --> REQ
 ```
 
-Resolution precedence lives in `prompts/context.md` and `core/context` providers
-(explicit user path beats inferred active file, etc.).
+### DeepSeek-oriented rules (also help other prefix caches)
+
+Official behavior ([Context Caching](https://api-docs.deepseek.com/guides/kv_cache/)):
+cache hits require a **full match** of a persisted prefix unit (Sliding Window
+Attention). Construction takes seconds; hits are best-effort. Practical rules
+we enforce in-product:
+
+| Rule                               | Implementation                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| Append-only history inside a turn  | Soft-inject and tool results only push; never rewrite earlier messages |
+| Never relocate mid-history state   | `task_state::inject` updates the tip or appends `agent-state-{n}`      |
+| Stable `tools` for the turn        | First step’s schemas frozen on `AgentRunner`                           |
+| Volatile UI context off the prefix | Cursor / selection / git / clipboard / `#skill` chips on user tail     |
+| Deterministic plugin prose         | Plugin prompt blocks sorted before assemble                            |
+
+**Hit-rate expectations:** multi-step Agent turns often land ~85–95% on steps
+after the cold first call when the prefix stays intact. Session aggregates are
+lower because every new user text and large tool payload is a miss — that is
+billing math, not a broken cache. Code-edit workloads with big `read_file` /
+search results rarely sustain 95%+ on the **session** meter.
+
+Resolution precedence for paths lives in `prompts/context.md` and
+`core/context` providers (explicit user path beats inferred active file, etc.).
+
+Usage UI: `prompt_cache_hit_tokens` / miss fields → `cacheReadTokens`; hit % =
+`cacheRead / (inputMiss + cacheRead)` (`services/chat/tokenEstimate.ts`).
 
 ---
 
@@ -668,9 +717,11 @@ flowchart TB
   Exec -->|update_tasks| Tasks[sessionTasks + PlanApprovalCard]
 ```
 
-While the plan gate is on, non-read-only write tools are denied at registry /
-authorize; `update_tasks` (and read-only exploration) stay available so the
-assistant can emit an approvable step list.
+While the plan gate is on, writer tools may still appear in the schema but are
+denied by `PlanModeStore::authorize`. **Ask** withholds writers by spawning an
+`ask_mode()` tool manager (not by a per-message question heuristic). Agent/Plan
+turns share the full registry and freeze it for the turn.
+`update_tasks` (and read-only exploration) stay available.
 
 Skills are markdown playbooks under `src-tauri/prompts/skills/` (plus vendor
 assets). Invoking a skill typically injects the playbook and may run a subagent
@@ -743,11 +794,11 @@ host. The local path stays on disk after the first download.
 ### 11.3 Computer use
 
 Official plugin `computer-use` (`core/plugins/computer/`, Windows, off until
-Enable). Actions run in Rust; the Deno host only declares schemas. Pipeline:
-`launch` → `key` → UIA `click_control` / `set_value` → pixel `click`/`drag`.
-`screenshot` returns a JPEG **and** an interactive control list. JPEG `x,y` map
-through capture scale + window origin (physical pixels). Bundled playbook:
-`src-tauri/plugins/computer-use/skills/windows.md` via `contributes.agent.skills`.
+Enable). In-process Ghost (`ghost-session`); Deno host only declares schemas.
+Pipeline: `window` anchor → `see` → `act` (read `verified`) → `wait`/`assert`;
+browser via `browser`/`tab` (CDP). Anya keeps grants, approval, and HUD. Bundled
+playbook: `src-tauri/plugins/computer-use/skills/windows.md` via
+`contributes.agent.skills`.
 
 See [Computer use](./computer-use.md).
 

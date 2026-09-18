@@ -182,7 +182,7 @@ onUnmounted(() => {
   padding: 0 2px;
   font-family: var(--peek-font-sans);
   font-size: var(--peek-font-sm, 12px);
-  font-weight: 400;
+  font-weight: 500;
   color: var(--peek-muted);
   list-style: none;
   user-select: none;
@@ -280,7 +280,7 @@ onUnmounted(() => {
   word-break: break-word;
   font-family: var(--peek-font-sans);
   font-size: var(--peek-font-sm, 12px);
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.6;
   color: var(--peek-muted);
 }

@@ -91,6 +91,20 @@ impl PathPermissionStore {
             .any(|grant| grant.access == access && path_starts_with(&normalized, &grant.prefix))
     }
 
+    /// Persist a session grant without prompting (AlwaysAllow / 通过所有权限).
+    pub fn grant_always(&self, session_id: &str, path: &Path, access: PathAccess) {
+        let grant = PathGrant {
+            prefix: grant_prefix_for_path(path, access),
+            access,
+        };
+        if let Ok(mut guard) = self.grants.lock() {
+            let entry = guard.entry(session_id.to_string()).or_default();
+            if !entry.iter().any(|item| item == &grant) {
+                entry.push(grant);
+            }
+        }
+    }
+
     /// Completes a pending request. Returns the session id when a waiter was notified.
     pub fn complete(&self, request_id: &str, decision: &str) -> Option<String> {
         let Some(decision) = PermissionDecision::parse(decision) else {
@@ -168,16 +182,7 @@ impl PathPermissionStore {
         }
 
         if decision == PermissionDecision::AllowAlways {
-            let grant = PathGrant {
-                prefix: grant_prefix_for_path(&path, access),
-                access,
-            };
-            if let Ok(mut guard) = self.grants.lock() {
-                let entry = guard.entry(session_id.to_string()).or_default();
-                if !entry.iter().any(|item| item == &grant) {
-                    entry.push(grant);
-                }
-            }
+            self.grant_always(session_id, &path, access);
         }
 
         Ok(path)

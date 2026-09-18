@@ -3,6 +3,23 @@
     <SettingsPageHeader v-if="!hideHeader" :title="pageTitle" :description="pageDescription" />
 
     <SettingsEmptyState v-if="items.length === 0" :message="emptyText" />
+    <button
+      v-if="items.some((item) => advancedIds.has(item.id)) && !searching"
+      class="advanced-toggle"
+      type="button"
+      :aria-expanded="showAdvanced"
+      @click="showAdvanced = !showAdvanced"
+    >
+      {{
+        settingStore.language === "zh-CN"
+          ? showAdvanced
+            ? "收起高级选项"
+            : "显示高级选项"
+          : showAdvanced
+            ? "Hide advanced options"
+            : "Show advanced options"
+      }}
+    </button>
 
     <template v-for="(group, groupIndex) in groups" :key="group.id">
       <section class="settings-group">
@@ -111,6 +128,11 @@
                   </SelectItem>
                 </SelectContent>
               </Select>
+
+              <FontFamilySelect
+                v-else-if="item.type === 'select-font'"
+                :kind="fontKindForField(item.id)"
+              />
 
               <Select
                 v-else-if="item.type === 'select-reasoning-effort'"
@@ -286,7 +308,10 @@
                 :model-value="settingStore.toolApprovalMode"
                 @update:model-value="(v) => emit('tool-approval-mode-change', v)"
               >
-                <SelectTrigger class="w-full">
+                <SelectTrigger
+                  class="w-full"
+                  :class="{ 'text-destructive': settingStore.toolApprovalMode === 'alwaysAllow' }"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -294,6 +319,7 @@
                     v-for="option in toolApprovalModeSelectOptions"
                     :key="option.value"
                     :value="option.value"
+                    :class="{ 'text-destructive': option.value === 'alwaysAllow' }"
                   >
                     {{ option.label }}
                   </SelectItem>
@@ -426,7 +452,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { RefreshCw } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
@@ -437,6 +463,7 @@ import SettingsHelpTip from "@/components/settings/SettingsHelpTip.vue";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
 import SettingsToggle from "@/components/settings/SettingsToggle.vue";
 import SettingsEmptyState from "@/components/settings/SettingsEmptyState.vue";
+import FontFamilySelect from "@/components/settings/FontFamilySelect.vue";
 import {
   Select,
   SelectContent,
@@ -462,6 +489,7 @@ import {
 import { tr } from "@/services/i18n";
 import type { SettingDefinition } from "@/pages/Settings/settingsDefinitions";
 import type { ModelSelection } from "@/types/setting";
+import type { FontKind } from "@/services/theme/fonts";
 import {
   languageOptions,
   localizedOptionLabel,
@@ -518,6 +546,7 @@ const props = withDefaults(
     pageTitle: string;
     pageDescription?: string;
     hideHeader?: boolean;
+    searching?: boolean;
     apiKeyDraft?: string;
     mem0ApiKeyDraft?: string;
     mem0UserIdDraft?: string;
@@ -564,6 +593,12 @@ const emit = defineEmits<{
 const settingStore = useSettingStore();
 const chatModelStore = useChatModelStore();
 
+function fontKindForField(id: string): FontKind {
+  if (id === "fontCjk") return "cjk";
+  if (id === "fontMono") return "mono";
+  return "latin";
+}
+
 const selectedThemeValue = computed(() => {
   const isCustom = settingStore.customThemes.some((t) => t.id === settingStore.colorScheme);
   return isCustom ? `custom:${settingStore.colorScheme}` : `builtin:${settingStore.colorScheme}`;
@@ -583,6 +618,7 @@ const apiKeyPlaceholder = computed(() => tr(settingStore.language, "settings.api
 const groups = computed(() => {
   const map = new Map<string, SettingDefinition[]>();
   for (const item of props.items) {
+    if (!props.searching && !showAdvanced.value && advancedIds.has(item.id)) continue;
     const list = map.get(item.group) ?? [];
     list.push(item);
     map.set(item.group, list);
@@ -593,6 +629,13 @@ const groups = computed(() => {
     items: groupItems,
   }));
 });
+const showAdvanced = ref(false);
+const advancedIds = new Set([
+  "multimodalSplitAnalysis",
+  "passToolReasoning",
+  "continueThinkingAfterTools",
+  "hardwareAccelerationEnabled",
+]);
 
 const builtInThemeGroups = computed(() => {
   const allGroups = buildFullThemeGroups(settingStore.customThemes);
@@ -850,6 +893,20 @@ function onSearchSecretInput(id: string, value: string | number) {
 </script>
 
 <style scoped>
+.advanced-toggle {
+  margin-bottom: 16px;
+  padding: 7px 10px;
+  border: 1px solid var(--peek-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--peek-text);
+  cursor: pointer;
+  font-size: 13px;
+}
+.advanced-toggle:focus-visible {
+  outline: 2px solid var(--peek-accent);
+  outline-offset: 2px;
+}
 .setting-desc-link {
   display: inline;
   margin: 0;

@@ -6,6 +6,7 @@
       'is-fit-content': fit === 'content',
       'is-wrap': layout === 'wrap',
       'is-rail': layout === 'rail',
+      'is-idle': idle,
     }"
   >
     <PluginHostPane
@@ -59,6 +60,11 @@ function isActive(id: string) {
   if (props.activeId == null || props.activeId === "") return true;
   return id === props.activeId;
 }
+
+/** Hide when a sibling pane (diff/plan) is selected so flex:1 does not steal half the height. */
+const idle = computed(
+  () => items.value.length > 0 && !items.value.some((item) => isActive(item.id)),
+);
 </script>
 
 <style scoped>
@@ -88,5 +94,8 @@ function isActive(id: string) {
 }
 .plugin-slot-outlet.is-rail :deep(.plugin-host-pane) {
   width: 100%;
+}
+.plugin-slot-outlet.is-idle {
+  display: none;
 }
 </style>

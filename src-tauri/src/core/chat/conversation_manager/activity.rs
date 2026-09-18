@@ -72,6 +72,39 @@ impl ConversationManager {
         timeline.push(item);
     }
 
+    pub fn append_work_timeline_inject(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        inject_id: &str,
+        content: &str,
+    ) {
+        let text = content.trim();
+        if text.is_empty() {
+            return;
+        }
+        let Ok(mut sessions) = self.sessions.lock() else {
+            return;
+        };
+        let Some(message) = sessions
+            .get_mut(session_id)
+            .and_then(|messages| messages.iter_mut().find(|item| item.id == message_id))
+        else {
+            return;
+        };
+        let timeline = message.work_timeline.get_or_insert_with(Vec::new);
+        if timeline.iter().any(|item| match item {
+            WorkTimelineItem::Inject { id, content } => id == inject_id || content.trim() == text,
+            _ => false,
+        }) {
+            return;
+        }
+        timeline.push(WorkTimelineItem::Inject {
+            id: inject_id.to_string(),
+            content: text.to_string(),
+        });
+    }
+
     pub fn work_timeline_len(&self, session_id: &str, message_id: &str) -> usize {
         self.sessions
             .lock()

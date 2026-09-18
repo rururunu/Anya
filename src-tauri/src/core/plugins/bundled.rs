@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Ids rewritten on every launch; importing over them would be wiped.
-pub const OFFICIAL_PLUGIN_IDS: &[&str] = &["terminal", "computer-use"];
+pub const OFFICIAL_PLUGIN_IDS: &[&str] = &["terminal", "computer-use", "opencli"];
 
 use super::grant::{clear_grant, has_grant, save_grant, PluginGrant};
 use super::manifest::load_manifest;
@@ -26,13 +26,23 @@ const CU_ICON: &str = include_str!("../../../plugins/computer-use/ui/icon.svg");
 const CU_ABOUT: &str = include_str!("../../../plugins/computer-use/ui/about.md");
 const CU_SKILL_WINDOWS: &str = include_str!("../../../plugins/computer-use/skills/windows.md");
 
+const OC_MANIFEST: &str = include_str!("../../../plugins/opencli/plugin.json");
+const OC_HOST: &str = include_str!("../../../plugins/opencli/host/main.ts");
+const OC_ICON: &str = include_str!("../../../plugins/opencli/ui/icon.svg");
+const OC_ABOUT: &str = include_str!("../../../plugins/opencli/ui/about.md");
+const OC_SKILL_BROWSER: &str = include_str!("../../../plugins/opencli/skills/browser.md");
+const OC_SKILL_USAGE: &str = include_str!("../../../plugins/opencli/skills/usage.md");
+
 pub fn ensure_bundled_plugins() -> Result<(), ToolError> {
     retire_unshipped_plugin("anya-cli");
     retire_unshipped_plugin("system-terminal");
+    retire_unshipped_plugin("pet-gallery");
     write_official_terminal(plugins_dir().join("terminal"))?;
     write_official_computer_use(plugins_dir().join("computer-use"))?;
+    write_official_opencli(plugins_dir().join("opencli"))?;
     ensure_official_grant("terminal")?;
-    ensure_official_grant_disabled("computer-use")
+    ensure_official_grant_disabled("computer-use")?;
+    ensure_official_grant_disabled("opencli")
 }
 
 fn write_official_terminal(dir: PathBuf) -> Result<(), ToolError> {
@@ -85,6 +95,19 @@ fn write_official_computer_use(dir: PathBuf) -> Result<(), ToolError> {
     Ok(())
 }
 
+fn write_official_opencli(dir: PathBuf) -> Result<(), ToolError> {
+    write_plugin_file(&dir, "plugin.json", OC_MANIFEST)?;
+    write_plugin_file(&dir, "ui/icon.svg", OC_ICON)?;
+    write_plugin_file(&dir, "ui/about.md", OC_ABOUT)?;
+    write_plugin_file(&dir, "host/main.ts", OC_HOST)?;
+    write_plugin_file(&dir, "skills/browser.md", OC_SKILL_BROWSER)?;
+    write_plugin_file(&dir, "skills/usage.md", OC_SKILL_USAGE)?;
+    let _ = fs::remove_file(dir.join("ui").join("src").join("activate.js"));
+    let _ = fs::remove_file(dir.join("ui").join(".anya").join("activate.js"));
+    let _ = fs::remove_file(dir.join("ui").join("index.html"));
+    Ok(())
+}
+
 /// Drop a previously bundled plugin so it does not linger as a user install.
 fn retire_unshipped_plugin(id: &str) {
     let _ = fs::remove_dir_all(plugins_dir().join(id));
@@ -92,6 +115,10 @@ fn retire_unshipped_plugin(id: &str) {
 }
 
 fn write_plugin_file(dir: &Path, rel: &str, contents: &str) -> Result<(), ToolError> {
+    write_plugin_bytes(dir, rel, contents.as_bytes())
+}
+
+fn write_plugin_bytes(dir: &Path, rel: &str, contents: &[u8]) -> Result<(), ToolError> {
     let path = dir.join(rel);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| ToolError::new(e.to_string()))?;

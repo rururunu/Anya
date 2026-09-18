@@ -50,6 +50,11 @@ pub struct ChatSendRequest {
     /// message drives the turn prompt but is never persisted to chat history.
     #[serde(default)]
     pub resume_plan: bool,
+    /// Explicit mid-turn soft-inject (staged chip 追加 / guide). Queue-continue
+    /// after ChatFinished must leave this false so a cancelling agent cannot
+    /// swallow the next turn.
+    #[serde(default)]
+    pub soft_inject: bool,
 }
 
 /// Optional per-send settings that override global settings for one conversation.
@@ -62,6 +67,7 @@ pub struct ChatSendOverrides {
     pub image_gen: Option<ImageGenSendOptions>,
     pub skip_auto_plan: bool,
     pub resume_plan: bool,
+    pub soft_inject: bool,
 }
 
 impl ChatSendOverrides {
@@ -74,6 +80,7 @@ impl ChatSendOverrides {
             image_gen: request.image_gen.clone(),
             skip_auto_plan: request.skip_auto_plan,
             resume_plan: request.resume_plan,
+            soft_inject: request.soft_inject,
         }
     }
 }
@@ -397,6 +404,7 @@ mod tests {
             serde_json::from_str(r#"{"message":"hello"}"#).expect("request parses");
         assert!(!request.resume_plan);
         assert!(!request.skip_auto_plan);
+        assert!(!request.soft_inject);
     }
 
     #[test]
@@ -407,6 +415,16 @@ mod tests {
         let overrides = ChatSendOverrides::from_request(&request);
         assert!(overrides.resume_plan);
         assert!(overrides.skip_auto_plan);
+        assert!(!overrides.soft_inject);
+    }
+
+    #[test]
+    fn from_request_maps_soft_inject() {
+        let request: ChatSendRequest =
+            serde_json::from_str(r#"{"message":"nudge","softInject":true}"#)
+                .expect("request parses");
+        let overrides = ChatSendOverrides::from_request(&request);
+        assert!(overrides.soft_inject);
     }
 
     #[test]

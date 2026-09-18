@@ -779,7 +779,7 @@
       </div>
     </div>
 
-    <WelcomeOnboarding v-if="showOnboarding" @completed="showOnboarding = false" />
+    <WelcomeOnboarding v-if="showOnboarding" />
 
     <ImageLightbox
       :open="imageLightboxOpen"
@@ -830,6 +830,7 @@
 import {
   computed,
   defineAsyncComponent,
+  nextTick,
   onMounted,
   onUnmounted,
   ref,
@@ -981,6 +982,13 @@ function handleEditFromImage(payload: { images: string[]; draftText?: string; re
 const COMPOSER_CLEARANCE_EXTRA = 12;
 let composerResizeObserver: ResizeObserver | null = null;
 
+/** Composer dock height plus the absolutely-positioned staged queue above it. */
+function measureComposerFootprint(element: HTMLElement): number {
+  const staged = element.querySelector(".staged-wrap") as HTMLElement | null;
+  const stagedHeight = staged?.getBoundingClientRect().height ?? 0;
+  return element.offsetHeight + stagedHeight;
+}
+
 const pluginBackdrop = computed(() => getAssetOverride("workbench.backdrop"));
 const activeBackground = computed(() => {
   const currentThemeId = settingStore.colorScheme;
@@ -1051,7 +1059,11 @@ watch(
       return;
     }
     const sync = () => {
-      composerFootprint.value = element.offsetHeight;
+      composerFootprint.value = measureComposerFootprint(element);
+      const staged = element.querySelector(".staged-wrap");
+      if (staged instanceof HTMLElement && composerResizeObserver) {
+        composerResizeObserver.observe(staged);
+      }
     };
     composerResizeObserver = new ResizeObserver(sync);
     composerResizeObserver.observe(element);
@@ -1070,7 +1082,7 @@ const workspaces = ref<Workspace[]>([]);
 const activeSessionId = ref("");
 const activeSessionWorkspaceId = ref<string | null>(null);
 
-const showOnboarding = ref(!settingStore.onboardingCompleted);
+const showOnboarding = computed(() => !settingStore.onboardingCompleted);
 
 const builtInTheme = computed(() => settingStore.colorScheme);
 const messages = computed(() => chatStore.sessions[rootSessionId(activeSessionId.value)] ?? []);
@@ -1268,6 +1280,22 @@ const {
   removePendingInteraction,
   clearSessionUnread,
 });
+
+watch(
+  stagedMessages,
+  () => {
+    const element = composerWrapRef.value;
+    if (!element) return;
+    nextTick(() => {
+      composerFootprint.value = measureComposerFootprint(element);
+      const staged = element.querySelector(".staged-wrap");
+      if (staged instanceof HTMLElement && composerResizeObserver) {
+        composerResizeObserver.observe(staged);
+      }
+    });
+  },
+  { flush: "post" },
+);
 
 function handleCreateQuickConversation() {
   extensionView.value = null;
@@ -1633,6 +1661,11 @@ watch(settingsOpen, (open) => {
 </script>
 
 <style scoped>
+@media (max-height: 650px) {
+  .empty-conversation-brand {
+    display: none;
+  }
+}
 .workbench {
   --workbench-chrome-bg: color-mix(in srgb, var(--peek-sidebar) 92%, var(--peek-bg));
   --nav-col: 258px;
@@ -3116,10 +3149,10 @@ button {
 .review-shell {
   grid-column: 3;
   grid-row: 1;
+  box-sizing: border-box;
   min-width: 0;
   min-height: 0;
-  width: min(var(--review-pane-width, 527px), 48cqw);
-  max-width: 100%;
+  width: var(--review-pane-width, 527px);
   display: flex;
   overflow: hidden;
   border-top: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
@@ -3302,12 +3335,6 @@ button {
   .composer-wrap :deep(.workbench-composer .conversation-token-meta) {
     display: none;
   }
-  .composer-wrap :deep(.workbench-composer .model-badge) {
-    max-width: 132px;
-  }
-  .composer-wrap :deep(.workbench-composer .model-name) {
-    max-width: 76px;
-  }
 }
 
 @container conversation (max-width: 400px) {
@@ -3317,12 +3344,6 @@ button {
   }
   .composer-wrap {
     width: calc(100% - 10px);
-  }
-  .composer-wrap :deep(.workbench-composer .model-badge) {
-    max-width: 108px;
-  }
-  .composer-wrap :deep(.workbench-composer .model-name) {
-    max-width: 56px;
   }
 }
 

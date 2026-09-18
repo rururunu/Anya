@@ -22,7 +22,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.21-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.22-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -37,18 +37,19 @@
 
 ## 一览
 
-|               |                                                                                                                   |
-| ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| **工作台**    | 完整桌面界面：置顶会话、项目工作区、归档 / 恢复、变更审查与内嵌设置。                                             |
-| **悬浮窗**    | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                                                             |
-| **Agent**     | Ask / Agent / Plan / Image；工具、Skills、MCP、Office；复杂任务可自动进入带写操作门禁的计划。                     |
-| **插件**      | Deno 宿主扩展：槽位、窗口、Agent 工具。官方：`computer-use`（默认关闭）、`terminal`。Agent 可自己创建并调试插件。 |
-| **电脑操控**  | 官方 `computer-use` **Agent** 插件：先 `launch`/快捷键/UIA 控件，像素点击只作兜底。截图同时带控件树。仅 Windows。 |
-| **Companion** | [安卓远程](https://github.com/rururunu/AnyaAndroid) — 扫码后即可在手机上对话、审批、收发文件。                    |
-| **RAG**       | 可选语义工作区检索（API 或本地嵌入）。启用前不下载模型、不发请求。                                                |
-| **本地优先**  | 密钥、历史与设置默认保存在本机。                                                                                  |
+|               |                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **工作台**    | 完整桌面界面：置顶会话、项目工作区、归档 / 恢复、变更审查与内嵌设置。                                                                                                    |
+| **悬浮窗**    | 任意应用中双击 <kbd>Alt</kbd>，随时提问、附带上下文。                                                                                                                    |
+| **Agent**     | Ask / Agent / Plan / Image；工具、Skills、MCP、Office；可通过 `request_plan_mode` 征求进入计划（写操作门禁）。                                                           |
+| **插件**      | Deno 宿主扩展：槽位、窗口、Agent 工具。官方：`computer-use`（默认关闭）、`opencli`（默认关闭）、`terminal`。Agent 可自己创建并调试插件。                                 |
+| **电脑操控**  | 官方 `computer-use` **Agent** 插件：进程内 [Ghost](https://github.com/NORTHTEKDevs/ghost)（`see`/`act`/`wait`、窗口锚点、CDP 浏览器）。Anya 保留审批与 HUD。仅 Windows。 |
+| **OpenCLI**   | 官方 `opencli` **Agent** 插件：[OpenCLI](https://github.com/jackwener/OpenCLI) 站点适配器 + Browser Bridge 已登录 Chrome。与电脑操控互补，偏网页场景。                   |
+| **Companion** | [安卓远程](https://github.com/rururunu/AnyaAndroid) — 扫码后即可在手机上对话、审批、收发文件。                                                                           |
+| **RAG**       | 可选语义工作区检索（API 或本地嵌入）。启用前不下载模型、不发请求。                                                                                                       |
+| **本地优先**  | 密钥、历史与设置默认保存在本机。                                                                                                                                         |
 
-**文档：** [架构](./docs/architecture-overview.zh-CN.md) · [插件系统](./docs/plugin-system.zh-CN.md) · [电脑操控](./docs/computer-use.zh-CN.md) · [发布](./docs/release.zh-CN.md) · [索引](./docs/README.zh-CN.md)
+**文档：** [架构](./docs/architecture-overview.zh-CN.md) · [插件系统](./docs/plugin-system.zh-CN.md) · [电脑操控](./docs/computer-use.zh-CN.md) · [OpenCLI](./docs/opencli.zh-CN.md) · [发布](./docs/release.zh-CN.md) · [索引](./docs/README.zh-CN.md)
 
 ---
 
@@ -152,14 +153,14 @@ flowchart LR
 
 ### Ask / Agent / Plan / Image
 
-| 模式      | 意图                       | 典型工具 / 约束                                                    |
-| --------- | -------------------------- | ------------------------------------------------------------------ |
-| **Ask**   | 只读调研                   | 读文件、搜索、LSP 等只读工具                                       |
-| **Agent** | 默认；在可控前提下改动环境 | 文件、PowerShell、Git、Skills、MCP、子 Agent；复杂任务可自动进计划 |
-| **Plan**  | 先定步骤再执行             | 写工具锁定；`update_tasks` + 消息末尾批准卡                        |
-| **Image** | 每轮真正出图               | 仅 `generate_image`；走设置 → 生图提供商（不用聊天提供商）         |
+| 模式      | 意图                       | 典型工具 / 约束                                                                          |
+| --------- | -------------------------- | ---------------------------------------------------------------------------------------- |
+| **Ask**   | 只读调研                   | 读文件、搜索、LSP 等只读工具                                                             |
+| **Agent** | 默认；在可控前提下改动环境 | 文件、PowerShell、Git、Skills、MCP、子 Agent；可调用 `request_plan_mode`（从不静默开闸） |
+| **Plan**  | 先定步骤再执行             | 写工具由门禁锁定；`update_tasks` + 消息末尾批准卡                                        |
+| **Image** | 每轮真正出图               | 仅 `generate_image`；走设置 → 生图提供商（不用聊天提供商）                               |
 
-Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（手动或自动）经计划门禁拦截写操作，直到用户在回答末尾批准；Image 模式钉死 Images API 工具与提示词，确保每轮产出真实图片。四种模式共用同一套 `AgentRunner`——约束落在工具暴露、审批与 plan/image 门禁，而不是第二套编排器。
+Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（用户选择，或接受 `request_plan_mode` 后）经计划门禁拦截写操作，直到用户在回答末尾批准；Image 模式钉死 Images API 工具与提示词，确保每轮产出真实图片。四种模式共用同一套 `AgentRunner`——约束落在工具暴露、审批与 plan/image 门禁，而不是第二套编排器。提示词组装保持稳定前缀（易变 IDE 语境与 `#skill` chips 挂在用户消息尾部；工具 schemas 整轮冻结），以便带前缀缓存的服务商——尤其是 DeepSeek——在 Agent 多步间复用已计费的输入 token。
 
 <p align="center">
   <img src="./docs/image/image_production.png" alt="生图模式：先出图，再用追问修改" width="900" />
@@ -302,7 +303,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.21_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.22_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 
@@ -311,3 +312,12 @@ pnpm tauri:build
 ## 许可证
 
 本项目采用 [Unlicense](./LICENSE)，相当于公共领域，几乎无限制使用、修改与分发。
+
+---
+
+## 致谢
+
+Anya 站在优秀开源项目之上。特别感谢：
+
+- **[Ghost](https://github.com/NORTHTEKDevs/ghost)**（[NORTHTEKDevs](https://github.com/NORTHTEKDevs)）— 进程内电脑操控引擎，支撑 Anya 的桌面自动化（UIA、动作校验、CDP 浏览器）。
+- **[OpenCLI](https://github.com/jackwener/OpenCLI)**（[jackwener](https://github.com/jackwener)）— 站点适配器与 Browser Bridge，让 Agent 能用确定性 CLI 驱动已登录的 Chrome。

@@ -3,14 +3,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { File, FileDiff } from "@lucide/vue";
+import { computed, ref } from "vue";
+import { ChevronDown, ChevronUp, File, FileDiff } from "@lucide/vue";
 import ArtifactRows, { type ArtifactRow } from "@/components/chat/ArtifactRows.vue";
 import { extractCodeChanges } from "@/services/chat/codeChanges";
 import { fileBasename } from "@/services/chat/toolDiff";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import type { ChatMessage, SharedFileOffer } from "@/types/chat";
+
+const FILE_PREVIEW = 3;
 
 const props = withDefaults(
   defineProps<{
@@ -31,6 +33,7 @@ const emit = defineEmits<{
 }>();
 
 const settingStore = useSettingStore();
+const expanded = ref(false);
 const changes = computed(() => extractCodeChanges([props.message]));
 const changedPaths = computed(() => new Set(changes.value.map((change) => change.path)));
 
@@ -42,9 +45,10 @@ const sharedFiles = computed(() => {
 const rows = computed((): ArtifactRow[] => {
   const language = settingStore.language;
   const items: ArtifactRow[] = [];
+  const files = changes.value;
 
-  if (changes.value.length === 1) {
-    const change = changes.value[0]!;
+  if (files.length === 1) {
+    const change = files[0]!;
     items.push({
       key: `change-${change.id}`,
       icon: FileDiff,
@@ -55,8 +59,8 @@ const rows = computed((): ArtifactRow[] => {
       onOpen: () => emit("reviewFile", change.path),
       onAction: () => emit("review"),
     });
-  } else if (changes.value.length > 1) {
-    const totals = changes.value.reduce(
+  } else if (files.length > 1) {
+    const totals = files.reduce(
       (total, change) => ({
         added: total.added + change.added,
         removed: total.removed + change.removed,
@@ -66,12 +70,49 @@ const rows = computed((): ArtifactRow[] => {
     items.push({
       key: "changes-summary",
       icon: FileDiff,
-      label: tr(language, "editedFiles", { count: changes.value.length }),
+      label: tr(language, "editedFiles", { count: files.length }),
       stats: { added: totals.added, removed: totals.removed },
       actionLabel: tr(language, "reviewChanges"),
       onOpen: () => emit("review"),
       onAction: () => emit("review"),
     });
+
+    const hidden = files.length - FILE_PREVIEW;
+    const visible = expanded.value || hidden <= 0 ? files : files.slice(0, FILE_PREVIEW);
+    for (const change of visible) {
+      items.push({
+        key: `change-${change.id}`,
+        icon: File,
+        label: displayChangePath(change.path),
+        title: change.path,
+        stats: { added: change.added, removed: change.removed },
+        nested: true,
+        onOpen: () => emit("reviewFile", change.path),
+      });
+    }
+    if (hidden > 0) {
+      items.push(
+        expanded.value
+          ? {
+              key: "changes-more",
+              icon: ChevronUp,
+              label: tr(language, "collapse"),
+              nested: true,
+              onOpen: () => {
+                expanded.value = false;
+              },
+            }
+          : {
+              key: "changes-more",
+              icon: ChevronDown,
+              label: tr(language, "moreEditedFiles", { count: hidden }),
+              nested: true,
+              onOpen: () => {
+                expanded.value = true;
+              },
+            },
+      );
+    }
   }
 
   for (const file of sharedFiles.value) {
@@ -86,6 +127,10 @@ const rows = computed((): ArtifactRow[] => {
 
   return items;
 });
+
+function displayChangePath(path: string) {
+  return path.replace(/\\/g, "/");
+}
 
 async function openFile(file: SharedFileOffer) {
   const path = file.absolutePath || file.path;

@@ -89,6 +89,9 @@ async function bootstrap() {
     !windowLabel.startsWith("overlay-preview-");
 
   const isDesktopPet = windowLabel === "desktop-pet";
+  const isComputerUseHud = windowLabel === "computer-use-hud";
+  const isComputerUseBanner = windowLabel === "computer-use-banner";
+  const isComputerUseSurface = isComputerUseHud || isComputerUseBanner;
 
   // Resolve each interactive route before loading settings. Keep the HTML
   // boot splash up until the workbench loading layer has painted, so we never
@@ -126,10 +129,15 @@ async function bootstrap() {
     app.mount("#app");
     await router.isReady();
     await waitForNextPaint();
-  } else if (isDesktopPet) {
+  } else if (isDesktopPet || isComputerUseSurface) {
     markPeekWindow();
     hideBootSplash({ fadeMs: 0 });
-    void router.replace("/desktop-pet");
+    const route = isComputerUseBanner
+      ? "/computer-use-banner"
+      : isComputerUseHud
+        ? "/computer-use-hud"
+        : "/desktop-pet";
+    void router.replace(route);
     applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     await settingStore.load();
     applyThemeAppearance({
@@ -158,12 +166,12 @@ async function bootstrap() {
   if (windowLabel.startsWith("overlay-preview-")) {
     document.documentElement.classList.add("peek-window");
     await router.replace("/image-preview");
-  } else if (isOverlay || isDesktopPet) {
-    // The overlay / desktop-pet route was mounted eagerly above.
+  } else if (isOverlay || isDesktopPet || isComputerUseSurface) {
+    // Overlay / pet / computer-use surfaces were mounted eagerly above.
   }
 
   await router.isReady();
-  if (windowLabel !== "workbench" && !isOverlay && !isDesktopPet) {
+  if (windowLabel !== "workbench" && !isOverlay && !isDesktopPet && !isComputerUseSurface) {
     app.mount("#app");
     await waitForNextPaint();
     hideBootSplash({ fadeMs: 180 });

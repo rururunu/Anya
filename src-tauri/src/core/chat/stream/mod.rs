@@ -30,6 +30,14 @@ impl StreamManager {
             .map(|(id, _)| id.clone())
     }
 
+    /// Message ids for every in-flight assistant stream.
+    pub fn active_message_ids(&self) -> Vec<String> {
+        self.active_tasks
+            .lock()
+            .map(|active| active.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Queues a soft-inject user message into an active stream for the session.
     pub fn soft_inject(
         &self,
@@ -51,9 +59,10 @@ impl StreamManager {
             .find(|(_, task)| task.session_id == session_id)
             .map(|(id, task)| (id.clone(), task))
             .ok_or(ChatError::MessageNotFound)?;
-        if let Ok(mut queue) = task.soft_queue.lock() {
-            queue.push_back(content);
-        }
+        task.soft_queue
+            .lock()
+            .map_err(|error| ChatError::Internal(error.to_string()))?
+            .push_back(content);
         Ok(message_id)
     }
 }

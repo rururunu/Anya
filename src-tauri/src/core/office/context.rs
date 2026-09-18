@@ -260,15 +260,30 @@ fn tool_hint_for_app(app: &str) -> String {
 }
 
 fn foreground_office_app() -> Option<&'static str> {
-    let window = WindowDetector::detect().ok()?;
-    if window.process_name.eq_ignore_ascii_case("WINWORD.EXE") {
+    office_app_from_process(&WindowDetector::detect().ok()?.process_name)
+}
+
+fn office_app_from_process(process_name: &str) -> Option<&'static str> {
+    if process_name.eq_ignore_ascii_case("WINWORD.EXE") {
         Some("word")
-    } else if window.process_name.eq_ignore_ascii_case("EXCEL.EXE") {
+    } else if process_name.eq_ignore_ascii_case("EXCEL.EXE") {
         Some("excel")
-    } else if window.process_name.eq_ignore_ascii_case("POWERPNT.EXE") {
+    } else if process_name.eq_ignore_ascii_case("POWERPNT.EXE") {
         Some("powerpoint")
     } else {
         None
+    }
+}
+
+/// Collect Office context only for a known process. Skips probing every Office app.
+pub fn collect_office_context_for_process(process_name: &str) -> Option<OfficeContext> {
+    let app = office_app_from_process(process_name)?;
+    match try_collect_app(app, true) {
+        Ok(context) => context,
+        Err(error) => {
+            tracing::warn!(provider = "office", error = %error, "context provider failed");
+            None
+        }
     }
 }
 

@@ -88,11 +88,33 @@ impl ChatService {
         let session_id = session_id.unwrap_or_else(|| DEFAULT_SESSION_ID.to_string());
         shared_session_origin_store().mark(&session_id, origin);
 
-        // Mid-turn soft inject: queue into the active agent loop (tool boundary).
+        // Soft-inject only when the client explicitly asks (staged chip 追加 /
+        // guide). Auto-flush after a turn must never ride a still-active or
+        // cancelling agent — that duplicated sends and attached queue-continue
+        // messages onto an already-finished assistant.
         if let Some(assistant_message_id) =
             self.agent_runtime.active_assistant_for_session(&session_id)
         {
-            return self.soft_inject(&session_id, content, &assistant_message_id);
+            if overrides.soft_inject {
+                match self.agent_runtime.soft_inject(&session_id, content.clone()) {
+                    Ok(_) => {
+                        return self.persist_soft_inject(
+                            &session_id,
+                            content,
+                            &assistant_message_id,
+                        );
+                    }
+                    Err(ChatError::MessageNotFound) => {
+                        tracing::warn!(
+                            session_id = %session_id,
+                            "soft inject: agent already finished; starting a new turn"
+                        );
+                    }
+                    Err(error) => return Err(error),
+                }
+            } else {
+                return Err(ChatError::TurnInProgress);
+            }
         }
 
         let known_workspaces = self.workspace_manager.list();
@@ -174,11 +196,9 @@ impl ChatService {
                 }
             }
         }
-        let content = if overrides.resume_plan {
-            append_plan_checklist(&content, &self.tasks)
-        } else {
-            content
-        };
+        // Keep the persisted / UI user turn as the short approve text. The
+        // checklist is model-only (injected into ChatRequest below) so the
+        // optimistic `local-user-*` bubble can match ChatStarted by content.
         let content = crate::core::plugins::rewrite_user_message(&content);
         let user_message = create_message(&session_id, Role::User, content, MessageStatus::Done);
         let assistant_message = create_message(
@@ -403,10 +423,11 @@ impl ChatService {
             }
         }
         let plan_mode = plan_store.is_active(&session_id);
-        let suggest_plan_request = chat_mode == ChatMode::Agent
-            && !plan_mode
-            && !overrides.skip_auto_plan
-            && crate::core::tools::plan_mode::should_auto_plan(&user_message.content, chat_mode);
+        // Always inject the Agent plan-request hint (when not already in Plan) so
+        // the policy suffix stays a stable prefix across turns. Heuristic gating
+        // used to add/remove this block per message and bust DeepSeek cache.
+        let suggest_plan_request =
+            chat_mode == ChatMode::Agent && !plan_mode && !overrides.skip_auto_plan;
 
         let image_mode_options = if chat_mode == ChatMode::Image {
             let incoming = overrides.image_gen.clone().unwrap_or_default();
@@ -439,7 +460,7 @@ impl ChatService {
             companion_origin: shared_session_origin_store().is_companion(&session_id),
             image_mode: image_mode_options.as_ref().map(ImageModePolicy::from),
         };
-        let request = PromptBuilder::build(PromptBuildInput {
+        let mut request = PromptBuilder::build(PromptBuildInput {
             request_id: &assistant_message.id,
             session_id: &session_id,
             history: &compact.messages,
@@ -450,6 +471,16 @@ impl ChatService {
             provider: Some(provider.id().to_string()),
             preferences: &prompt_preferences,
         });
+        if overrides.resume_plan {
+            if let Some(current) = request
+                .messages
+                .iter_mut()
+                .rev()
+                .find(|message| matches!(message.role, Role::User))
+            {
+                current.content = append_plan_checklist(&current.content, &self.tasks);
+            }
+        }
 
         let turn = history
             .iter()
@@ -591,20 +622,23 @@ impl ChatService {
         }
     }
 
-    fn soft_inject(
+    fn persist_soft_inject(
         &self,
         session_id: &str,
         content: String,
         assistant_message_id: &str,
     ) -> Result<ChatSendResult, ChatError> {
-        // Marker persists soft-inject identity across history reload (UI folds these
-        // into the preceding assistant turn instead of an unanswered user bubble).
+        // Marker persists soft-inject identity across history reload.
         const SOFT_INJECT_MARKER: &str = "<!--peek:soft-inject-->\n";
         let stored = format!("{SOFT_INJECT_MARKER}{content}");
         let user_message = create_message(session_id, Role::User, stored, MessageStatus::Done);
         self.conversation.append(session_id, user_message.clone());
-        // Agent queue gets plain text (no HTML marker).
-        self.agent_runtime.soft_inject(session_id, content)?;
+        self.conversation.append_work_timeline_inject(
+            session_id,
+            assistant_message_id,
+            &user_message.id,
+            &content,
+        );
 
         // Do not emit ChatStarted: that would re-project the assistant bubble and can
         // wipe in-flight streamed content. Frontend already staged the user message.

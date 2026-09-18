@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "@/types/chat";
-import { lastTurnUserContent } from "./chatHistory";
+import { lastSoftInjectContent, lastTurnUserContent } from "./chatHistory";
 
 function msg(
   partial: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role" | "content">,
@@ -41,5 +41,31 @@ describe("lastTurnUserContent", () => {
 
   it("returns empty when there is no user turn", () => {
     expect(lastTurnUserContent([msg({ id: "a1", role: "assistant", content: "hi" })])).toBe("");
+  });
+});
+
+describe("lastSoftInjectContent", () => {
+  it("returns the latest inject so consecutive identical guides can be skipped", () => {
+    expect(
+      lastSoftInjectContent([
+        msg({ id: "u1", role: "user", content: "hello" }),
+        msg({ id: "a1", role: "assistant", content: "", status: "streaming" }),
+        msg({
+          id: "u2",
+          role: "user",
+          content: "<!--peek:soft-inject-->\nlook here",
+          injected: true,
+        }),
+      ]),
+    ).toBe("look here");
+  });
+
+  it("does not treat the original question as an inject", () => {
+    expect(
+      lastSoftInjectContent([
+        msg({ id: "u1", role: "user", content: "hello" }),
+        msg({ id: "a1", role: "assistant", content: "", status: "streaming" }),
+      ]),
+    ).toBe("");
   });
 });

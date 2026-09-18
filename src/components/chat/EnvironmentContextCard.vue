@@ -390,7 +390,7 @@ details[open] summary svg {
   margin-left: auto;
   color: var(--peek-muted);
   font-size: 11px;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 pre {

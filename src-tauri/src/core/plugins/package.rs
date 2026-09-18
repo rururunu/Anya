@@ -364,6 +364,7 @@ mod tests {
     fn official_ids_are_blocked() {
         assert!(is_official_plugin_id("terminal"));
         assert!(is_official_plugin_id("computer-use"));
+        assert!(!is_official_plugin_id("pet-gallery"));
         assert!(!is_official_plugin_id("system-terminal"));
         assert!(!is_official_plugin_id("anya-cli"));
         assert!(!is_official_plugin_id("pack-demo"));

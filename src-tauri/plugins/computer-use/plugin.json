@@ -1,17 +1,17 @@
 {
   "id": "computer-use",
   "name": "Computer Use",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "apiVersion": "1.0",
   "role": "agent",
-  "description": "Gives the chat agent screenshot, click, type, and scroll on the Windows desktop. No workbench UI — Enable it, then ask Anya.",
+  "description": "让 Agent 操控本机桌面与浏览器（Ghost）。启用前需确认。仅 Windows。",
   "icon": "ui/icon.svg",
   "about": "ui/about.md",
   "host": { "entry": "host/main.ts" },
   "contributes": {
     "agent": {
       "tools": true,
-      "prompt": "When the user wants to see or operate the desktop, you MUST use these tools. Priority: (1) launch an app/file/URI (2) key chords (3) click_control / set_value from the UIA list attached to screenshot (4) pixel click/drag only for canvas. Follow the Windows playbook below. SPEED: launch or screenshot once, then emit ALL remaining tools in ONE turn. Screenshot again only after the whole task or if after_pointer says you hit Anya. Do not hover. Do not Win+R if launch works. click: tap; count:2 double-click. drag x,y+x2,y2 is a straight line; curves: path or cx,cy,r. key supports win. Do not click Anya unless asked.",
+      "prompt": "When the user wants to operate the desktop or a browser, you MUST use these tools. Ghost MCP-parity dispatch: prepare window anchor → CDP auto-route for Chromium with DevTools → else background UIA; focus_guard restores the user's foreground. Pipeline: (1) window launch/anchor (2) see or find (3) act by name/role; read verified + dispatch/route (4) wait/assert. Canvas: drag (real mouse, auto-raise). description= on find/act uses ground (OCR/VLM). Ctrl+C/X/V/A/Z background; other chords auto-raise. Do NOT ask for GHOST_FOCUS_LOCK/setx. Prefer Chinese AND English labels. Do not click Anya unless asked. HUD Stop cancels Ghost.",
       "skills": ["skills/windows.md"]
     }
   },

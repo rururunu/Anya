@@ -3,6 +3,9 @@ import type { AppLanguage } from "@/types/setting";
 export const settingsFieldIds = [
   "colorScheme",
   "language",
+  "fontCjk",
+  "fontLatin",
+  "fontMono",
   "zoom",
   "hardwareAccelerationEnabled",
   "opacity",
@@ -72,6 +75,7 @@ type CategoryKey =
   | "rag";
 type GroupKey =
   | "themeLanguage"
+  | "fonts"
   | "window"
   | "hotkeys"
   | "performance"
@@ -398,6 +402,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.rag.incomplete": "Fill in the API URL, key, and model.",
 
   "settings.groups.themeLanguage": "Theme & language",
+  "settings.groups.fonts": "Fonts",
   "settings.groups.window": "Window",
   "settings.groups.hotkeys": "Shortcuts",
   "settings.groups.performance": "Performance",
@@ -415,7 +420,8 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.groups.pinBadges": "Badges",
   "settings.groups.about": "Application",
 
-  "settings.pages.appearance.description": "Theme, window, and the shortcuts that wake Anya.",
+  "settings.pages.appearance.description":
+    "Theme, fonts, window, and the shortcuts that wake Anya.",
   "settings.pages.ai.description":
     "Default chat model, vision fallback, and reasoning. Configure API keys under Provider. Image generation is under Image.",
   "settings.pages.image.description":
@@ -459,6 +465,13 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.colorScheme.description": "Choose light or dark.",
   "settings.fields.language.title": "Language",
   "settings.fields.language.description": "Choose the display language for the interface.",
+  "settings.fields.fontCjk.title": "Chinese font",
+  "settings.fields.fontCjk.description": "Used for Chinese glyphs. Default is Microsoft YaHei.",
+  "settings.fields.fontLatin.title": "English font",
+  "settings.fields.fontLatin.description":
+    "Used for Latin letters. Default is Source Sans 3, a document grotesk.",
+  "settings.fields.fontMono.title": "Code font",
+  "settings.fields.fontMono.description": "Used in diffs, terminals, and code blocks.",
   "settings.fields.zoom.title": "Interface Zoom",
   "settings.fields.zoom.description":
     "Adjust the scale of interface elements and fonts for high-DPI displays.",
@@ -552,7 +565,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "Model used for semantic ranking. Larger models are more accurate but slower to download and run.",
   "settings.fields.toolApprovalMode.title": "Tool approval mode",
   "settings.fields.toolApprovalMode.description":
-    "Always allow still blocks dangerous shell via rules.",
+    "Ask prompts for tools. Auto skips prompts inside the workspace. Full approve also allows outside-workspace paths; dangerous shell rules still apply.",
   "settings.fields.agentWorkDisplay.title": "Agent work display",
   "settings.fields.agentWorkDisplay.description":
     "Detailed shows shell and code diffs inline in the chat timeline. Compact folds them into process details (collapsed by default). Read tools always stay in process details.",
@@ -755,6 +768,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.deleteConfirm": "确定要删除此提供商吗？",
 
     "settings.groups.themeLanguage": "主题与语言",
+    "settings.groups.fonts": "字体",
     "settings.groups.window": "窗口",
     "settings.groups.hotkeys": "快捷键",
     "settings.groups.performance": "性能",
@@ -772,7 +786,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.pinBadges": "角标",
     "settings.groups.about": "应用信息",
 
-    "settings.pages.appearance.description": "主题、窗口与唤起快捷键。",
+    "settings.pages.appearance.description": "主题、字体、窗口与唤起快捷键。",
     "settings.pages.ai.description":
       "默认对话模型、视觉回退与推理行为。API Key 在「提供商」中配置。生图请到「生图」。",
     "settings.pages.image.description":
@@ -813,6 +827,13 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.colorScheme.description": "选择浅色或深色。",
     "settings.fields.language.title": "界面语言",
     "settings.fields.language.description": "界面语言。",
+    "settings.fields.fontCjk.title": "中文字体",
+    "settings.fields.fontCjk.description": "用于中文。默认微软雅黑，可改成其他已安装字体。",
+    "settings.fields.fontLatin.title": "英文字体",
+    "settings.fields.fontLatin.description":
+      "用于拉丁字母。默认 Source Sans 3，比系统 UI 字体更正式。",
+    "settings.fields.fontMono.title": "代码字体",
+    "settings.fields.fontMono.description": "用于 diff、终端和代码块。",
     "settings.fields.zoom.title": "界面缩放",
     "settings.fields.zoom.description": "调整软件界面大小。",
     "settings.fields.hardwareAccelerationEnabled.title": "硬件加速",
@@ -893,7 +914,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.semanticSearchModel.description":
       "用于语义排序的模型。更大的模型更准确，但下载与推理更慢。",
     "settings.fields.toolApprovalMode.title": "工具审批模式",
-    "settings.fields.toolApprovalMode.description": "全开仍会拦截危险 shell。",
+    "settings.fields.toolApprovalMode.description":
+      "「请求」需确认工具；「自动」跳过工作区内审批；「完全批准」同时放行工作区外路径。危险 shell 仍会被规则拦截。",
     "settings.fields.agentWorkDisplay.title": "工作过程显示",
     "settings.fields.agentWorkDisplay.description":
       "详细显示：命令与代码 diff 直接穿插在对话时间线中。轻量显示：收入过程详情并默认折叠；读取类工具始终在过程详情中。",
@@ -1034,6 +1056,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.deleteConfirm": "このプロバイダーを削除しますか？",
 
     "settings.groups.themeLanguage": "テーマと言語",
+    "settings.groups.fonts": "フォント",
     "settings.groups.window": "ウィンドウ",
     "settings.groups.hotkeys": "ショートカット",
     "settings.groups.performance": "パフォーマンス",
@@ -1208,6 +1231,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.deleteConfirm": "Удалить этого провайдера?",
 
     "settings.groups.themeLanguage": "Тема и язык",
+    "settings.groups.fonts": "Шрифты",
     "settings.groups.window": "Окно",
     "settings.groups.hotkeys": "Ярлыки",
     "settings.groups.performance": "Производительность",
@@ -1383,6 +1407,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.deleteConfirm": "Diesen Anbieter wirklich löschen?",
 
     "settings.groups.themeLanguage": "Thema & Sprache",
+    "settings.groups.fonts": "Schriftarten",
     "settings.groups.window": "Fenster",
     "settings.groups.hotkeys": "Tastenkürzel",
     "settings.groups.performance": "Leistung",
@@ -1560,6 +1585,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.deleteConfirm": "Supprimer ce fournisseur ?",
 
     "settings.groups.themeLanguage": "Thème et langue",
+    "settings.groups.fonts": "Polices",
     "settings.groups.window": "Fenêtre",
     "settings.groups.hotkeys": "Raccourcis",
     "settings.groups.performance": "Performances",
@@ -1739,6 +1765,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.deleteConfirm": "이 제공자를 삭제할까요?",
 
     "settings.groups.themeLanguage": "테마와 언어",
+    "settings.groups.fonts": "글꼴",
     "settings.groups.window": "창",
     "settings.groups.hotkeys": "단축키",
     "settings.groups.performance": "성능",
@@ -1855,6 +1882,9 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
   "en-US": {
     colorScheme: "Appearance › Color Scheme",
     language: "Appearance › Language",
+    fontCjk: "Appearance › Chinese font",
+    fontLatin: "Appearance › English font",
+    fontMono: "Appearance › Code font",
     zoom: "Appearance › Interface Zoom",
     hardwareAccelerationEnabled: "Appearance › Hardware acceleration",
     opacity: "Appearance › Opacity",
@@ -1896,6 +1926,9 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
   "zh-CN": {
     colorScheme: "Appearance › Color Scheme",
     language: "Appearance › Language",
+    fontCjk: "外观 › 中文字体",
+    fontLatin: "外观 › 英文字体",
+    fontMono: "外观 › 代码字体",
     zoom: "Appearance › Interface Zoom",
     hardwareAccelerationEnabled: "外观 › 硬件加速",
     opacity: "Appearance › Opacity",
@@ -1943,6 +1976,9 @@ const settingsFieldKeywords: Record<
   "en-US": {
     colorScheme: ["theme", "color", "scheme"],
     language: ["language", "locale"],
+    fontCjk: ["font", "chinese", "cjk", "yahei", "microsoft"],
+    fontLatin: ["font", "english", "latin", "system", "segoe"],
+    fontMono: ["font", "code", "mono", "cascadia", "consolas", "jetbrains"],
     zoom: ["zoom", "scale", "size", "font"],
     hardwareAccelerationEnabled: [
       "gpu",
@@ -2009,6 +2045,9 @@ const settingsFieldKeywords: Record<
   "zh-CN": {
     colorScheme: ["配色", "主题", "颜色", "theme", "color"],
     language: ["语言", "language", "locale"],
+    fontCjk: ["字体", "中文", "微软雅黑", "雅黑", "font", "chinese"],
+    fontLatin: ["字体", "英文", "系统", "segoe", "font", "english"],
+    fontMono: ["字体", "代码", "等宽", "cascadia", "consolas", "font", "mono", "code"],
     zoom: ["缩放", "放大", "大小", "字体", "zoom", "scale"],
     hardwareAccelerationEnabled: ["gpu", "硬件", "加速", "渲染", "webview2", "重启"],
     opacity: ["透明", "透明度", "毛玻璃", "blur", "opacity", "glass", "acrylic", "外观"],
@@ -2036,7 +2075,16 @@ const settingsFieldKeywords: Record<
     tavilyApiKey: ["联网", "搜索", "tavily", "api", "key", "密钥"],
     semanticSearchEnabled: ["语义", "检索", "工作区", "embedding", "rag", "search"],
     semanticSearchModel: ["语义", "模型", "嵌入", "embedding", "bge", "e5"],
-    toolApprovalMode: ["审批", "ask", "auto", "一律允许", "全开", "approval"],
+    toolApprovalMode: [
+      "审批",
+      "请求",
+      "自动",
+      "完全批准",
+      "ask",
+      "auto",
+      "alwaysAllow",
+      "approval",
+    ],
     agentWorkDisplay: [
       "详细",
       "轻量",

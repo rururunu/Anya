@@ -119,6 +119,34 @@ function curatedPypi(
 }
 
 export const CURATED_MCP_CATALOG: CatalogEntry[] = [
+  {
+    name: "curated/ghost",
+    title: "Ghost Desktop",
+    description:
+      "Windows 桌面操控（UI Automation，后台验证点击）。一键下载 ghost-mcp 并注册为 MCP。试用时建议先关掉官方 computer-use 插件避免工具打架。",
+    version: "0.23.4",
+    websiteUrl: "https://github.com/NORTHTEKDevs/ghost",
+    package: {
+      registryType: "binary",
+      identifier: "ghost-mcp",
+      runtimeHint: "ghost",
+      transport: { type: "stdio" },
+    },
+    install: {
+      id: "ghost",
+      title: "Ghost Desktop",
+      description: "Verified desktop control for agents (UI Automation).",
+      command: "__anya_ensure_ghost__",
+      args: [],
+      env: [["GHOST_SHELL", "off"]],
+      enabled: true,
+      homepage: "https://github.com/NORTHTEKDevs/ghost",
+      source: "curated",
+      qualifiedName: "io.github.NORTHTEKDevs/ghost",
+    },
+    requiredEnv: [],
+    source: "curated",
+  },
   curatedNpm(
     "filesystem",
     "Filesystem",
@@ -461,6 +489,9 @@ export function entryRuntimeKind(entry: CatalogEntry): "npm" | "pypi" | "other" 
 export function isEntryInstallable(entry: CatalogEntry, support: McpRuntimeSupport): boolean {
   // Next version: guide users through required API keys / env vars.
   if ((entry.requiredEnv ?? []).length > 0) return false;
+  if (entry.install.id === "ghost" || entry.install.command === "__anya_ensure_ghost__") {
+    return true;
+  }
   switch (entryRuntimeKind(entry)) {
     case "npm":
       return support.npm;

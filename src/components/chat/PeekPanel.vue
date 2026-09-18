@@ -616,13 +616,7 @@ const contextPreview = computed(() => {
     return `[Selected Files] ${preview}`;
   }
 
-  if (context.selectedImages?.length) {
-    const count = context.selectedImages.length;
-    return count === 1
-      ? tr(settingStore.language, "selectedImage")
-      : tr(settingStore.language, "selectedImages", { count });
-  }
-
+  // Selected images already appear as thumbs in the composer — skip the text banner.
   return "";
 });
 watch(
@@ -1046,8 +1040,10 @@ async function handlePause() {
     console.error("chat_cancel failed:", error);
     // 无活跃任务时（例如异常退出后恢复），本地也要解除卡住的执行态
     chatStore.settleInterruptedSession(sessionId);
+    // No ChatFinished when cancel misses the task — drain the queue here.
+    void chatStore.flushStaged(sessionId);
   }
-  void chatStore.flushStaged(sessionId);
+  // Successful cancel emits chat-finished, which flushes the staged queue.
 }
 
 function close() {
@@ -1899,6 +1895,14 @@ onUnmounted(() => {
   isolation: isolate;
   will-change: transform, opacity;
   box-shadow: inset 0 1px 0 var(--peek-panel-highlight);
+}
+
+.peek-panel:not(.chat) .composer-dock {
+  gap: 0;
+  border-radius: var(--peek-radius-composer, 16px);
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--peek-shadow, #000) 16%, transparent),
+    inset 0 1px 0 var(--peek-panel-highlight);
 }
 
 .composer-dock :deep(.chat-input-shell) {

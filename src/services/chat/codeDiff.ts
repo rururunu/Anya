@@ -1,12 +1,18 @@
 import { ipcInvoke } from "@/services/ipc/commands";
 import { IPC_COMMANDS } from "@/types/ipc";
 
-export type CodeDiffLineKind = "context" | "addition" | "deletion";
+export type CodeDiffLineKind = "context" | "addition" | "deletion" | "skip";
+
+export interface CodeDiffInlineRange {
+  from: number;
+  to: number;
+}
 
 export interface CodeDiffLine {
   lineNumber: number;
   text: string;
   kind: CodeDiffLineKind;
+  skipped?: number;
 }
 
 export interface CodeDiffRow {
@@ -25,19 +31,18 @@ export interface CodeDiffRequest {
 }
 
 export async function buildCodeDiff(request: CodeDiffRequest): Promise<CodeDiffDocument> {
+  let document: CodeDiffDocument | null = null;
   try {
-    const document = await ipcInvoke<CodeDiffDocument>(IPC_COMMANDS.buildCodeDiff, { request });
-    if (document.rows.length || !request.unifiedDiff.trim()) {
-      return document;
+    document = await ipcInvoke<CodeDiffDocument>(IPC_COMMANDS.buildCodeDiff, { request });
+    if (!document.rows.length && request.unifiedDiff.trim()) {
+      document = null;
     }
   } catch (error) {
     console.warn("Rust code diff unavailable; rendering unified diff locally.", error);
   }
 
-  // The native command is the primary implementation. This fallback keeps
-  // completed changes visible while a dev backend is rebuilding or a legacy
-  // window has not loaded the new command capability yet.
-  return parseUnifiedDiff(request.unifiedDiff);
+  const rows = document?.rows ?? parseUnifiedDiff(request.unifiedDiff).rows;
+  return { rows: collapseUnchangedRows(rows) };
 }
 
 function parseUnifiedDiff(diff: string): CodeDiffDocument {
@@ -64,7 +69,12 @@ function parseUnifiedDiff(diff: string): CodeDiffDocument {
       newLine = Number(hunk[2]);
       continue;
     }
-    if (raw.startsWith("--- ") || raw.startsWith("+++ ") || raw.startsWith("diff ") || raw.startsWith("index ")) {
+    if (
+      raw.startsWith("--- ") ||
+      raw.startsWith("+++ ") ||
+      raw.startsWith("diff ") ||
+      raw.startsWith("index ")
+    ) {
       continue;
     }
     if (raw.startsWith("-")) {
@@ -91,4 +101,93 @@ function parseUnifiedDiff(diff: string): CodeDiffDocument {
 
   flushChanges();
   return { rows };
+}
+
+const CONTEXT_LINES = 3;
+const MIN_SKIP = 2;
+
+function isChangedRow(row: CodeDiffRow): boolean {
+  return row.left?.kind === "deletion" || row.right?.kind === "addition";
+}
+
+function skipRow(count: number): CodeDiffRow {
+  const line: CodeDiffLine = { lineNumber: 0, text: "", kind: "skip", skipped: count };
+  return { left: { ...line }, right: { ...line } };
+}
+
+/** Fold long unchanged stretches so the review shows hunks, not the whole file. */
+export function collapseUnchangedRows(rows: CodeDiffRow[], context = CONTEXT_LINES): CodeDiffRow[] {
+  if (!rows.some(isChangedRow)) return rows;
+  const out: CodeDiffRow[] = [];
+  let index = 0;
+  while (index < rows.length) {
+    if (isChangedRow(rows[index]!)) {
+      out.push(rows[index]!);
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (end < rows.length && !isChangedRow(rows[end]!)) end += 1;
+    const run = rows.slice(index, end);
+    const leading = index === 0;
+    const trailing = end === rows.length;
+    const keepStart = leading ? 0 : Math.min(context, run.length);
+    const keepEnd = trailing ? 0 : Math.min(context, run.length - keepStart);
+    const skipped = run.length - keepStart - keepEnd;
+    if (skipped >= MIN_SKIP) {
+      out.push(...run.slice(0, keepStart));
+      out.push(skipRow(skipped));
+      out.push(...run.slice(run.length - keepEnd));
+    } else {
+      out.push(...run);
+    }
+    index = end;
+  }
+  return out;
+}
+
+/** Highlight the middle of a replaced line; skip when the whole line changed. */
+export function inlineEditRange(
+  before: string,
+  after: string,
+): { before: CodeDiffInlineRange | null; after: CodeDiffInlineRange | null } {
+  if (!before || !after || before === after) {
+    return { before: null, after: null };
+  }
+  let prefix = 0;
+  const limit = Math.min(before.length, after.length);
+  while (prefix < limit && before[prefix] === after[prefix]) prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < limit - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+  const beforeTo = before.length - suffix;
+  const afterTo = after.length - suffix;
+  if (prefix >= beforeTo && prefix >= afterTo) {
+    return { before: null, after: null };
+  }
+  return {
+    before:
+      prefix < beforeTo && beforeTo - prefix < before.length
+        ? { from: prefix, to: beforeTo }
+        : null,
+    after:
+      prefix < afterTo && afterTo - prefix < after.length ? { from: prefix, to: afterTo } : null,
+  };
+}
+
+/** Intra-line ranges for a replacement row (deletion on the left, addition on the right). */
+export function inlineRangesForRow(row: CodeDiffRow): {
+  left?: CodeDiffInlineRange;
+  right?: CodeDiffInlineRange;
+} {
+  if (row.left?.kind !== "deletion" || row.right?.kind !== "addition") return {};
+  const ranges = inlineEditRange(row.left.text, row.right.text);
+  return {
+    left: ranges.before ?? undefined,
+    right: ranges.after ?? undefined,
+  };
 }

@@ -1,6 +1,11 @@
 <template>
   <div v-if="rows.length" class="artifact-rows">
-    <div v-for="row in rows" :key="row.key" class="artifact-row">
+    <div
+      v-for="row in rows"
+      :key="row.key"
+      class="artifact-row"
+      :class="{ 'is-nested': row.nested }"
+    >
       <component
         :is="row.icon"
         class="artifact-icon"
@@ -37,6 +42,7 @@ export interface ArtifactRow {
   title?: string;
   stats?: { added?: number; removed?: number };
   actionLabel?: string;
+  nested?: boolean;
   onOpen: () => void;
   onAction?: () => void;
 }
@@ -65,6 +71,19 @@ defineProps<{
 .artifact-icon {
   flex: none;
   color: var(--peek-faint);
+}
+
+.artifact-row.is-nested {
+  padding-left: 22px;
+}
+
+.artifact-row.is-nested .artifact-icon {
+  color: color-mix(in srgb, var(--peek-faint) 82%, transparent);
+}
+
+.artifact-row.is-nested .artifact-label {
+  font-size: 11.5px;
+  font-weight: 500;
 }
 
 .artifact-main {

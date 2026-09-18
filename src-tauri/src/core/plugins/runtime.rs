@@ -304,6 +304,9 @@ impl PluginRuntime {
     }
 
     fn stop_session(&self, id: &str) {
+        if id == "computer-use" {
+            super::computer::stop_engine();
+        }
         if let Some(registry) = self.registry() {
             unregister_plugin_tools(registry.as_ref(), id);
         }
@@ -338,6 +341,24 @@ impl PluginRuntime {
         }
         if method.starts_with("computer.") {
             return super::computer::dispatch_rpc(id, method, &params);
+        }
+        if method.starts_with("deepseek.") {
+            let app = self
+                .app
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .ok_or_else(|| ToolError::new("plugin runtime has no app handle"))?;
+            return super::deepseek::dispatch_rpc(&app, id, method);
+        }
+        if method.starts_with("pet.") {
+            let app = self
+                .app
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .ok_or_else(|| ToolError::new("plugin runtime has no app handle"))?;
+            return super::pet::dispatch_rpc(&app, id, method, &params);
         }
         let mut map = self
             .sessions
@@ -441,11 +462,20 @@ impl PluginRuntime {
                 .map(|session| session.agent_tools.clone())
                 .unwrap_or_default();
             let extra = if grant_has(&item.id, "agent.prompt") {
-                prompt::extra_from_manifest(
+                let mut extra = prompt::extra_from_manifest(
                     &item.id,
                     &manifest.contributes.agent.prompt,
                     &manifest.contributes.agent.skills,
-                )
+                );
+                if item.id == "computer-use" {
+                    if let Some(catalog) = super::computer::playbook_prompt_catalog() {
+                        if !extra.is_empty() {
+                            extra.push_str("\n\n");
+                        }
+                        extra.push_str(&catalog);
+                    }
+                }
+                extra
             } else {
                 String::new()
             };
@@ -457,6 +487,7 @@ impl PluginRuntime {
                 &extra,
             ));
         }
+        blocks.sort();
         prompt::assemble(&blocks)
     }
 }

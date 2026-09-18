@@ -85,6 +85,6 @@ const fallbackIcon = computed(() => {
 .plugin-sidebar-icon-img {
   display: block;
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: 12px;
 }
 </style>

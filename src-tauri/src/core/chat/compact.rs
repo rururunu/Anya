@@ -559,12 +559,11 @@ async fn summarize_folded(
 }
 
 fn is_compactable(message: &ChatMessage) -> bool {
-    if is_compaction_summary(message)
-        || message.id.starts_with("agent-state-")
-        || message.status == MessageStatus::Pending
-    {
+    if is_compaction_summary(message) || message.status == MessageStatus::Pending {
         return false;
     }
+    // agent-state snapshots are append-only for prefix-cache stability; allow
+    // mid-turn compact to fold them (live state is re-injected / preserved).
     matches!(message.role, Role::User | Role::Assistant | Role::Tool)
         && message_has_estimable_tokens(message)
 }

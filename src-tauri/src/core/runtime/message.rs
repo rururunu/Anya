@@ -26,9 +26,9 @@ pub struct ToolActivity {
 }
 
 /// Chronological marker for one piece of assistant work: a run of reasoning
-/// text, a run of regular reply text, or a tool call — in the order they
-/// actually happened. Persisted alongside the message so history reloads and
-/// crash recovery keep narration interleaved with the tool cards it
+/// text, a run of regular reply text, a tool call, or a mid-turn user inject
+/// — in the order they actually happened. Persisted alongside the message so
+/// history reloads keep narration interleaved with the tool cards it
 /// describes, instead of collapsing into "all text, then all tools".
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -38,6 +38,10 @@ pub enum WorkTimelineItem {
         content: String,
     },
     Content {
+        id: String,
+        content: String,
+    },
+    Inject {
         id: String,
         content: String,
     },

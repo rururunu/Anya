@@ -374,6 +374,52 @@ mod work_timeline_tests {
         cleanup(db_path);
     }
 
+    #[test]
+    fn inject_splits_later_content_into_a_new_run() {
+        let (manager, db_path) = temp_manager();
+        let session_id = "session";
+        let message = create_message(
+            session_id,
+            Role::Assistant,
+            String::new(),
+            MessageStatus::Streaming,
+        );
+        let message_id = message.id.clone();
+        manager
+            .sessions
+            .lock()
+            .unwrap()
+            .insert(session_id.into(), vec![message]);
+
+        manager.append_work_timeline_text(
+            session_id,
+            &message_id,
+            TimelineTextKind::Content,
+            "before ",
+        );
+        manager.append_work_timeline_inject(session_id, &message_id, "inj-1", "use a flowchart");
+        manager.append_work_timeline_text(
+            session_id,
+            &message_id,
+            TimelineTextKind::Content,
+            "after",
+        );
+
+        let timeline = manager.messages(session_id)[0]
+            .work_timeline
+            .clone()
+            .expect("timeline");
+        assert_eq!(timeline.len(), 3);
+        assert!(
+            matches!(&timeline[1], WorkTimelineItem::Inject { content, .. } if content == "use a flowchart")
+        );
+        assert!(
+            matches!(&timeline[2], WorkTimelineItem::Content { content, .. } if content == "after")
+        );
+
+        cleanup(db_path);
+    }
+
     /// Consecutive deltas of the same kind must merge into one run instead of
     /// fragmenting into one timeline item per chunk.
     #[test]

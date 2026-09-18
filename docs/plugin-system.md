@@ -189,7 +189,7 @@ model tool_calls (plugin_<id>__<name>)
 | ----------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SlotRegistry`          | `src/composables/plugins/slotRegistry.ts`     | Named anchors (`sidebar.tabs`/`composer.accessory` stackable, `workbench.main` exclusive). The shell renders them with `PluginSlotOutlet` — no per-anchor Vue component. `sidebar.tabs` chrome (`nav`/`header`/`views`) is launcher location only. |
 | `ctx.agent`             | `src/composables/plugins/conversationSend.ts` | Frozen agent service (`run` / `mount` / `send` / `sessionId`). `ctx.conversation.*` are aliases.                                                                                                                                                   |
-| `AssetOverrideRegistry` | `src/composables/plugins/assetRegistry.ts`    | Resource keys (`mascot.idle`/`tray.icon`/`workbench.backdrop`/`pet.stage.skin`) with an allowed-kind whitelist (image/video/lottie)                                                                                                                |
+| `AssetOverrideRegistry` | `src/composables/plugins/assetRegistry.ts`    | Resource keys (`mascot.idle`/`tray.icon`/`workbench.backdrop`/`pet.stage.skin`/`pet.stage.atlas`) with an allowed-kind whitelist (`spritesheet` for atlases)                                                                                       |
 | `CapabilityFramework`   | `src-tauri/src/core/plugins/capability.rs`    | Structured, scoped capability declarations (e.g. `net.listen` restricted to loopback + a port range) — finer-grained than an enum permission                                                                                                       |
 | `PluginEventBus`        | `src/composables/plugins/eventBus.ts`         | Namespaced publish/subscribe; 200-subscription cap per plugin; a subscriber's error can't break others                                                                                                                                             |
 
@@ -295,14 +295,17 @@ Agent plugins skip `activate.js` / `ui.workbench`. After Enable, their tools are
 
 ### 6.2c Computer-use runtime
 
-Official `computer-use` is implemented in Rust (`core/plugins/computer/`), not Deno. The Deno host only declares tool schemas. Prefer:
+Official `computer-use` runs in Rust on an in-process Ghost session
+(`core/plugins/computer/ghost_*.rs`). The Deno host only declares tool schemas.
+Prefer:
 
-1. `launch` (ShellExecute)
-2. `key`
-3. `click_control` / `set_value` (UIA Invoke / ValuePattern; screenshot returns the control list)
-4. Pixel `click` / `drag` only for canvas or unnamed regions
+1. `window` launch/focus/anchor
+2. `see` (prefer `mode=text`)
+3. `act` by name/role — read `verified`
+4. `wait` / `assert`; `browser`/`tab` for the web
+5. Pixel `screenshot`/`click`/`drag` only for canvas or unnamed regions
 
-JPEG click coordinates are image pixels mapped by capture scale + window origin (physical, DPI reported). Details: [Computer use](./computer-use.md).
+Details: [Computer use](./computer-use.md).
 
 ### 6.3 Common plugin shapes at a glance
 
@@ -351,20 +354,22 @@ JPEG click coordinates are image pixels mapped by capture scale + window origin 
 
 ### 7.2 Permissions (`permissions`)
 
-| id             | Meaning                                                                                                                                        |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `storage`      | Store small key-value data inside the plugin's own folder                                                                                      |
-| `ask_anya`     | Call Anya's agent (`ctx.agent.run` on a plugin session, or `send` into the current chat)                                                       |
-| `pty`          | Open a real terminal (ConPTY)                                                                                                                  |
-| `run`          | `--allow-run` in the Deno host                                                                                                                 |
-| `fs.workspace` | Read/write the current workspace from `host/main.ts` (`Deno.readTextFile` / `writeTextFile`) — not a `ctx` method                              |
-| `fs.pick`      | Native file dialog via `ctx.fs.pick` / `AnyaPlugin.pick`                                                                                       |
-| `net`          | `--allow-net` in the Deno host                                                                                                                 |
-| `agent.tools`  | Register tools the model can call                                                                                                              |
-| `agent.hooks`  | Run hooks during an agent turn                                                                                                                 |
-| `agent.prompt` | Append to the agent system prompt                                                                                                              |
-| `ui.workbench` | Load into the workbench's own page (can read stores/settings)                                                                                  |
-| `computer`     | Screenshot, UIA, keyboard, and `launch` on Windows. Official plugin: `computer-use` (off until Enable). See [Computer use](./computer-use.md). |
+| id                 | Meaning                                                                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`          | Store small key-value data inside the plugin's own folder                                                                                                                                   |
+| `ask_anya`         | Call Anya's agent (`ctx.agent.run` on a plugin session, or `send` into the current chat)                                                                                                    |
+| `pty`              | Open a real terminal (ConPTY)                                                                                                                                                               |
+| `run`              | `--allow-run` in the Deno host                                                                                                                                                              |
+| `fs.workspace`     | Read/write the current workspace from `host/main.ts` (`Deno.readTextFile` / `writeTextFile`) — not a `ctx` method                                                                           |
+| `fs.pick`          | Native file dialog via `ctx.fs.pick` / `AnyaPlugin.pick`                                                                                                                                    |
+| `net`              | `--allow-net` in the Deno host                                                                                                                                                              |
+| `agent.tools`      | Register tools the model can call                                                                                                                                                           |
+| `agent.hooks`      | Run hooks during an agent turn                                                                                                                                                              |
+| `agent.prompt`     | Append to the agent system prompt                                                                                                                                                           |
+| `ui.workbench`     | Load into the workbench's own page (can read stores/settings)                                                                                                                               |
+| `computer`         | Screenshot, UIA, keyboard, and `launch` on Windows. Official plugin: `computer-use` (off until Enable). See [Computer use](./computer-use.md).                                              |
+| `deepseek.balance` | Read DeepSeek account balance using Anya's stored API key (`ctx.host.rpc("deepseek.balance")`). The key is never handed to the plugin.                                                      |
+| `pet`              | Control the desktop pet: show/hide, size, appearance, expression (`ctx.host.rpc("pet.*")`). `ctx.assets.register("pet.stage.skin", …)` also pushes to the pet window when `pet` is granted. |
 
 ### 7.3 Workbench SDK (`ctx` inside `activate(ctx)`)
 
@@ -396,7 +401,7 @@ ctx.i18n.t(key, fallback, dict?)   // dict: { "zh-CN": "...", en: "..." }
 
 ctx.stores.chat / ctx.stores.setting   // Pinia stores (needs ui.workbench)
 
-ctx.host.rpc(method, params?): Promise<unknown>   // forwarded to host/main.ts, or builtin pty.* / computer.*
+ctx.host.rpc(method, params?): Promise<unknown>   // forwarded to host/main.ts, or builtin pty.* / computer.* / deepseek.* / pet.*
 ctx.host.on(event, fn): () => void
 
 ctx.fs.pick({ multiple?, directory?, filters?: [{ name, extensions }] }): Promise<{ path, name, url }[] | null>
@@ -474,14 +479,21 @@ without opening any launcher in Anya's UI.
 
 One JSON object per line over stdin/stdout:
 
-| method                                                                                                       | Purpose                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `hello`                                                                                                      | Handshake, carries `pluginId`/`token`/`hostPid`                                                                                                                                      |
-| `describe`                                                                                                   | Returns `{ tools: [{name,description,parameters}], hooks: string[] }`                                                                                                                |
-| `tool`                                                                                                       | `{name, args}` → tool execution result                                                                                                                                               |
-| `hook`                                                                                                       | `{hook, payload}` → processed payload (`allow:false` denies the tool call)                                                                                                           |
-| `pty.open/write/resize/kill`                                                                                 | Forwarded by Anya when `pty` is granted; the host doesn't implement it itself                                                                                                        |
-| `computer.screenshot/screenInfo/listWindows/focusWindow/findControl/clickControl/click/move/scroll/type/key` | Anya-owned (Windows). Needs `computer`. Screenshot defaults to the foreground window. Click x/y are pixels in the last screenshot; prefer `findControl`/`clickControl` for named UI. |
+| method                                                                                                       | Purpose                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hello`                                                                                                      | Handshake, carries `pluginId`/`token`/`hostPid`                                                                                                                                                                                                                                                                                          |
+| `describe`                                                                                                   | Returns `{ tools: [{name,description,parameters}], hooks: string[] }`                                                                                                                                                                                                                                                                    |
+| `tool`                                                                                                       | `{name, args}` → tool execution result                                                                                                                                                                                                                                                                                                   |
+| `hook`                                                                                                       | `{hook, payload}` → processed payload (`allow:false` denies the tool call)                                                                                                                                                                                                                                                               |
+| `pty.open/write/resize/kill`                                                                                 | Forwarded by Anya when `pty` is granted; the host doesn't implement it itself                                                                                                                                                                                                                                                            |
+| `computer.screenshot/screenInfo/listWindows/focusWindow/findControl/clickControl/click/move/scroll/type/key` | Anya-owned (Windows). Needs `computer`. Screenshot defaults to the foreground window. Click x/y are pixels in the last screenshot; prefer `findControl`/`clickControl` for named UI.                                                                                                                                                     |
+| `deepseek.balance`                                                                                           | Anya-owned. Needs `deepseek.balance`. Returns `{ configured, isAvailable?, balances: [{ currency, totalBalance, grantedBalance, toppedUpBalance }] }`.                                                                                                                                                                                   |
+| `pet.show/hide/toggle/visible`                                                                               | Anya-owned. Needs `pet`. Toggle desktop-pet visibility. `toggle` accepts `{ visible?: boolean }`.                                                                                                                                                                                                                                        |
+| `pet.setSize/getSize`                                                                                        | Anya-owned. Needs `pet`. `size` is `small` \| `medium` \| `large`.                                                                                                                                                                                                                                                                       |
+| `pet.setAppearance/getAppearance/clearAppearance`                                                            | Anya-owned. Needs `pet`. `mode`: `mascot` \| `companion` \| `media` \| **`spritesheet`**. For `spritesheet`, `source` is a `pet.json` (ChatGPT/Codex atlas: transparent **1536×1872**, 8×9, frames 192×208; rows idle/runRight/runLeft/wave/jump/fail/wait/work/review). `media` kinds remain `image`\|`video`\|`lottie`\|`svg`\|`html`. |
+| `pet.setMode`                                                                                                | Anya-owned. Needs `pet`. Switch built-in modes: `{ mode: "mascot"\|"companion", config?: { accent?, variant?: "orb"\|"pill", glow? } }`.                                                                                                                                                                                                 |
+| `pet.setSkin/clearSkin`                                                                                      | Anya-owned. Needs `pet`. Legacy alias for `setAppearance({ mode: "media", kind, source })` / `clearAppearance`. Relative paths become `anya-plugin://localhost/<id>/…`.                                                                                                                                                                  |
+| `pet.setExpression/clearExpression`                                                                          | Anya-owned. Needs `pet`. Expressions: `idle`/`thinking`/`working`/`talking`/`waiting`/`done`/`error`/`sleeping`.                                                                                                                                                                                                                         |
 
 ### 7.6 `manage_plugin` tool actions (for agents)
 

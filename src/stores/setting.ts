@@ -16,6 +16,7 @@ import {
 } from "@/types/setting";
 import { normalizeColorScheme, readCachedColorScheme } from "@/services/theme/catalog";
 import { applyThemeAppearance } from "@/services/theme";
+import { applyUiFonts } from "@/services/theme/fonts";
 
 const LEGACY_STORAGE_KEY = "peek.settings";
 let settingsUpdateSequence = 0;
@@ -56,7 +57,7 @@ const defaultSettings: AppSettings = {
   reasoningLanguage: "auto",
   passToolReasoning: true,
   continueThinkingAfterTools: true,
-  showReasoning: true,
+  showReasoning: false,
   agentWorkDisplay: "detailed",
   multiModelCollaboration: false,
   collaborationModels: [],
@@ -76,9 +77,12 @@ const defaultSettings: AppSettings = {
   semanticSearchApiBaseUrl: "",
   semanticSearchApiKey: "",
   semanticSearchApiModel: "",
-  onboardingCompleted: false,
+  onboardingCompleted: true,
   customThemes: [],
   customBackground: undefined,
+  fontCjk: "",
+  fontLatin: "",
+  fontMono: "",
 };
 
 /** Apply light/dark/custom theme via ThemeService (`html[data-theme]`). */
@@ -211,6 +215,7 @@ export const useSettingStore = defineStore("setting", {
     applyPublicSettings(settings: AppSettings) {
       applyCommonSettings(this, settings);
       applyTheme(settings);
+      applyUiFonts(settings);
       applyZoom(this.zoom);
       void applyOpacity(this.opacity);
       void applyChromeFrostedGlass(this.chromeFrostedGlass);
@@ -219,6 +224,7 @@ export const useSettingStore = defineStore("setting", {
       applyCommonSettings(this, settings);
       applySecretSettings(this, settings);
       applyTheme(settings);
+      applyUiFonts(settings);
       applyZoom(this.zoom);
       void applyOpacity(this.opacity);
       void applyChromeFrostedGlass(this.chromeFrostedGlass);
@@ -229,7 +235,11 @@ export const useSettingStore = defineStore("setting", {
         this.applySettings(settings);
       } catch (error) {
         console.error("get_app_settings failed:", error);
-        this.applySettings(defaultSettings);
+        // Keep current in-memory values on transient IPC failures (common while
+        // `tauri:dev` rebuilds). Never fall back to defaults that reopen onboarding.
+        if (!this.$state.chatModel && !this.$state.deepseekApiKey) {
+          this.applyPublicSettings(defaultSettings);
+        }
       }
 
       const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);

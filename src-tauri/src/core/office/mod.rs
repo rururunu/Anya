@@ -10,6 +10,7 @@ pub mod word;
 pub mod worker;
 
 pub use context::{
-    collect_office_context, enrich_request_context, office_app_available, OfficeContext,
+    collect_office_context, collect_office_context_for_process, enrich_request_context,
+    office_app_available, OfficeContext,
 };
 pub use tools::register_tools;

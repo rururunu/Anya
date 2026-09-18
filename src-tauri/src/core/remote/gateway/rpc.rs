@@ -493,6 +493,7 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 chat_model,
                 chat_model_provider,
                 image_gen,
+                false,
             )
             .await
         }
@@ -653,6 +654,7 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 None,
                 None,
                 None,
+                true,
             )
             .await
         }

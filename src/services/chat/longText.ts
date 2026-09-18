@@ -16,6 +16,11 @@ export const USER_MESSAGE_FOLD_MIN_CHARS = 900;
 /** Visible lines while a user bubble is collapsed. */
 export const USER_MESSAGE_FOLD_VISIBLE_LINES = 10;
 
+/** Soft-inject cards stay short; fold earlier than user questions. */
+export const SOFT_INJECT_FOLD_MIN_LINES = 4;
+export const SOFT_INJECT_FOLD_MIN_CHARS = 220;
+export const SOFT_INJECT_FOLD_VISIBLE_LINES = 3;
+
 /** Count lines after normalizing newlines. */
 export function countTextLines(text: string): number {
   if (!text) return 0;
@@ -39,12 +44,18 @@ export function shouldAttachPasteAsFile(text: string): boolean {
 
 /** True when a sent user message should start collapsed in the thread. */
 export function shouldFoldUserMessage(text: string): boolean {
+  return exceedsFoldThreshold(text, USER_MESSAGE_FOLD_MIN_LINES, USER_MESSAGE_FOLD_MIN_CHARS);
+}
+
+/** True when a mid-turn inject card should start collapsed. */
+export function shouldFoldSoftInject(text: string): boolean {
+  return exceedsFoldThreshold(text, SOFT_INJECT_FOLD_MIN_LINES, SOFT_INJECT_FOLD_MIN_CHARS);
+}
+
+function exceedsFoldThreshold(text: string, minLines: number, minChars: number): boolean {
   const normalized = normalizeMultilineText(text);
   if (!normalized) return false;
-  return (
-    countTextLines(normalized) > USER_MESSAGE_FOLD_MIN_LINES ||
-    normalized.length > USER_MESSAGE_FOLD_MIN_CHARS
-  );
+  return countTextLines(normalized) > minLines || normalized.length > minChars;
 }
 
 /** Suggested filename for a pasted text attachment. */

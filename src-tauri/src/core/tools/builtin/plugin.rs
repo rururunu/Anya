@@ -169,6 +169,13 @@ impl Tool for ManagePluginTool {
             "enable" => {
                 let id = sanitize_plugin_id(args["id"].as_str().unwrap_or(""))?;
                 let manifest = load_manifest(&id)?;
+                if id == "computer-use"
+                    || manifest.permissions.iter().any(|p| p == "computer")
+                {
+                    return Err(ToolError::new(
+                        "computer-use requires the user to Enable it in Plugins (consent dialog). Do not enable desktop-control plugins via manage_plugin.",
+                    ));
+                }
                 let permissions = args["permissions"]
                     .as_array()
                     .map(|arr| {

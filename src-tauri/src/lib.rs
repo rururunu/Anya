@@ -22,8 +22,8 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use app_state::AppState;
 use commands::{
-    app, ask, chat, deepseek_files, desktop_pet, diff, harness, icons, mcp, permission, plugins,
-    remote, semantic, settings, skills, token_usage, updater, window, workspace,
+    app, ask, chat, computer_use, deepseek_files, desktop_pet, diff, harness, icons, mcp, opencli,
+    permission, plugins, remote, semantic, settings, skills, token_usage, updater, window, workspace,
 };
 use services::app_lifecycle;
 use services::overlay_native::clear_minimize_pending;
@@ -51,7 +51,6 @@ fn cursor_pos() -> Option<(i32, i32)> {
 fn trigger_overlay(app: &AppHandle) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
-        crate::core::context::provider::force_release_modifiers_for_capture();
         toggle_overlay(&handle, cursor_pos());
     });
 }
@@ -199,6 +198,7 @@ pub fn run() {
             show_workbench_window(app.handle());
             crate::services::webview_theme::apply_webview_theme(app.handle(), &settings);
             crate::services::desktop_pet::restore_desktop_pet_on_startup(app.handle());
+            crate::services::computer_use_hud::init(app.handle());
             crate::core::remote::restore_gateway_if_enabled(app.handle());
             Ok(())
         })
@@ -299,8 +299,17 @@ pub fn run() {
             window::get_preview_image,
             desktop_pet::toggle_desktop_pet,
             desktop_pet::get_desktop_pet_visible,
+            desktop_pet::set_desktop_pet_size,
+            desktop_pet::get_desktop_pet_size,
             desktop_pet::show_workbench,
             desktop_pet::toggle_overlay_from_pet,
+            computer_use::dismiss_computer_use_hud,
+            computer_use::list_computer_use_playbooks,
+            computer_use::get_computer_use_playbook,
+            computer_use::delete_computer_use_playbook,
+            opencli::get_opencli_setup_status,
+            opencli::install_opencli_cli,
+            opencli::run_opencli_doctor,
             settings::get_app_settings,
             settings::set_app_settings,
             semantic::get_semantic_search_status,
@@ -342,6 +351,7 @@ pub fn run() {
             mcp::list_mcp_server_statuses,
             mcp::connect_mcp_server,
             mcp::reauthenticate_mcp_server,
+            mcp::ensure_ghost_mcp,
             icons::cache_install_icon,
             icons::lookup_install_icon,
             icons::lookup_install_icons,
@@ -351,6 +361,7 @@ pub fn run() {
             app::relaunch_app,
             updater::download_and_install_update,
             diff::build_code_diff,
+            diff::working_tree_diff,
             chat::chat,
             chat::chat_cancel,
             chat::agent_debug_snapshot,

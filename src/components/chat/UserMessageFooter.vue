@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { ChevronDown, Plus } from "@lucide/vue";
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
 import ContextUsageRing from "@/components/chat/ContextUsageRing.vue";
 import ModelPicker from "@/components/chat/input/ModelPicker.vue";
 import OptionPicker from "@/components/chat/input/OptionPicker.vue";
+import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useComposerFooterDisplay } from "@/composables/chat/useComposerFooterDisplay";
+import { fullApprovalConfirmOptions } from "@/services/chat/fullApprovalConfirm";
 import { tr } from "@/services/i18n";
 
 const props = defineProps<{
@@ -22,6 +24,7 @@ const emit = defineEmits<{
 const modeOpen = ref(false);
 const modelOpen = ref(false);
 const approvalOpen = ref(false);
+const approvalConfirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 
 const {
   language,
@@ -57,7 +60,17 @@ const {
   selectModel,
   applyThinkingTier,
   ensureModels,
-} = useComposerFooterDisplay(() => props.sessionId);
+} = useComposerFooterDisplay(() => props.sessionId, {
+  confirmFullApproval: async () =>
+    Boolean(await approvalConfirmDialogRef.value?.ask(fullApprovalConfirmOptions(language.value))),
+});
+
+const modelChipTitle = computed(() => {
+  if (showThinkingTier.value && thinkingTierLabel.value) {
+    return `${modelDisplayName.value} · ${thinkingTierLabel.value}`;
+  }
+  return modelDisplayName.value;
+});
 
 function onModelOpen(open: boolean) {
   modelOpen.value = open;
@@ -72,6 +85,7 @@ function onModelOpen(open: boolean) {
 
 <template>
   <div class="user-message-footer" data-tauri-drag-region="false" @mousedown.stop @click.stop>
+    <AppConfirmDialog ref="approvalConfirmDialogRef" />
     <div class="input-footer-primary">
       <button
         type="button"
@@ -91,6 +105,7 @@ function onModelOpen(open: boolean) {
             class="model-badge footer-chip"
             :class="{ open: modeOpen }"
             data-tauri-drag-region="false"
+            :title="chatModeLabel"
             :aria-label="chatModeLabel"
           >
             <component :is="chatModeIcon" :size="13" class="footer-chip-icon" />
@@ -125,7 +140,8 @@ function onModelOpen(open: boolean) {
             class="model-badge footer-chip"
             :class="{ open: modelOpen }"
             data-tauri-drag-region="false"
-            :aria-label="modelDisplayName"
+            :title="modelChipTitle"
+            :aria-label="modelChipTitle"
           >
             <span class="footer-chip-icon-slot" aria-hidden="true">
               <component
@@ -189,8 +205,9 @@ function onModelOpen(open: boolean) {
           <button
             type="button"
             class="model-badge footer-chip"
-            :class="{ open: approvalOpen }"
+            :class="{ open: approvalOpen, 'is-full-approve': toolApprovalMode === 'alwaysAllow' }"
             data-tauri-drag-region="false"
+            :title="approvalModeLabel"
             :aria-label="approvalModeLabel"
           >
             <component :is="approvalIcon" :size="13" class="footer-chip-icon" />
@@ -234,10 +251,17 @@ function onModelOpen(open: boolean) {
           class="conversation-token-count"
           :title="conversationTokenTitle"
         >
-          ≈ {{ formatTokenCount(conversationTokenCount, language) }} tokens
+          {{ formatTokenCount(conversationTokenCount, language) }}
+        </span>
+        <span
+          v-if="conversationTokenCount && cacheHitPercent != null"
+          class="conversation-token-sep"
+          aria-hidden="true"
+        >
+          |
         </span>
         <span v-if="cacheHitPercent != null" class="conversation-cache-hit" :title="cacheHitTitle">
-          {{ tr(language, "tokens.cacheHit", { percent: cacheHitPercent }) }}
+          {{ cacheHitPercent }}%
         </span>
       </span>
 
@@ -274,10 +298,13 @@ function onModelOpen(open: boolean) {
 }
 .user-message-footer {
   width: 100%;
+  min-width: 0;
   min-height: 30px;
   justify-content: space-between;
   gap: 8px;
   padding-top: 4px;
+  container-type: inline-size;
+  container-name: user-composer;
 }
 .input-footer-primary {
   flex: 1;
@@ -295,8 +322,6 @@ function onModelOpen(open: boolean) {
 .attach-trigger-btn,
 .send-btn {
   flex: none;
-  width: var(--peek-control-icon, 28px);
-  height: var(--peek-control-icon, 28px);
   border: 0;
   border-radius: 50%;
   background: var(--peek-send-bg);
@@ -305,11 +330,29 @@ function onModelOpen(open: boolean) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transform: translateZ(0);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.attach-trigger-btn {
+  width: var(--peek-control-icon, 28px);
+  height: var(--peek-control-icon, 28px);
   cursor: pointer;
+}
+.send-btn {
+  width: 34px;
+  height: 34px;
+  cursor: default;
 }
 .attach-trigger-btn:hover,
 .send-btn.active:hover:not(:disabled) {
   transform: scale(1.03);
+}
+.attach-trigger-btn:active,
+.send-btn.active:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .footer-chip {
   height: var(--peek-control-icon, 28px);
@@ -320,11 +363,14 @@ function onModelOpen(open: boolean) {
   color: var(--peek-muted);
   box-shadow: none;
   font-family: var(--peek-font-sans);
-  font-size: var(--peek-font-xs, 12px);
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.01em;
   line-height: 1.2;
   cursor: pointer;
+  transition:
+    color var(--motion-fast, 110ms) ease,
+    opacity var(--motion-fast, 110ms) ease;
 }
 .footer-chip:hover,
 .footer-chip.open,
@@ -336,9 +382,27 @@ function onModelOpen(open: boolean) {
   box-shadow: none;
   outline: none;
 }
+.footer-chip.is-full-approve,
+.footer-chip.is-full-approve:hover,
+.footer-chip.is-full-approve.open,
+.footer-chip.is-full-approve:focus-visible,
+.footer-chip.is-full-approve:active {
+  color: var(--peek-danger, #ef4444);
+}
+.footer-chip.is-full-approve .footer-chip-icon {
+  opacity: 1;
+  color: var(--peek-danger, #ef4444);
+}
 .footer-chip-icon {
   flex: none;
   opacity: 0.78;
+  transition:
+    opacity 140ms ease,
+    color 140ms ease;
+}
+.footer-chip:hover .footer-chip-icon,
+.footer-chip.open .footer-chip-icon {
+  opacity: 1;
 }
 .footer-chip-icon-slot {
   flex: none;
@@ -378,6 +442,21 @@ function onModelOpen(open: boolean) {
   flex: none;
   opacity: 0.45;
 }
+@container user-composer (max-width: 600px) {
+  .footer-chip .model-name,
+  .footer-chip .model-tier,
+  .footer-chip .model-chevron {
+    display: none;
+  }
+  .footer-chip,
+  .model-badge {
+    width: var(--peek-control-icon, 28px);
+    max-width: none;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+}
 .conversation-token-meta {
   display: inline-flex;
   align-items: baseline;
@@ -390,16 +469,17 @@ function onModelOpen(open: boolean) {
   white-space: nowrap;
   user-select: none;
 }
-.send-btn {
-  cursor: default;
-  transition:
-    background 120ms ease,
-    color 120ms ease,
-    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+.conversation-token-sep {
+  flex: none;
+  opacity: 0.45;
 }
 .send-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
+}
+.send-btn:focus-visible {
+  outline: 2px solid var(--peek-accent);
+  outline-offset: 3px;
 }
 .send-btn.active {
   background: var(--peek-send-active-bg, var(--peek-send-bg));
@@ -410,6 +490,17 @@ function onModelOpen(open: boolean) {
   opacity: 0.45;
   cursor: default;
   transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .attach-trigger-btn,
+  .attach-trigger-btn:hover,
+  .attach-trigger-btn:active,
+  .send-btn,
+  .send-btn.active:hover:not(:disabled),
+  .send-btn.active:active:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
 }
 </style>
 

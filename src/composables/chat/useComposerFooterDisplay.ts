@@ -77,11 +77,17 @@ function approvalIcon(mode: ToolApprovalMode): Component {
 }
 
 /** Read-only composer chrome (mode, model, approval, tokens) for a session. */
-export function useComposerFooterDisplay(sessionId: () => string) {
+export function useComposerFooterDisplay(
+  sessionId: () => string,
+  options?: {
+    confirmFullApproval?: () => Promise<boolean>;
+  },
+) {
   const chatStore = useChatStore();
   const chatModelStore = useChatModelStore();
   const settingStore = useSettingStore();
   const { language } = storeToRefs(settingStore);
+  const confirmFullApproval = options?.confirmFullApproval;
 
   const compose = computed(() => chatStore.sessionCompose[sessionId()]);
   const chatModel = computed(
@@ -209,6 +215,7 @@ export function useComposerFooterDisplay(sessionId: () => string) {
       id: option.value,
       label: localizedOptionLabel(option, language.value),
       icon: approvalIcon(option.value),
+      tone: option.value === "alwaysAllow" ? ("danger" as const) : undefined,
     })),
   );
   const availableModels = computed(() => {
@@ -267,12 +274,19 @@ export function useComposerFooterDisplay(sessionId: () => string) {
     if (next === chatMode.value) return;
     patchCompose({ chatMode: next });
     const id = sessionId();
-    if (next === "plan" && id) {
+    if (!id) return;
+    if (next === "plan") {
       chatStore.setSessionRejectedPlanFingerprint(id, null);
       void setPlanMode(id, true, "manual")
         .then(() => {
           chatStore.setSessionPlanMode(id, true);
           chatStore.setSessionPlanTrigger(id, "manual");
+        })
+        .catch(() => undefined);
+    } else {
+      void setPlanMode(id, false)
+        .then(() => {
+          chatStore.setSessionPlanMode(id, false);
         })
         .catch(() => undefined);
     }
@@ -281,7 +295,13 @@ export function useComposerFooterDisplay(sessionId: () => string) {
   function selectApprovalMode(mode: string) {
     if (mode !== "ask" && mode !== "auto" && mode !== "alwaysAllow") return;
     if (mode === toolApprovalMode.value) return;
-    patchCompose({ toolApprovalMode: mode });
+    void (async () => {
+      if (mode === "alwaysAllow") {
+        const confirmed = await confirmFullApproval?.();
+        if (!confirmed) return;
+      }
+      patchCompose({ toolApprovalMode: mode });
+    })();
   }
 
   function selectModel(entry: ChatModelInfo) {

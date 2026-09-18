@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
+use std::path::Path;
+use std::process::{Command, Stdio};
+use tauri::State;
+
+use crate::app_state::AppState;
+use crate::runtime::terminal::prepare_command;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +53,89 @@ pub fn build_code_diff(request: CodeDiffRequest) -> CodeDiffDocument {
         }
         _ => parse_unified_diff(&request.unified_diff),
     }
+}
+
+const MAX_UNTRACKED_BYTES: u64 = 256 * 1024;
+const MAX_UNTRACKED_FILES: usize = 40;
+const MAX_DIFF_CHARS: usize = 1_500_000;
+
+#[tauri::command]
+pub fn working_tree_diff(state: State<'_, AppState>) -> Result<String, String> {
+    let Some(workspace) = state.core.workspaces().current() else {
+        return Ok(String::new());
+    };
+    let root = Path::new(&workspace.root);
+    if git_output(root, &["rev-parse", "--is-inside-work-tree"]).is_err() {
+        return Ok(String::new());
+    }
+    let mut diff = git_output(root, &["diff", "HEAD"]).or_else(|_| git_output(root, &["diff"]))?;
+    if let Ok(untracked) = git_output(root, &["ls-files", "--others", "--exclude-standard"]) {
+        let mut added = 0;
+        for path in untracked.lines().filter(|line| !line.is_empty()) {
+            if added >= MAX_UNTRACKED_FILES || diff.len() >= MAX_DIFF_CHARS {
+                break;
+            }
+            let Some(file_diff) = untracked_file_diff(root, path) else {
+                continue;
+            };
+            if !diff.is_empty() && !diff.ends_with('\n') {
+                diff.push('\n');
+            }
+            diff.push_str(&file_diff);
+            added += 1;
+        }
+    }
+    if diff.len() > MAX_DIFF_CHARS {
+        diff.truncate(MAX_DIFF_CHARS);
+    }
+    Ok(diff)
+}
+
+fn git_output(root: &Path, args: &[&str]) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command.args(["-c", "core.quotepath=false"]);
+    command.args(args);
+    command.current_dir(root);
+    command.stdin(Stdio::null());
+    prepare_command(&mut command);
+    let output = command.output().map_err(|error| error.to_string())?;
+    let text = crate::runtime::encoding::decode_process_bytes(&output.stdout);
+    if !output.status.success() {
+        let stderr = crate::runtime::encoding::decode_process_bytes(&output.stderr);
+        return Err(stderr.trim().to_string());
+    }
+    Ok(text)
+}
+
+fn untracked_file_diff(root: &Path, path: &str) -> Option<String> {
+    let file = root.join(path);
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > MAX_UNTRACKED_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(&file).ok()?;
+    if bytes.contains(&0) {
+        return None;
+    }
+    let content = String::from_utf8_lossy(&bytes);
+    Some(untracked_unified_diff(path, &content))
+}
+
+fn untracked_unified_diff(path: &str, content: &str) -> String {
+    let line_count = if content.is_empty() {
+        0
+    } else {
+        content.lines().count()
+    };
+    let mut out = format!(
+        "diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{line_count} @@\n"
+    );
+    for line in content.lines() {
+        out.push('+');
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 fn diff_text(old_text: &str, new_text: &str) -> CodeDiffDocument {
@@ -194,7 +283,8 @@ fn line_text(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_code_diff, diff_text, parse_unified_diff, CodeDiffLineKind, CodeDiffRequest,
+        build_code_diff, diff_text, parse_unified_diff, untracked_unified_diff, CodeDiffLineKind,
+        CodeDiffRequest,
     };
 
     #[test]
@@ -244,5 +334,13 @@ mod tests {
         assert_eq!(document.rows.len(), 1);
         assert_eq!(document.rows[0].left.as_ref().unwrap().text, "old");
         assert_eq!(document.rows[0].right.as_ref().unwrap().text, "new");
+    }
+
+    #[test]
+    fn untracked_diff_uses_dev_null_old_side() {
+        let diff = untracked_unified_diff("src/new.ts", "hello\n");
+        assert!(diff.contains("--- /dev/null"));
+        assert!(diff.contains("+++ b/src/new.ts"));
+        assert!(diff.contains("+hello"));
     }
 }

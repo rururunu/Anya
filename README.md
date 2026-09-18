@@ -22,7 +22,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.21-4D6BFE?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.22-4D6BFE?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
@@ -37,18 +37,19 @@
 
 ## At a glance
 
-|                  |                                                                                                                                                    |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workbench**    | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                                            |
-| **Overlay**      | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                                           |
-| **Agent**        | Ask / Agent / Plan / Image; tools, Skills, MCP, Office; complex tasks may auto-plan with a write gate.                                             |
-| **Plugins**      | Deno-hosted extensions: slots, windows, Agent tools. Official: `computer-use` (off until Enable), `terminal`. Agent can create and debug plugins.  |
-| **Computer use** | Official `computer-use` **agent** plugin: launch apps, keyboard, UIA controls, then pixel click/drag. Screenshot + control tree together. Windows. |
-| **Companion**    | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone.                        |
-| **RAG**          | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.                                |
-| **Local-first**  | Keys, history, and settings stay on your machine by default.                                                                                       |
+|                  |                                                                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workbench**    | Full desktop UI for pinned chats, project workspaces, archive / restore, review, and embedded settings.                                                                                   |
+| **Overlay**      | Double-tap <kbd>Alt</kbd> from any app. Ask, attach context, keep going.                                                                                                                  |
+| **Agent**        | Ask / Agent / Plan / Image; tools, Skills, MCP, Office; may ask to enter Plan via `request_plan_mode` (write gate).                                                                       |
+| **Plugins**      | Deno-hosted extensions: slots, windows, Agent tools. Official: `computer-use` (off until Enable), `opencli` (off until Enable), `terminal`. Agent can create and debug plugins.           |
+| **Computer use** | Official `computer-use` **agent** plugin: in-process [Ghost](https://github.com/NORTHTEKDevs/ghost) (`see`/`act`/`wait`, window anchor, CDP browser). Anya keeps approval + HUD. Windows. |
+| **OpenCLI**      | Official `opencli` **agent** plugin: [OpenCLI](https://github.com/jackwener/OpenCLI) site adapters + logged-in Chrome via Browser Bridge. Complements Computer Use for the web.           |
+| **Companion**    | [Android remote](https://github.com/rururunu/AnyaAndroid) — scan a QR, then chat, approve, and share files from your phone.                                                               |
+| **RAG**          | Optional semantic workspace search (API or local embeddings). Off until enabled; no model is downloaded beforehand.                                                                       |
+| **Local-first**  | Keys, history, and settings stay on your machine by default.                                                                                                                              |
 
-**Docs:** [Architecture](./docs/architecture-overview.md) · [Plugin system](./docs/plugin-system.md) · [Computer use](./docs/computer-use.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
+**Docs:** [Architecture](./docs/architecture-overview.md) · [Plugin system](./docs/plugin-system.md) · [Computer use](./docs/computer-use.md) · [OpenCLI](./docs/opencli.md) · [Releases](./docs/release.md) · [Index](./docs/README.md)
 
 ---
 
@@ -152,14 +153,14 @@ Docs: [Companion README](https://github.com/rururunu/AnyaAndroid) · [Companion 
 
 ### Ask / Agent / Plan / Image
 
-| Mode      | Intent                              | Typical tools / constraints                                                        |
-| --------- | ----------------------------------- | ---------------------------------------------------------------------------------- |
-| **Ask**   | Read-only investigation             | Files, search, LSP, other read-only tools                                          |
-| **Agent** | Default; change the world carefully | Files, PowerShell, Git, Skills, MCP, sub-agents; complex tasks may auto-enter Plan |
-| **Plan**  | Agree on steps before writes        | Write tools locked; `update_tasks` + end-of-message approval card                  |
-| **Image** | Every turn draws a picture          | Only `generate_image`; Settings → Image providers (not chat providers)             |
+| Mode      | Intent                              | Typical tools / constraints                                                                        |
+| --------- | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Ask**   | Read-only investigation             | Files, search, LSP, other read-only tools                                                          |
+| **Agent** | Default; change the world carefully | Files, PowerShell, Git, Skills, MCP, sub-agents; may call `request_plan_mode` (never silent-enter) |
+| **Plan**  | Agree on steps before writes        | Write tools locked by gate; `update_tasks` + end-of-message approval card                          |
+| **Image** | Every turn draws a picture          | Only `generate_image`; Settings → Image providers (not chat providers)                             |
 
-Ask withholds write / shell / git. Agent enables them under your approval policy. Plan (manual or auto) blocks writes via the plan gate until you approve at the end of the assistant reply. Image mode pins the Images API tool and prompt so each turn produces a real image. All four share the same `AgentRunner` loop — policy lives in tool exposure, approval, plan/image gates, not a second orchestrator.
+Ask withholds write / shell / git. Agent enables them under your approval policy. Plan (user-selected, or after accepting `request_plan_mode`) blocks writes via the plan gate until you approve at the end of the assistant reply. Image mode pins the Images API tool and prompt so each turn produces a real image. All four share the same `AgentRunner` loop — policy lives in tool exposure, approval, plan/image gates, not a second orchestrator. Prompt assembly keeps a stable prefix (volatile IDE context and `#skill` chips hang off the user message; tool schemas freeze for the turn) so providers with prefix caching — especially DeepSeek — can reuse prior tokens across agent steps.
 
 <p align="center">
   <img src="./docs/image/image_production.png" alt="Image mode: generate, then refine with follow-ups" width="900" />
@@ -302,7 +303,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.21_x64.msi`.
+The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.22_x64.msi`.
 
 For signing, `latest.json`, and GitHub Releases, see [Releases and remote updates](./docs/release.md).
 
@@ -311,3 +312,12 @@ For signing, `latest.json`, and GitHub Releases, see [Releases and remote update
 ## License
 
 This repository is dedicated to the public domain under the [Unlicense](./LICENSE).
+
+---
+
+## Acknowledgments
+
+Anya builds on excellent open-source work. Special thanks to:
+
+- **[Ghost](https://github.com/NORTHTEKDevs/ghost)** ([NORTHTEKDevs](https://github.com/NORTHTEKDevs)) — the in-process computer-use engine behind Anya’s desktop automation (UIA, verified actions, CDP browser).
+- **[OpenCLI](https://github.com/jackwener/OpenCLI)** ([jackwener](https://github.com/jackwener)) — site adapters and Browser Bridge that let the agent drive a logged-in Chrome with deterministic CLI commands.

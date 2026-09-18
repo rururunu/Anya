@@ -6,6 +6,11 @@ pub enum ChatError {
     EmptyMessage,
     #[error("message not found")]
     MessageNotFound,
+    /// A turn is still active and the client did not request soft-inject.
+    /// Staged / queue-continue sends must wait for ChatFinished instead of
+    /// being appended onto the in-flight (or cancelling) agent.
+    #[error("turn already in progress")]
+    TurnInProgress,
     #[error("{0}")]
     Provider(String),
     #[error("{0}")]

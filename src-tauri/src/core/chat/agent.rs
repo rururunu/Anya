@@ -134,6 +134,10 @@ impl AgentRunner {
             .rposition(|msg| msg.role == Role::User);
         let mut used_tokens = estimate_request_tokens(&request);
         let mut last_compact_msg_len = 0usize;
+        // Freeze tool schemas for the whole turn. Mid-turn Plan accept must not
+        // rebuild `tools` (DeepSeek disk cache). Plan writers are blocked by
+        // authorize, not by shrinking this frozen set.
+        let mut frozen_tools: Option<std::sync::Arc<[serde_json::Value]>> = None;
 
         loop {
             if cancelled.load(Ordering::Relaxed) {
@@ -185,9 +189,16 @@ impl AgentRunner {
             }
 
             task_state.inject(&mut request);
-            request.tools =
-                self.tools
-                    .focused_schemas(&request, tool_ctx.root_session_id(), &discovered_tools);
+            let tools = frozen_tools
+                .get_or_insert_with(|| {
+                    self.tools.focused_schemas(
+                        &request,
+                        tool_ctx.root_session_id(),
+                        &discovered_tools,
+                    )
+                })
+                .clone();
+            request.tools = tools;
             tool_executor.set_allowed_tools(
                 request
                     .tools
@@ -351,6 +362,44 @@ impl AgentRunner {
                         reasoning,
                         finish_reason,
                     } => {
+                        request.messages.push(ChatMessage {
+                            id: format!("msg-{}", now_millis()),
+                            session_id: request.session_id.clone(),
+                            role: Role::Assistant,
+                            content: content.clone(),
+                            reasoning: reasoning.clone(),
+                            work_timeline: None,
+                            tool_activities: None,
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                            status: MessageStatus::Done,
+                            timestamp: now_millis(),
+                            estimated_tokens: None,
+                        });
+                        if drain_soft_injects(
+                            &soft_queue,
+                            &mut request,
+                            &tx,
+                            &mut user_msg_index,
+                        )
+                        .await
+                        {
+                            steps += 1;
+                            continue;
+                        }
+                        tokio::task::yield_now().await;
+                        if drain_soft_injects(
+                            &soft_queue,
+                            &mut request,
+                            &tx,
+                            &mut user_msg_index,
+                        )
+                        .await
+                        {
+                            steps += 1;
+                            continue;
+                        }
                         let _ = tx
                             .send(StreamEvent::TurnComplete {
                                 content,

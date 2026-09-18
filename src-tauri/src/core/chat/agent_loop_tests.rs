@@ -285,6 +285,7 @@ async fn collect_finish(rx: &mut mpsc::Receiver<StreamEvent>) -> Option<StreamEv
 struct InjectAwareProvider {
     scripts: Mutex<Vec<ProviderTurn>>,
     saw_inject: Arc<AtomicBool>,
+    delay: std::time::Duration,
 }
 
 #[async_trait]
@@ -319,6 +320,10 @@ impl AIProvider for InjectAwareProvider {
                 content: "done".into(),
                 tool_calls: vec![],
             });
+
+        if !self.delay.is_zero() {
+            tokio::time::sleep(self.delay).await;
+        }
 
         let _ = tx.send(StreamEvent::Start).await;
         if !turn.content.is_empty() {
@@ -367,6 +372,7 @@ async fn soft_inject_applies_at_tool_boundary() {
             },
         ]),
         saw_inject: Arc::clone(&saw_inject),
+        delay: std::time::Duration::ZERO,
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
@@ -399,6 +405,61 @@ async fn soft_inject_applies_at_tool_boundary() {
     assert!(
         saw_inject.load(Ordering::SeqCst),
         "second provider call should see soft-injected user message"
+    );
+    let _ = std::fs::remove_file(db);
+}
+
+#[tokio::test]
+async fn soft_inject_continues_when_model_would_stop() {
+    use std::collections::VecDeque;
+
+    let tools = Arc::new(ToolManager::new(ToolRegistry::new()));
+    let saw_inject = Arc::new(AtomicBool::new(false));
+    let provider = Arc::new(InjectAwareProvider {
+        scripts: Mutex::new(vec![
+            ProviderTurn {
+                content: "draft answer".into(),
+                tool_calls: vec![],
+            },
+            ProviderTurn {
+                content: "after inject".into(),
+                tool_calls: vec![],
+            },
+        ]),
+        saw_inject: Arc::clone(&saw_inject),
+        delay: std::time::Duration::from_millis(40),
+    });
+    let (ctx, db) = make_ctx(tools.registry());
+    let runner = AgentRunner::new(provider, tools);
+    let (tx, mut rx) = mpsc::channel(32);
+    let soft_queue = Arc::new(Mutex::new(VecDeque::new()));
+    let soft_queue_push = Arc::clone(&soft_queue);
+    let pusher = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        if let Ok(mut queue) = soft_queue_push.lock() {
+            queue.push_back("INJECT-ME now".into());
+        }
+    });
+
+    runner
+        .run(
+            base_request(),
+            ctx,
+            tx,
+            Arc::new(AtomicBool::new(false)),
+            soft_queue,
+        )
+        .await
+        .unwrap();
+    let _ = pusher.await;
+    let finish = collect_finish(&mut rx).await.expect("finish");
+    match finish {
+        StreamEvent::TurnComplete { content, .. } => assert_eq!(content, "after inject"),
+        _ => panic!("unexpected"),
+    }
+    assert!(
+        saw_inject.load(Ordering::SeqCst),
+        "finalizing turn should keep going after a late soft-inject"
     );
     let _ = std::fs::remove_file(db);
 }

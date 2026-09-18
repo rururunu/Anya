@@ -187,17 +187,22 @@ impl ChatService {
 
     /// Returns environment context including the workbench's selected workspace.
     pub fn environment_context(&self) -> crate::core::runtime::RequestContext {
-        self.resolve_environment_context(true)
+        self.resolve_from_captured(self.context_resolver.resolve(), true, true)
     }
 
-    /// Returns environment context for the overlay without inheriting the workbench workspace.
-    pub fn environment_context_for_overlay(&self) -> crate::core::runtime::RequestContext {
-        self.resolve_environment_context(false)
-    }
-
-    fn resolve_environment_context(
+    /// Overlay show path: merge IDE cache without git / Office / clipboard capture.
+    pub fn overlay_show_context(
         &self,
+        captured: crate::core::runtime::RequestContext,
+    ) -> crate::core::runtime::RequestContext {
+        self.resolve_from_captured(captured, false, false)
+    }
+
+    fn resolve_from_captured(
+        &self,
+        captured: crate::core::runtime::RequestContext,
         include_current_workspace: bool,
+        heavy: bool,
     ) -> crate::core::runtime::RequestContext {
         let current_workspace = if include_current_workspace {
             self.workspace_manager.current()
@@ -205,7 +210,6 @@ impl ChatService {
             None
         };
         let known_workspaces = self.workspace_manager.list();
-        let captured = self.context_resolver.resolve();
         tracing::debug!(
             active_window = ?captured.active_window.as_deref(),
             active_file = ?captured.active_file.as_deref(),
@@ -213,6 +217,7 @@ impl ChatService {
             selected_files = captured.selected_files.len(),
             ide = ?captured.ide_context.as_ref().map(|ide| ide.ide.as_str()),
             include_current_workspace,
+            heavy,
             "ChatService::resolve_environment_context input captured context"
         );
         let mut context = self.context_resolver.resolve_request(
@@ -220,7 +225,11 @@ impl ChatService {
             current_workspace.as_ref(),
             &known_workspaces,
         );
-        crate::core::context::provider::environment_provider::collect(&mut context);
+        if heavy {
+            crate::core::context::provider::environment_provider::collect(&mut context);
+        } else {
+            crate::core::context::provider::environment_provider::collect_fast(&mut context);
+        }
         tracing::debug!(
             active_window = ?context.active_window.as_deref(),
             active_file = ?context.active_file.as_deref(),

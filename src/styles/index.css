@@ -5,6 +5,7 @@
 
 @import "tailwindcss";
 @import "../services/theme/themes.css";
+@import "../services/theme/syntax.css";
 @import "tw-animate-css";
 @import "shadcn-vue/tailwind.css";
 
@@ -136,6 +137,7 @@ html.chrome-frosted-glass .settings-workbench,
     @apply font-sans;
     font-family: var(--peek-font-sans);
     font-size: var(--peek-font-md, 14px);
+    font-weight: 500;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }

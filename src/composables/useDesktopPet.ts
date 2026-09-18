@@ -10,10 +10,28 @@ export type { PetAction, TiltDirection } from "./useDesktopPetMotion";
 import { useDesktopPetAutonomous } from "./useDesktopPetAutonomous";
 export type { AutonomousAction } from "./useDesktopPetAutonomous";
 import { useDesktopPetAgentSessions } from "./useDesktopPetAgentSessions";
-import { showWorkbench, toggleDesktopPet, toggleOverlayFromPet } from "@/services/ipc/commands";
+import {
+  showWorkbench,
+  toggleDesktopPet,
+  toggleOverlayFromPet,
+  setDesktopPetSize,
+} from "@/services/ipc/commands";
 import { IPC_EVENTS } from "@/types/ipc";
+import {
+  DEFAULT_PET_APPEARANCE,
+  normalizePetAppearance,
+  type PetAppearance,
+} from "@/services/pet/appearance";
+import type { PetSpriteAnimationId } from "@/services/pet/spritesheet";
 
 export type PetSize = "small" | "medium" | "large";
+
+export type {
+  PetAppearance,
+  PetAppearanceMode,
+  PetCompanionConfig,
+  PetMediaKind,
+} from "@/services/pet/appearance";
 
 export interface PetSizeConfig {
   sizePx: number;
@@ -39,8 +57,30 @@ export function useDesktopPet() {
 
   const isSleeping = ref(false);
   const manualExpression = ref<MascotExpression | null>(null);
+  const pluginExpression = ref<MascotExpression | null>(null);
   const size = ref<PetSize>("medium");
   const locked = ref(false);
+  const appearance = ref<PetAppearance>(DEFAULT_PET_APPEARANCE);
+  const spriteGesture = ref<PetSpriteAnimationId | null>(null);
+  let spriteGestureTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearSpriteGesture() {
+    if (spriteGestureTimer) {
+      clearTimeout(spriteGestureTimer);
+      spriteGestureTimer = null;
+    }
+    spriteGesture.value = null;
+  }
+
+  function playSpriteGesture(id: PetSpriteAnimationId, durationMs = 700) {
+    if (appearance.value.mode !== "spritesheet") return;
+    clearSpriteGesture();
+    spriteGesture.value = id;
+    spriteGestureTimer = setTimeout(() => {
+      spriteGesture.value = null;
+      spriteGestureTimer = null;
+    }, durationMs);
+  }
 
   const {
     activeInteraction,
@@ -75,6 +115,9 @@ export function useDesktopPet() {
     get() {
       if (manualExpression.value) {
         return manualExpression.value;
+      }
+      if (pluginExpression.value) {
+        return pluginExpression.value;
       }
       if (activeInteraction.value) {
         return "waiting";
@@ -146,6 +189,10 @@ export function useDesktopPet() {
   /** 触发 Q 弹跳跃反馈动画。 */
   function triggerBounce(e?: MouseEvent) {
     interruptAutonomous();
+    if (appearance.value.mode === "spritesheet") {
+      playSpriteGesture("wave", 700);
+      return;
+    }
     triggerClickReaction(e);
   }
 
@@ -153,6 +200,10 @@ export function useDesktopPet() {
   function onPetClick(e?: MouseEvent) {
     interruptAutonomous();
     wakeUp();
+    if (appearance.value.mode === "spritesheet") {
+      playSpriteGesture("wave", 700);
+      return;
+    }
     triggerClickReaction(e);
   }
 
@@ -163,12 +214,15 @@ export function useDesktopPet() {
   }
 
   /** 切换或设置宠物尺寸并同步窗口大小。 */
-  async function setPetSize(nextSize: PetSize) {
+  async function setPetSize(nextSize: PetSize, syncRust = false) {
     size.value = nextSize;
     try {
       localStorage.setItem(STORAGE_KEY_SIZE, nextSize);
       const conf = PET_SIZES[nextSize];
       await appWindow.setSize(new LogicalSize(conf.windowWidth, conf.windowHeight));
+      if (syncRust) {
+        await setDesktopPetSize(nextSize);
+      }
     } catch (e) {
       console.warn("Failed to set pet window size:", e);
     }
@@ -268,10 +322,17 @@ export function useDesktopPet() {
     if (dx > 4 || dy > 4) {
       hasDragged = true;
       window.removeEventListener("mousemove", onMouseMove);
+      if (appearance.value.mode === "spritesheet") {
+        const dir = e.screenX >= dragStartX ? "runRight" : "runLeft";
+        playSpriteGesture(dir, 1200);
+      }
       try {
         await appWindow.startDragging();
         // 拖拽完成后记录新位置
         await persistPosition();
+        if (appearance.value.mode === "spritesheet") {
+          clearSpriteGesture();
+        }
       } catch (err) {
         console.warn("startDragging failed:", err);
       }
@@ -300,6 +361,49 @@ export function useDesktopPet() {
       },
     );
     unlistenFns.push(unlistenSizeChanged);
+
+    const applyAppearance = (raw: unknown) => {
+      appearance.value = normalizePetAppearance(raw) ?? DEFAULT_PET_APPEARANCE;
+    };
+
+    const unlistenAppearance = await listen<unknown>(
+      IPC_EVENTS.desktopPetAppearanceChanged,
+      (event) => {
+        applyAppearance(event.payload);
+      },
+    );
+    unlistenFns.push(unlistenAppearance);
+
+    const unlistenSkin = await listen<unknown>(IPC_EVENTS.desktopPetSkinChanged, (event) => {
+      applyAppearance(event.payload);
+    });
+    unlistenFns.push(unlistenSkin);
+
+    const knownExpressions = new Set<MascotExpression>([
+      "idle",
+      "thinking",
+      "working",
+      "talking",
+      "waiting",
+      "done",
+      "error",
+      "sleeping",
+    ]);
+    const unlistenExpression = await listen<string | null>(
+      IPC_EVENTS.desktopPetExpressionChanged,
+      (event) => {
+        const next = event.payload;
+        if (typeof next === "string" && knownExpressions.has(next as MascotExpression)) {
+          pluginExpression.value = next as MascotExpression;
+          if (next !== "sleeping") {
+            isSleeping.value = false;
+          }
+          return;
+        }
+        pluginExpression.value = null;
+      },
+    );
+    unlistenFns.push(unlistenExpression);
   }
 
   onMounted(async () => {
@@ -319,6 +423,7 @@ export function useDesktopPet() {
   });
 
   onBeforeUnmount(() => {
+    clearSpriteGesture();
     resetMotion();
     stopAutonomous();
     for (const fn of unlistenFns) fn();
@@ -336,6 +441,8 @@ export function useDesktopPet() {
     autonomousGaze,
     size,
     locked,
+    appearance,
+    spriteGesture,
     activeInteraction,
     interactionCount,
     currentInteractionIndex,

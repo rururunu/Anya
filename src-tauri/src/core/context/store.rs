@@ -3,7 +3,8 @@ use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::core::context::manager::{ContextCaptureOutcome, ContextManager};
-use crate::core::context::models::ChatContext;
+use crate::core::context::models::{ChatContext, WindowInfo};
+use crate::core::context::platform::WindowDetector;
 use crate::core::runtime::RequestContext;
 
 #[derive(Clone)]
@@ -124,6 +125,29 @@ fn now_millis() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Snapshot the current foreground window without clipboard / UIA / Explorer COM.
+///
+/// Alt+Alt show must not wait on those providers; they run after the window is visible.
+pub fn snapshot_foreground() -> (RequestContext, Option<WindowInfo>) {
+    let window = WindowDetector::detect().ok().filter(|window| {
+        !window.process_name.eq_ignore_ascii_case("Anya.exe")
+    });
+    let captured = ChatContext {
+        window: window.clone(),
+        ..ChatContext::empty()
+    };
+    if let Ok(mut guard) = store().lock() {
+        let stored = StoredContext {
+            id: NEXT_CONTEXT_ID.fetch_add(1, Ordering::Relaxed),
+            captured_at_ms: now_millis(),
+            context: captured.clone(),
+        };
+        log_snapshot("snapshot_foreground stored context", &stored);
+        *guard = Some(stored);
+    }
+    (map_to_request_context(Some(&captured)), window)
 }
 
 /// 在 overlay 显示前采集前台上下文并缓存。

@@ -3,9 +3,12 @@ import {
   countTextLines,
   pastedTextFilename,
   shouldAttachPasteAsFile,
+  shouldFoldSoftInject,
   shouldFoldUserMessage,
   PASTE_AS_FILE_MIN_CHARS,
   PASTE_AS_FILE_MIN_LINES,
+  SOFT_INJECT_FOLD_MIN_CHARS,
+  SOFT_INJECT_FOLD_MIN_LINES,
   USER_MESSAGE_FOLD_MIN_CHARS,
   USER_MESSAGE_FOLD_MIN_LINES,
 } from "./longText";
@@ -28,6 +31,16 @@ describe("longText", () => {
 
     const longChars = "x".repeat(USER_MESSAGE_FOLD_MIN_CHARS + 1);
     expect(shouldFoldUserMessage(longChars)).toBe(true);
+  });
+
+  it("folds mid-turn injects on a shorter threshold", () => {
+    expect(shouldFoldSoftInject("short")).toBe(false);
+    const manyLines = Array.from(
+      { length: SOFT_INJECT_FOLD_MIN_LINES + 1 },
+      (_, i) => `L${i}`,
+    ).join("\n");
+    expect(shouldFoldSoftInject(manyLines)).toBe(true);
+    expect(shouldFoldSoftInject("x".repeat(SOFT_INJECT_FOLD_MIN_CHARS + 1))).toBe(true);
   });
 
   it("attaches paste when over line or char thresholds", () => {

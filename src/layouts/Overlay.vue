@@ -44,8 +44,8 @@ function removeCapturedSelection() {
 }
 
 const PANEL_WIDTH = 640;
-// Fallback when dock height is not measured yet: single-line input + footer + dock borders.
-const INPUT_HEIGHT = 88;
+// Fallback when dock height is not measured yet: compact single-row bar + dock borders.
+const INPUT_HEIGHT = 56;
 const OVERLAY_MIN_HEIGHT_INPUT = INPUT_HEIGHT;
 const CHAT_HEIGHT_PREFERRED = 520;
 const CHAT_SCREEN_MARGIN = 48;
@@ -430,7 +430,7 @@ onMounted(async () => {
   const window = getCurrentWebviewWindow();
   void window.setMaximizable(false);
   // Sync native size with design px + UI zoom before the first paint settles.
-  // tauri.conf / window.rs create 640×84, but zoomed shells still need a
+  // tauri.conf / window.rs create 640×56, but zoomed shells still need a
   // matching LogicalSize or the first Alt+Alt frame looks clipped.
   if (mode.value === "input") {
     queueLayoutResize(async () => {

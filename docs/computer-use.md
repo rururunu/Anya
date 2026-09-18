@@ -8,49 +8,54 @@
 
 Official **agent** plugin `computer-use` (Windows, **off until Enable**). No workbench UI — grant `computer`, then ask Anya in chat, or type `#plugin:computer-use`. Mutating tools use the existing approval picker; **Allow for session** avoids a confirm on every click.
 
-It is not a screenshot-only VLM. Screenshot is the eye; UI Automation is the skeleton; `launch` / keyboard are the fast path.
+Execution engine: in-process **[Ghost](https://github.com/NORTHTEKDevs/ghost)** (`ghost-session` v0.23.4, MIT). Anya keeps permission grants, tool approval, and the Computer Use HUD; Ghost owns UIA, background focus policy, verification, and browser CDP.
 
-## 1. Hybrid pipeline
+## 1. Ghost-style pipeline
 
-The agent is instructed (plugin prompt + bundled playbook) to climb this ladder. Lower rungs are faster and hit more reliably:
+| Step     | Tool                            | Notes                                                               |
+| -------- | ------------------------------- | ------------------------------------------------------------------- |
+| 1        | `window`                        | `launch` / `focus` / `anchor` — session remembers the target window |
+| 2        | `see`                           | Prefer `mode=text`; else name/role/enabled/center list              |
+| 3        | `act`                           | Click/type by name/role; read **`verified`**                        |
+| 4        | `wait` / `assert`               | Element / value / idle — avoid long sleeps                          |
+| 5        | `browser` + `tab`               | CDP for the web — never pixel-click pages                           |
+| Fallback | `screenshot` / `click` / `drag` | Canvas / snip / unnamed chrome only                                 |
 
-| Level | How                                      | Typical tools                                                                     |
-| ----- | ---------------------------------------- | --------------------------------------------------------------------------------- |
-| 1     | ShellExecute — open an app, file, or URI | `launch` (`mspaint`, `notepad`, `C:\doc.docx`, `ms-settings:display`)             |
-| 2     | App / OS shortcuts                       | `key` (`ctrl+s`, `win+e`, `alt+f4`)                                               |
-| 3     | UIA semantics                            | `click_control` (InvokePattern, else clickable point), `set_value` (ValuePattern) |
-| 4     | Last-resort pixels                       | `click` / `drag` / `scroll` on canvas, snip region, or unnamed chrome             |
+Background focus policy is the default (`GHOST_FOCUS_LOCK`): Ghost prefers posted messages / UIA without stealing the user's mouse.
 
-Do not hunt the Start menu. Do not screenshot after every click. One screenshot to aim, then emit the remaining calls in the **same** model turn (mutating tools run in order).
+## 2. Tool surface
 
-## 2. Dual input: JPEG + UIA tree
+**Desktop:** `see`, `act`, `wait`, `assert`, `window`, `key`/`hotkey`, `scroll`, `drag`, `clipboard`, `screenshot`, `screen_info`.
 
-`screenshot` captures the **foreground window** by default (`scope: desktop` for the virtual screen). The tool result is:
+**Browser:** `browser` (`launch` \| `attach` \| `tabs` \| `close`), `tab` (`open` \| `navigate` \| `click` \| `type` \| `text` \| `eval` \| `wait` \| …).
 
-1. A JPEG (downscaled to a 1280px edge). Click/move/scroll `x,y` are pixels in **this** image, origin top-left.
-2. Up to 40 interactive UIA controls: name, AutomationId, **image-space** rect. `click_control` `index` / `name` / `id` uses that list.
+**Aliases** (old prompts): `list_windows`, `focus_window`, `find_control`, `click_control`, `set_value`, `launch`, `click`, `type`.
 
-`find_control` searches Name **or** AutomationId when the overlay is truncated. Coordinates for named clicks come from UIA bounding boxes / `GetClickablePoint`, not from the model guessing pixels.
+Read-only tools (`see`, `assert`, `wait`, `screenshot`, `list_windows`, `find_control`, …) skip approval; mutating `act` / `window` / `key` / `browser` / `tab` / … require it (session allow still clears the class).
 
-JPEG → screen mapping: `screen = image / scale + window origin`, where `scale = image_w / window_w`. Capture, UIA rects, and SendInput all use **physical** pixels. The result also reports window **DPI** so a 125%/150%/4K display is not treated as CSS pixels.
+## 3. HUD + stop
 
-After `click` / `click_control`, Anya probes `ElementFromPoint` and the foreground title (no JPEG recapture). If the foreground looks like Anya, the tool result says so — focus the target app instead of clicking again.
+On the first `plugin_computer-use__*` tool in a chat, Anya opens the glow + banner. Chat finished or HUD **Stop** calls Ghost emergency stop, clears the window anchor, and closes the HUD.
 
-## 3. Bundled Windows playbook
+## 4. Bundled playbook + learned library
 
-`plugin.json` `contributes.agent.skills: ["skills/windows.md"]` is appended to the system prompt when `agent.prompt` is granted (no extra `load_skill` turn). Recipes cover Paint, Notepad, Explorer, Settings, Calculator, Snipping, Task Manager, and common dialogs (EN + zh-CN labels).
+`plugin.json` `contributes.agent.skills: ["skills/windows.md"]` is appended when `agent.prompt` is granted. Recipes cover Notepad, Explorer, Paint, Settings, Calculator, dialogs, and CDP browser flow (EN + zh-CN labels).
 
-Source of truth: [`src-tauri/plugins/computer-use/skills/windows.md`](../src-tauri/plugins/computer-use/skills/windows.md). Official plugins are copied into AppData on launch.
+The **`playbook` tool** (Agent S2 retrieve/write + EchoPath-style steps) stores successful semantic procedures under `%APPDATA%/Anya/computer-use/playbooks/*.json`. Next time: `lookup` before exploring; on a failed `verified` step: `fail` (confidence drop / quarantine), then explore and `save` with the same `id` to patch. An index of local playbooks is injected into the prompt when the plugin is enabled.
 
-## 4. Code map
+Source: [`src-tauri/plugins/computer-use/skills/windows.md`](../src-tauri/plugins/computer-use/skills/windows.md); impl: `core/plugins/computer/playbook/`.
 
-| Piece                            | Path                                                                                   |
-| -------------------------------- | -------------------------------------------------------------------------------------- |
-| Manifest, host schemas, playbook | `src-tauri/plugins/computer-use/`                                                      |
-| Dispatch + tools                 | `core/plugins/computer/` (`ops.rs`, `win/{capture,uia,snapshot,launch,observe,input}`) |
-| Prompt assembly (`skills` files) | `core/plugins/prompt.rs`                                                               |
-| Agent tool names                 | `plugin_computer-use__*`                                                               |
+## 5. Code map
 
-`computer.*` host RPC is the same primitive set for a UI plugin with `computer` granted. The official plugin is `role: agent` — the chat agent calls the tools directly.
+| Piece                                  | Path                                                             |
+| -------------------------------------- | ---------------------------------------------------------------- |
+| Manifest, host schemas, playbook       | `src-tauri/plugins/computer-use/`                                |
+| Ghost bridge + ops + learned playbooks | `core/plugins/computer/{ghost_bridge,ghost_ops,playbook,mod}.rs` |
+| Dependency                             | `Cargo.toml` → `ghost-session` (Windows `cfg`, pinned git tag)   |
+| Agent tool names                       | `plugin_computer-use__*`                                         |
+
+Pin upstream Ghost releases; bump the tag deliberately and note breaking tool changes. Binary size and first-call COM init cost grow with the engine; that is expected for in-process embed.
+
+Do **not** also enable Ghost MCP for the same session — one desktop stack only. For logged-in websites prefer the official [OpenCLI](./opencli.md) plugin; do not drive the same Chrome with Ghost CDP and OpenCLI Bridge in one turn.
 
 Related: [Plugin system](./plugin-system.md) (`contributes.agent.skills`, permission `computer`).

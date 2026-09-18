@@ -28,7 +28,9 @@ const isPeek =
   windowLabel === "overlay" ||
   windowLabel.startsWith("overlay-") ||
   windowLabel.startsWith("overlay-preview-") ||
-  windowLabel === "desktop-pet";
+  windowLabel === "desktop-pet" ||
+  windowLabel === "computer-use-hud" ||
+  windowLabel === "computer-use-banner";
 </script>
 
 <style scoped>

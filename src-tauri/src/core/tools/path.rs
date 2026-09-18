@@ -3,6 +3,7 @@ use std::path::{Component, Path, PathBuf};
 use super::context::ToolContext;
 use super::error::ToolError;
 use super::path_permission::PathAccess;
+use crate::models::settings::ToolApprovalMode;
 
 pub fn normalize_path(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
@@ -69,8 +70,13 @@ pub fn resolve_tool_path(
 
     deny_user_plugin_hunt(&normalized)?;
 
-    // Outside-workspace writes are denied by default (sandbox). Opt-in via settings.
-    if access == PathAccess::Write && !super::sandbox::allow_outside_workspace_writes() {
+    let approval_mode =
+        super::tool_approval::shared_tool_approval_store().mode_for_session(ctx.root_session_id());
+    let pass_all = approval_mode == ToolApprovalMode::AlwaysAllow;
+
+    // Outside-workspace writes: denied unless settings opt-in, or AlwaysAllow (最高级放行).
+    if access == PathAccess::Write && !pass_all && !super::sandbox::allow_outside_workspace_writes()
+    {
         return Err(ToolError::new(format!(
             "write outside workspace denied (enable allowOutsideWorkspaceWrites to permit after approval): {}",
             normalized.display()
@@ -81,6 +87,14 @@ pub fn resolve_tool_path(
         .path_permission_store
         .is_granted(ctx.root_session_id(), &normalized, access)
     {
+        return Ok(normalized);
+    }
+
+    // AlwaysAllow: auto-pass path prompts (including outside workspace).
+    // Auto: workspace tools are already approved; outside paths still ask.
+    if pass_all {
+        ctx.path_permission_store
+            .grant_always(ctx.root_session_id(), &normalized, access);
         return Ok(normalized);
     }
 
@@ -148,6 +162,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn always_allow_auto_grants_outside_workspace_reads() {
+        use crate::core::chat::conversation_manager::ConversationManager;
+        use crate::core::event::{BusEvent, EventBus};
+        use crate::core::tools::context::{AskStore, PathPermissionStore, ToolContext};
+        use crate::core::tools::tool_approval::shared_tool_approval_store;
+        use crate::models::settings::ToolApprovalMode;
+        use std::sync::{atomic::AtomicBool, Arc, Mutex};
+
+        struct NullBus;
+        impl EventBus for NullBus {
+            fn emit(&self, _event: BusEvent) {}
+        }
+
+        shared_tool_approval_store().set_session_mode("s-always", Some(ToolApprovalMode::AlwaysAllow));
+        let db = std::env::temp_dir().join(format!("peek-path-allow-{}.db", uuid::Uuid::new_v4()));
+        let ws = std::env::temp_dir().join(format!("peek-ws-allow-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&ws);
+        let outside = std::env::temp_dir().join(format!("peek-outside-read-{}.txt", uuid::Uuid::new_v4()));
+        let _ = std::fs::write(&outside, "ok");
+        let ctx = ToolContext {
+            workspace_root: ws,
+            request_context: Default::default(),
+            session_id: "s-always".into(),
+            assistant_message_id: "a".into(),
+            conversation: Arc::new(ConversationManager::new(db)),
+            event_bus: Arc::new(NullBus),
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            ask_store: Arc::new(AskStore::new()),
+            path_permission_store: Arc::new(PathPermissionStore::new()),
+            registry: None,
+            provider: None,
+            subagent_depth: 0,
+            max_subagent_depth: 1,
+            subagent_id: None,
+            parent_activity_id: None,
+            app_handle: None,
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let resolved = resolve_tool_path(
+            &ctx,
+            outside.to_str().unwrap_or("C:\\outside-read.txt"),
+            PathAccess::Read,
+            "read_file",
+        )
+        .expect("AlwaysAllow should skip path permission prompt");
+        assert_eq!(normalize_path(&resolved), normalize_path(&outside));
+        shared_tool_approval_store().set_session_mode("s-always", None);
+    }
+
+    #[test]
     fn rejects_parent_escape() {
         let ws = PathBuf::from("/workspace/project");
         let err = resolve_in_workspace(&ws, "../outside.txt").unwrap_err();
@@ -198,6 +262,107 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.message.contains("write outside workspace denied"));
+    }
+
+    #[test]
+    fn always_allow_permits_outside_workspace_writes() {
+        use crate::core::chat::conversation_manager::ConversationManager;
+        use crate::core::event::{BusEvent, EventBus};
+        use crate::core::tools::context::{AskStore, PathPermissionStore, ToolContext};
+        use crate::core::tools::tool_approval::shared_tool_approval_store;
+        use crate::models::settings::ToolApprovalMode;
+        use std::sync::{atomic::AtomicBool, Arc, Mutex};
+
+        struct NullBus;
+        impl EventBus for NullBus {
+            fn emit(&self, _event: BusEvent) {}
+        }
+
+        crate::core::tools::sandbox::configure(false, false, 120, 120);
+        shared_tool_approval_store()
+            .set_session_mode("s-always-write", Some(ToolApprovalMode::AlwaysAllow));
+        let db = std::env::temp_dir().join(format!("peek-path-aw-{}.db", uuid::Uuid::new_v4()));
+        let ws = std::env::temp_dir().join(format!("peek-ws-aw-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&ws);
+        let outside = std::env::temp_dir().join(format!("peek-outside-aw-{}.txt", uuid::Uuid::new_v4()));
+        let ctx = ToolContext {
+            workspace_root: ws,
+            request_context: Default::default(),
+            session_id: "s-always-write".into(),
+            assistant_message_id: "a".into(),
+            conversation: Arc::new(ConversationManager::new(db)),
+            event_bus: Arc::new(NullBus),
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            ask_store: Arc::new(AskStore::new()),
+            path_permission_store: Arc::new(PathPermissionStore::new()),
+            registry: None,
+            provider: None,
+            subagent_depth: 0,
+            max_subagent_depth: 1,
+            subagent_id: None,
+            parent_activity_id: None,
+            app_handle: None,
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let resolved = resolve_tool_path(
+            &ctx,
+            outside.to_str().unwrap_or("C:\\outside-aw.txt"),
+            PathAccess::Write,
+            "write_file",
+        )
+        .expect("AlwaysAllow should permit outside-workspace writes");
+        assert_eq!(normalize_path(&resolved), normalize_path(&outside));
+        shared_tool_approval_store().set_session_mode("s-always-write", None);
+    }
+
+    #[test]
+    fn auto_still_denies_outside_workspace_writes_by_default() {
+        use crate::core::chat::conversation_manager::ConversationManager;
+        use crate::core::event::{BusEvent, EventBus};
+        use crate::core::tools::context::{AskStore, PathPermissionStore, ToolContext};
+        use crate::core::tools::tool_approval::shared_tool_approval_store;
+        use crate::models::settings::ToolApprovalMode;
+        use std::sync::{atomic::AtomicBool, Arc, Mutex};
+
+        struct NullBus;
+        impl EventBus for NullBus {
+            fn emit(&self, _event: BusEvent) {}
+        }
+
+        crate::core::tools::sandbox::configure(false, false, 120, 120);
+        shared_tool_approval_store().set_session_mode("s-auto-write", Some(ToolApprovalMode::Auto));
+        let db = std::env::temp_dir().join(format!("peek-path-auto-{}.db", uuid::Uuid::new_v4()));
+        let ws = std::env::temp_dir().join(format!("peek-ws-auto-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&ws);
+        let outside = std::env::temp_dir().join(format!("peek-outside-auto-{}.txt", uuid::Uuid::new_v4()));
+        let ctx = ToolContext {
+            workspace_root: ws,
+            request_context: Default::default(),
+            session_id: "s-auto-write".into(),
+            assistant_message_id: "a".into(),
+            conversation: Arc::new(ConversationManager::new(db)),
+            event_bus: Arc::new(NullBus),
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            ask_store: Arc::new(AskStore::new()),
+            path_permission_store: Arc::new(PathPermissionStore::new()),
+            registry: None,
+            provider: None,
+            subagent_depth: 0,
+            max_subagent_depth: 1,
+            subagent_id: None,
+            parent_activity_id: None,
+            app_handle: None,
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let err = resolve_tool_path(
+            &ctx,
+            outside.to_str().unwrap_or("C:\\outside-auto.txt"),
+            PathAccess::Write,
+            "write_file",
+        )
+        .unwrap_err();
+        assert!(err.message.contains("write outside workspace denied"));
+        shared_tool_approval_store().set_session_mode("s-auto-write", None);
     }
 
     #[test]

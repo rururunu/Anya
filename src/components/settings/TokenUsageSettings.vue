@@ -1,5 +1,14 @@
 <template>
   <section class="settings-page is-wide usage-page">
+    <DeepSeekBalanceCard
+      :report="balance"
+      :loading="balanceLoading"
+      :error="balanceError"
+      :language="settingStore.language"
+      :copy="balanceCopy"
+      @refresh="loadBalance"
+    />
+
     <SettingsPageHeader :title="copy.title" :description="copy.description">
       <template #actions>
         <Select v-model="range" @update:model-value="applyRange">
@@ -78,14 +87,6 @@
           <small>{{ copy.accuracyHint }}</small>
         </div>
       </section>
-
-      <DeepSeekBalanceCard
-        :report="balance"
-        :loading="balanceLoading"
-        :error="balanceError"
-        :language="settingStore.language"
-        :copy="balanceCopy"
-      />
 
       <div v-if="report.modelCalls === 0" class="empty-state">
         <BarChart3 :size="25" />
@@ -259,6 +260,7 @@ const balanceCopy = computed(() => ({
   unconfigured: tr(settingStore.language, "usage.balance.unconfigured"),
   error: tr(settingStore.language, "usage.balance.error"),
   loading: tr(settingStore.language, "usage.balance.loading"),
+  refresh: tr(settingStore.language, "usage.balance.refresh"),
 }));
 
 const rangeOptions = computed(() =>
@@ -415,7 +417,6 @@ async function loadBalance() {
 async function load() {
   loading.value = true;
   error.value = "";
-  void loadBalance();
   try {
     report.value = await getTokenUsageReport({
       from: bounds.value.from,
@@ -435,7 +436,10 @@ function setGranularity(value: Granularity) {
   granularity.value = value;
   void load();
 }
-onMounted(() => void load());
+onMounted(() => {
+  void loadBalance();
+  void load();
+});
 </script>
 
 <style scoped>

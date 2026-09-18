@@ -162,7 +162,7 @@ model tool_calls (plugin_<id>__<name>)
 | ----------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SlotRegistry`          | `src/composables/plugins/slotRegistry.ts`     | 命名锚点（`sidebar.tabs`/`composer.accessory` 可叠加，`workbench.main` 独占）。壳用 `PluginSlotOutlet` 出孔，不再为每个锚点写专用组件。`sidebar.tabs` 的 chrome（`nav`/`header`/`views`）只决定入口位置。 |
 | `ctx.agent`             | `src/composables/plugins/conversationSend.ts` | 冻结的 Agent 服务（`run` / `mount` / `send` / `sessionId`）。`ctx.conversation.*` 是别名。                                                                                                                |
-| `AssetOverrideRegistry` | `src/composables/plugins/assetRegistry.ts`    | 资源键（`mascot.idle`/`tray.icon`/`workbench.backdrop`/`pet.stage.skin`）+ 类型白名单（image/video/lottie）                                                                                               |
+| `AssetOverrideRegistry` | `src/composables/plugins/assetRegistry.ts`    | 资源键（`mascot.idle`/`tray.icon`/`workbench.backdrop`/`pet.stage.skin`/`pet.stage.atlas`）+ 类型白名单（图集为 `spritesheet`）                                                                           |
 | `CapabilityFramework`   | `src-tauri/src/core/plugins/capability.rs`    | 结构化子能力声明（如 `net.listen` 限定 loopback + 端口范围），比枚举权限更细粒度                                                                                                                          |
 | `PluginEventBus`        | `src/composables/plugins/eventBus.ts`         | 命名空间发布订阅，单插件订阅上限 200，订阅者异常互相隔离                                                                                                                                                  |
 
@@ -254,14 +254,15 @@ Agent 插件不需要 `activate.js` / `ui.workbench`。启用后工具会出现�
 
 ### 6.2c Computer-use 运行时
 
-官方 `computer-use` 的动作在 Rust（`core/plugins/computer/`），不在 Deno。Deno host 只声明工具 schema。优先级：
+官方 `computer-use` 在 Rust 里跑进程内 Ghost（`core/plugins/computer/ghost_*.rs`）。Deno host 只声明工具 schema。优先级：
 
-1. `launch`（ShellExecute）
-2. `key`
-3. `click_control` / `set_value`（UIA Invoke / ValuePattern；截图结果带控件列表）
-4. 像素 `click` / `drag` 只用于画布或没有名字的区域
+1. `window` launch/focus/anchor
+2. `see`（优先 `mode=text`）
+3. `act` 按 name/role——读 `verified`
+4. `wait` / `assert`；网页用 `browser`/`tab`
+5. 像素 `screenshot`/`click`/`drag` 只用于画布或无名区域
 
-JPEG 点击坐标是图像像素，按缩放 + 窗口原点映射到物理屏幕（带 DPI）。详见 [电脑操控](./computer-use.zh-CN.md)。
+详见 [电脑操控](./computer-use.zh-CN.md)。
 
 ### 6.3 常见插件类型速查
 
@@ -310,20 +311,22 @@ JPEG 点击坐标是图像像素，按缩放 + 窗口原点映射到物理屏幕
 
 ### 7.2 权限（`permissions`）
 
-| id             | 含义                                                                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `storage`      | 在插件文件夹内存少量 key-value                                                                                                       |
-| `ask_anya`     | 调用 Anya 的 agent（`ctx.agent.run` 走插件自己的会话，或 `send` 注入当前对话）                                                       |
-| `pty`          | 开一个真终端（ConPTY）                                                                                                               |
-| `run`          | Deno host 里 `--allow-run` 启动子进程                                                                                                |
-| `fs.workspace` | 在 `host/main.ts` 里读写当前工作区（`Deno.readTextFile` / `writeTextFile`）——不是 `ctx` 方法                                         |
-| `fs.pick`      | 原生文件对话框，调用 `ctx.fs.pick` / `AnyaPlugin.pick`                                                                               |
-| `net`          | Deno host `--allow-net`                                                                                                              |
-| `agent.tools`  | 给模型注册工具                                                                                                                       |
-| `agent.hooks`  | 在 agent 轮次中跑钩子                                                                                                                |
-| `agent.prompt` | 追加系统提示                                                                                                                         |
-| `ui.workbench` | 加载进工作台同一页面（能读 store/设置）                                                                                              |
-| `computer`     | Windows 上截屏、UIA、键盘与 `launch`。官方插件 `computer-use`（默认关闭，需手动 Enable）。详见 [电脑操控](./computer-use.zh-CN.md)。 |
+| id                 | 含义                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`          | 在插件文件夹内存少量 key-value                                                                                                                                 |
+| `ask_anya`         | 调用 Anya 的 agent（`ctx.agent.run` 走插件自己的会话，或 `send` 注入当前对话）                                                                                 |
+| `pty`              | 开一个真终端（ConPTY）                                                                                                                                         |
+| `run`              | Deno host 里 `--allow-run` 启动子进程                                                                                                                          |
+| `fs.workspace`     | 在 `host/main.ts` 里读写当前工作区（`Deno.readTextFile` / `writeTextFile`）——不是 `ctx` 方法                                                                   |
+| `fs.pick`          | 原生文件对话框，调用 `ctx.fs.pick` / `AnyaPlugin.pick`                                                                                                         |
+| `net`              | Deno host `--allow-net`                                                                                                                                        |
+| `agent.tools`      | 给模型注册工具                                                                                                                                                 |
+| `agent.hooks`      | 在 agent 轮次中跑钩子                                                                                                                                          |
+| `agent.prompt`     | 追加系统提示                                                                                                                                                   |
+| `ui.workbench`     | 加载进工作台同一页面（能读 store/设置）                                                                                                                        |
+| `computer`         | Windows 上截屏、UIA、键盘与 `launch`。官方插件 `computer-use`（默认关闭，需手动 Enable）。详见 [电脑操控](./computer-use.zh-CN.md)。                           |
+| `deepseek.balance` | 用 Anya 已保存的 DeepSeek API Key 查询账户余额（`ctx.host.rpc("deepseek.balance")`），不把密钥交给插件。                                                       |
+| `pet`              | 控制桌面宠物：显示/隐藏、尺寸、形象、表情（`ctx.host.rpc("pet.*")`）。也可 `ctx.assets.register("pet.stage.skin", …)`（需同时有 `pet` 权限才会推到宠物窗口）。 |
 
 ### 7.3 工作台 SDK（`activate(ctx)` 里的 `ctx`）
 
@@ -345,7 +348,7 @@ ctx.slots.mount(anchorId, { id, title?, icon?, mount }): boolean   // exclusive 
 ctx.slots.unmount(anchorId, id)
 
 ctx.assets.list(): string[]
-ctx.assets.register(key, { kind: "image"|"video"|"lottie", source }): boolean  // 已被其它插件占用时返回 false
+ctx.assets.register(key, { kind: "image"|"video"|"lottie"|"svg"|"html"|"spritesheet", source }): boolean  // 已被其它插件占用时返回 false
 ctx.assets.unregister(key)
 
 ctx.bus.publish(topic, payload)
@@ -355,7 +358,7 @@ ctx.i18n.t(key, fallback, dict?)   // dict: { "zh-CN": "...", en: "..." }
 
 ctx.stores.chat / ctx.stores.setting   // Pinia store（需 ui.workbench）
 
-ctx.host.rpc(method, params?): Promise<unknown>   // 转发给 host/main.ts，或内置 pty.* / computer.*
+ctx.host.rpc(method, params?): Promise<unknown>   // 转发给 host/main.ts，或内置 pty.* / computer.* / deepseek.* / pet.*
 ctx.host.on(event, fn): () => void
 
 ctx.fs.pick({ multiple?, directory?, filters?: [{ name, extensions }] }): Promise<{ path, name, url }[] | null>
@@ -415,14 +418,21 @@ ctx.onDeactivate(fn)   // 注册清理函数，deactivate 时统一调用
 
 单行 JSON、stdin/stdout，方法：
 
-| method                                                                                                       | 用途                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `hello`                                                                                                      | 握手，携带 `pluginId`/`token`/`hostPid`                                                                                            |
-| `describe`                                                                                                   | 返回 `{ tools: [{name,description,parameters}], hooks: string[] }`                                                                 |
-| `tool`                                                                                                       | `{name, args}` → 工具执行结果                                                                                                      |
-| `hook`                                                                                                       | `{hook, payload}` → 处理后的 payload（`allow:false` 可否决工具调用）                                                               |
-| `pty.open/write/resize/kill`                                                                                 | 需要 `pty` 权限时，Anya 内置转发，host 不用自己实现                                                                                |
-| `computer.screenshot/screenInfo/listWindows/focusWindow/findControl/clickControl/click/move/scroll/type/key` | Anya 实现（Windows）。需要 `computer`。截屏默认前台窗口。点击坐标是上一张截图像素；按名称操作优先用 `findControl`/`clickControl`。 |
+| method                                                                                                       | 用途                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hello`                                                                                                      | 握手，携带 `pluginId`/`token`/`hostPid`                                                                                                                                                                                                                                                                                            |
+| `describe`                                                                                                   | 返回 `{ tools: [{name,description,parameters}], hooks: string[] }`                                                                                                                                                                                                                                                                 |
+| `tool`                                                                                                       | `{name, args}` → 工具执行结果                                                                                                                                                                                                                                                                                                      |
+| `hook`                                                                                                       | `{hook, payload}` → 处理后的 payload（`allow:false` 可否决工具调用）                                                                                                                                                                                                                                                               |
+| `pty.open/write/resize/kill`                                                                                 | 需要 `pty` 权限时，Anya 内置转发，host 不用自己实现                                                                                                                                                                                                                                                                                |
+| `computer.screenshot/screenInfo/listWindows/focusWindow/findControl/clickControl/click/move/scroll/type/key` | Anya 实现（Windows）。需要 `computer`。截屏默认前台窗口。点击坐标是上一张截图像素；按名称操作优先用 `findControl`/`clickControl`。                                                                                                                                                                                                 |
+| `deepseek.balance`                                                                                           | Anya 实现。需要 `deepseek.balance`。返回 `{ configured, isAvailable?, balances: [{ currency, totalBalance, grantedBalance, toppedUpBalance }] }`。                                                                                                                                                                                 |
+| `pet.show/hide/toggle/visible`                                                                               | Anya 实现。需要 `pet`。切换桌面宠物可见性。`toggle` 可带 `{ visible?: boolean }`。                                                                                                                                                                                                                                                 |
+| `pet.setSize/getSize`                                                                                        | Anya 实现。需要 `pet`。`size` 为 `small` \| `medium` \| `large`。                                                                                                                                                                                                                                                                  |
+| `pet.setAppearance/getAppearance/clearAppearance`                                                            | Anya 实现。需要 `pet`。`mode`：`mascot` \| `companion` \| `media` \| **`spritesheet`**。`spritesheet` 的 `source` 指向 `pet.json`（ChatGPT/Codex 契约：透明图集 **1536×1872**，8×9，每帧 192×208；行=idle/runRight/runLeft/wave/jump/fail/wait/work/review）。`media` 的 `kind` 仍支持 `image`\|`video`\|`lottie`\|`svg`\|`html`。 |
+| `pet.setMode`                                                                                                | Anya 实现。需要 `pet`。快捷切换内置模式：`{ mode: "mascot"\|"companion", config?: { accent?, variant?: "orb"\|"pill", glow? } }`。                                                                                                                                                                                                 |
+| `pet.setSkin/clearSkin`                                                                                      | Anya 实现。需要 `pet`。兼容旧 API，等价于 `setAppearance({ mode: "media", kind, source })` / `clearAppearance`。相对路径会解析为 `anya-plugin://localhost/<id>/…`。                                                                                                                                                                |
+| `pet.setExpression/clearExpression`                                                                          | Anya 实现。需要 `pet`。表情：`idle`/`thinking`/`working`/`talking`/`waiting`/`done`/`error`/`sleeping`（内置 `companion` 模式会随表情变色/动效）。                                                                                                                                                                                 |
 
 ### 7.6 `manage_plugin` 工具动作（agent 用）
 

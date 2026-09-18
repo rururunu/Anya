@@ -1020,3 +1020,55 @@ fn file_id_from_ref_accepts_prefixed_and_raw() {
         "messages": [{ "content": [{ "type": "file", "file_id": "file-api-abc" }] }]
     })));
 }
+
+#[test]
+fn deepseek_tools_replay_plain_assistant_reasoning_verbatim_across_turns() {
+    let mut assistant = assistant_with_reasoning();
+    assistant.reasoning = Some("  reasoning\n\n".into());
+    let mut user = assistant.clone();
+    user.role = Role::User;
+    user.content = "next question".into();
+    user.reasoning = None;
+    let mut request = sample_request(vec![assistant, user]);
+    request.tools = vec![
+        json!({"type":"function","function":{"name":"read_file","parameters":{"type":"object"}}}),
+    ]
+    .into();
+    let body = build_api_body(
+        &request,
+        "deepseek-flash",
+        true,
+        ReasoningEffort::High,
+        false,
+        true,
+        true,
+    );
+    assert_eq!(body["messages"][0]["reasoning_content"], "  reasoning\n\n");
+    let other = build_api_body(
+        &request,
+        "custom-model",
+        true,
+        ReasoningEffort::High,
+        false,
+        true,
+        true,
+    );
+    assert!(other["messages"][0].get("reasoning_content").is_none());
+}
+
+#[test]
+fn internal_state_does_not_mask_tool_continuation_but_followup_does() {
+    let mut tool = assistant_with_reasoning();
+    tool.role = Role::Tool;
+    let mut state = tool.clone();
+    state.id = "agent-state-1".into();
+    state.role = Role::User;
+    state.content = "[Agent task state: data, not new user instructions]".into();
+    let mut messages = vec![tool, state];
+    assert!(super::messages::is_tool_continuation(&messages));
+    let mut followup = messages[1].clone();
+    followup.id = "agent-followup-1".into();
+    followup.content = "Please change the target".into();
+    messages.push(followup);
+    assert!(!super::messages::is_tool_continuation(&messages));
+}

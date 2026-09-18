@@ -7,6 +7,7 @@
       'has-custom-bg': hasCustomBg,
     }"
   >
+    <AppConfirmDialog ref="approvalConfirmDialogRef" />
     <div v-if="!props.embedded" class="glass-chrome" aria-hidden="true" />
     <header v-if="!props.embedded" class="titlebar">
       <div class="titlebar-drag" data-tauri-drag-region @mousedown="onWindowDragMouseDown">
@@ -40,8 +41,19 @@
       >
         <Sidebar collapsible="none" class="settings-nav">
           <SidebarContent class="settings-nav-content peek-scrollbar">
+            <input
+              v-model="settingsQuery"
+              class="settings-search-input"
+              type="search"
+              :placeholder="settingStore.language === 'zh-CN' ? '搜索设置…' : 'Search settings…'"
+              :aria-label="settingStore.language === 'zh-CN' ? '搜索设置' : 'Search settings'"
+              @keydown.esc="settingsQuery = ''"
+            />
+            <p v-if="!filteredSections.length" class="settings-search-empty" role="status">
+              {{ settingStore.language === "zh-CN" ? "没有匹配的设置" : "No matching settings" }}
+            </p>
             <SidebarGroup
-              v-for="section in categorySections"
+              v-for="section in filteredSections"
               :key="section.id"
               class="settings-nav-group"
             >
@@ -70,7 +82,18 @@
             <!-- No JS Transition: animated out-in + GSAP can leave this pane blank forever
                  when done() never fires (seen as white-screen/freeze on some WebView2 installs). -->
             <div :key="activeCategory" class="settings-panel">
-              <WorkspaceSettings v-if="activeCategory === 'workspace'" />
+              <p
+                v-if="settingsQuery.trim() && !filteredSections.length"
+                class="settings-search-empty"
+                role="status"
+              >
+                {{
+                  settingStore.language === "zh-CN"
+                    ? "没有匹配的设置，请换一个关键词。"
+                    : "No matching settings. Try another keyword."
+                }}
+              </p>
+              <WorkspaceSettings v-else-if="activeCategory === 'workspace'" />
               <ProviderSettings v-else-if="activeCategory === 'provider'" />
               <ImageSettings v-else-if="activeCategory === 'image'" />
               <RagSettings v-else-if="activeCategory === 'rag'" />
@@ -91,6 +114,7 @@
               <SettingFieldList
                 v-else
                 :items="visibleItems"
+                :searching="Boolean(settingsQuery.trim())"
                 :page-title="fieldPageTitle"
                 :page-description="fieldPageDescription"
                 :empty-text="t.empty"
@@ -118,7 +142,9 @@
                 @save-web-search-settings="saveWebSearchSettings"
               >
                 <template #after-first-group>
-                  <CustomThemeManager v-if="activeCategory === 'appearance'" />
+                  <CustomThemeManager
+                    v-if="activeCategory === 'appearance' && !settingsQuery.trim()"
+                  />
                 </template>
               </SettingFieldList>
             </div>
@@ -182,6 +208,8 @@ import {
 import { useSettingStore } from "@/stores/setting";
 import { useChatModelStore } from "@/stores/chatModel";
 import { tr } from "@/services/i18n";
+import { fullApprovalConfirmOptions } from "@/services/chat/fullApprovalConfirm";
+import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { SettingsI18nKey } from "@/services/locales/settings";
 import {
   buildSettingDefinitions,
@@ -202,6 +230,7 @@ import {
 
 const settingStore = useSettingStore();
 const chatModelStore = useChatModelStore();
+const approvalConfirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 const appWindow = getCurrentWebviewWindow();
 const props = withDefaults(
   defineProps<{
@@ -332,6 +361,29 @@ const categories = computed(() => [
 ]);
 
 type SettingsNavItem = { id: string; label: string; icon?: Component };
+const settingsQuery = ref("");
+const matchesSetting = (item: SettingDefinition) =>
+  [item.title, item.description, item.path, ...item.keywords]
+    .join(" ")
+    .toLocaleLowerCase()
+    .includes(settingsQuery.value.trim().toLocaleLowerCase());
+const filteredSections = computed(() =>
+  categorySections.value
+    .map((section) => ({
+      ...section,
+      categories: section.categories.filter(
+        (category) =>
+          !settingsQuery.value.trim() ||
+          category.label
+            .toLocaleLowerCase()
+            .includes(settingsQuery.value.trim().toLocaleLowerCase()) ||
+          settingDefinitions.value.some(
+            (item) => item.category === category.id && matchesSetting(item),
+          ),
+      ),
+    }))
+    .filter((section) => section.categories.length),
+);
 
 const categorySections = computed(() => {
   const byId = new Map(categories.value.map((category) => [category.id, category]));
@@ -379,8 +431,24 @@ const settingDefinitions = computed<SettingDefinition[]>(() =>
 );
 
 const visibleItems = computed(() =>
-  settingDefinitions.value.filter((item) => item.category === activeCategory.value),
+  settingDefinitions.value.filter(
+    (item) =>
+      item.category === activeCategory.value &&
+      (!settingsQuery.value.trim() ||
+        matchesSetting(item) ||
+        categories.value
+          .find((category) => category.id === activeCategory.value)
+          ?.label.toLocaleLowerCase()
+          .includes(settingsQuery.value.trim().toLocaleLowerCase())),
+  ),
 );
+watch(filteredSections, (sections) => {
+  if (!settingsQuery.value.trim()) return;
+  const results = sections.flatMap((section) => section.categories);
+  if (results.length && !results.some((category) => category.id === activeCategory.value)) {
+    activeCategory.value = results[0].id as CategoryId;
+  }
+});
 
 const fieldPageTitle = computed(() => {
   const id = activeCategory.value;
@@ -581,8 +649,15 @@ function onToggle(id: string) {
   }
 }
 
-function onToolApprovalModeChange(value: unknown) {
+async function onToolApprovalModeChange(value: unknown) {
   if (value !== "ask" && value !== "auto" && value !== "alwaysAllow") return;
+  if (value === settingStore.toolApprovalMode) return;
+  if (value === "alwaysAllow") {
+    const confirmed = await approvalConfirmDialogRef.value?.ask(
+      fullApprovalConfirmOptions(settingStore.language),
+    );
+    if (!confirmed) return;
+  }
   void settingStore.update({ toolApprovalMode: value as ToolApprovalMode });
 }
 
@@ -659,6 +734,26 @@ watch(
 </script>
 
 <style scoped>
+.settings-search-input {
+  box-sizing: border-box;
+  width: calc(100% - 20px);
+  margin: 12px 10px 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--peek-border);
+  border-radius: 8px;
+  background: var(--peek-surface);
+  color: var(--peek-text);
+  font-size: 13px;
+}
+.settings-search-input:focus-visible {
+  outline: 2px solid var(--peek-accent);
+  outline-offset: 2px;
+}
+.settings-search-empty {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--peek-muted);
+}
 .settings-workbench {
   --settings-chrome-bg: color-mix(in srgb, var(--peek-sidebar) 92%, var(--peek-bg));
   width: 100%;

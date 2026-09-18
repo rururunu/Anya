@@ -11,12 +11,13 @@ import {
   Check,
   CircleX,
   Code2,
+  CodeXml,
   Copy,
   Database,
   FileCode2,
   GitCompareArrows,
   Hash,
-  SquareTerminal,
+  TextWrap,
 } from "@lucide/vue";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
@@ -79,7 +80,7 @@ renderer.code = ({ text, lang }) => {
   const languageLabel = displayLanguage(language);
   const blockClass = language ? "code-block" : "code-block code-block--plain";
 
-  return `<div class="${blockClass}"><div class="code-block-toolbar"><span class="code-language"><span class="code-language-icon" data-code-language-icon="${language}"></span><span class="code-language-label">${languageLabel}</span></span><button type="button" class="code-copy-button" data-code-copy aria-label="Copy code" title="Copy code"></button></div><div class="code-block-body"><pre><code class="hljs${languageClass}">${highlighted}</code></pre></div></div>\n`;
+  return `<div class="${blockClass}"><div class="code-block-toolbar"><span class="code-language"><span class="code-language-icon" data-code-language-icon="${language}"></span><span class="code-language-label">${languageLabel}</span></span><div class="code-block-actions"><button type="button" class="code-action-button" data-code-wrap aria-label="Toggle wrap" title="Toggle wrap" aria-pressed="true"></button><button type="button" class="code-action-button" data-code-copy aria-label="Copy code" title="Copy code"></button></div></div><div class="code-block-body"><pre><code class="hljs${languageClass}">${highlighted}</code></pre></div></div>\n`;
 };
 
 renderer.image = ({ href, title, text }) => {
@@ -96,7 +97,7 @@ function iconForLanguage(language: string): Component {
   if (
     ["bash", "shell", "sh", "zsh", "fish", "powershell", "ps1", "bat", "cmd"].includes(language)
   ) {
-    return SquareTerminal;
+    return CodeXml;
   }
   if (["sql", "mysql", "pgsql", "postgresql", "graphql"].includes(language)) {
     return Database;
@@ -130,22 +131,25 @@ function iconForLanguage(language: string): Component {
 
 function displayLanguage(language: string) {
   const labels: Record<string, string> = {
-    bash: "Shell",
-    sh: "Shell",
-    ps1: "PowerShell",
-    js: "JavaScript",
-    jsx: "JavaScript JSX",
-    ts: "TypeScript",
-    tsx: "TypeScript JSX",
-    cs: "C#",
-    csharp: "C#",
-    cpp: "C++",
-    yml: "YAML",
-    md: "Markdown",
-    py: "Python",
-    rs: "Rust",
+    bash: "bash",
+    sh: "bash",
+    zsh: "zsh",
+    shell: "shell",
+    ps1: "powershell",
+    powershell: "powershell",
+    js: "javascript",
+    jsx: "jsx",
+    ts: "typescript",
+    tsx: "tsx",
+    cs: "csharp",
+    csharp: "csharp",
+    cpp: "cpp",
+    yml: "yaml",
+    md: "markdown",
+    py: "python",
+    rs: "rust",
   };
-  return labels[language] || language || "Text";
+  return labels[language] || language || "text";
 }
 
 function escapeHtmlAttribute(value: string) {
@@ -169,6 +173,9 @@ function hydrateCodeBlockIcons() {
       h(iconForLanguage(language), { size: 13, strokeWidth: 2, "aria-hidden": "true" }),
       element,
     );
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-code-wrap]").forEach((button) => {
+    renderButtonIcon(button, TextWrap);
   });
   root.querySelectorAll<HTMLButtonElement>("[data-code-copy]").forEach((button) => {
     renderButtonIcon(button, Copy);
@@ -245,7 +252,9 @@ function hydrateAll() {
 
 function unmountPortalHosts(root: HTMLElement) {
   root
-    .querySelectorAll<HTMLElement>("[data-code-language-icon], [data-code-copy], [data-chart-spec]")
+    .querySelectorAll<HTMLElement>(
+      "[data-code-language-icon], [data-code-copy], [data-code-wrap], [data-chart-spec]",
+    )
     .forEach((el) => {
       render(null, el);
     });
@@ -308,6 +317,20 @@ watch(html, () => {
 async function onMarkdownClick(event: MouseEvent) {
   const target = event.target;
   if (!(target instanceof Element)) return;
+
+  const wrapButton = target.closest("[data-code-wrap]");
+  if (wrapButton instanceof HTMLButtonElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    const block = wrapButton.closest(".code-block");
+    if (!(block instanceof HTMLElement)) return;
+    const nowrap = block.classList.toggle("is-nowrap");
+    wrapButton.setAttribute("aria-pressed", String(!nowrap));
+    const label = nowrap ? "Wrap lines" : "Unwrap lines";
+    wrapButton.setAttribute("aria-label", label);
+    wrapButton.title = label;
+    return;
+  }
 
   const copyButton = target.closest("[data-code-copy]");
   if (copyButton instanceof HTMLButtonElement) {
@@ -375,9 +398,11 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 <style scoped>
 .markdown-body {
   font-size: 13px;
-  line-height: 1.65;
+  font-weight: 500;
+  line-height: 1.7;
   color: var(--peek-text);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .markdown-body :deep(img) {
   max-width: 100%;
@@ -427,23 +452,21 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 
 .markdown-body :deep(pre:not(.code-block pre)) {
   margin: 0.75em 0;
-  padding: 12px 14px;
-  border: 1px solid var(--peek-code-border);
-  border-radius: 10px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
+  border-radius: 12px;
   background: var(--peek-code-body-bg);
-  box-shadow: var(--peek-code-shadow);
-  overflow-x: hidden;
-  line-height: 1.6;
+  overflow-x: auto;
+  line-height: 1.65;
   tab-size: 2;
 }
 
 .markdown-body :deep(.code-block) {
-  margin: 0.75em 0;
+  margin: 0.85em 0;
   overflow: clip;
-  border: 1px solid var(--peek-code-border);
-  border-radius: 10px;
-  background: var(--peek-code-bg);
-  box-shadow: var(--peek-code-shadow);
+  border: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
+  border-radius: 12px;
+  background: var(--peek-code-body-bg);
 }
 
 .markdown-body :deep(.code-block-toolbar) {
@@ -457,14 +480,13 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  min-height: 30px;
-  padding: 5px 8px 5px 10px;
+  min-height: 36px;
+  padding: 6px 8px 2px 14px;
   overflow: hidden;
   line-height: 1;
-  border-bottom: 1px solid var(--peek-code-border);
-  background: var(--peek-code-toolbar-bg);
-  border-top-left-radius: 9px;
-  border-top-right-radius: 9px;
+  background: var(--peek-code-body-bg);
+  border-top-left-radius: 11px;
+  border-top-right-radius: 11px;
 }
 
 .markdown-body :deep(.code-block.is-stuck),
@@ -473,43 +495,36 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   border-top-right-radius: 0;
 }
 
+.markdown-body :deep(.code-block.is-stuck .code-block-toolbar) {
+  box-shadow: 0 8px 10px -10px color-mix(in srgb, var(--peek-text) 28%, transparent);
+}
+
 .markdown-body :deep(.code-language) {
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   color: var(--peek-code-muted);
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
 }
 
 .markdown-body :deep(.code-language-label) {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
   max-width: 100%;
-  padding: 2px 8px;
   overflow: hidden;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--peek-code-border) 88%, transparent);
-  background: color-mix(in srgb, var(--peek-code-body-bg) 72%, var(--peek-code-bg));
   color: var(--peek-code-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
   text-overflow: ellipsis;
   text-transform: none;
   white-space: nowrap;
-}
-
-.markdown-body :deep(.code-block--plain .code-language-label) {
-  border-color: color-mix(in srgb, var(--peek-info) 22%, var(--peek-code-border));
-  background: color-mix(in srgb, var(--peek-info) 8%, var(--peek-code-bg));
-  color: color-mix(in srgb, var(--peek-info) 72%, var(--peek-code-muted));
 }
 
 .markdown-body :deep(.code-language-icon) {
@@ -519,7 +534,7 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.88;
+  opacity: 0.78;
 }
 
 .markdown-body :deep(.code-language-icon svg) {
@@ -527,10 +542,17 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   width: 14px;
   height: 14px;
   flex: none;
-  color: var(--peek-syntax-type, color-mix(in srgb, var(--peek-accent) 78%, var(--peek-muted)));
+  color: var(--peek-code-muted);
 }
 
-.markdown-body :deep(.code-copy-button) {
+.markdown-body :deep(.code-block-actions) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 1px;
+}
+
+.markdown-body :deep(.code-action-button) {
   box-sizing: border-box;
   flex: none;
   align-self: center;
@@ -545,51 +567,50 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   background: transparent;
   color: var(--peek-code-icon);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.72;
   transition:
     opacity var(--motion-fast, 120ms) ease,
     background-color var(--motion-fast, 120ms) ease,
     color var(--motion-fast, 120ms) ease;
 }
 
-.markdown-body :deep(.code-block:hover .code-copy-button),
-.markdown-body :deep(.code-block:focus-within .code-copy-button),
-.markdown-body :deep(.code-copy-button:focus-visible) {
-  opacity: 1;
-}
-
-.markdown-body :deep(.code-copy-button svg) {
+.markdown-body :deep(.code-action-button svg) {
   display: block;
   flex: none;
   width: 14px;
   height: 14px;
 }
 
-.markdown-body :deep(.code-copy-button:hover) {
-  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
+.markdown-body :deep(.code-action-button:hover) {
+  background: color-mix(in srgb, var(--peek-text) 7%, transparent);
   color: var(--peek-code-fg);
+  opacity: 1;
 }
 
-.markdown-body :deep(.code-copy-button:focus-visible) {
+.markdown-body :deep(.code-action-button:focus-visible) {
   opacity: 1;
   outline: 2px solid color-mix(in srgb, var(--peek-accent) 55%, transparent);
   outline-offset: 1px;
 }
 
-.markdown-body :deep(.code-copy-button.copied) {
+.markdown-body :deep(.code-action-button[aria-pressed="true"]) {
+  opacity: 0.92;
+}
+
+.markdown-body :deep(.code-action-button.copied) {
   opacity: 1;
   color: var(--peek-success, #36a269);
 }
 
-.markdown-body :deep(.code-copy-button.copy-failed) {
+.markdown-body :deep(.code-action-button.copy-failed) {
   opacity: 1;
   color: var(--peek-danger, #d35f5f);
 }
 
 .markdown-body :deep(.code-block-body) {
-  background: var(--peek-code-body-bg);
-  border-bottom-left-radius: 9px;
-  border-bottom-right-radius: 9px;
+  background: transparent;
+  border-bottom-left-radius: 11px;
+  border-bottom-right-radius: 11px;
 }
 
 .markdown-body :deep(.code-block pre) {
@@ -597,22 +618,30 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding: 12px 14px;
+  padding: 8px 16px 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
+.markdown-body :deep(.code-block.is-nowrap .code-block-body) {
+  overflow-x: auto;
+}
+
+.markdown-body :deep(.code-block.is-nowrap pre) {
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .markdown-body :deep(.code-block--plain pre code) {
   color: color-mix(in srgb, var(--peek-code-fg) 88%, var(--peek-code-muted));
-  font-size: 11.5px;
-  line-height: 1.7;
 }
 
 .markdown-body :deep(code) {
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 12.5px;
+  line-height: 1.65;
 }
 
 .markdown-body :deep(pre code) {
@@ -633,26 +662,37 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 }
 
 .markdown-body :deep(:not(pre) > code) {
-  padding: 0.12em 0.38em;
+  padding: 0.1em 0.32em;
   border: 1px solid color-mix(in srgb, var(--peek-code-border) 80%, transparent);
-  border-radius: 5px;
+  border-radius: 4px;
   background: color-mix(in srgb, var(--peek-code-body-bg) 76%, var(--peek-surface));
   color: var(--peek-code-fg);
-  font-size: 0.92em;
+  font-size: 0.9em;
+  font-weight: 500;
+  vertical-align: 0.04em;
 }
 
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) {
-  margin: 0.3em 0 0.65em;
-  padding-left: 1.45em;
+  margin: 0.4em 0 0.75em;
+  padding-left: 1.7em;
+  list-style-position: outside;
+}
+
+.markdown-body :deep(ul) {
+  list-style-type: disc;
+}
+
+.markdown-body :deep(li) {
+  line-height: 1.7;
 }
 
 .markdown-body :deep(li + li) {
-  margin-top: 0.2em;
+  margin-top: 0.38em;
 }
 
 .markdown-body :deep(li > p) {
-  margin-bottom: 0.25em;
+  margin: 0;
 }
 
 .markdown-body :deep(input[type="checkbox"]) {
@@ -688,8 +728,10 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   display: block;
   width: max-content;
   max-width: 100%;
-  margin: 0.65em 0;
+  margin: 0.75em 0;
+  border: 0;
   border-collapse: collapse;
+  border-spacing: 0;
   overflow-x: auto;
 }
 
@@ -699,14 +741,27 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 
 .markdown-body :deep(th),
 .markdown-body :deep(td) {
-  padding: 5px 9px;
-  border: 1px solid var(--peek-border);
+  padding: 0.42em 1.4em 0.42em 0;
+  border: 0;
+  background: transparent;
   text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+.markdown-body :deep(th:last-child),
+.markdown-body :deep(td:last-child) {
+  padding-right: 0;
 }
 
 .markdown-body :deep(th) {
-  background: color-mix(in srgb, var(--peek-text) 7%, transparent);
+  color: var(--peek-text);
   font-weight: 650;
+  padding-bottom: 0.55em;
+}
+
+.markdown-body :deep(td) {
+  color: var(--peek-text);
 }
 
 .markdown-body :deep(img) {

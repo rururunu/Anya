@@ -1332,7 +1332,7 @@ function formatTime(epochMs: number) {
 
 .tunnel-toggle-sub {
   font-size: 11px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--muted-foreground);
   text-align: center;
 }

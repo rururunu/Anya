@@ -434,6 +434,12 @@ const segments = computed<TimelineSegment[]>(() => {
 
   for (const item of timeline) {
     if (item.type === "content" && props.suppressContent) continue;
+    if (item.type === "inject") {
+      if (item.content.trim()) {
+        out.push({ type: "inject", id: item.id, content: item.content });
+      }
+      continue;
+    }
     if (item.type === "reasoning" || item.type === "content") {
       if (item.content.trim()) {
         out.push({ ...item });
@@ -487,7 +493,10 @@ function isGeneratedImageSegment(segment: TimelineSegment): boolean {
 /** After the turn completes, images stay next to the reply instead of inside the fold. */
 function isReplySegment(segment: TimelineSegment): boolean {
   return (
-    segment.type === "content" || segment.type === "ask-answer" || isGeneratedImageSegment(segment)
+    segment.type === "content" ||
+    segment.type === "inject" ||
+    segment.type === "ask-answer" ||
+    isGeneratedImageSegment(segment)
   );
 }
 
@@ -606,7 +615,12 @@ watch(
 const conversationFind = inject(conversationFindKey, null);
 
 function segmentMatchesQuery(segment: TimelineSegment, query: string) {
-  if (segment.type === "reasoning" || segment.type === "narration" || segment.type === "content") {
+  if (
+    segment.type === "reasoning" ||
+    segment.type === "narration" ||
+    segment.type === "content" ||
+    segment.type === "inject"
+  ) {
     return textIncludesQuery(segment.content, query);
   }
   if (segment.type === "ask-answer") {
@@ -657,6 +671,10 @@ watch(
   margin-right: 0;
 }
 
+.agent-work :deep(.inject-card) {
+  margin: 8px 0;
+}
+
 .agent-work-fold {
   width: 100%;
   margin: 0;
@@ -675,7 +693,7 @@ watch(
   border-radius: 6px;
   font-family: var(--peek-font-sans);
   font-size: var(--peek-font-sm, 12px);
-  font-weight: 400;
+  font-weight: 500;
   color: var(--peek-muted);
   list-style: none;
   user-select: none;
@@ -711,7 +729,7 @@ watch(
 .agent-work-fold-meta {
   margin-left: auto;
   padding-left: 8px;
-  font-weight: 400;
+  font-weight: 500;
   font-size: 11px;
   color: var(--peek-faint);
   white-space: nowrap;

@@ -6,6 +6,8 @@
         class="confirm-dialog"
         :class="{ 'is-detail': Boolean(options.detailLabel) }"
         :aria-describedby="undefined"
+        @open-auto-focus="onOpenAutoFocus"
+        @keydown.enter.capture.prevent="onEnter"
       >
         <button
           v-if="options.detailLabel"
@@ -43,6 +45,7 @@
             {{ options.cancelLabel }}
           </button>
           <button
+            ref="confirmButtonRef"
             type="button"
             class="confirm-button"
             :class="options.tone === 'danger' ? 'danger' : 'primary'"
@@ -77,9 +80,12 @@ export interface ConfirmDialogOptions {
   cancelLabel: string;
   tone?: ConfirmDialogTone;
   detailLabel?: string;
+  /** Focus confirm and treat Enter as confirm (Esc still cancels). */
+  confirmOnEnter?: boolean;
 }
 
 const open = ref(false);
+const confirmButtonRef = ref<HTMLButtonElement | null>(null);
 const options = reactive({
   title: "",
   description: "",
@@ -87,13 +93,14 @@ const options = reactive({
   cancelLabel: "Cancel",
   tone: "danger" as ConfirmDialogTone,
   detailLabel: "",
+  confirmOnEnter: false,
 });
 let resolver: ((confirmed: boolean) => void) | null = null;
 
 /** Open the dialog and resolve when the user confirms or cancels. */
 function ask(nextOptions: ConfirmDialogOptions) {
   resolver?.(false);
-  Object.assign(options, { tone: "danger", detailLabel: "" }, nextOptions);
+  Object.assign(options, { tone: "danger", detailLabel: "", confirmOnEnter: false }, nextOptions);
   open.value = true;
   return new Promise<boolean>((resolve) => {
     resolver = resolve;
@@ -110,6 +117,16 @@ function settle(confirmed: boolean) {
 /** Treat outside-dismiss / Escape as cancel. */
 function handleOpenChange(nextOpen: boolean) {
   if (!nextOpen && open.value) settle(false);
+}
+
+function onOpenAutoFocus(event: Event) {
+  if (!options.confirmOnEnter) return;
+  event.preventDefault();
+  confirmButtonRef.value?.focus();
+}
+
+function onEnter() {
+  if (options.confirmOnEnter) settle(true);
 }
 
 defineExpose({ ask });

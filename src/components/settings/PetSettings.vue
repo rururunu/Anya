@@ -51,10 +51,10 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import MascotFace from "@/components/icons/MascotFace.vue";
 import SettingsToggle from "@/components/settings/SettingsToggle.vue";
-import { getDesktopPetVisible, toggleDesktopPet } from "@/services/ipc/commands";
+import { getDesktopPetVisible, setDesktopPetSize, toggleDesktopPet } from "@/services/ipc/commands";
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import { IPC_EVENTS } from "@/types/ipc";
@@ -89,9 +89,9 @@ async function handleSetPetSize(nextSize: PetSize) {
   petSize.value = nextSize;
   try {
     localStorage.setItem("anya.desktop-pet.size", nextSize);
-    await emit(IPC_EVENTS.desktopPetSizeChanged, nextSize);
+    await setDesktopPetSize(nextSize);
   } catch (e) {
-    console.warn("Failed to emit pet size change:", e);
+    console.warn("Failed to set pet size:", e);
   }
 }
 

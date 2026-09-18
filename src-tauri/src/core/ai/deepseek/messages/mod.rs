@@ -35,6 +35,11 @@ pub(crate) fn build_api_body(
     // cache-hit token accounting) only apply to actual DeepSeek models, never to
     // custom OpenAI-compatible providers routed through the same adapter.
     let is_deepseek = model.trim().to_ascii_lowercase().starts_with("deepseek");
+    let effective_pass = if is_deepseek {
+        !request.tools.is_empty() || messages_have_tool_call_reasoning(&request.messages)
+    } else {
+        effective_pass
+    };
     let messages: Vec<_> = prepared_messages(request)
         .iter()
         .map(|message| message_to_api_json(message, effective_pass, is_deepseek))
@@ -210,10 +215,7 @@ fn to_responses_user_content(content: &str) -> Value {
                             json!({ "type": "input_image", "image_url": url })
                         }
                         "file" => {
-                            let file_id = part
-                                .get("file_id")
-                                .and_then(Value::as_str)
-                                .unwrap_or("");
+                            let file_id = part.get("file_id").and_then(Value::as_str).unwrap_or("");
                             json!({ "type": "input_image", "file_id": file_id })
                         }
                         "text" => json!({
@@ -310,6 +312,9 @@ fn resolve_pass_tool_reasoning(
 /// user message — i.e. an agent-loop continuation, not the opening model call.
 pub(super) fn is_tool_continuation(messages: &[crate::core::runtime::ChatMessage]) -> bool {
     for message in messages.iter().rev() {
+        if crate::runtime::tool::is_internal_feedback(&message.id) {
+            continue;
+        }
         match message.role {
             Role::Tool => return true,
             Role::User if message.content.starts_with("[System]") => return true,

@@ -4,8 +4,9 @@ mod agent;
 mod bundle;
 mod bundled;
 mod capability;
-mod computer;
+pub mod computer;
 mod contract;
+mod deepseek;
 mod deno;
 pub mod diagnostics;
 mod fs;
@@ -13,8 +14,10 @@ mod grant;
 mod job;
 mod locate;
 mod manifest;
+pub mod opencli;
 mod package;
 mod permissions;
+mod pet;
 mod prompt;
 mod pty;
 mod runtime;
@@ -32,7 +35,21 @@ pub use capability::{
     capability_label, is_known_capability, validate_capability_decl, CapabilityDecl,
     KNOWN_CAPABILITY_CATEGORIES,
 };
-pub use computer::requires_tool_approval;
+pub use computer::{
+    delete_computer_playbook, get_computer_playbook, list_computer_playbooks, stop_engine as stop_computer_engine,
+    ComputerPlaybook,
+};
+
+/// Whether a plugin agent tool requires the tool-approval picker.
+pub fn requires_tool_approval(full_name: &str) -> bool {
+    if full_name.starts_with("plugin_opencli__") {
+        return opencli::requires_tool_approval(full_name);
+    }
+    if full_name.starts_with("plugin_computer-use__") {
+        return computer::requires_tool_approval(full_name);
+    }
+    false
+}
 pub use contract::describe_contract;
 #[allow(unused_imports)]
 pub use fs::{

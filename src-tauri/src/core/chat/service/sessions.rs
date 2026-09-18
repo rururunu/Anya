@@ -10,6 +10,13 @@ impl ChatService {
         self.agent_runtime.cancel(&self.conversation, message_id)
     }
 
+    /// Cancels every in-flight assistant stream (e.g. Computer Use stop button).
+    pub fn cancel_all_active(&self) {
+        for message_id in self.agent_runtime.active_message_ids() {
+            let _ = self.cancel(&message_id);
+        }
+    }
+
     /// Returns the message history for a session.
     pub fn history(&self, session_id: &str) -> Result<Vec<ChatMessage>, ChatError> {
         self.conversation.history(session_id)

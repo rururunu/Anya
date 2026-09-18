@@ -9,7 +9,7 @@ impl Tool for SearchToolsTool {
         "search_tools"
     }
     fn description(&self) -> &str {
-        "Find and load tools by capability. Search when the currently visible tools do not cover the task. Available capabilities may include Office documents/spreadsheets/slides, browser/computer control, Git, LSP, MCP, plugins, memory, image generation, subagents and workspace search. Returned tools become available on the next model step."
+        "Look up tools by capability when unsure which name to call. Search by capability or exact tool name (Office, browser/computer control, Git, LSP, MCP, plugins, memory, image generation, subagents, workspace search, …). Matching tools are already in the current schema — refine the query if nothing matches."
     }
     fn read_only(&self) -> bool {
         true
@@ -33,7 +33,7 @@ impl Tool for SearchToolsTool {
         } else {
             registry.schemas()
         };
-        Ok(json!({"tools":rank_tools(&schemas, query),"hint":"Returned tools are loaded for the next step; refine the query if no matches."}).to_string())
+        Ok(json!({"tools":rank_tools(&schemas, query),"hint":"Matching tools are already callable by name; refine the query if no matches."}).to_string())
     }
 }
 

@@ -18,15 +18,15 @@ pub async fn drain_soft_injects(
     request: &mut ChatRequest,
     tx: &mpsc::Sender<StreamEvent>,
     user_msg_index: &mut Option<usize>,
-) {
+) -> bool {
     let injected: Vec<String> = {
         let Ok(mut queue) = soft_queue.lock() else {
-            return;
+            return false;
         };
         queue.drain(..).collect()
     };
     if injected.is_empty() {
-        return;
+        return false;
     }
 
     for content in injected {
@@ -56,4 +56,5 @@ pub async fn drain_soft_injects(
             kind: "soft_injected".to_string(),
         })
         .await;
+    true
 }

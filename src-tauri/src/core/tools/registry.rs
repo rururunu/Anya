@@ -245,21 +245,6 @@ impl ToolRegistry {
         filtered
     }
 
-    /// Writer turns after plan approval: keep the full toolset except `save_plan`,
-    /// so execution cannot open a second proposal.
-    pub fn filter_without_save_plan(&self) -> ToolRegistry {
-        let mut filtered = ToolRegistry::new();
-        for name in self.names() {
-            if name == "save_plan" {
-                continue;
-            }
-            if let Some(tool) = self.get(&name) {
-                filtered.register(tool);
-            }
-        }
-        filtered
-    }
-
     /// Image generation mode: only `generate_image` is exposed so every turn
     /// can produce a picture without file/shell side effects.
     pub fn filter_for_image_mode(&self) -> ToolRegistry {
@@ -441,7 +426,7 @@ mod tests {
             read_only: false,
         }));
 
-        let agent = registry.filter_without_save_plan().names();
+        let agent = registry.names();
         assert!(agent.contains(&"request_plan_mode".to_string()));
         assert!(!registry
             .filter_for_plan_mode()
@@ -497,23 +482,6 @@ mod tests {
         assert!(names.contains(&"manage_plugin".to_string()));
         assert!(names.contains(&"read_file".to_string()));
         assert!(!names.contains(&"write_file".to_string()));
-    }
-
-    #[test]
-    fn filter_without_save_plan_drops_proposal_tool() {
-        let mut registry = ToolRegistry::new();
-        registry.register(Arc::new(StubTool {
-            name: "save_plan",
-            read_only: false,
-        }));
-        registry.register(Arc::new(StubTool {
-            name: "write_file",
-            read_only: false,
-        }));
-
-        let names = registry.filter_without_save_plan().names();
-        assert!(names.contains(&"write_file".to_string()));
-        assert!(!names.contains(&"save_plan".to_string()));
     }
 
     struct HiddenTool;

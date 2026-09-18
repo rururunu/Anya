@@ -63,38 +63,32 @@ describe("useDesktopPet", () => {
     vi.useRealTimers();
   });
 
-  it("triggers Q-bounce on click without altering expression into done", async () => {
+  it("plays spritesheet wave gesture on click without CSS bounce action", async () => {
     const [pet, app] = withSetup(() => useDesktopPet());
+    expect(pet.appearance.value.mode).toBe("spritesheet");
     expect(pet.expression.value).toBe("idle");
-    expect(pet.isBouncing.value).toBe(false);
+    expect(pet.spriteGesture.value).toBeNull();
 
     pet.onPetClick();
-
-    // Advance to rAF
-    await vi.advanceTimersByTimeAsync(20);
-    expect(pet.isBouncing.value).toBe(true);
-    // Crucial: Expression remains natural idle, NOT changed into done
+    expect(pet.spriteGesture.value).toBe("wave");
     expect(pet.expression.value).toBe("idle");
 
-    // Advance past max action duration (650ms)
     await vi.advanceTimersByTimeAsync(700);
-    expect(pet.isBouncing.value).toBe(false);
-    expect(pet.expression.value).toBe("idle");
+    expect(pet.spriteGesture.value).toBeNull();
     app.unmount();
   });
 
-  it("wakes up sleeping pet and triggers bounce on click", async () => {
+  it("wakes up sleeping pet and plays wave on click", async () => {
     const [pet, app] = withSetup(() => useDesktopPet());
     pet.expression.value = "sleeping";
+    expect(pet.expression.value).toBe("sleeping");
 
     pet.onPetClick();
     expect(pet.expression.value).toBe("idle");
-
-    await vi.advanceTimersByTimeAsync(20);
-    expect(pet.isBouncing.value).toBe(true);
+    expect(pet.spriteGesture.value).toBe("wave");
 
     await vi.advanceTimersByTimeAsync(700);
-    expect(pet.isBouncing.value).toBe(false);
+    expect(pet.spriteGesture.value).toBeNull();
     app.unmount();
   });
 

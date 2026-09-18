@@ -22,6 +22,7 @@ export type SettingType =
   | "select-agent-work-display"
   | "select-model"
   | "select-zoom"
+  | "select-font"
   | "secret"
   | "memory-secret"
   | "search-secret"
@@ -77,6 +78,9 @@ const INLINE_DESCRIPTION_IDS: ReadonlySet<SettingFieldId> = new Set([
 
 const SILENT_COPY_IDS: ReadonlySet<SettingFieldId> = new Set([
   "language",
+  "fontCjk",
+  "fontLatin",
+  "fontMono",
   "appName",
   "appVersion",
   "appIdentifier",
@@ -130,6 +134,7 @@ export function buildSettingDefinitions(
   const m = buildFieldCopy(language);
   const groups = {
     themeLanguage: tr(language, "settings.groups.themeLanguage"),
+    fonts: tr(language, "settings.groups.fonts"),
     window: tr(language, "settings.groups.window"),
     hotkeys: tr(language, "settings.groups.hotkeys"),
     performance: tr(language, "settings.groups.performance"),
@@ -170,6 +175,39 @@ export function buildSettingDefinitions(
       help: m.language.help,
       type: "select-language",
       keywords: [...m.language.keywords],
+    },
+    {
+      id: "fontCjk",
+      category: "appearance",
+      group: groups.fonts,
+      path: m.fontCjk.path,
+      title: m.fontCjk.title,
+      description: m.fontCjk.description,
+      help: m.fontCjk.help,
+      type: "select-font",
+      keywords: [...m.fontCjk.keywords],
+    },
+    {
+      id: "fontLatin",
+      category: "appearance",
+      group: groups.fonts,
+      path: m.fontLatin.path,
+      title: m.fontLatin.title,
+      description: m.fontLatin.description,
+      help: m.fontLatin.help,
+      type: "select-font",
+      keywords: [...m.fontLatin.keywords],
+    },
+    {
+      id: "fontMono",
+      category: "appearance",
+      group: groups.fonts,
+      path: m.fontMono.path,
+      title: m.fontMono.title,
+      description: m.fontMono.description,
+      help: m.fontMono.help,
+      type: "select-font",
+      keywords: [...m.fontMono.keywords],
     },
     {
       id: "zoom",

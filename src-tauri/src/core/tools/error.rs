@@ -19,6 +19,7 @@ impl ErrorCategory {
             "access denied",
             "access is denied",
             "not allowed",
+            "plan mode is active",
             "权限",
         ]
         .iter()
@@ -75,7 +76,7 @@ impl ErrorCategory {
             Self::MissingPath => "Locate the actual path with list_folder/find_files before retrying.",
             Self::PatchConflict => "Read the current target range and reconstruct the patch from exact text; do not overwrite the file.",
             Self::InvalidArguments => "Inspect the tool schema and correct the indicated fields before retrying.",
-            Self::Permission => "Respect the denied scope; obtain missing authorization or report the blocker. Do not bypass it.",
+            Self::Permission => "Respect the denied scope. If the error mentions plan mode, stop writers and either finish the plan (save_plan / update_tasks) or wait until the user approves / leaves Plan. Do not bypass the gate.",
             Self::Transient => "A bounded retry may help for read-only operations. Check whether a write already took effect before retrying it.",
             Self::Unknown => "Inspect this error and choose a different approach instead of repeating the same call.",
         }

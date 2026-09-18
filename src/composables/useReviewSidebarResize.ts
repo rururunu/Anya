@@ -7,19 +7,19 @@ import {
 
 const DEFAULT_WIDTH = 520;
 const MIN_WIDTH = 320;
-const MAX_WIDTH = 900;
-const CHAT_PANE_MIN_WIDTH = 420;
+const CHAT_PANE_MIN_WIDTH = 280;
 const RESIZE_HANDLE_WIDTH = 7;
 const STORAGE_KEY = "anya.workbenchReviewWidth.v1";
 
 export const REVIEW_RESIZE_HANDLE_WIDTH = RESIZE_HANDLE_WIDTH;
 export const REVIEW_SIDEBAR_MIN_WIDTH = MIN_WIDTH;
-export const REVIEW_SIDEBAR_MAX_WIDTH = MAX_WIDTH;
+/** Aria ceiling only; live max is the remaining space beside the conversation. */
+export const REVIEW_SIDEBAR_MAX_WIDTH = 4096;
 
 function readStoredWidth(): number {
   const stored = Number(localStorage.getItem(STORAGE_KEY));
   if (!Number.isFinite(stored)) return DEFAULT_WIDTH;
-  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, stored));
+  return Math.max(MIN_WIDTH, stored);
 }
 
 export function readStoredReviewSidebarWidth() {
@@ -48,10 +48,7 @@ export function useReviewSidebarResize(options: {
       ? (options.navigationWidth?.value ?? NAVIGATION_SIDEBAR_DEFAULT_WIDTH) +
         NAVIGATION_RESIZE_HANDLE_WIDTH
       : 0;
-    return Math.min(
-      MAX_WIDTH,
-      Math.max(MIN_WIDTH, contentWidth - nav - CHAT_PANE_MIN_WIDTH - RESIZE_HANDLE_WIDTH),
-    );
+    return Math.max(MIN_WIDTH, contentWidth - nav - CHAT_PANE_MIN_WIDTH - RESIZE_HANDLE_WIDTH);
   }
 
   function clampWidth(width: number) {

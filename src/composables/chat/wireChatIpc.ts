@@ -361,7 +361,9 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
     await listen<{ sessionId?: string; messages?: string[] }>("remote-staged-changed", (event) => {
       const sessionId = event.payload.sessionId;
       if (!sessionId) return;
-      chatStore.applyStagedFromRemote(sessionId, event.payload.messages ?? []);
+      // Events can arrive late or out of order across windows. Treat them as
+      // invalidations and re-read the authoritative queue after pending writes.
+      void chatStore.refreshStagedFromRemote(sessionId);
     });
     await listen<{ sessionId?: string }>("remote-compose-needed", (event) => {
       const sessionId = event.payload.sessionId;

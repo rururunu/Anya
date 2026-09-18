@@ -233,7 +233,8 @@ export interface UrlOfferEvent {
 export type WorkTimelineItem =
   | { type: "reasoning"; id: string; content: string }
   | { type: "content"; id: string; content: string }
-  | { type: "tool"; id: string; toolActivityId: string };
+  | { type: "tool"; id: string; toolActivityId: string }
+  | { type: "inject"; id: string; content: string };
 
 export interface ChatSendRequest {
   message: string;
@@ -258,6 +259,9 @@ export interface ChatSendRequest {
   /** Approve & execute continuation: drives the turn but never persists a
    * user bubble / history entry for the approval message. */
   resumePlan?: boolean;
+  /** Explicit mid-turn soft-inject (staged chip 追加). Queue-continue after
+   * the turn finishes must omit this so a cancelling agent cannot swallow it. */
+  softInject?: boolean;
 }
 
 export interface OfficeContext {

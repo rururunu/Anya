@@ -1,8 +1,38 @@
+use std::cell::Cell;
+
+thread_local! {
+    static OVERLAY_VISIBILITY_DEPTH: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Win32 `ShowWindow`/`hide` synthesizes `Focused` before `is_visible` updates.
+/// Nested hide/show from that event overflows the UI thread stack.
+struct OverlayVisibilityGuard;
+
+impl OverlayVisibilityGuard {
+    fn enter() -> Option<Self> {
+        OVERLAY_VISIBILITY_DEPTH.with(|depth| {
+            if depth.get() > 0 {
+                return None;
+            }
+            depth.set(1);
+            Some(Self)
+        })
+    }
+}
+
+impl Drop for OverlayVisibilityGuard {
+    fn drop(&mut self) {
+        OVERLAY_VISIBILITY_DEPTH.with(|depth| depth.set(0));
+    }
+}
+
 #[cfg(windows)]
 mod imp {
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock};
+
+    use super::OverlayVisibilityGuard;
 
     use tauri::WebviewWindow;
     use windows::Win32::Foundation::{BOOL, HWND};
@@ -79,6 +109,9 @@ mod imp {
     /// instead of a clean transparent edge. Cloak/uncloak alone is enough to
     /// hide the default Win32 frame during the show transition.
     pub fn show_overlay_without_flash(window: &WebviewWindow) -> Result<(), String> {
+        let Some(_guard) = OverlayVisibilityGuard::enter() else {
+            return Ok(());
+        };
         let hwnd = local_hwnd(window)?;
         unsafe {
             apply_toolwindow_style(hwnd);
@@ -94,6 +127,9 @@ mod imp {
 
     /// Hide without DWM close animation flash.
     pub fn hide_overlay_without_flash(window: &WebviewWindow) -> Result<(), String> {
+        let Some(_guard) = OverlayVisibilityGuard::enter() else {
+            return Ok(());
+        };
         let hwnd = local_hwnd(window)?;
         unsafe {
             set_cloaked(hwnd, true);
@@ -191,12 +227,18 @@ mod imp {
     pub fn reapply_toolwindow_style(_window: &WebviewWindow) {}
 
     pub fn show_overlay_without_flash(window: &WebviewWindow) -> Result<(), String> {
+        let Some(_guard) = super::OverlayVisibilityGuard::enter() else {
+            return Ok(());
+        };
         window.show().map_err(|error| error.to_string())?;
         let _ = window.set_focus();
         Ok(())
     }
 
     pub fn hide_overlay_without_flash(window: &WebviewWindow) -> Result<(), String> {
+        let Some(_guard) = super::OverlayVisibilityGuard::enter() else {
+            return Ok(());
+        };
         window.hide().map_err(|error| error.to_string())
     }
 
@@ -207,3 +249,16 @@ mod imp {
 
 #[cfg(not(windows))]
 pub use imp::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visibility_guard_rejects_reentry() {
+        let first = OverlayVisibilityGuard::enter().expect("first enter");
+        assert!(OverlayVisibilityGuard::enter().is_none());
+        drop(first);
+        assert!(OverlayVisibilityGuard::enter().is_some());
+    }
+}

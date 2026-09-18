@@ -522,9 +522,10 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     } catch (error) {
       console.error("chat_cancel failed:", error);
       chatStore.settleInterruptedSession(sessionId);
+      // No ChatFinished when cancel misses the task — drain the queue here.
+      void chatStore.flushStaged(sessionId);
     }
-    // 停止后也继续发送暂存队列（chat-finished cancelled 会再触发一次，flushStaged 自身有防重入）。
-    void chatStore.flushStaged(sessionId);
+    // Successful cancel emits chat-finished, which flushes the staged queue.
   }
 
   async function handleRewound(payload: {

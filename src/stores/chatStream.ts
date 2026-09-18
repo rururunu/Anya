@@ -2,6 +2,7 @@
  * Stream / work-timeline helpers for the chat Pinia store.
  */
 
+import { stripSoftInjectMarker } from "@/services/chat/softInject";
 import type { ChatMessage, WorkTimelineItem } from "@/types/chat";
 
 /**
@@ -28,6 +29,50 @@ export function appendTimelineText(
     });
   }
   return next;
+}
+
+/** Insert a mid-turn follow-up at the current end of the assistant timeline. */
+export function appendTimelineInject(
+  timeline: WorkTimelineItem[] | undefined,
+  id: string,
+  content: string,
+): WorkTimelineItem[] {
+  const text = content.trim();
+  if (!text) {
+    return [...(timeline ?? [])];
+  }
+  const next = [...(timeline ?? [])];
+  if (
+    next.some((item) => item.type === "inject" && (item.id === id || item.content.trim() === text))
+  ) {
+    return next;
+  }
+  next.push({ type: "inject", id, content: text });
+  return next;
+}
+
+export function timelineHasInject(
+  timeline: WorkTimelineItem[] | undefined,
+  inject: ChatMessage,
+): boolean {
+  const text = stripSoftInjectMarker(inject.content).trim();
+  return (timeline ?? []).some(
+    (item) => item.type === "inject" && (item.id === inject.id || item.content.trim() === text),
+  );
+}
+
+export function withTimelineInject(assistant: ChatMessage, inject: ChatMessage): ChatMessage {
+  if (timelineHasInject(assistant.workTimeline, inject)) {
+    return assistant;
+  }
+  return {
+    ...assistant,
+    workTimeline: appendTimelineInject(
+      assistant.workTimeline,
+      inject.id,
+      stripSoftInjectMarker(inject.content),
+    ),
+  };
 }
 
 export function findLastMessageIndex(

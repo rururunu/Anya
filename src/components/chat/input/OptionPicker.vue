@@ -13,6 +13,7 @@
       :class="{
         active: index === selectedIndex,
         current: option.id === selectedId,
+        danger: option.tone === 'danger',
       }"
       role="option"
       :aria-selected="index === selectedIndex"
@@ -67,6 +68,7 @@ export type OptionPickerItem = {
   description?: string;
   hint?: string;
   icon?: Component;
+  tone?: "danger";
 };
 
 defineProps<{
@@ -221,5 +223,28 @@ defineEmits<{
 .option-hint:hover {
   background: color-mix(in srgb, var(--peek-text) 8%, transparent);
   color: var(--peek-text);
+}
+
+.option-picker-item.danger .option-label,
+.option-picker-item.danger .option-leading,
+.option-picker-item.danger .option-icon,
+.option-picker-item.danger .option-check {
+  color: var(--peek-danger, #ef4444);
+}
+
+.option-picker-item.danger .option-leading {
+  background: color-mix(in srgb, var(--peek-danger, #ef4444) 12%, transparent);
+}
+
+.option-picker-list.compact .option-picker-item.danger .option-leading {
+  background: transparent;
+}
+
+.option-picker-item.danger.current:not(.active) {
+  background: color-mix(in srgb, var(--peek-danger, #ef4444) 8%, transparent);
+}
+
+.option-picker-item.danger.active {
+  background: color-mix(in srgb, var(--peek-danger, #ef4444) 14%, transparent);
 }
 </style>
