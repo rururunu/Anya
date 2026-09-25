@@ -229,6 +229,8 @@ export type SettingsI18nKey =
   | "settings.provider.apiKey"
   | "settings.provider.getApiKey"
   | "settings.provider.baseUrl"
+  | "settings.provider.websiteUrl"
+  | "settings.provider.websiteUrlPlaceholder"
   | "settings.provider.apiProtocol"
   | "settings.provider.apiProtocolHint"
   | "settings.provider.apiProtocolGrokHint"
@@ -259,6 +261,10 @@ export type SettingsI18nKey =
   | "settings.provider.urlPlaceholder"
   | "settings.provider.save"
   | "settings.provider.saved"
+  | "settings.provider.done"
+  | "settings.provider.autoSaved"
+  | "settings.provider.saving"
+  | "settings.provider.saveFailed"
   | "settings.provider.back"
   | "settings.provider.name"
   | "settings.provider.namePlaceholder"
@@ -301,6 +307,8 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.apiKey": "API Key",
   "settings.provider.getApiKey": "Get a key:",
   "settings.provider.baseUrl": "Base URL",
+  "settings.provider.websiteUrl": "Official website URL (icon)",
+  "settings.provider.websiteUrlPlaceholder": "https://example.com",
   "settings.provider.apiProtocol": "API protocol",
   "settings.provider.apiProtocolHint":
     "Chat Completions is the OpenAI-compatible default. Choose Responses for Grok and other vendors that only stream reasoning on /v1/responses, or Anthropic for /v1/messages. Each model can override this below.",
@@ -335,6 +343,10 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.urlPlaceholder": "https://api.example.com/v1",
   "settings.provider.save": "Save Settings",
   "settings.provider.saved": "Settings saved successfully",
+  "settings.provider.done": "Done",
+  "settings.provider.autoSaved": "Changes save automatically",
+  "settings.provider.saving": "Saving…",
+  "settings.provider.saveFailed": "Could not save",
   "settings.provider.back": "Back",
   "settings.provider.name": "Provider Name",
   "settings.provider.namePlaceholder": "e.g. Ollama, OpenRouter",
@@ -466,12 +478,12 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.language.title": "Language",
   "settings.fields.language.description": "Choose the display language for the interface.",
   "settings.fields.fontCjk.title": "Chinese font",
-  "settings.fields.fontCjk.description": "Used for Chinese glyphs. Default is Microsoft YaHei.",
+  "settings.fields.fontCjk.description": "Used for Chinese glyphs. Default is PingFang SC.",
   "settings.fields.fontLatin.title": "English font",
-  "settings.fields.fontLatin.description":
-    "Used for Latin letters. Default is Source Sans 3, a document grotesk.",
+  "settings.fields.fontLatin.description": "Used for Latin letters. Default is Inter Variable.",
   "settings.fields.fontMono.title": "Code font",
-  "settings.fields.fontMono.description": "Used in diffs, terminals, and code blocks.",
+  "settings.fields.fontMono.description":
+    "Used in diffs, terminals, and code blocks. Default is Fira Code.",
   "settings.fields.zoom.title": "Interface Zoom",
   "settings.fields.zoom.description":
     "Adjust the scale of interface elements and fonts for high-DPI displays.",
@@ -728,6 +740,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.apiKey": "API Key",
     "settings.provider.getApiKey": "获取地址：",
     "settings.provider.baseUrl": "Base URL",
+    "settings.provider.websiteUrl": "官网 URL（用于图标）",
+    "settings.provider.websiteUrlPlaceholder": "https://example.com",
     "settings.provider.apiProtocol": "API 协议",
     "settings.provider.apiProtocolHint":
       "默认使用 OpenAI 兼容的 Chat Completions。Grok 等只在 /v1/responses 上流式返回思考过程的厂商请改选 Responses；需要 /v1/messages 的请选 Anthropic。下方可为单个模型覆盖。",
@@ -760,6 +774,10 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.urlPlaceholder": "https://api.example.com/v1",
     "settings.provider.save": "保存设置",
     "settings.provider.saved": "设置保存成功",
+    "settings.provider.done": "完成",
+    "settings.provider.autoSaved": "修改会自动保存",
+    "settings.provider.saving": "正在保存…",
+    "settings.provider.saveFailed": "保存失败",
     "settings.provider.back": "返回",
     "settings.provider.name": "提供商名称",
     "settings.provider.namePlaceholder": "例如 Ollama, OpenRouter",
@@ -828,12 +846,11 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.language.title": "界面语言",
     "settings.fields.language.description": "界面语言。",
     "settings.fields.fontCjk.title": "中文字体",
-    "settings.fields.fontCjk.description": "用于中文。默认微软雅黑，可改成其他已安装字体。",
+    "settings.fields.fontCjk.description": "用于中文。默认优先 PingFang SC，可改成其他已安装字体。",
     "settings.fields.fontLatin.title": "英文字体",
-    "settings.fields.fontLatin.description":
-      "用于拉丁字母。默认 Source Sans 3，比系统 UI 字体更正式。",
+    "settings.fields.fontLatin.description": "用于拉丁字母。默认优先 Inter Variable。",
     "settings.fields.fontMono.title": "代码字体",
-    "settings.fields.fontMono.description": "用于 diff、终端和代码块。",
+    "settings.fields.fontMono.description": "用于 diff、终端和代码块。默认优先 Fira Code。",
     "settings.fields.zoom.title": "界面缩放",
     "settings.fields.zoom.description": "调整软件界面大小。",
     "settings.fields.hardwareAccelerationEnabled.title": "硬件加速",
@@ -1031,6 +1048,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.apiKey": "API キー",
     "settings.provider.getApiKey": "取得先：",
     "settings.provider.baseUrl": "ベース URL",
+    "settings.provider.websiteUrl": "公式サイト URL（アイコン用）",
+    "settings.provider.websiteUrlPlaceholder": "https://example.com",
     "settings.provider.modelsList": "モデルリスト",
     "settings.provider.modelsPlaceholder": "モデルID（例: gpt-4o）",
     "settings.provider.addModel": "追加",
@@ -1048,6 +1067,10 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.urlPlaceholder": "https://api.example.com/v1",
     "settings.provider.save": "設定を保存",
     "settings.provider.saved": "設定を保存しました",
+    "settings.provider.done": "完了",
+    "settings.provider.autoSaved": "変更は自動保存されます",
+    "settings.provider.saving": "保存中…",
+    "settings.provider.saveFailed": "保存できませんでした",
     "settings.provider.back": "戻る",
     "settings.provider.name": "プロバイダー名",
     "settings.provider.namePlaceholder": "例: Ollama, OpenRouter",
@@ -1205,6 +1228,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.apiKey": "API ключ",
     "settings.provider.getApiKey": "Получить ключ:",
     "settings.provider.baseUrl": "Базовый URL",
+    "settings.provider.websiteUrl": "Официальный сайт (значок)",
+    "settings.provider.websiteUrlPlaceholder": "https://example.com",
     "settings.provider.modelsList": "Список моделей",
     "settings.provider.modelsPlaceholder": "ID модели, напр. gpt-4o",
     "settings.provider.addModel": "Добавить",
@@ -1223,6 +1248,10 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.urlPlaceholder": "https://api.example.com/v1",
     "settings.provider.save": "Сохранить настройки",
     "settings.provider.saved": "Настройки успешно сохранены",
+    "settings.provider.done": "Готово",
+    "settings.provider.autoSaved": "Изменения сохраняются автоматически",
+    "settings.provider.saving": "Сохранение…",
+    "settings.provider.saveFailed": "Не удалось сохранить",
     "settings.provider.back": "Назад",
     "settings.provider.name": "Имя провайдера",
     "settings.provider.namePlaceholder": "например, Ollama, OpenRouter",
@@ -1382,6 +1411,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.apiKey": "API-Schlüssel",
     "settings.provider.getApiKey": "Key unter:",
     "settings.provider.baseUrl": "Basis-URL",
+    "settings.provider.websiteUrl": "Offizielle Website (Symbol)",
+    "settings.provider.websiteUrlPlaceholder": "https://example.com",
     "settings.provider.modelsList": "Modellliste",
     "settings.provider.modelsPlaceholder": "Modell-ID, z.B. gpt-4o",
     "settings.provider.addModel": "Hinzufügen",
@@ -1399,6 +1430,10 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.urlPlaceholder": "https://api.example.com/v1",
     "settings.provider.save": "Einstellungen speichern",
     "settings.provider.saved": "Einstellungen gespeichert",
+    "settings.provider.done": "Fertig",
+    "settings.provider.autoSaved": "Änderungen werden automatisch gespeichert",
+    "settings.provider.saving": "Speichern…",
+    "settings.provider.saveFailed": "Speichern fehlgeschlagen",
     "settings.provider.back": "Zurück",
     "settings.provider.name": "Anbietername",
     "settings.provider.namePlaceholder": "z.B. Ollama, OpenRouter",
@@ -1560,6 +1595,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.apiKey": "Clé API",
     "settings.provider.getApiKey": "Obtenir une clé :",
     "settings.provider.baseUrl": "URL de base",
+    "settings.provider.websiteUrl": "Site officiel (icône)",
+    "settings.provider.websiteUrlPlaceholder": "https://example.com",
     "settings.provider.modelsList": "Liste des modèles",
     "settings.provider.modelsPlaceholder": "ID du modèle, ex. gpt-4o",
     "settings.provider.addModel": "Ajouter",
@@ -1577,6 +1614,10 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.urlPlaceholder": "https://api.example.com/v1",
     "settings.provider.save": "Enregistrer les paramètres",
     "settings.provider.saved": "Paramètres enregistrés",
+    "settings.provider.done": "Terminé",
+    "settings.provider.autoSaved": "Modifications enregistrées automatiquement",
+    "settings.provider.saving": "Enregistrement…",
+    "settings.provider.saveFailed": "Échec de l’enregistrement",
     "settings.provider.back": "Retour",
     "settings.provider.name": "Nom du fournisseur",
     "settings.provider.namePlaceholder": "ex. Ollama, OpenRouter",
@@ -1740,6 +1781,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.apiKey": "API 키",
     "settings.provider.getApiKey": "발급 주소:",
     "settings.provider.baseUrl": "기본 URL",
+    "settings.provider.websiteUrl": "공식 웹사이트 URL (아이콘)",
+    "settings.provider.websiteUrlPlaceholder": "https://example.com",
     "settings.provider.modelsList": "모델 목록",
     "settings.provider.modelsPlaceholder": "모델 ID, 예: gpt-4o",
     "settings.provider.addModel": "추가",
@@ -1757,6 +1800,10 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.provider.urlPlaceholder": "https://api.example.com/v1",
     "settings.provider.save": "설정 저장",
     "settings.provider.saved": "설정이 저장되었습니다",
+    "settings.provider.done": "완료",
+    "settings.provider.autoSaved": "변경 사항이 자동 저장됩니다",
+    "settings.provider.saving": "저장 중…",
+    "settings.provider.saveFailed": "저장 실패",
     "settings.provider.back": "이전",
     "settings.provider.name": "제공자 이름",
     "settings.provider.namePlaceholder": "예: Ollama, OpenRouter",

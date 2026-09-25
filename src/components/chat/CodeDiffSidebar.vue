@@ -154,10 +154,27 @@
             :wrap-lines="wrapLines"
           />
         </section>
+        <div
+          v-if="visibleChanges.length > 1"
+          class="change-tree-resize"
+          :class="{ active: treeResizing }"
+          role="separator"
+          aria-orientation="vertical"
+          :aria-label="tr(settingStore.language, 'resizeChangeTree')"
+          :title="tr(settingStore.language, 'resizeChangeTree')"
+          :aria-valuemin="CHANGE_TREE_MIN_WIDTH"
+          :aria-valuemax="CHANGE_TREE_MAX_WIDTH"
+          :aria-valuenow="Math.round(treeWidth)"
+          tabindex="0"
+          @pointerdown="startResize"
+          @dblclick="resetWidth"
+          @keydown="handleResizeKey"
+        />
         <nav
           v-if="visibleChanges.length > 1"
           ref="changeFilesRef"
           class="change-tree peek-scrollbar"
+          :style="{ width: `${treeWidth}px` }"
           :aria-label="tr(settingStore.language, 'changedFiles')"
         >
           <div
@@ -230,7 +247,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, toRef, watch } from "vue";
 import {
   Check,
   ChevronRight,
@@ -249,6 +266,11 @@ import CodeDiffEditor from "@/components/chat/CodeDiffEditor.vue";
 import DiffScopePicker from "@/components/chat/DiffScopePicker.vue";
 import SplitDiffStack from "@/components/chat/SplitDiffStack.vue";
 import { useDiffScope } from "@/composables/chat/useDiffScope";
+import {
+  CHANGE_TREE_MAX_WIDTH,
+  CHANGE_TREE_MIN_WIDTH,
+  useChangeTreeResize,
+} from "@/composables/useChangeTreeResize";
 import { copyText } from "@/services/clipboard";
 import { resolveChangeFilePath, type CodeChangeEntry } from "@/services/chat/codeChanges";
 import { buildChangeFileTree, flattenChangeFileTree } from "@/services/chat/changeFileTree";
@@ -291,6 +313,10 @@ let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
 let skipFileScroll = false;
 
 const { scope: diffScope, setScope, changes: scopedChanges } = useDiffScope(() => props.messages);
+
+const { treeWidth, treeResizing, startResize, handleResizeKey, resetWidth } = useChangeTreeResize({
+  paneWidth: toRef(props, "width"),
+});
 
 const allChanges = computed<ChangeEntry[]>(() =>
   scopedChanges.value.map((change) => ({ ...change, language: codeLanguageForPath(change.path) })),
@@ -588,6 +614,35 @@ async function copyActiveDiff() {
   gap: 6px;
   font: 600 10px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+.change-tree-resize {
+  position: relative;
+  z-index: 3;
+  flex: none;
+  width: 7px;
+  min-width: 7px;
+  cursor: col-resize;
+  outline: none;
+  touch-action: none;
+}
+.change-tree-resize::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 18px);
+  left: 2px;
+  width: 3px;
+  height: 36px;
+  border-radius: 2px;
+  background: transparent;
+  transition:
+    background 100ms ease,
+    transform 100ms ease;
+}
+.change-tree-resize:hover::after,
+.change-tree-resize:focus-visible::after,
+.change-tree-resize.active::after {
+  background: color-mix(in srgb, var(--peek-accent) 68%, var(--peek-border));
+  transform: scaleY(1.15);
 }
 .change-tree {
   flex: none;

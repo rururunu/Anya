@@ -22,8 +22,8 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.22-4D6BFE?style=flat-square" />
-  <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.24-4D6BFE?style=flat-square" />
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
 
@@ -70,6 +70,8 @@ The workbench is the full desktop surface: Quick Ask threads from the overlay si
 | **Workspaces** | Bind chats to a project folder; pin, reorder, collapse, archive, restore, or open the folder directly.                  |
 | **Quick Ask**  | Temporary overlay sessions — continue, start new, or keep a long run here while you still summon the overlay elsewhere. |
 
+Long conversations open on their newest messages; scroll upward to load older history without transferring the entire transcript at once. Sidebar sections and workspaces start collapsed and remember which ones you expand.
+
 ### Review changes
 
 When Agent edits files, Anya shows a per-file summary and a focused Diff view.
@@ -80,6 +82,7 @@ When Agent edits files, Anya shows a per-file summary and a focused Diff view.
 
 - Task list and verification stay on the conversation timeline.
 - Open **Review** for side-by-side or unified diffs.
+- Large multi-file diffs render file bodies as they approach the viewport; change navigation still reaches files that have not rendered yet.
 - Undo covers changes Anya applied in the current session (checkpoints).
 
 ### Settings
@@ -91,6 +94,8 @@ Configure models, providers, agent behavior, Image generation, RAG search, and e
 </p>
 
 Common controls include provider and model protocol, disabled models, model-specific reasoning effort, vision / multimodal fallback, language, tool approval mode, Agent display density, context-window budget, **Image** providers/models, and **RAG Search** (API or local embeddings; off by default).
+
+Search finds settings categories as well as individual fields. The font picker lists installed system families. The model picker can show its last known list while provider discovery refreshes in the background.
 
 Reasoning controls follow the selected model's advertised family. DeepSeek exposes disabled / low / high / max; GPT, Grok, Claude, Qwen, Kimi, and other compatible families expose the levels their endpoint supports. Unsupported values are clamped before a request is sent.
 
@@ -118,6 +123,8 @@ Summoning outside an IDE starts a **Quick Ask** session — not bound to a works
 
 Need more room? Use **Open conversation in workbench** on the overlay to move that same session into the full desktop UI — progress, tools, and history continue there.
 
+After the first message, the overlay expands its native window before showing the conversation, keeping the input dock in place during the transition.
+
 ### IDE context plugins
 
 Companion plugins push active file, workspace, language, and selection to the local Anya app (best-effort; the editor keeps working if Anya is not running).
@@ -135,6 +142,8 @@ Companion plugins push active file, workspace, language, and selection to the lo
 2. Install Companion and scan (or paste host / token). Deep link: `anya://pair`.
 3. Same Wi-Fi uses `ws://PC:8787/remote/v1`. Away from home, Cloudflare Quick Tunnel `wss://`.
 4. Phone → desktop uses chunked upload. Desktop → phone: tap the offer card, then HTTP `/f/{id}` with Range (resumable). A new chat from the phone FAB stays unbound — it does not inherit the desktop workspace.
+
+The desktop gateway exposes session rename, workspace pin/edit, uncommitted workspace diff, and environment context to compatible Companion clients. History supports paging and a compact response that loads execution details on demand.
 
 ```mermaid
 flowchart LR
@@ -169,6 +178,8 @@ Ask withholds write / shell / git. Agent enables them under your approval policy
 ### Timeline
 
 Assistant turns interleave **reasoning**, **reply text**, and **tool activity** in chronological order — live and after reload. Long thinking no longer hides the work that happened mid-thought.
+
+Long tool output is folded inside an expanded activity and can be opened when needed.
 
 ### Integrations
 
@@ -303,7 +314,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.22_x64.msi`.
+The installer lands at `src-tauri/target/release/bundle/msi/Anya_0.2.24_x64.msi`.
 
 For signing, `latest.json`, and GitHub Releases, see [Releases and remote updates](./docs/release.md).
 
@@ -311,7 +322,7 @@ For signing, `latest.json`, and GitHub Releases, see [Releases and remote update
 
 ## License
 
-This repository is dedicated to the public domain under the [Unlicense](./LICENSE).
+This repository is licensed under the [MIT License](./LICENSE).
 
 ---
 

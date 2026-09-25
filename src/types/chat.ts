@@ -442,6 +442,17 @@ export interface ContextUsageResponse {
 
 export interface ChatHistoryRequest {
   sessionId?: string;
+  /**
+   * Page size in messages. Omitted (or 0) returns the whole transcript, which is
+   * what the Rust side did before paging existed.
+   */
+  limit?: number;
+  /**
+   * Exclusive cursor: return only messages older than this one. The Rust side
+   * resolves the id against the transcript, so equal timestamps cannot split a page.
+   */
+  beforeId?: string;
+  beforeTimestamp?: number;
 }
 
 export interface ChatHistoryResponse {
@@ -451,6 +462,11 @@ export interface ChatHistoryResponse {
   messageCacheUsages?: MessageCacheUsage[];
   messageCompletedAt?: Record<string, number>;
   consumedTokens?: number;
+  /** Older messages exist before the returned window. */
+  hasMore?: boolean;
+  /** Cursor for the next older page; the oldest message in this window. */
+  oldestId?: string;
+  oldestTimestamp?: number;
 }
 
 export interface ChatSessionSummary {

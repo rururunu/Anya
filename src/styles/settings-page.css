@@ -4,10 +4,10 @@
   box-sizing: border-box;
   container-type: inline-size;
   container-name: settings-page;
-  width: min(100%, 56rem);
+  width: min(100%, 64rem);
   min-width: 0;
   margin-inline: auto;
-  padding: var(--peek-space-5, 20px) clamp(14px, 3.2cqi, 28px) var(--peek-space-6, 24px);
+  padding: 28px clamp(20px, 3.2cqi, 44px) 48px;
   color: var(--peek-text);
 }
 
@@ -20,14 +20,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin: 0 0 20px;
+  margin: 0 0 26px;
   padding: 0;
 }
 
 .settings-page-header h2 {
   margin: 0;
   color: var(--peek-text);
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.25;
@@ -48,11 +48,11 @@
 }
 
 .settings-group {
-  margin: 0 0 var(--peek-space-5, 20px);
+  margin: 0 0 26px;
 }
 
 .settings-group-title {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   padding: 0 2px;
   color: var(--peek-text);
   font-size: 14px;
@@ -63,26 +63,10 @@
 
 .settings-card {
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: var(--peek-radius-lg, 12px);
+  border: 1px solid color-mix(in srgb, var(--peek-border) 55%, transparent);
+  border-radius: 14px;
   background: var(--peek-list-bg);
-}
-
-html.chrome-frosted-glass .settings-card {
-  background: color-mix(in srgb, var(--peek-surface) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--peek-border) 60%, transparent);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--peek-shadow, #000) 8%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-html.has-custom-bg .settings-card,
-.workbench.has-custom-bg .settings-card {
-  background: color-mix(in srgb, var(--peek-surface) 78%, transparent);
-  border: 1px solid color-mix(in srgb, var(--peek-border) 60%, transparent);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--peek-shadow, #000) 8%, transparent);
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  box-shadow: none;
 }
 
 html.chrome-frosted-glass .settings-row:hover,
@@ -93,11 +77,11 @@ html.has-custom-bg .settings-row:hover,
 
 .settings-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(8rem, min(22rem, 42%));
-  gap: clamp(10px, 2.4cqi, 16px);
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, min(22rem, 36%));
+  gap: clamp(16px, 2.4cqi, 24px);
   align-items: center;
-  padding: 14px 16px;
-  border-top: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
+  padding: 16px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 45%, transparent);
   transition: background-color var(--motion-fast, 110ms) ease;
 }
 
@@ -138,8 +122,8 @@ html.has-custom-bg .settings-row:hover,
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -152,7 +136,11 @@ html.has-custom-bg .settings-row:hover,
 .settings-help:hover,
 .settings-help:focus-visible {
   color: var(--peek-muted);
-  outline: none;
+}
+
+.settings-help:focus-visible {
+  outline: 2px solid var(--peek-accent);
+  outline-offset: 2px;
 }
 
 .settings-help-icon {

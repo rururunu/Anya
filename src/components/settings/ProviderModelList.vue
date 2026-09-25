@@ -22,10 +22,10 @@
           ref="modelDraftInputRef"
           v-model="modelDraft"
           :placeholder="t('settings.provider.modelsPlaceholder')"
-          class="h-8 min-w-0 flex-1 text-xs font-mono"
+          class="h-9 min-w-0 flex-1 text-sm font-mono"
           @keydown.enter.exact.prevent="onAdd"
         />
-        <Button type="button" size="sm" class="h-8 gap-1 shrink-0" @click="onAdd">
+        <Button type="button" size="sm" class="h-9 gap-1 shrink-0" @click="onAdd">
           <Plus class="size-3.5" />
           {{ t("settings.provider.addModel") }}
         </Button>
@@ -203,19 +203,19 @@ async function onAdd() {
 .field-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .field-row label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--peek-text);
 }
 
 .field-hint {
   margin: 0;
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--muted-foreground);
 }
 
@@ -238,7 +238,7 @@ async function onAdd() {
 
 .oauth-error {
   margin: 4px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--destructive, #ef4444);
   line-height: 1.4;
 }
@@ -246,7 +246,7 @@ async function onAdd() {
 .models-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .models-add-row {
@@ -262,7 +262,7 @@ async function onAdd() {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .model-item {
@@ -270,7 +270,7 @@ async function onAdd() {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 8px 6px 10px;
+  padding: 9px 10px 9px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--sidebar) 55%, transparent);
@@ -298,7 +298,7 @@ async function onAdd() {
   min-width: 0;
   flex: 1;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--foreground);
   overflow-wrap: anywhere;
 }
@@ -318,7 +318,7 @@ async function onAdd() {
 .model-protocol-select {
   width: 8.75rem;
   flex: none;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .model-remove {
@@ -348,7 +348,7 @@ async function onAdd() {
   padding: 10px;
   border: 1px dashed var(--border);
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
   color: var(--muted-foreground);
   text-align: center;

@@ -167,6 +167,8 @@ export interface CustomProviderConfig {
   id: string;
   name: string;
   baseUrl: string;
+  /** Official website used to resolve the provider icon. */
+  websiteUrl?: string;
   apiKey: string;
   /** Newline-separated model IDs (legacy comma-separated still accepted when loading). */
   models: string;

@@ -44,12 +44,36 @@ pub enum ClientMessage {
         #[serde(rename = "requestId")]
         request_id: String,
     },
+    /// Full history, or a window of it. `detail: "light"` drops the per-turn execution
+    /// process (reasoning / work timeline / tool activities); `limit` + `beforeMessageId`
+    /// page backwards through older turns. All three are optional so older companions keep
+    /// sending the two-field frame they always sent.
     #[serde(rename = "session.history")]
     SessionHistory {
         #[serde(rename = "requestId")]
         request_id: String,
         #[serde(rename = "sessionId")]
         session_id: String,
+        /// `"light"` (final answer only) or `"full"`; absent means full.
+        #[serde(rename = "detail", default)]
+        detail: Option<String>,
+        /// Maximum messages to return, counting back from the end (or from the cursor).
+        #[serde(rename = "limit", default)]
+        limit: Option<usize>,
+        /// Paging cursor: return only messages older than this one.
+        #[serde(rename = "beforeMessageId", default)]
+        before_message_id: Option<String>,
+    },
+    /// Full detail for individual messages (`session.messageDetail`). The companion asks for
+    /// a turn's execution process only when the user expands it.
+    #[serde(rename = "session.messageDetail")]
+    SessionMessageDetail {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "messageIds", default)]
+        message_ids: Vec<String>,
     },
     #[serde(rename = "session.delete")]
     SessionDelete {
@@ -67,6 +91,15 @@ pub enum ClientMessage {
         session_id: String,
         archived: bool,
     },
+    /// Rename a chat session (desktop `set_chat_session_title`).
+    #[serde(rename = "session.rename")]
+    SessionRename {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        title: String,
+    },
     /// List archived chat sessions (mirrors desktop `list_archived_chat_sessions`).
     #[serde(rename = "session.listArchived")]
     SessionListArchived {
@@ -82,9 +115,43 @@ pub enum ClientMessage {
         workspace_id: String,
         archived: bool,
     },
+    /// Pin or unpin a workspace (desktop `set_workspace_pinned`).
+    #[serde(rename = "workspace.pin")]
+    WorkspacePin {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "workspaceId")]
+        workspace_id: String,
+        pinned: bool,
+    },
+    /// Update workspace display name / description (desktop `update_workspace`).
+    #[serde(rename = "workspace.update")]
+    WorkspaceUpdate {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "workspaceId")]
+        workspace_id: String,
+        name: String,
+        #[serde(default)]
+        description: Option<String>,
+    },
+    /// Git working-tree unified diff for a workspace (desktop `working_tree_diff`).
+    #[serde(rename = "workspace.workingTreeDiff")]
+    WorkspaceWorkingTreeDiff {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "workspaceId", default)]
+        workspace_id: Option<String>,
+    },
     /// Archived workspaces (desktop `list_archived_workspaces`).
     #[serde(rename = "workspace.listArchived")]
     WorkspaceListArchived {
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
+    /// Live desktop environment / IDE / Office context (desktop `get_environment_context`).
+    #[serde(rename = "context.environment")]
+    ContextEnvironment {
         #[serde(rename = "requestId")]
         request_id: String,
     },

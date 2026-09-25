@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.22                                            |
+| **Version** | v0.2.24                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -276,15 +276,17 @@ sequenceDiagram
   D-->>P: 206 Partial Content
 ```
 
-| Topic           | Contract                                                                                                                              |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Path / port     | `/remote/v1` on **8787** (LAN `ws`, tunnel `wss`)                                                                                     |
-| Auth            | Short-lived QR token, then stored device credential                                                                                   |
-| Keep-alive      | Application `ping` / `pong` (proxies drop native WS pings)                                                                            |
-| Phone → desktop | Chunked `file.upload.*` (JSON+b64 **or** binary WS frames), out-of-order, 512KB, **500MB** cap                                        |
-| Desktop → phone | Offer card → `file.download.begin` → HTTP `/f/{id}` with `Range` (10 min ticket). Legacy: `workspace.readFile` `mode=download` slices |
-| Previews        | HTTP `/p/{id}/` reverse proxy on the same gateway (cookie / Referer fallback)                                                         |
-| Unbound phone   | FAB / `chat.send` without `workspaceId` is Quick Ask — **never** inherit the desktop workspace                                        |
+| Topic                 | Contract                                                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Path / port           | `/remote/v1` on **8787** (LAN `ws`, tunnel `wss`)                                                                                                                                                                         |
+| Auth                  | Short-lived QR token, then stored device credential                                                                                                                                                                       |
+| Keep-alive            | Application `ping` / `pong` (proxies drop native WS pings)                                                                                                                                                                |
+| Phone → desktop       | Chunked `file.upload.*` (JSON+b64 **or** binary WS frames), out-of-order, 512KB, **500MB** cap                                                                                                                            |
+| Desktop → phone       | Offer card → `file.download.begin` → HTTP `/f/{id}` with `Range` (10 min ticket). Legacy: `workspace.readFile` `mode=download` slices                                                                                     |
+| Previews              | HTTP `/p/{id}/` reverse proxy on the same gateway (cookie / Referer fallback)                                                                                                                                             |
+| Unbound phone         | FAB / `chat.send` without `workspaceId` is Quick Ask — **never** inherit the desktop workspace                                                                                                                            |
+| Companion ≥0.1.8 RPCs | `session.rename`, `workspace.pin` / `workspace.update`, `workspace.workingTreeDiff`, `context.environment` (desktop ≥ **0.2.24**)                                                                                         |
+| History RPCs          | `session.history` accepts `limit` and exclusive `beforeMessageId`; explicit `detail: "light"` omits execution bodies, which `session.messageDetail` fetches on demand. Omitted `detail` retains the full legacy response. |
 
 Phone-side diagrams: [Companion architecture](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.md).
 
@@ -366,9 +368,9 @@ sequenceDiagram
 | Overlay / Workbench layouts | `layouts/Overlay.vue`, `layouts/Main.vue`                      | Window shells; workbench embeds SettingsPage; nav in `composables/workbench/`                                                                                           |
 | Chat UI                     | `components/chat/*`                                            | Message list, timeline, tool cards, plan approval, composer (`ChatInputBar` + `input/*`)                                                                                |
 | Chat composables            | `composables/chat/`                                            | `wireChatIpc`, `useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`, `useMessage{Scroll,PreviewRail}`, `useConversationFind`, attachments, ask-user flow |
-| Chat store                  | `stores/chat.ts`, `stores/chatSessions.ts`                     | Pinia façade; session list/archive/title in `chatSessions`; compose/stream helpers in sibling modules                                                                   |
+| Chat store                  | `stores/chat.ts`, `stores/chatSessions.ts`                     | Pinia façade; session list/archive/title and history page cursors in `chatSessions`; compose/stream helpers in sibling modules                                          |
 | Workbench composables       | `composables/workbench/`                                       | `useWorkbenchNavigation`, `useNavigationSidebar`, sessions/workspaces/review lifecycle                                                                                  |
-| Other stores                | `stores/setting.ts`, `chatModel.ts`, `plugins.ts`              | Settings, model catalog, user plugins                                                                                                                                   |
+| Other stores                | `stores/setting.ts`, `chatModel.ts`, `plugins.ts`              | Settings, cached model catalog with background discovery, user plugins                                                                                                  |
 | Theme                       | `services/theme/`                                              | Catalog (light/dark), `ThemeService` apply path, `themes.css` tokens                                                                                                    |
 | Chat services               | `services/chat/`                                               | Image gen mode, local image src, save image, composer segments, token estimate                                                                                          |
 | IPC                         | `services/ipc/`                                                | Typed invoke + event subscription                                                                                                                                       |
@@ -840,6 +842,21 @@ Overlay and workbench share the conversation store; “open in workbench” reus
 the same `session_id`. Workspace ordering, pinning, collapsed state, and archive
 status are persisted separately from chat messages. Companion projects the same
 store over the gateway.
+
+The desktop `chat_history` IPC returns the newest window with `hasMore`,
+`oldestId`, and `oldestTimestamp`. `beforeId` anchors older pages even when
+messages share a timestamp; metadata associated with messages is scoped to the
+returned window. The full transcript remains in the Rust conversation store
+for the Agent. The frontend prepends older pages when the user scrolls upward
+and preserves the scroll anchor.
+
+`chatModel.ts` seeds the picker from `services/chat/modelListCache.ts` or
+configured model IDs, then refreshes provider discovery in the background.
+`services/settings/startupCache.ts` seeds composer model and reasoning controls
+before the settings IPC returns; persisted settings remain authoritative.
+Navigation expansion IDs live in browser storage through
+`composables/workbench/navigationCollapseState.ts`; unlisted sections and
+workspaces start collapsed.
 
 ---
 

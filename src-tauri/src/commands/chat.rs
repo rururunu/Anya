@@ -5,6 +5,7 @@ use crate::core::agent::AgentDebugEvent;
 use crate::core::ai::deepseek;
 use crate::core::chat::session_origin::RequestOrigin;
 use crate::core::chat::SendPreferences;
+use crate::core::runtime::ChatMessage;
 use crate::models::chat::{
     ChatCancelRequest, ChatHistoryRequest, ChatHistoryResponse, ChatModelInfo, ChatSendOverrides,
     ChatSendRequest, ChatSendResponse, ContextUsageRequest, ContextUsageResponse,
@@ -67,6 +68,40 @@ pub fn agent_debug_snapshot(state: State<'_, AppState>) -> Result<Vec<AgentDebug
     Ok(state.core.chat().agent_debug_snapshot())
 }
 
+/// Slice one page out of a transcript ordered by timestamp ascending.
+///
+/// `before_id` is resolved against the transcript first so equal timestamps
+/// cannot split or duplicate a page; `before_timestamp` is only the fallback
+/// for when that id is gone (rewound away, or a stale cursor from another
+/// window). `has_more` reports whether older messages remain.
+fn slice_history_page(
+    transcript: &[ChatMessage],
+    limit: Option<usize>,
+    before_timestamp: Option<i64>,
+    before_id: Option<&str>,
+) -> (Vec<ChatMessage>, bool) {
+    let total = transcript.len();
+    let cursor_end = before_id
+        .and_then(|id| transcript.iter().position(|message| message.id == id))
+        .or_else(|| {
+            before_timestamp.and_then(|timestamp| {
+                transcript
+                    .iter()
+                    .position(|message| message.timestamp as i64 >= timestamp)
+            })
+        })
+        .unwrap_or(total)
+        .min(total);
+    let window_start = match limit {
+        Some(limit) if limit > 0 => cursor_end.saturating_sub(limit),
+        _ => 0,
+    };
+    (
+        transcript[window_start..cursor_end].to_vec(),
+        window_start > 0,
+    )
+}
+
 #[tauri::command]
 pub async fn chat_history(
     state: State<'_, AppState>,
@@ -76,11 +111,34 @@ pub async fn chat_history(
         .session_id
         .unwrap_or_else(|| crate::core::runtime::DEFAULT_SESSION_ID.to_string());
 
-    let messages = state
+    // The transcript is held in memory in full and the model consumes every
+    // message, so nothing is trimmed here. What grows without bound as a
+    // conversation ages is the IPC payload, so the page is sliced at this
+    // boundary instead.
+    let transcript = state
         .core
         .chat()
         .history(&session_id)
         .map_err(|error| error.to_string())?;
+
+    let (messages, has_more) = slice_history_page(
+        &transcript,
+        request.limit,
+        request.before_timestamp,
+        request.before_id.as_deref(),
+    );
+    let oldest_timestamp = messages
+        .first()
+        .map(|message| message.timestamp as i64);
+    let oldest_id = messages.first().map(|message| message.id.clone());
+
+    // Per-message side tables follow the same window, otherwise they would
+    // restore the very payload growth this paging exists to avoid.
+    let window_ids: std::collections::HashSet<String> = messages
+        .iter()
+        .map(|message| message.id.clone())
+        .collect();
+
     let last_cache_usage = crate::core::chat::db::load_session_cache_usage(
         &state.core.chat().conversation().db_pool(),
         &session_id,
@@ -92,13 +150,19 @@ pub async fn chat_history(
         &session_id,
     )
     .await
-    .unwrap_or_default();
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|usage| window_ids.contains(&usage.message_id))
+    .collect();
     let message_completed_at = crate::core::chat::db::load_message_completed_at(
         &state.core.chat().conversation().db_pool(),
         &session_id,
     )
     .await
-    .unwrap_or_default();
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|(message_id, _)| window_ids.contains(message_id))
+    .collect();
     let consumed_tokens = state.core.chat().conversation().consumed_tokens(&session_id);
 
     Ok(ChatHistoryResponse {
@@ -108,6 +172,9 @@ pub async fn chat_history(
         message_cache_usages,
         message_completed_at,
         consumed_tokens,
+        has_more,
+        oldest_timestamp,
+        oldest_id,
     })
 }
 
@@ -244,56 +311,15 @@ pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, Stri
         }
     }
 
-    for custom in &settings.custom_providers {
-        let base = custom.base_url.trim();
-        let key = custom.api_key.trim();
-        if base.is_empty() {
-            continue;
-        }
-
-        let is_disabled =
-            |id: &str| crate::core::ai::registry::provider_model_is_disabled(custom, id);
-
-        let mut remote_ok = false;
-        if !key.is_empty() {
-            let models_url = deepseek::normalize_models_url(base);
-            match deepseek::list_openai_compatible_models(
-                &models_url,
-                key,
-                &custom.id,
-                Some(&custom.name),
-            )
-            .await
-            {
-                Ok(models) if !models.is_empty() => {
-                    all_models.extend(models.into_iter().filter(|m| !is_disabled(&m.id)));
-                    remote_ok = true;
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    eprintln!("custom provider {} list_models error: {error}", custom.name);
-                }
-            }
-        }
-
-        // Keep manually configured models when remote listing is unavailable.
-        if !remote_ok && !custom.models.trim().is_empty() {
-            let custom_models: Vec<ChatModelInfo> = custom
-                .models
-                .split([',', '\n'])
-                .map(str::trim)
-                .filter(|s| !s.is_empty() && !is_disabled(s))
-                .map(|id| ChatModelInfo {
-                    id: id.to_string(),
-                    owned_by: custom.name.clone(),
-                    provider: custom.id.clone(),
-                    display_name: None,
-                    thinking_variants: None,
-                    reasoning: None,
-                })
-                .collect();
-            all_models.extend(custom_models);
-        }
+    // Provider discovery is network-bound: query every provider concurrently
+    // instead of paying one round trip after another. `join_all` preserves the
+    // configured order, so the picker still lists providers the same way.
+    let discoveries = settings
+        .custom_providers
+        .iter()
+        .map(discover_custom_provider_models);
+    for models in futures_util::future::join_all(discoveries).await {
+        all_models.extend(models);
     }
 
     if all_models.is_empty() && !settings.deepseek_api_key.trim().is_empty() {
@@ -303,6 +329,57 @@ pub async fn list_chat_models(app: AppHandle) -> Result<Vec<ChatModelInfo>, Stri
     }
 
     Ok(all_models)
+}
+
+/// Discover one custom provider's model list: the provider's `/models` first,
+/// falling back to the IDs configured by hand in Settings when it does not
+/// answer (or has no key).
+async fn discover_custom_provider_models(
+    custom: &crate::models::settings::CustomProviderConfig,
+) -> Vec<ChatModelInfo> {
+    let base = custom.base_url.trim();
+    if base.is_empty() {
+        return Vec::new();
+    }
+
+    let is_disabled = |id: &str| crate::core::ai::registry::provider_model_is_disabled(custom, id);
+
+    if !custom.api_key.trim().is_empty() {
+        let models_url = deepseek::normalize_models_url(base);
+        match deepseek::list_openai_compatible_models(
+            &models_url,
+            custom.api_key.trim(),
+            &custom.id,
+            Some(&custom.name),
+        )
+        .await
+        {
+            // The provider answered: trust its list even when every entry is
+            // switched off, matching the previous sequential behaviour.
+            Ok(models) if !models.is_empty() => {
+                return models.into_iter().filter(|m| !is_disabled(&m.id)).collect();
+            }
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("custom provider {} list_models error: {error}", custom.name);
+            }
+        }
+    }
+
+    custom
+        .models
+        .split([',', '\n'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !is_disabled(s))
+        .map(|id| ChatModelInfo {
+            id: id.to_string(),
+            owned_by: custom.name.clone(),
+            provider: custom.id.clone(),
+            display_name: None,
+            thinking_variants: None,
+            reasoning: None,
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -461,6 +538,99 @@ fn environment_context_from_source(
 pub fn clear_all_chat_sessions(state: State<'_, AppState>) -> Result<(), String> {
     state.core.chat().conversation().clear_all_sessions();
     Ok(())
+}
+
+#[cfg(test)]
+mod history_paging_tests {
+    use super::*;
+    use crate::core::runtime::{MessageStatus, Role};
+
+    fn message(id: &str, timestamp: u64) -> ChatMessage {
+        ChatMessage {
+            id: id.to_string(),
+            session_id: "session-1".to_string(),
+            role: Role::User,
+            content: id.to_string(),
+            reasoning: None,
+            work_timeline: None,
+            tool_activities: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            status: MessageStatus::Done,
+            timestamp,
+            estimated_tokens: None,
+        }
+    }
+
+    fn transcript(count: usize) -> Vec<ChatMessage> {
+        (0..count)
+            .map(|index| message(&format!("m{index}"), index as u64))
+            .collect()
+    }
+
+    fn ids(page: &[ChatMessage]) -> Vec<&str> {
+        page.iter().map(|message| message.id.as_str()).collect()
+    }
+
+    #[test]
+    fn no_limit_returns_the_whole_transcript() {
+        let all = transcript(5);
+
+        let (page, has_more) = slice_history_page(&all, None, None, None);
+
+        assert_eq!(ids(&page), vec!["m0", "m1", "m2", "m3", "m4"]);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn limit_returns_the_newest_window() {
+        let all = transcript(5);
+
+        let (page, has_more) = slice_history_page(&all, Some(2), None, None);
+
+        assert_eq!(ids(&page), vec!["m3", "m4"]);
+        assert!(has_more);
+    }
+
+    #[test]
+    fn cursor_walks_backwards_without_gaps_or_repeats() {
+        let all = transcript(5);
+
+        let (newest, more_newest) = slice_history_page(&all, Some(2), None, None);
+        let (middle, more_middle) = slice_history_page(&all, Some(2), Some(3), Some("m3"));
+        let (oldest, more_oldest) = slice_history_page(&all, Some(2), Some(1), Some("m1"));
+
+        assert_eq!(ids(&newest), vec!["m3", "m4"]);
+        assert_eq!(ids(&middle), vec!["m1", "m2"]);
+        assert_eq!(ids(&oldest), vec!["m0"]);
+        assert!(more_newest && more_middle);
+        assert!(!more_oldest);
+    }
+
+    #[test]
+    fn equal_timestamps_do_not_split_or_repeat_a_page() {
+        // Every row shares a timestamp, so only the id anchor can page safely.
+        let all: Vec<ChatMessage> = (0..4).map(|i| message(&format!("m{i}"), 7)).collect();
+
+        let (newest, more_newest) = slice_history_page(&all, Some(2), None, None);
+        let (oldest, more_oldest) = slice_history_page(&all, Some(2), Some(7), Some("m2"));
+
+        assert_eq!(ids(&newest), vec!["m2", "m3"]);
+        assert!(more_newest);
+        assert_eq!(ids(&oldest), vec!["m0", "m1"]);
+        assert!(!more_oldest);
+    }
+
+    #[test]
+    fn unknown_cursor_id_falls_back_to_timestamp() {
+        let all = transcript(5);
+
+        let (page, has_more) = slice_history_page(&all, Some(2), Some(3), Some("rewound-away"));
+
+        assert_eq!(ids(&page), vec!["m1", "m2"]);
+        assert!(has_more);
+    }
 }
 
 #[cfg(test)]

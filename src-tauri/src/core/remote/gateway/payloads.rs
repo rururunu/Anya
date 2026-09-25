@@ -82,7 +82,14 @@ fn remote_provider_meta(
                 _ => None,
             }),
         favicon_url: custom
-            .and_then(|item| favicon_url_for_base(&item.base_url))
+            .and_then(|item| {
+                favicon_url_for_base(
+                    item.website_url
+                        .as_deref()
+                        .filter(|url| !url.trim().is_empty())
+                        .unwrap_or(&item.base_url),
+                )
+            })
             .filter(|_| provider_id != "deepseek"),
     }
 }
@@ -210,7 +217,34 @@ pub(super) fn image_gen_options_payload(
     })
 }
 
-pub(super) async fn session_history(app: &AppHandle, session_id: &str) -> serde_json::Value {
+/// Whether a history payload carries each turn's execution process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum HistoryDetail {
+    /// Final answer and summary chips only; the execution process is fetched on expand.
+    Light,
+    /// Everything the desktop renders.
+    Full,
+}
+
+impl HistoryDetail {
+    /// Only an explicit `"light"` slims the payload; absent or unknown values stay full, so a
+    /// companion that predates this field keeps receiving exactly what it used to.
+    fn parse(raw: Option<&str>) -> Self {
+        match raw.map(str::trim) {
+            Some(value) if value.eq_ignore_ascii_case("light") => Self::Light,
+            _ => Self::Full,
+        }
+    }
+}
+
+pub(super) async fn session_history(
+    app: &AppHandle,
+    session_id: &str,
+    detail: Option<&str>,
+    limit: Option<usize>,
+    before_message_id: Option<&str>,
+) -> serde_json::Value {
+    let detail = HistoryDetail::parse(detail);
     let Some(state) = app.try_state::<AppState>() else {
         return json!({ "sessionId": session_id, "messages": [] });
     };
@@ -254,7 +288,7 @@ pub(super) async fn session_history(app: &AppHandle, session_id: &str) -> serde_
         .collect();
     match state.core.chat().history(session_id) {
         Ok(messages) => {
-            let mapped: Vec<serde_json::Value> = messages
+            let mut visible: Vec<crate::core::runtime::ChatMessage> = messages
                 .into_iter()
                 .filter(|message| {
                     !matches!(
@@ -262,14 +296,33 @@ pub(super) async fn session_history(app: &AppHandle, session_id: &str) -> serde_
                         crate::core::runtime::Role::Tool | crate::core::runtime::Role::System
                     )
                 })
+                .collect();
+            // Paging: `beforeMessageId` is an exclusive cursor and `limit` counts back from it,
+            // so the companion walks backwards one page at a time.
+            if let Some(cursor) = before_message_id {
+                if let Some(index) = visible.iter().position(|message| message.id == cursor) {
+                    visible.truncate(index);
+                }
+            }
+            let mut has_more = false;
+            if let Some(limit) = limit {
+                if visible.len() > limit {
+                    let start = visible.len() - limit;
+                    has_more = start > 0;
+                    visible.drain(..start);
+                }
+            }
+            let mapped: Vec<serde_json::Value> = visible
+                .into_iter()
                 .map(|message| {
                     let completed = completed_at.get(&message.id).copied();
-                    remote_chat_message(message, completed)
+                    remote_chat_message(message, completed, detail)
                 })
                 .collect();
             json!({
                 "sessionId": session_id,
                 "messages": mapped,
+                "hasMore": has_more,
                 "planModeActive": crate::core::tools::plan_mode::shared_plan_mode_store()
                     .is_active(session_id),
                 "messageCacheUsages": cache_usages,
@@ -290,8 +343,10 @@ pub(super) async fn session_history(app: &AppHandle, session_id: &str) -> serde_
 fn remote_chat_message(
     message: crate::core::runtime::ChatMessage,
     completed_at: Option<u64>,
+    detail: HistoryDetail,
 ) -> serde_json::Value {
     use crate::core::runtime::{MessageStatus, Role};
+    let light = matches!(detail, HistoryDetail::Light);
     let role = match message.role {
         Role::User => "User",
         Role::Assistant => "Assistant",
@@ -307,47 +362,65 @@ fn remote_chat_message(
     };
     let code_changes = extract_code_changes(&message);
     let plan_tasks = extract_plan_tasks(&message);
-    let tool_activities = message
+    let step_count = message
         .tool_activities
         .as_ref()
-        .map(|activities| {
-            activities
-                .iter()
-                .map(|activity| {
-                    json!({
-                        "id": activity.id,
-                        "subagentId": activity.subagent_id,
-                        "parentActivityId": activity.parent_activity_id,
-                        "toolName": activity.tool_name,
-                        "title": activity.title,
-                        "kind": activity.kind,
-                        "detail": activity.detail,
-                        "arguments": activity.arguments,
-                        "result": activity.result,
-                        "preview": activity.preview.as_ref().map(|preview| json!({
-                            "path": preview.path,
-                            "unifiedDiff": preview.unified_diff,
-                            "affectedPaths": preview.affected_paths,
-                        })),
-                        "success": activity.success,
-                        "status": activity.status,
+        .map(|activities| activities.len())
+        .unwrap_or(0);
+    // A light payload still carries the final answer and the summary chips, but leaves the
+    // execution process to an explicit `session.messageDetail` fetch.
+    let detail_omitted = light && (step_count > 0 || message.reasoning.is_some());
+    let tool_activities = if light {
+        Vec::new()
+    } else {
+        message
+            .tool_activities
+            .as_ref()
+            .map(|activities| {
+                activities
+                    .iter()
+                    .map(|activity| {
+                        json!({
+                            "id": activity.id,
+                            "subagentId": activity.subagent_id,
+                            "parentActivityId": activity.parent_activity_id,
+                            "toolName": activity.tool_name,
+                            "title": activity.title,
+                            "kind": activity.kind,
+                            "detail": activity.detail,
+                            "arguments": activity.arguments,
+                            "result": activity.result,
+                            "preview": activity.preview.as_ref().map(|preview| json!({
+                                "path": preview.path,
+                                "unifiedDiff": preview.unified_diff,
+                                "affectedPaths": preview.affected_paths,
+                            })),
+                            "success": activity.success,
+                            "status": activity.status,
+                        })
                     })
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
     // Same wire shape as the desktop store: `{type, id, content | toolActivityId}`.
-    let work_timeline = message
-        .work_timeline
-        .as_ref()
-        .map(|items| serde_json::to_value(items).unwrap_or(serde_json::Value::Array(Vec::new())))
-        .unwrap_or(serde_json::Value::Array(Vec::new()));
+    let work_timeline = if light {
+        serde_json::Value::Array(Vec::new())
+    } else {
+        message
+            .work_timeline
+            .as_ref()
+            .map(|items| {
+                serde_json::to_value(items).unwrap_or(serde_json::Value::Array(Vec::new()))
+            })
+            .unwrap_or(serde_json::Value::Array(Vec::new()))
+    };
     json!({
         "id": message.id,
         "sessionId": message.session_id,
         "role": role,
         "content": message.content,
-        "reasoning": message.reasoning,
+        "reasoning": if light { None } else { message.reasoning },
         "status": status,
         "createdAtEpochMs": message.timestamp,
         "completedAtEpochMs": completed_at,
@@ -356,7 +429,45 @@ fn remote_chat_message(
         "planTasks": plan_tasks,
         "toolActivities": tool_activities,
         "workTimeline": work_timeline,
+        "detailOmitted": detail_omitted,
+        "stepCount": step_count,
     })
+}
+
+/// Full detail for the requested messages, in the same shape as `session.history` entries.
+///
+/// The companion asks for a turn's execution process only when the user expands it, which keeps
+/// the initial history payload small.
+pub(super) async fn session_message_detail(
+    app: &AppHandle,
+    session_id: &str,
+    message_ids: &[String],
+) -> serde_json::Value {
+    let Some(state) = app.try_state::<AppState>() else {
+        return json!({ "sessionId": session_id, "messages": [] });
+    };
+    let completed_at = crate::core::chat::db::load_message_completed_at(
+        &state.core.chat().conversation().db_pool(),
+        session_id,
+    )
+    .await
+    .unwrap_or_default();
+    let wanted: std::collections::HashSet<&str> =
+        message_ids.iter().map(String::as_str).collect();
+    match state.core.chat().history(session_id) {
+        Ok(messages) => {
+            let mapped: Vec<serde_json::Value> = messages
+                .into_iter()
+                .filter(|message| wanted.contains(message.id.as_str()))
+                .map(|message| {
+                    let completed = completed_at.get(&message.id).copied();
+                    remote_chat_message(message, completed, HistoryDetail::Full)
+                })
+                .collect();
+            json!({ "sessionId": session_id, "messages": mapped })
+        }
+        Err(_) => json!({ "sessionId": session_id, "messages": [] }),
+    }
 }
 
 fn extract_code_changes(message: &crate::core::runtime::ChatMessage) -> Vec<serde_json::Value> {

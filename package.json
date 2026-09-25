@@ -1,7 +1,8 @@
 {
   "name": "Anya",
   "private": true,
-  "version": "0.2.22",
+  "version": "0.2.24",
+  "license": "MIT",
   "description": "Hand your work & questions to Anya anytime.",
   "type": "module",
   "scripts": {

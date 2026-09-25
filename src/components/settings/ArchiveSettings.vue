@@ -1,7 +1,7 @@
 <template>
   <AppConfirmDialog ref="confirmDialogRef" />
   <section class="settings-page is-wide archive-page">
-    <SettingsPageHeader :title="copy.title" :description="copy.description">
+    <SettingsPageHeader :title="copy.title">
       <template #actions>
         <Button
           variant="ghost"

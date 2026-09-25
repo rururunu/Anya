@@ -431,7 +431,9 @@ import {
 import type { AttachedFileChip } from "@/services/chat/attachFiles";
 
 // Lazy: keeps Markdown/echarts out of the Alt+Alt input-mode boot path.
-const MessageList = defineAsyncComponent(() => import("@/components/chat/MessageList.vue"));
+const loadMessageList = () => import("@/components/chat/MessageList.vue");
+const MessageList = defineAsyncComponent(loadMessageList);
+let messageListWarmup: ReturnType<typeof setTimeout> | undefined;
 
 const props = defineProps<{
   mode: "input" | "chat";
@@ -880,33 +882,33 @@ function handleLayoutChange(payload: {
   emitComposerLayout();
 }
 
-/** Re-measure after picker transitions paint so the native window includes the list. */
+/** Measure the final layout once; picker animation only changes opacity/transform. */
 let dockMeasureScheduled = false;
+let dockMeasureFrame = 0;
 function scheduleDockHeightMeasure() {
   if (dockMeasureScheduled) return;
   dockMeasureScheduled = true;
   void nextTick(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        dockMeasureScheduled = false;
-        const dock = dockRef.value;
-        if (!dock) {
-          emitComposerLayout();
-          return;
-        }
-        const dockHeight = Math.ceil(dock.getBoundingClientRect().height);
-        if (dockHeight > 0) {
-          composerLayout.value = {
-            ...composerLayout.value,
-            dockMeasured: true,
-            pickerHeight: 0,
-            hasImages: false,
-            hasFiles: false,
-            inputBarHeight: dockHeight,
-          };
-        }
+    dockMeasureFrame = requestAnimationFrame(() => {
+      dockMeasureFrame = 0;
+      dockMeasureScheduled = false;
+      const dock = dockRef.value;
+      if (!dock) {
         emitComposerLayout();
-      });
+        return;
+      }
+      const dockHeight = Math.ceil(dock.offsetHeight);
+      if (dockHeight > 0) {
+        composerLayout.value = {
+          ...composerLayout.value,
+          dockMeasured: true,
+          pickerHeight: 0,
+          hasImages: false,
+          hasFiles: false,
+          inputBarHeight: dockHeight,
+        };
+      }
+      emitComposerLayout();
     });
   });
 }
@@ -970,25 +972,14 @@ function resolveOverlaySendOptions(): { workspaceId?: string; quickAsk?: boolean
   return { quickAsk: true };
 }
 
+let focusRevision = 0;
 async function scheduleOverlayInputFocus() {
-  const window = getCurrentWebviewWindow();
-  const attempt = async () => {
-    await nextTick();
-    try {
-      await window.setFocus();
-    } catch {
-      // ignore focus errors during reveal
-    }
-    void inputRef.value?.focusInput();
-  };
-  await attempt();
-  requestAnimationFrame(() => {
-    void attempt();
-    requestAnimationFrame(() => {
-      void attempt();
-      globalThis.setTimeout(() => void attempt(), 80);
-    });
-  });
+  const revision = ++focusRevision;
+  await nextTick();
+  if (revision !== focusRevision || !panelVisible.value) return;
+  // Rust focuses the native window before overlay-shown. Focus the editor once;
+  // delayed native retries can steal focus back from a picker or another app.
+  void inputRef.value?.focusInput();
 }
 
 function handleShowContext(context: CapturedContext) {
@@ -1363,17 +1354,14 @@ watch(
   },
 );
 
-watch(panelVisible, async (visible) => {
-  // Keep the dock fully painted. Native cloak/show owns window visibility;
-  // opacity hide/reveal here flashes on every Alt+Alt summon.
-  if (!visible) {
-    return;
-  }
-  await nextTick();
-  void scheduleOverlayInputFocus();
-});
-
 onMounted(async () => {
+  // Warm the transcript after the input surface is usable, not during the
+  // first send/resize. Module loading is cached; the transcript stays unmounted.
+  messageListWarmup = setTimeout(() => {
+    void loadMessageList().catch(() => {
+      /* The async component can retry on open. */
+    });
+  }, 500);
   const window = getCurrentWebviewWindow();
   isAlwaysOnTop.value = await window.isAlwaysOnTop().catch(() => true);
   // Ensure dock is visible even if a prior session left inline styles behind.
@@ -1464,6 +1452,7 @@ onMounted(async () => {
   });
 
   await window.listen("overlay-hidden", () => {
+    ++focusRevision;
     clearMinimizePreview();
     panelVisible.value = false;
     inputRef.value?.reset();
@@ -1501,8 +1490,6 @@ onMounted(async () => {
     panelVisible.value = true;
     // 动态新建窗口时，overlay-shown 在 Vue 挂载前就发出了，
     // 这里补做相同的初始化：聚焦输入框（背景已由 Rust configure 处理）
-    void scheduleOverlayInputFocus();
-  } else {
     void scheduleOverlayInputFocus();
   }
 
@@ -1549,6 +1536,9 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  clearTimeout(messageListWarmup);
+  ++focusRevision;
+  cancelAnimationFrame(dockMeasureFrame);
   void setWindowSessionView();
   clearMinimizePreview();
   stopDiffSidebarResize();
@@ -1787,6 +1777,7 @@ onUnmounted(() => {
 }
 
 .thread-panel {
+  animation: thread-reveal 160ms cubic-bezier(0.2, 0.72, 0.25, 1);
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -1802,6 +1793,23 @@ onUnmounted(() => {
   z-index: 1;
   isolation: isolate;
   box-shadow: inset 0 1px 0 var(--peek-panel-highlight);
+}
+
+@keyframes thread-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-panel {
+    animation: none;
+  }
 }
 
 .thread-panel.glass {

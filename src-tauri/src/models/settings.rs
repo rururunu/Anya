@@ -261,6 +261,8 @@ pub struct CustomProviderConfig {
     pub id: String,
     pub name: String,
     pub base_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub website_url: Option<String>,
     pub api_key: String,
     /// Comma-separated or newline-separated model IDs (stored as raw text).
     pub models: String,
@@ -419,13 +421,13 @@ pub struct AppSettings {
     /// Frosted-glass titlebar and sidebars on the workbench.
     #[serde(default)]
     pub chrome_frosted_glass: bool,
-    /// Chinese UI font family. Empty = Microsoft YaHei stack.
+    /// Chinese UI font family. Empty = PingFang SC stack.
     #[serde(default)]
     pub font_cjk: String,
     /// Latin UI font family. Empty = system UI stack.
     #[serde(default)]
     pub font_latin: String,
-    /// Monospace / code font family. Empty = Cascadia Code stack.
+    /// Monospace / code font family. Empty = Fira Code stack.
     #[serde(default)]
     pub font_mono: String,
     #[serde(default = "default_chat_model")]
@@ -1202,6 +1204,7 @@ mod tests {
             id: "go".into(),
             name: "Go".into(),
             base_url: "https://example/v1".into(),
+            website_url: None,
             api_key: "sk".into(),
             models: "minimax-m3".into(),
             disabled_models: String::new(),
@@ -1211,6 +1214,10 @@ mod tests {
         };
         let empty = serde_json::to_value(&provider).expect("serialize");
         assert!(empty.get("modelProtocols").is_none());
+        assert!(empty.get("websiteUrl").is_none());
+        let legacy: super::CustomProviderConfig =
+            serde_json::from_value(empty).expect("deserialize old provider");
+        assert_eq!(legacy.website_url, None);
 
         provider.model_protocols.insert(
             "minimax-m3".into(),
@@ -1218,8 +1225,12 @@ mod tests {
         );
         let json = serde_json::to_value(&provider).expect("serialize");
         assert_eq!(json["modelProtocols"]["minimax-m3"], "anthropicMessages");
+        provider.website_url = Some("https://commandcode.ai/".into());
+        let json = serde_json::to_value(&provider).expect("serialize with website");
+        assert_eq!(json["websiteUrl"], "https://commandcode.ai/");
         let restored: super::CustomProviderConfig =
             serde_json::from_value(json).expect("deserialize");
+        assert_eq!(restored.website_url.as_deref(), Some("https://commandcode.ai/"));
         assert_eq!(
             restored.model_protocols.get("minimax-m3"),
             Some(&super::ModelWireProtocol::AnthropicMessages)

@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from "vue";
+import { computed, ref, watch, type Ref } from "vue";
 
 import type { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -17,6 +17,10 @@ import {
 } from "@/commands/workspace";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import type { ChatSessionSummary } from "@/types/chat";
+import {
+  persistExpandedNavigationState,
+  readExpandedNavigationState,
+} from "./navigationCollapseState";
 import type { WorkspaceDropPosition, SessionPointerDrag, WorkspacePointerDrag } from "./types";
 import type { WorkbenchLabels } from "./useWorkbenchLabels";
 
@@ -53,8 +57,11 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     moveSessionToWorkspace,
   } = options;
 
-  const collapsedWorkspaceIds = ref(new Set<string>());
-  const collapsedNavigationSections = ref(new Set<string>());
+  // Stored as *expanded* ids: anything absent stays collapsed, so the sidebar
+  // opens fully collapsed and new workspaces/sections default to collapsed too.
+  const storedExpandedIds = readExpandedNavigationState();
+  const expandedWorkspaceIds = ref(new Set(storedExpandedIds.workspaces));
+  const expandedNavigationSections = ref(new Set(storedExpandedIds.sections));
   const workspaceMenuId = options.workspaceMenuId ?? ref("");
   const draggedWorkspaceId = ref("");
   const dragOverWorkspaceId = ref("");
@@ -82,18 +89,46 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     { id: "workspaces", label: navigationLabels.value.workspaces, items: regularWorkspaces.value },
   ]);
 
+  // Rendered by the sidebar itself rather than through workspaceNavigationSections.
+  const QUICK_ASK_SECTION_ID = "quick";
+
+  const collapsedNavigationSections = computed(() => {
+    const expanded = expandedNavigationSections.value;
+    const ids = [
+      ...workspaceNavigationSections.value.map((section) => section.id),
+      QUICK_ASK_SECTION_ID,
+    ];
+    return new Set(ids.filter((id) => !expanded.has(id)));
+  });
+
+  const collapsedWorkspaceIds = computed(() => {
+    const expanded = expandedWorkspaceIds.value;
+    return new Set(
+      workspaces.value.map((workspace) => workspace.id).filter((id) => !expanded.has(id)),
+    );
+  });
+
+  function persistExpandedCollapseState() {
+    persistExpandedNavigationState({
+      sections: expandedNavigationSections.value,
+      workspaces: expandedWorkspaceIds.value,
+    });
+  }
+
   function toggleNavigationSection(id: string) {
-    const next = new Set(collapsedNavigationSections.value);
+    const next = new Set(expandedNavigationSections.value);
     if (next.has(id)) next.delete(id);
     else next.add(id);
-    collapsedNavigationSections.value = next;
+    expandedNavigationSections.value = next;
+    persistExpandedCollapseState();
   }
 
   function toggleWorkspaceGroup(id: string) {
-    const next = new Set(collapsedWorkspaceIds.value);
+    const next = new Set(expandedWorkspaceIds.value);
     if (next.has(id)) next.delete(id);
     else next.add(id);
-    collapsedWorkspaceIds.value = next;
+    expandedWorkspaceIds.value = next;
+    persistExpandedCollapseState();
   }
 
   function toggleWorkspaceMenu(id: string) {
@@ -129,10 +164,11 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
   }
 
   function expandWorkspaceGroup(id: string) {
-    if (!collapsedWorkspaceIds.value.has(id)) return;
-    const next = new Set(collapsedWorkspaceIds.value);
-    next.delete(id);
-    collapsedWorkspaceIds.value = next;
+    if (expandedWorkspaceIds.value.has(id)) return;
+    const next = new Set(expandedWorkspaceIds.value);
+    next.add(id);
+    expandedWorkspaceIds.value = next;
+    persistExpandedCollapseState();
   }
 
   function startWorkspacePointerDrag(event: PointerEvent, workspace: Workspace) {
@@ -319,7 +355,8 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
     const target = workspaces.value[targetIndex];
     if (!source || !target || source.pinned !== target.pinned) return;
 
-    const next = workspaces.value.filter((workspace) => workspace.id !== sourceId);
+    const previous = workspaces.value;
+    const next = previous.filter((workspace) => workspace.id !== sourceId);
     const adjustedTargetIndex = next.findIndex((workspace) => workspace.id === targetId);
     const insertionIndex = adjustedTargetIndex + (dropPosition === "after" ? 1 : 0);
     next.splice(insertionIndex, 0, source);
@@ -328,9 +365,56 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
       await reorderWorkspaces(next.map((workspace) => workspace.id));
     } catch (error) {
       console.error("reorder workspaces failed:", error);
-      workspaces.value = await listWorkspaces();
+      // Roll back to the order that was on screen. Adopting the refetch
+      // unconditionally used to replace the whole list with whatever
+      // listWorkspaces() returned, so a failed reorder emptied the sidebar
+      // until the app was restarted.
+      workspaces.value = previous;
+      try {
+        const refreshed = await listWorkspaces();
+        if (refreshed.length > 0 || previous.length === 0) workspaces.value = refreshed;
+      } catch (refreshError) {
+        console.error("refreshing workspaces after a failed reorder failed:", refreshError);
+      }
     }
   }
+
+  /**
+   * Move a workspace to the front of its own group (pinned / regular) and persist
+   * the order, so the list reflects what was used last while dragging still
+   * works: a drop rewrites the very same order.
+   */
+  async function promoteWorkspaceToFront(workspaceId: string) {
+    const list = workspaces.value;
+    const workspace = list.find((item) => item.id === workspaceId);
+    if (!workspace) return;
+    const groupStart = list.findIndex((item) => item.pinned === workspace.pinned);
+    if (groupStart < 0 || list[groupStart]?.id === workspaceId) return;
+
+    const previous = list;
+    const next = list.filter((item) => item.id !== workspaceId);
+    const insertAt = next.findIndex((item) => item.pinned === workspace.pinned);
+    next.splice(insertAt < 0 ? next.length : insertAt, 0, workspace);
+    workspaces.value = next;
+    try {
+      await reorderWorkspaces(next.map((item) => item.id));
+    } catch (error) {
+      console.error("promote workspace to front failed:", error);
+      workspaces.value = previous;
+    }
+  }
+
+  // Launch restores the last session, which is not a fresh "use" — promoting on
+  // that first value would silently undo a deliberate drag order on every start.
+  let sawInitialWorkspace = false;
+  watch(activeSessionWorkspaceId, (workspaceId) => {
+    if (!workspaceId) return;
+    if (!sawInitialWorkspace) {
+      sawInitialWorkspace = true;
+      return;
+    }
+    void promoteWorkspaceToFront(workspaceId);
+  });
 
   async function toggleWorkspacePinned(workspace: Workspace) {
     workspaceMenuId.value = "";
@@ -359,6 +443,9 @@ export function useWorkbenchWorkspaces(options: UseWorkbenchWorkspacesOptions) {
 
   async function createWorkspaceConversation(workspace: Workspace) {
     await switchWorkspace(workspace.id);
+    // Starting a conversation here counts as using the workspace, and the
+    // watcher may still be consuming its one startup skip.
+    void promoteWorkspaceToFront(workspace.id);
     createConversation(workspace.id);
     await refreshSessions();
   }

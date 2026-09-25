@@ -4,11 +4,14 @@ import {
   pastedTextFilename,
   shouldAttachPasteAsFile,
   shouldFoldSoftInject,
+  shouldFoldToolBody,
   shouldFoldUserMessage,
   PASTE_AS_FILE_MIN_CHARS,
   PASTE_AS_FILE_MIN_LINES,
   SOFT_INJECT_FOLD_MIN_CHARS,
   SOFT_INJECT_FOLD_MIN_LINES,
+  TOOL_BODY_FOLD_MIN_CHARS,
+  TOOL_BODY_FOLD_MIN_LINES,
   USER_MESSAGE_FOLD_MIN_CHARS,
   USER_MESSAGE_FOLD_MIN_LINES,
 } from "./longText";
@@ -41,6 +44,17 @@ describe("longText", () => {
     ).join("\n");
     expect(shouldFoldSoftInject(manyLines)).toBe(true);
     expect(shouldFoldSoftInject("x".repeat(SOFT_INJECT_FOLD_MIN_CHARS + 1))).toBe(true);
+  });
+
+  it("folds tool bodies only for genuinely long output", () => {
+    expect(shouldFoldToolBody("")).toBe(false);
+    expect(shouldFoldToolBody("short result")).toBe(false);
+
+    const manyLines = Array.from({ length: TOOL_BODY_FOLD_MIN_LINES + 1 }, (_, i) => `L${i}`).join(
+      "\n",
+    );
+    expect(shouldFoldToolBody(manyLines)).toBe(true);
+    expect(shouldFoldToolBody("x".repeat(TOOL_BODY_FOLD_MIN_CHARS + 1))).toBe(true);
   });
 
   it("attaches paste when over line or char thresholds", () => {

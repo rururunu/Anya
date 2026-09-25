@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 use crate::core::tools::error::ToolError;
@@ -27,6 +27,10 @@ pub struct PlanModeStore {
     /// cycle. Reset whenever plan mode (re)activates so a stale save from a
     /// previous cycle never excuses skipping `save_plan` this time.
     plans_saved: Mutex<HashSet<String>>,
+    /// Plan file the current planning cycle's `save_plan` actually wrote, keyed
+    /// by root session. The default name is derived host-side from a timestamp
+    /// and a slug, so no other layer can reconstruct it.
+    plan_paths: Mutex<HashMap<String, String>>,
 }
 
 impl PlanModeStore {
@@ -35,6 +39,7 @@ impl PlanModeStore {
             active_sessions: Mutex::new(HashSet::new()),
             awaiting_approval: Mutex::new(HashSet::new()),
             plans_saved: Mutex::new(HashSet::new()),
+            plan_paths: Mutex::new(HashMap::new()),
         }
     }
 
@@ -54,6 +59,7 @@ impl PlanModeStore {
         if let Ok(mut guard) = self.plans_saved.lock() {
             guard.remove(session_id);
         }
+        self.set_plan_path(session_id, None);
     }
 
     /// Record that `save_plan` wrote a proposal for this session's current
@@ -71,6 +77,30 @@ impl PlanModeStore {
                 guard.remove(session_id);
             }
         }
+        if !saved {
+            self.set_plan_path(session_id, None);
+        }
+    }
+
+    /// Remember which file the current cycle's `save_plan` wrote.
+    pub fn set_plan_path(&self, session_id: &str, path: Option<&str>) {
+        if session_id.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = self.plan_paths.lock() {
+            match path {
+                Some(path) => guard.insert(session_id.to_string(), path.to_string()),
+                None => guard.remove(session_id),
+            };
+        }
+    }
+
+    /// Plan file written by the current cycle's `save_plan`, if any.
+    pub fn plan_path(&self, session_id: &str) -> Option<String> {
+        self.plan_paths
+            .lock()
+            .ok()
+            .and_then(|guard| guard.get(session_id).cloned())
     }
 
     /// True once `save_plan` has run since plan mode last (re)activated.
@@ -214,5 +244,30 @@ mod tests {
         store.mark_awaiting_approval("s");
         store.set_active("s", false);
         assert!(!store.is_awaiting_approval("s"));
+    }
+
+    #[test]
+    fn remembers_the_plan_path_per_session() {
+        let store = PlanModeStore::new();
+        store.set_active("s", true);
+        store.set_plan_path("s", Some(".anya/plans/20260921-101500-fix.md"));
+        assert_eq!(
+            store.plan_path("s").as_deref(),
+            Some(".anya/plans/20260921-101500-fix.md")
+        );
+        assert!(store.plan_path("other").is_none());
+    }
+
+    #[test]
+    fn rewind_and_deactivation_forget_the_plan_path() {
+        let store = PlanModeStore::new();
+        store.set_active("s", true);
+        store.set_plan_path("s", Some(".anya/plans/a.md"));
+        store.sync_plan_saved("s", false);
+        assert!(store.plan_path("s").is_none());
+
+        store.set_plan_path("s", Some(".anya/plans/b.md"));
+        store.set_active("s", false);
+        assert!(store.plan_path("s").is_none());
     }
 }

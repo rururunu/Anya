@@ -1,6 +1,6 @@
 /*
- * 西文用 Source Sans 3（正式 Grotesk），汉字用微软雅黑。
- * Source Sans 3 的 @font-face 只覆盖拉丁区，CJK 会落到雅黑。
+ * 西文优先 Inter Variable，汉字优先 PingFang SC，代码优先 Fira Code。
+ * 未安装的系统字体会按后续字体依次回退。
  */
 @import "@fontsource-variable/source-sans-3";
 @import "@fontsource-variable/inter";
@@ -11,15 +11,15 @@
 
 :root {
   --font-sans-latin:
-    "Source Sans 3 Variable", "Source Sans 3", Calibri, Aptos, "Segoe UI", "Helvetica Neue", Arial,
-    sans-serif;
+    "Inter Variable", Inter, "Source Sans 3 Variable", "Source Sans 3", Calibri, Aptos, "Segoe UI",
+    "Helvetica Neue", Arial;
   --font-sans-cjk:
-    "Microsoft YaHei", "微软雅黑", "Microsoft YaHei UI", "PingFang SC", "Hiragino Sans GB",
+    "PingFang SC", "Microsoft YaHei", "微软雅黑", "Microsoft YaHei UI", "Hiragino Sans GB",
     "Noto Sans SC", sans-serif;
-  --peek-font-sans: var(--font-sans-latin), var(--font-sans-cjk), sans-serif;
+  --peek-font-sans: var(--font-sans-latin), var(--font-sans-cjk);
   --font-mono:
-    "Cascadia Code", "Cascadia Mono", "JetBrains Mono Variable", Consolas, "SF Mono", Menlo,
-    ui-monospace, monospace;
+    "Fira Code", "Cascadia Code", "Cascadia Mono", "JetBrains Mono Variable", Consolas, "SF Mono",
+    Menlo, ui-monospace, monospace;
   --peek-font-mono: var(--font-mono);
 }
 

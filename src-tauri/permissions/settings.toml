@@ -4,6 +4,7 @@ description = "Enables settings read/write commands."
 commands.allow = [
   "get_app_settings",
   "set_app_settings",
+  "list_system_fonts",
   "list_vscode_themes",
   "load_vscode_theme",
   "list_skills",

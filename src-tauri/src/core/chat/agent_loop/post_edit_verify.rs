@@ -224,7 +224,9 @@ fn verification_plan(workspace: &Path, paths: &BTreeSet<String>) -> Vec<Verifica
     let mut commands = Vec::new();
     for (cwd, kind) in projects {
         let checks: Vec<String> = match kind {
-            "rust" => vec!["cargo check -q".into(), "cargo test -q".into()],
+            // Automatic verification is a baseline, not a full regression suite.
+            // The agent chooses focused tests when the behavior change needs them.
+            "rust" => vec!["cargo check -q".into()],
             "python" => vec!["python -m pytest -q".into()],
             _ => javascript_checks(&cwd),
         };
@@ -258,20 +260,10 @@ fn javascript_checks(dir: &Path) -> Vec<String> {
     } else {
         "npm"
     };
-    if let Some(check) = scripts.get("check").and_then(|value| value.as_str()) {
-        let mut checks = vec![format!("{manager} run check")];
-        if scripts.contains_key("test")
-            && ![" test", "vitest", "jest", "--test"]
-                .iter()
-                .any(|marker| check.contains(marker))
-        {
-            checks.push(format!("{manager} run test"));
-        }
-        return checks;
-    }
-    ["typecheck", "lint", "test"]
+    ["typecheck", "check", "lint", "test"]
         .into_iter()
-        .filter(|name| scripts.contains_key(*name))
+        .find(|name| scripts.get(*name).is_some_and(|value| value.is_string()))
+        .into_iter()
         .map(|name| format!("{manager} run {name}"))
         .collect()
 }
@@ -374,7 +366,8 @@ mod tests {
         std::fs::write(root.join("pnpm-lock.yaml"), "").unwrap();
         std::fs::write(root.join("src-tauri/Cargo.toml"), "").unwrap();
         let rust = verification_plan(&root, &BTreeSet::from(["src-tauri/src/lib.rs".into()]));
-        assert_eq!(rust.len(), 2);
+        assert_eq!(rust.len(), 1);
+        assert_eq!(rust[0].command, "cargo check -q");
         assert!(rust
             .iter()
             .all(|c| c.cwd == root.join("src-tauri") && c.command.starts_with("cargo ")));
@@ -382,12 +375,23 @@ mod tests {
             &root,
             &BTreeSet::from(["src-tauri/src/lib.rs".into(), "src/App.vue".into()]),
         );
-        assert_eq!(both.len(), 4);
+        assert_eq!(both.len(), 2);
         assert!(both
             .iter()
             .any(|c| c.command == "pnpm run check" && c.cwd == root));
         assert!(verification_plan(&root, &BTreeSet::from(["README.md".into()])).is_empty());
         assert!(verification_plan(&root, &BTreeSet::from(["../escape.rs".into()])).is_empty());
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"scripts":{"typecheck":"tsc --noEmit","check":"tsc && vitest run","lint":"eslint .","test":"vitest run"}}"#,
+        )
+        .unwrap();
+        assert_eq!(javascript_checks(&root), vec!["pnpm run typecheck"]);
+        std::fs::write(root.join("package.json"), r#"{"scripts":{"test":"vitest run"}}"#)
+            .unwrap();
+        assert_eq!(javascript_checks(&root), vec!["pnpm run test"]);
+        std::fs::write(root.join("package.json"), r#"{"scripts":{}}"#).unwrap();
+        assert!(javascript_checks(&root).is_empty());
         std::fs::remove_dir_all(&root).unwrap();
     }
 

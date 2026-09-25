@@ -1,6 +1,6 @@
 <template>
   <div class="workbench-session-list" :class="`is-${variant}`">
-    <template v-for="session in rootSessions" :key="session.sessionId">
+    <template v-for="session in visibleRootSessions" :key="session.sessionId">
       <div
         class="session-row"
         :class="{
@@ -152,6 +152,15 @@
         </button>
       </div>
     </Teleport>
+    <button
+      v-if="hiddenSessionCount > 0"
+      type="button"
+      class="session-more"
+      @click="showMoreSessions"
+    >
+      {{ tr(language, "moreSessions") }}
+      <span class="session-more-count">{{ hiddenSessionCount }}</span>
+    </button>
   </div>
 </template>
 
@@ -275,6 +284,27 @@ const rootSessions = computed(() =>
       !isSubagentSessionId(session.sessionId) && !isPluginAgentSessionId(session.sessionId),
   ),
 );
+/**
+ * Per-workspace ceiling. The summary query no longer bounds the row count, so a
+ * workspace with hundreds of sessions would otherwise render every one of them.
+ */
+const SESSION_LIST_PAGE = 30;
+const visibleCount = ref(SESSION_LIST_PAGE);
+/** Never hide the session the user is currently in, even past the page edge. */
+const shownCount = computed(() => {
+  const activeIndex = rootSessions.value.findIndex(
+    (session) => session.sessionId === props.activeSessionId,
+  );
+  return activeIndex >= visibleCount.value ? activeIndex + 1 : visibleCount.value;
+});
+const visibleRootSessions = computed(() => rootSessions.value.slice(0, shownCount.value));
+const hiddenSessionCount = computed(() =>
+  Math.max(0, rootSessions.value.length - shownCount.value),
+);
+
+function showMoreSessions() {
+  visibleCount.value += SESSION_LIST_PAGE;
+}
 
 function archiveVisual(sessionId: string) {
   return props.archiveVisualState?.[sessionId];
@@ -361,6 +391,32 @@ function sessionStatusLabel(sessionId: string) {
 </script>
 
 <style scoped>
+/* Footer for a capped list: reveals the next page of sessions. */
+.session-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 2px;
+  padding: 5px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.session-more:hover {
+  border-style: solid;
+}
+
+.session-more-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
 .workbench-session-list {
   box-sizing: border-box;
   width: 100%;

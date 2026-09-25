@@ -6,12 +6,26 @@
       </SelectTrigger>
       <SelectContent position="popper" align="end" :side-offset="6">
         <SelectItem :value="FONT_DEFAULT">{{ defaultFontLabel(kind, language) }}</SelectItem>
-        <SelectItem v-for="family in fontPresetFamilies(kind)" :key="family" :value="family">
+        <SelectItem v-for="family in fontOptions" :key="family" :value="family">
           {{ family }}
         </SelectItem>
         <SelectItem :value="FONT_CUSTOM">{{ customFontLabel(language) }}</SelectItem>
       </SelectContent>
     </Select>
+    <span v-if="fontLoadState === 'ready'" class="font-source-hint">
+      {{
+        language === "zh-CN"
+          ? `已读取本机 ${systemFonts.length} 款字体`
+          : `${systemFonts.length} installed fonts found`
+      }}
+    </span>
+    <span v-else-if="fontLoadState === 'loading'" class="font-source-hint">
+      {{ language === "zh-CN" ? "正在读取本机字体…" : "Loading installed fonts…" }}
+    </span>
+    <button v-else type="button" class="font-source-retry" @click="refreshSystemFonts">
+      {{ language === "zh-CN" ? "读取失败，点击重试" : "Could not load fonts. Retry" }}
+      <span v-if="fontLoadError">({{ fontLoadError }})</span>
+    </button>
     <Input
       v-if="selectValue === FONT_CUSTOM"
       :model-value="customDraft"
@@ -25,8 +39,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { Input } from "@/components/ui/input";
+import { loadSystemFonts } from "@/services/theme/systemFonts";
 import {
   Select,
   SelectContent,
@@ -55,15 +70,36 @@ const props = defineProps<{
 const settingStore = useSettingStore();
 const language = computed(() => settingStore.language);
 const stored = computed(() => settingStore[fontSettingKey(props.kind)] ?? "");
-const forceCustom = ref(fontSelectValue(stored.value, props.kind) === FONT_CUSTOM);
+const systemFonts = ref<string[]>([]);
+const fontLoadState = ref<"loading" | "ready" | "error">("loading");
+const fontLoadError = ref("");
+const fontOptions = computed(() =>
+  systemFonts.value.length ? systemFonts.value : fontPresetFamilies(props.kind),
+);
+const forceCustom = ref(false);
 const selectValue = computed(() =>
-  forceCustom.value ? FONT_CUSTOM : fontSelectValue(stored.value, props.kind),
+  forceCustom.value ? FONT_CUSTOM : fontSelectValue(stored.value, props.kind, fontOptions.value),
 );
 const customDraft = ref(selectValue.value === FONT_CUSTOM ? stored.value : "");
 
+async function refreshSystemFonts() {
+  fontLoadState.value = "loading";
+  fontLoadError.value = "";
+  try {
+    const families = await loadSystemFonts();
+    systemFonts.value = families;
+    fontLoadState.value = "ready";
+  } catch (error) {
+    console.error("Could not load installed fonts:", error);
+    fontLoadError.value = String(error);
+    fontLoadState.value = "error";
+  }
+}
+
+onMounted(refreshSystemFonts);
+
 watch(stored, (value) => {
-  if (fontSelectValue(value, props.kind) === FONT_CUSTOM) {
-    forceCustom.value = true;
+  if (fontSelectValue(value, props.kind, fontOptions.value) === FONT_CUSTOM) {
     customDraft.value = value;
   }
 });
@@ -79,7 +115,9 @@ function onSelect(value: unknown) {
   if (value === FONT_CUSTOM) {
     forceCustom.value = true;
     customDraft.value =
-      fontSelectValue(stored.value, props.kind) === FONT_CUSTOM ? stored.value : "";
+      fontSelectValue(stored.value, props.kind, fontOptions.value) === FONT_CUSTOM
+        ? stored.value
+        : "";
     return;
   }
   forceCustom.value = false;
@@ -108,5 +146,14 @@ function commitCustom() {
   gap: 8px;
   width: 100%;
   min-width: 0;
+}
+.font-source-hint,
+.font-source-retry {
+  color: var(--peek-faint);
+  font-size: 11px;
+  text-align: left;
+}
+.font-source-retry {
+  align-self: flex-start;
 }
 </style>

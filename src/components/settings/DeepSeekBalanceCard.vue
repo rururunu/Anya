@@ -135,7 +135,7 @@ function formatMoney(currency: string, value: string) {
 }
 .balance-card.is-row {
   margin: 0;
-  padding: 8px 12px 10px 48px;
+  padding: 10px 16px 12px 54px;
   border: 0;
   border-top: 1px solid color-mix(in srgb, var(--peek-border) 70%, transparent);
   border-radius: 0;

@@ -35,6 +35,26 @@ mod imp {
     use super::OverlayVisibilityGuard;
 
     use tauri::WebviewWindow;
+
+    pub fn set_overlay_bounds(
+        window: &WebviewWindow,
+        position: tauri::PhysicalPosition<i32>,
+        size: tauri::PhysicalSize<u32>,
+    ) -> Result<(), String> {
+        let hwnd = HWND(window.hwnd().map_err(|e| e.to_string())?.0);
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                None,
+                position.x,
+                position.y,
+                size.width as i32,
+                size.height as i32,
+                SWP_NOACTIVATE | windows::Win32::UI::WindowsAndMessaging::SWP_NOZORDER,
+            )
+            .map_err(|e| e.to_string())
+        }
+    }
     use windows::Win32::Foundation::{BOOL, HWND};
     use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -213,6 +233,15 @@ pub use imp::*;
 #[cfg(not(windows))]
 mod imp {
     use tauri::WebviewWindow;
+
+    pub fn set_overlay_bounds(
+        window: &WebviewWindow,
+        position: tauri::PhysicalPosition<i32>,
+        size: tauri::PhysicalSize<u32>,
+    ) -> Result<(), String> {
+        window.set_position(position).map_err(|e| e.to_string())?;
+        window.set_size(size).map_err(|e| e.to_string())
+    }
 
     pub fn mark_overlay_native_minimized(_label: &str) {}
     pub fn is_overlay_native_minimized(_label: &str) -> bool {

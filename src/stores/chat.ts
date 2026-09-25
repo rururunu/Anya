@@ -72,6 +72,9 @@ import { planFromHistory, tasksFromHistory } from "@/services/chat/planProposal"
 import { optimisticUserMatchesServer } from "@/services/chat/optimisticMatch";
 import { serializeStaged } from "@/services/chat/stagedOperations";
 
+/** Messages per history page (~25 turns); older pages load on demand. */
+const HISTORY_PAGE_SIZE = 50;
+
 function sessionsStore() {
   return useChatSessionsStore();
 }
@@ -92,6 +95,8 @@ const log = createLogger("chat-store");
 export const useChatStore = defineStore("chat", {
   state: () => ({
     sending: {} as Record<string, boolean>,
+    /** Guards concurrent "load earlier" requests per session. */
+    historyLoadingOlder: {} as Record<string, boolean>,
     /** Per-conversation compose settings (model / mode / approval / draft). */
     sessionCompose: {} as Record<string, SessionCompose>,
     /** User messages typed while a turn is executing — held until the guide
@@ -1650,7 +1655,9 @@ export const useChatStore = defineStore("chat", {
     },
     async loadHistory(sessionId: string) {
       try {
-        const response = await chatHistory({ sessionId });
+        // Only the newest page is fetched: shipping a long conversation's whole
+        // transcript over IPC is what made large sessions sluggish.
+        const response = await chatHistory({ sessionId, limit: HISTORY_PAGE_SIZE });
         const messages = response.messages
           .map((message) => normalizeMessage(message, sessionId))
           .filter((message): message is ChatMessage => message !== null);
@@ -1675,6 +1682,10 @@ export const useChatStore = defineStore("chat", {
         ) {
           this.setSessionMessages(sessionId, nextMessages);
         }
+        sessionsStore().setHistoryPaging(sessionId, {
+          hasOlder: Boolean(response.hasMore),
+          oldestId: response.oldestId ?? null,
+        });
         const historyCache = cacheUsagesFromHistory(response.messageCacheUsages);
         this.setSessionConsumedTokens(sessionId, response.consumedTokens ?? 0);
         if (!this.sending[sessionId] || !this.sessionCacheUsage[sessionId]) {
@@ -1696,6 +1707,36 @@ export const useChatStore = defineStore("chat", {
         if (!sessionsStore().sessions[sessionId]) {
           this.setSessionMessages(sessionId, []);
         }
+      }
+    },
+    /**
+     * Fetch one older page and prepend it. The caller restores the scroll anchor
+     * once the new rows are in the DOM.
+     */
+    async loadOlderMessages(sessionId: string) {
+      const paging = sessionsStore().historyPaging[sessionId];
+      if (!paging?.hasOlder || !paging.oldestId || this.historyLoadingOlder[sessionId]) {
+        return;
+      }
+      this.historyLoadingOlder = { ...this.historyLoadingOlder, [sessionId]: true };
+      try {
+        const response = await chatHistory({
+          sessionId,
+          limit: HISTORY_PAGE_SIZE,
+          beforeId: paging.oldestId,
+        });
+        const older = response.messages
+          .map((message) => normalizeMessage(message, sessionId))
+          .filter((message): message is ChatMessage => message !== null);
+        sessionsStore().prependSessionMessages(sessionId, older);
+        sessionsStore().setHistoryPaging(sessionId, {
+          hasOlder: Boolean(response.hasMore),
+          oldestId: response.oldestId ?? null,
+        });
+      } catch (error) {
+        log.error("chat_history older page failed", error);
+      } finally {
+        this.historyLoadingOlder = { ...this.historyLoadingOlder, [sessionId]: false };
       }
     },
     settleInterruptedSession(sessionId: string) {

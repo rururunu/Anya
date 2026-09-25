@@ -68,7 +68,9 @@
                     :title="navItem.label"
                     @click="activeCategory = navItem.id as CategoryId"
                   >
-                    <component :is="navItem.icon" class="size-4 shrink-0" />
+                    <span class="settings-nav-icon" aria-hidden="true">
+                      <component :is="navItem.icon" :size="17" :stroke-width="1.8" />
+                    </span>
                     <span class="settings-nav-label">{{ navItem.label }}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -116,7 +118,6 @@
                 :items="visibleItems"
                 :searching="Boolean(settingsQuery.trim())"
                 :page-title="fieldPageTitle"
-                :page-description="fieldPageDescription"
                 :empty-text="t.empty"
                 v-model:api-key-draft="apiKeyDraft"
                 v-model:mem0-api-key-draft="mem0ApiKeyDraft"
@@ -159,23 +160,24 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from "vue";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { markBootPhase, reportBootPhases } from "@/services/bootTiming";
 import {
   Archive,
   Bot,
   BrainCircuit,
-  Shield,
-  Folders,
+  FileSearch,
+  FolderOpen,
   Globe2,
   History,
-  Image as ImageIcon,
   Info,
   Minus,
   Palette,
+  PawPrint,
   Pin,
-  Search,
   Server,
   Settings2,
-  Sparkles,
+  WandSparkles,
+  Workflow,
   X,
   BarChart3,
 } from "@lucide/vue";
@@ -210,12 +212,12 @@ import { useChatModelStore } from "@/stores/chatModel";
 import { tr } from "@/services/i18n";
 import { fullApprovalConfirmOptions } from "@/services/chat/fullApprovalConfirm";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
-import type { SettingsI18nKey } from "@/services/locales/settings";
 import {
   buildSettingDefinitions,
   type CategoryId,
   type SettingDefinition,
 } from "@/pages/Settings/settingsDefinitions";
+import { matchesStandaloneSettingsCategory } from "@/pages/Settings/settingsSearch";
 import {
   DEFAULT_SETTINGS_CATEGORY,
   type AppLanguage,
@@ -256,7 +258,15 @@ async function resizeSettingsWindow() {
   const zoom = (settingStore.zoom || 100) / 100;
   const scaledWidth = SETTINGS_BASE_WIDTH * zoom;
   const scaledHeight = SETTINGS_BASE_HEIGHT * zoom;
+  // Zoom rescales this window through an async native resize, so the window
+  // reaches its scaled size a beat after the first frame. Timed to see whether
+  // that beat is what reads as "the zoom arrives late".
+  const startedAt = performance.now();
   await appWindow.setSize(new LogicalSize(scaledWidth, scaledHeight));
+  markBootPhase(
+    `settings resize ${Math.round(performance.now() - startedAt)}ms (zoom ${settingStore.zoom})`,
+  );
+  reportBootPhases("settings window");
 }
 
 function resolveSettingsCategory(category?: CategoryId): CategoryId {
@@ -328,19 +338,19 @@ const t = computed(() => {
 
 const categories = computed(() => [
   { id: "ai" as const, label: t.value.categories.ai, icon: Bot },
-  { id: "image" as const, label: t.value.categories.image, icon: ImageIcon },
+  { id: "image" as const, label: t.value.categories.image, icon: WandSparkles },
   { id: "provider" as const, label: t.value.categories.provider, icon: Server },
   {
     id: "workspace" as const,
     label: t.value.categories.workspace,
-    icon: Folders,
+    icon: FolderOpen,
   },
   {
     id: "pet" as const,
     label: t.value.categories.pet,
-    icon: Sparkles,
+    icon: PawPrint,
   },
-  { id: "agent" as const, label: t.value.categories.agent, icon: Shield },
+  { id: "agent" as const, label: t.value.categories.agent, icon: Workflow },
   { id: "history" as const, label: t.value.categories.history, icon: History },
   { id: "archive" as const, label: t.value.categories.archive, icon: Archive },
   { id: "usage" as const, label: t.value.categories.usage, icon: BarChart3 },
@@ -351,7 +361,7 @@ const categories = computed(() => [
     icon: BrainCircuit,
   },
   { id: "search" as const, label: t.value.categories.search, icon: Globe2 },
-  { id: "rag" as const, label: t.value.categories.rag, icon: Search },
+  { id: "rag" as const, label: t.value.categories.rag, icon: FileSearch },
   {
     id: "appearance" as const,
     label: t.value.categories.appearance,
@@ -379,6 +389,11 @@ const filteredSections = computed(() =>
             .includes(settingsQuery.value.trim().toLocaleLowerCase()) ||
           settingDefinitions.value.some(
             (item) => item.category === category.id && matchesSetting(item),
+          ) ||
+          matchesStandaloneSettingsCategory(
+            category.id,
+            settingStore.language,
+            settingsQuery.value,
           ),
       ),
     }))
@@ -453,21 +468,6 @@ watch(filteredSections, (sections) => {
 const fieldPageTitle = computed(() => {
   const id = activeCategory.value;
   return t.value.categories[id as keyof typeof t.value.categories] ?? "";
-});
-
-const FIELD_LIST_PAGE_DESC_KEYS = new Set([
-  "appearance",
-  "ai",
-  "agent",
-  "memory",
-  "search",
-  "pinTools",
-]);
-
-const fieldPageDescription = computed(() => {
-  const id = activeCategory.value;
-  if (!FIELD_LIST_PAGE_DESC_KEYS.has(id)) return "";
-  return tr(settingStore.language, `settings.pages.${id}.description` as SettingsI18nKey);
 });
 
 function minimize() {
@@ -736,11 +736,12 @@ watch(
 <style scoped>
 .settings-search-input {
   box-sizing: border-box;
-  width: calc(100% - 20px);
-  margin: 12px 10px 4px;
-  padding: 9px 10px;
-  border: 1px solid var(--peek-border);
-  border-radius: 8px;
+  width: calc(100% - 16px);
+  height: 36px;
+  margin: 8px 8px 14px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 55%, transparent);
+  border-radius: 10px;
   background: var(--peek-surface);
   color: var(--peek-text);
   font-size: 13px;
@@ -845,8 +846,13 @@ watch(
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 20px 0 0 0;
   background: var(--peek-list-bg) !important;
+  box-shadow: none;
 }
 
 .settings-workbench.is-glass,
@@ -854,7 +860,6 @@ watch(
 .settings-workbench.is-glass .settings-body,
 .settings-workbench.is-glass .titlebar,
 .settings-workbench.is-glass .settings-nav,
-.settings-workbench.is-glass .settings-content-pane,
 .settings-workbench.is-glass :deep([data-slot="sidebar"]),
 .settings-workbench.is-glass :deep([data-slot="sidebar-wrapper"]),
 .settings-workbench.has-custom-bg,
@@ -862,7 +867,6 @@ watch(
 .settings-workbench.has-custom-bg .settings-body,
 .settings-workbench.has-custom-bg .titlebar,
 .settings-workbench.has-custom-bg .settings-nav,
-.settings-workbench.has-custom-bg .settings-content-pane,
 .settings-workbench.has-custom-bg :deep([data-slot="sidebar"]),
 .settings-workbench.has-custom-bg :deep([data-slot="sidebar-wrapper"]) {
   background: transparent !important;
@@ -908,21 +912,26 @@ watch(
   padding-right: 1px;
   display: flex;
   flex-direction: column;
-  border-radius: var(--peek-radius-lg) 0 0 0;
+  border-radius: inherit;
 }
 
 .settings-nav-content {
   overflow-y: auto;
-  padding: 5px 4px 8px;
+  padding: 8px 8px 20px;
 }
 
 .settings-nav-group {
-  padding: 0 4px 4px;
+  padding: 0 0 12px;
+}
+
+.settings-nav-group + .settings-nav-group {
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 38%, transparent);
+  padding-top: 12px;
 }
 
 .settings-section-label {
-  height: 25px;
-  padding: 0 8px;
+  height: 27px;
+  padding: 0 10px;
   color: var(--peek-faint);
   font-size: var(--peek-font-xs);
   font-weight: 650;
@@ -931,14 +940,34 @@ watch(
 .settings-nav :deep([data-slot="sidebar-menu-button"]),
 .settings-nav-item {
   position: relative;
-  height: var(--peek-control-row);
-  gap: 8px;
-  padding: 0 8px 0 10px;
-  border-radius: var(--peek-radius-sm);
+  height: 36px;
+  gap: 9px;
+  padding: 0 12px;
+  border-radius: 10px;
   background: transparent;
   color: var(--peek-muted);
   font-size: var(--peek-font-sm);
   letter-spacing: 0;
+}
+
+.settings-nav-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--peek-muted);
+}
+
+.settings-nav :deep([data-slot="sidebar-menu-button"]:hover) .settings-nav-icon,
+.settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) .settings-nav-icon {
+  color: var(--peek-text);
+}
+
+.settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) .settings-nav-icon {
+  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"]:hover) {
@@ -947,20 +976,9 @@ watch(
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) {
-  background: var(--peek-row-active);
+  background: color-mix(in srgb, var(--peek-list-bg) 86%, transparent);
   color: var(--peek-text);
   font-weight: 600;
-}
-
-.settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]::before) {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--peek-accent);
 }
 
 .settings-nav-label {

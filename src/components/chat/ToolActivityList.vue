@@ -177,18 +177,46 @@
           "
           class="tool-activity-body"
         >
-          <div v-if="item.activity.detail" class="tool-activity-detail">
+          <div
+            v-if="item.activity.detail"
+            class="tool-activity-detail"
+            :class="{ folded: isBodyFolded(item.activity) }"
+          >
             <Markdown
               :content="item.activity.detail"
               @preview-image="emit('previewImage', $event)"
             />
           </div>
-          <div v-else-if="shouldShowResult(item.activity)" class="tool-activity-detail">
+          <div
+            v-else-if="shouldShowResult(item.activity)"
+            class="tool-activity-detail"
+            :class="{ folded: isBodyFolded(item.activity) }"
+          >
             <Markdown
               :content="formatResult(item.activity.result!)"
               @preview-image="emit('previewImage', $event)"
             />
           </div>
+          <button
+            v-if="isBodyFoldable(item.activity)"
+            type="button"
+            class="tool-activity-more"
+            :aria-expanded="isBodyExpanded(item.activity)"
+            @click.stop="toggleBodyFold(item.activity)"
+          >
+            <ChevronRight
+              class="tool-activity-more-chevron"
+              :class="{ open: isBodyExpanded(item.activity) }"
+              :size="12"
+            />
+            <span>
+              {{
+                isBodyExpanded(item.activity)
+                  ? tr(settingStore.language, "toolBodyCollapse")
+                  : tr(settingStore.language, "toolBodyExpand")
+              }}
+            </span>
+          </button>
 
           <ToolActivityList
             v-if="childActivities(item.activity).length"
@@ -243,6 +271,7 @@ import {
 } from "@/services/chat/toolActivityDisplay";
 import { enrichToolActivities, isImageGenActivity } from "@/services/chat/toolActivityEnrichment";
 import { activityMatchesQuery } from "@/services/chat/conversationFind";
+import { shouldFoldToolBody, TOOL_BODY_FOLD_VISIBLE_LINES } from "@/services/chat/longText";
 import { conversationFindKey } from "@/composables/chat/useConversationFind";
 
 const props = withDefaults(
@@ -274,6 +303,8 @@ const emit = defineEmits<{
 const settingStore = useSettingStore();
 const inspectLabel = computed(() => tr(settingStore.language, "subagent.view"));
 const expandedIds = ref(new Set<string>());
+/** Activities whose long body the user expanded past the fold. */
+const expandedBodyIds = ref(new Set<string>());
 const previousStatuses = new Map<string, ToolActivity["status"]>();
 
 const activityPool = computed(() => props.allActivities ?? props.activities);
@@ -447,8 +478,45 @@ function isExpanded(activity: ToolActivity) {
 function setExpanded(activityId: string, expanded: boolean) {
   const next = new Set(expandedIds.value);
   if (expanded) next.add(activityId);
-  else next.delete(activityId);
+  else {
+    next.delete(activityId);
+    // Re-opening a collapsed activity starts from the folded body again.
+    setBodyExpanded(activityId, false);
+  }
   expandedIds.value = next;
+}
+
+/** Text the expanded body renders, matching the template's detail-then-result order. */
+function bodyText(activity: ToolActivity) {
+  const detail = activity.detail?.trim();
+  if (detail) return detail;
+  if (shouldShowResult(activity) && activity.result) return formatResult(activity.result);
+  return "";
+}
+
+/** Long tool output still gets its own fold toggle inside the expanded body. */
+function isBodyFoldable(activity: ToolActivity) {
+  return shouldFoldToolBody(bodyText(activity));
+}
+
+function isBodyExpanded(activity: ToolActivity) {
+  return expandedBodyIds.value.has(activity.id);
+}
+
+function isBodyFolded(activity: ToolActivity) {
+  return isBodyFoldable(activity) && !isBodyExpanded(activity);
+}
+
+function setBodyExpanded(activityId: string, expanded: boolean) {
+  if (expanded === expandedBodyIds.value.has(activityId)) return;
+  const next = new Set(expandedBodyIds.value);
+  if (expanded) next.add(activityId);
+  else next.delete(activityId);
+  expandedBodyIds.value = next;
+}
+
+function toggleBodyFold(activity: ToolActivity) {
+  setBodyExpanded(activity.id, !isBodyExpanded(activity));
 }
 
 const conversationFind = inject(conversationFindKey, null);
@@ -785,6 +853,36 @@ watch(
   padding: 2px 6px 8px 28px;
   font-size: 12px;
   color: var(--peek-muted);
+}
+.tool-activity-detail.folded {
+  line-height: 1.5;
+  max-height: calc(1.5em * v-bind(TOOL_BODY_FOLD_VISIBLE_LINES));
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+}
+.tool-activity-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 4px 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--peek-muted);
+  font-size: 11px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.tool-activity-more:hover {
+  color: var(--peek-text);
+}
+.tool-activity-more-chevron {
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+.tool-activity-more-chevron.open {
+  transform: rotate(-90deg);
 }
 .tool-activity-detail :deep(pre) {
   margin: 0;

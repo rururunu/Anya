@@ -207,13 +207,16 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
   async function refreshSessions() {
     sessionsStore.sessionsLoading = true;
     try {
+      // `null` marks a failed fetch. It used to resolve to [] and get assigned
+      // wholesale, so a transient list_workspaces error wiped every workspace
+      // off the sidebar until the app was restarted.
       const [chatResponse, workspaceResponse] = await Promise.all([
         listChatSessions(),
-        listWorkspaces().catch(() => []),
+        listWorkspaces().catch(() => null),
       ]);
       sessionsStore.setSummaries(chatResponse.sessions);
       sessionsStore.setStartedSessionIds(chatResponse.sessions.map((session) => session.sessionId));
-      workspaces.value = workspaceResponse;
+      if (workspaceResponse) workspaces.value = workspaceResponse;
     } catch (error) {
       console.error("list_chat_sessions failed:", error);
     } finally {

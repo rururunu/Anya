@@ -96,15 +96,34 @@
       @wheel.passive="handleWheel"
       @keydown="handleKeydown"
     >
+      <div
+        v-if="hasOlderHistory || loadingOlderHistory || hiddenLoadedTurns > 0"
+        class="load-earlier-row"
+      >
+        <button
+          type="button"
+          class="load-earlier"
+          :disabled="loadingOlderHistory"
+          @click="loadEarlierMessages"
+        >
+          <span v-if="loadingOlderHistory" class="load-earlier-spinner" aria-hidden="true" />
+          {{
+            tr(
+              settingStore.language,
+              hiddenLoadedTurns > 0 ? "showEarlierMessages" : "loadEarlierMessages",
+            )
+          }}
+        </button>
+      </div>
       <div v-if="displayItems.length === 0" class="empty-thread">
         {{ emptyThreadPrompt }}
       </div>
       <div
-        v-for="(turn, turnIndex) in displayTurns"
+        v-for="(turn, turnIndex) in renderedTurns.items"
         :key="turn.key"
         class="chat-turn"
-        :class="{ 'is-first-turn': turnIndex === 0 }"
-        v-memo="turnMemoDeps(turn, turnIndex)"
+        :class="{ 'is-first-turn': renderedTurns.start + turnIndex === 0 }"
+        v-memo="turnMemoDeps(turn, renderedTurns.start + turnIndex)"
         :ref="(el) => bindTurnHead(turn.key, el)"
       >
         <div
@@ -330,6 +349,7 @@ import {
 } from "@/services/ipc";
 import { useSettingStore } from "@/stores/setting";
 import { useChatStore } from "@/stores/chat";
+import { useChatSessionsStore } from "@/stores/chatSessions";
 import type { ChatMessage, CheckpointInfo, TaskItem } from "@/types/chat";
 import {
   parseSelectionAttachment,
@@ -344,7 +364,9 @@ import {
   extractPlanTitle,
   isCreatedPlanMessage,
   isPlanExecutePrompt,
+  planApprovePrompt,
   planCardCopy,
+  planPathFromMessages,
   savePlanFromMessage,
   tasksFromMessage,
 } from "@/services/chat/planProposal";
@@ -423,6 +445,7 @@ const emit = defineEmits<{
 const settingStore = useSettingStore();
 const appStore = useAppStore();
 const chatStore = useChatStore();
+const chatSessionsStore = useChatSessionsStore();
 const log = createLogger("message-list");
 const { sending } = storeToRefs(chatStore);
 const planBusy = ref(false);
@@ -634,7 +657,11 @@ async function approvePlanMode() {
       chatStore.setSessionPlanMode(props.sessionId, true);
       await setPlanMode(props.sessionId, true).catch(() => undefined);
     }
-    await chatStore.send(tr(settingStore.language, "planModeExecuteMessage"), props.sessionId, {
+    // The approve prompt must name the real plan file: save_plan defaults to
+    // .anya/plans/<stamp>-<slug>.md unless the agent passed an explicit path.
+    const planPath =
+      chatStore.sessionPlans[props.sessionId]?.path || planPathFromMessages(props.messages);
+    await chatStore.send(planApprovePrompt(settingStore.language, planPath), props.sessionId, {
       skipAutoPlan: true,
       resumePlan: true,
     });
@@ -787,8 +814,62 @@ const userMessages = computed(() =>
     .filter((item): item is Extract<DisplayItem, { kind: "user" }> => item.kind === "user")
     .map((item) => item.message),
 );
+/**
+ * Hard ceiling on rendered turns. Paging bounds how much history is *fetched*;
+ * this bounds how much of it reaches the DOM. Without it, a user who keeps
+ * paging back rebuilds the very DOM cost paging was meant to avoid.
+ */
+const RENDER_WINDOW_STEP = 80;
+/** Keyed by session so switching conversations resets the window. */
+const renderWindowState = ref<{ sessionId: string; size: number }>({
+  sessionId: "",
+  size: RENDER_WINDOW_STEP,
+});
+const renderWindow = computed(() =>
+  renderWindowState.value.sessionId === props.sessionId
+    ? renderWindowState.value.size
+    : RENDER_WINDOW_STEP,
+);
+const renderedTurns = computed(() => {
+  const turns = displayTurns.value;
+  const start = Math.max(0, turns.length - renderWindow.value);
+  return { start, items: turns.slice(start) };
+});
+/** Loaded but held back by the window: reveal these before fetching a page. */
+const hiddenLoadedTurns = computed(() => renderedTurns.value.start);
 const listRef = ref<HTMLElement | null>(null);
 const stickToBottom = ref(true);
+/** Older pages still live on the server: the window holds only the newest page. */
+const hasOlderHistory = computed(() =>
+  Boolean(props.sessionId && chatSessionsStore.historyPaging[props.sessionId]?.hasOlder),
+);
+const loadingOlderHistory = computed(() =>
+  Boolean(props.sessionId && chatStore.historyLoadingOlder[props.sessionId]),
+);
+/**
+ * Prepend the next older page. Content inserted above the viewport shifts every
+ * row down, so the offset is corrected by the height delta once they are in.
+ */
+async function loadEarlierMessages() {
+  const sessionId = props.sessionId;
+  const container = listRef.value;
+  if (!sessionId || !container) return;
+  const previousHeight = container.scrollHeight;
+  const previousTop = container.scrollTop;
+  if (hiddenLoadedTurns.value > 0) {
+    // Already in memory, just outside the rendered window.
+    renderWindowState.value = {
+      sessionId,
+      size: renderWindow.value + RENDER_WINDOW_STEP,
+    };
+  } else {
+    await chatStore.loadOlderMessages(sessionId);
+  }
+  await nextTick();
+  // Rows inserted above shift everything down; subtract the delta so the rows
+  // the user was reading stay put.
+  container.scrollTop = container.scrollHeight - previousHeight + previousTop;
+}
 const findOpen = ref(false);
 const findQuery = ref("");
 const findIndex = ref(0);
@@ -1302,6 +1383,50 @@ defineExpose({ openFind, closeFind });
 </script>
 
 <style scoped>
+/* "Load earlier" affordance: the loaded window holds only the newest page. */
+.load-earlier-row {
+  display: flex;
+  justify-content: center;
+  padding: 10px 16px 2px;
+}
+
+.load-earlier {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.load-earlier:hover:not(:disabled) {
+  border-color: var(--muted-foreground);
+}
+
+.load-earlier:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.load-earlier-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: load-earlier-spin 0.7s linear infinite;
+}
+
+@keyframes load-earlier-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .message-list-shell {
   position: relative;
   display: flex;
@@ -1756,7 +1881,7 @@ defineExpose({ openFind, closeFind });
   transform: translateY(0.5px);
 }
 .assistant-bubble :deep(.markdown-body) {
-  font-size: 13px;
+  font-size: var(--peek-agent-font-size, 13px);
   line-height: 1.7;
 }
 .assistant-bubble :deep(.agent-work),

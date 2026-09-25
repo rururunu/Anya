@@ -5,8 +5,10 @@ import {
   extractPlanTitle,
   isCreatedPlanMessage,
   isPlanExecutePrompt,
+  planApprovePrompt,
   planCardCopy,
   planFromHistory,
+  planPathFromMessage,
   savePlanFromMessage,
   shouldHidePlanChromeActivity,
   tasksFromHistory,
@@ -112,13 +114,59 @@ describe("isPlanExecutePrompt", () => {
   it("matches the canned approve-and-execute prompt", () => {
     expect(
       isPlanExecutePrompt(
-        "计划已批准。现在严格按临时方案（.anya/plan.md）执行，本回合写操作已解除限制。",
+        "计划已批准。现在严格按临时方案（.anya/plans/20260921-101500-fix-scroll.md）执行，本回合写操作已解除限制。",
       ),
     ).toBe(true);
     expect(
       isPlanExecutePrompt("Plan approved. Execute strictly according to the plan proposal."),
     ).toBe(true);
     expect(isPlanExecutePrompt("视频要能让用户选择本地文件")).toBe(false);
+  });
+});
+
+describe("planPathFromMessage / planApprovePrompt", () => {
+  it("prefers the explicit save_plan path", () => {
+    const msg = message([
+      activity({
+        toolName: "save_plan",
+        arguments: { title: "fix-scroll", path: "plans/fix-scroll.md", content: planMarkdown },
+      }),
+    ]);
+    expect(planPathFromMessage(msg)).toBe("plans/fix-scroll.md");
+  });
+
+  it("recovers the host-resolved default path from the tool result", () => {
+    const msg = message([
+      activity({
+        toolName: "save_plan",
+        arguments: { title: "fix-scroll", content: planMarkdown },
+        result: "Saved plan proposal to `.anya/plans/20260921-101500-fix-scroll.md` (120 bytes).",
+      }),
+    ]);
+    expect(planPathFromMessage(msg)).toBe(".anya/plans/20260921-101500-fix-scroll.md");
+  });
+
+  it("carries the host-resolved path into the plan restored from history", () => {
+    const msg = message([
+      activity({
+        toolName: "save_plan",
+        arguments: { title: "fix-scroll", content: planMarkdown },
+        result: "Saved plan proposal to `.anya/plans/20260921-101500-fix-scroll.md` (120 bytes).",
+      }),
+    ]);
+    expect(savePlanFromMessage(msg)?.path).toBe(".anya/plans/20260921-101500-fix-scroll.md");
+    expect(planFromHistory([msg])?.path).toBe(".anya/plans/20260921-101500-fix-scroll.md");
+  });
+
+  it("names the actual plan file in the approve prompt", () => {
+    const prompt = planApprovePrompt("zh-CN", ".anya/plans/20260921-101500-fix-scroll.md");
+    expect(prompt).toContain(".anya/plans/20260921-101500-fix-scroll.md");
+    expect(prompt).not.toContain(".anya/plan.md）");
+    expect(isPlanExecutePrompt(prompt)).toBe(true);
+  });
+
+  it("falls back to the default plan path when none was reported", () => {
+    expect(planApprovePrompt("en-US")).toContain("(.anya/plan.md)");
   });
 });
 

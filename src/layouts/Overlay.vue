@@ -15,12 +15,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { currentMonitor } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import PeekPanel from "@/components/chat/PeekPanel.vue";
-import { closeOverlay, setOverlayChatMode, takeOverlayContext } from "@/services/ipc";
+import {
+  closeOverlay,
+  expandOverlayForChat,
+  setOverlayChatMode,
+  takeOverlayContext,
+} from "@/services/ipc";
 import { createLogger } from "@/services/logger";
 import { useChatStore } from "@/stores/chat";
 import { useSettingStore } from "@/stores/setting";
@@ -70,8 +75,18 @@ let windowWidthWithSidebar = PANEL_WIDTH;
 /** Last applied input-mode design size — skip redundant Win32 setMinSize/setSize. */
 let lastInputDesignWidth = 0;
 let lastInputDesignHeight = 0;
+let inputResizeRevision = 0;
+let lastConstraints = "";
+let lastResizable: boolean | undefined;
+let chatEntryRevision = 0;
+let enteringChat = false;
 
 const windowLabel = getCurrentWebviewWindow().label;
+
+onUnmounted(() => {
+  ++chatEntryRevision;
+  ++inputResizeRevision;
+});
 
 function computePickerHeight(rowCount: number) {
   if (rowCount <= 0) {
@@ -97,6 +112,8 @@ async function applySizeConstraints(
 
   const panelWidth = designWidth * zoom;
   const height = minHeight * zoom;
+  const constraints = `${layout}:${panelWidth}:${height}`;
+  if (constraints === lastConstraints) return;
   try {
     await window.setMaxSize(null);
   } catch (error) {
@@ -110,28 +127,8 @@ async function applySizeConstraints(
     } catch (error) {
       console.warn("Failed to set overlay maximum size; continuing resize:", error);
     }
-  } else {
-    try {
-      await window.setMaxSize(null);
-    } catch (error) {
-      console.warn("Failed to clear overlay maximum size; continuing resize:", error);
-    }
   }
-}
-
-function waitForNextFrame(count = 2): Promise<void> {
-  return new Promise((resolve) => {
-    let remaining = count;
-    const tick = () => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
+  lastConstraints = constraints;
 }
 
 async function resizeWindow(
@@ -145,9 +142,12 @@ async function resizeWindow(
   if (await window.isMaximized()) {
     return;
   }
-  const scaleFactor = await window.scaleFactor();
-  const physicalPosition = await window.outerPosition();
-  const physicalSize = await window.outerSize();
+  const [scaleFactor, physicalPosition, physicalSize, monitor] = await Promise.all([
+    window.scaleFactor(),
+    window.outerPosition(),
+    window.outerSize(),
+    skipPositionCorrection ? Promise.resolve(null) : currentMonitor(),
+  ]);
 
   const logicalPos = physicalPosition.toLogical(scaleFactor);
   const logicalSize = physicalSize.toLogical(scaleFactor);
@@ -162,15 +162,14 @@ async function resizeWindow(
   const delta = scaledHeight - currentHeight;
   const deltaWidth = scaledWidth - currentWidth;
 
-  // Skip no-op resizes — setSize/setResizable on every keystroke causes jitter.
+  if (lastResizable !== resizable) {
+    await window.setResizable(resizable);
+    lastResizable = resizable;
+  }
+  // Skip no-op resizes — setSize on every keystroke causes jitter.
   if (Math.abs(delta) < 0.5 && Math.abs(deltaWidth) < 0.5) {
     return;
   }
-
-  await window.setResizable(resizable);
-  // Keep maximizable off for the borderless overlay — toggling it forces a
-  // Win32 non-client style refresh that flashes on every double-Alt summon.
-  await window.setMaximizable(false);
 
   await window.setSize(new LogicalSize(scaledWidth, scaledHeight));
 
@@ -178,7 +177,6 @@ async function resizeWindow(
     // 水平：居中扩展，并 clamp 到当前显示器左右边界
     let newX = logicalPos.x - deltaWidth / 2;
 
-    const monitor = await currentMonitor();
     if (monitor) {
       const monitorPosition = monitor.position.toLogical(scaleFactor);
       const monitorSize = monitor.size.toLogical(scaleFactor);
@@ -211,6 +209,7 @@ function queueLayoutResize(operation: () => Promise<void>) {
   layoutResizeQueue = layoutResizeQueue
     .then(operation)
     .catch((error) => console.error("Failed to resize overlay:", error));
+  return layoutResizeQueue;
 }
 
 function handleLayoutChange(payload: {
@@ -235,6 +234,9 @@ function handleLayoutChange(payload: {
   sidebarWidth?: number;
 }) {
   const modeValue = payload.mode ?? mode.value;
+  if (enteringChat) return;
+  // Ignore a child layout emitted before the latest mode change was rendered.
+  if (modeValue !== mode.value) return;
   const pickerHeight =
     (payload.pickerHeight ?? 0) > 0
       ? payload.pickerHeight!
@@ -302,8 +304,12 @@ function handleLayoutChange(payload: {
     }
     lastInputDesignWidth = PANEL_WIDTH;
     lastInputDesignHeight = nextHeight;
+    const revision = ++inputResizeRevision;
     queueLayoutResize(async () => {
+      // Rapid typing/picker changes only need the newest pending input size.
+      if (revision !== inputResizeRevision || mode.value !== "input") return;
       await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
+      if (revision !== inputResizeRevision || mode.value !== "input") return;
       await resizeWindow(PANEL_WIDTH, nextHeight, false, false, "bottom");
     });
     return;
@@ -323,6 +329,7 @@ function handleLayoutChange(payload: {
     }
 
     lastComposerExtraHeight.value = extraHeight;
+    if (!sidebarOpening && !sidebarClosing && Math.abs(deltaExtra) < 0.5) return;
     queueLayoutResize(async () => {
       const window = getCurrentWebviewWindow();
       const scaleFactor = await window.scaleFactor();
@@ -382,10 +389,13 @@ async function constrainedChatHeight(height: number) {
 }
 
 async function enterChatMode(nextSessionId: string) {
+  const entry = ++chatEntryRevision;
+  enteringChat = true;
+  ++inputResizeRevision;
+  // Own the initial expansion before the mode watcher emits its layout event.
+  chatWindowInitialized.value = true;
   sessionId.value = nextSessionId;
   chatStore.setOverlayDraftSession(nextSessionId);
-  mode.value = "chat";
-  chatWindowInitialized.value = false;
   lastComposerExtraHeight.value = 0;
   diffSidebarOpen.value = false;
   subagentSidebarOpen.value = false;
@@ -393,15 +403,33 @@ async function enterChatMode(nextSessionId: string) {
   imageSidebarOpen.value = false;
   windowWidthBeforeSidebar = PANEL_WIDTH;
   windowWidthWithSidebar = PANEL_WIDTH;
-  await setOverlayChatMode(windowLabel, true);
-  // 先切换 UI、等一帧绘制，再以底边为锚点展开，让输入框保持原位
-  await waitForNextFrame();
-  await applySizeConstraints("chat", OVERLAY_MIN_HEIGHT_CHAT);
-  await resizeWindow(PANEL_WIDTH, await preferredChatHeight(), true, false, "bottom");
-  chatWindowInitialized.value = true;
+  await queueLayoutResize(async () => {
+    if (entry !== chatEntryRevision) return;
+    try {
+      // Keep the input dock painted at the bottom until the final native
+      // rectangle is committed. Never mount the transcript into the 56px bar.
+      await expandOverlayForChat((settingStore.zoom || 100) / 100);
+      lastConstraints = "";
+      lastResizable = true;
+    } catch (error) {
+      log.warn("Native chat expansion failed; using fallback resize", error);
+      if (entry !== chatEntryRevision) return;
+      await setOverlayChatMode(windowLabel, true);
+      await resizeWindow(PANEL_WIDTH, await preferredChatHeight(), true, false, "bottom");
+      await applySizeConstraints("chat", OVERLAY_MIN_HEIGHT_CHAT);
+    } finally {
+      if (entry === chatEntryRevision) {
+        enteringChat = false;
+        mode.value = "chat";
+      }
+    }
+  });
 }
 
 async function resetToInputMode() {
+  ++chatEntryRevision;
+  enteringChat = false;
+  const revision = ++inputResizeRevision;
   mode.value = "input";
   sessionId.value = "";
   chatWindowInitialized.value = false;
@@ -416,11 +444,16 @@ async function resetToInputMode() {
   await setOverlayChatMode(windowLabel, false);
   lastInputDesignWidth = PANEL_WIDTH;
   lastInputDesignHeight = INPUT_HEIGHT;
-  await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-  await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false, false, "bottom");
+  await queueLayoutResize(async () => {
+    if (revision !== inputResizeRevision || mode.value !== "input") return;
+    await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
+    await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false, false, "bottom");
+  });
 }
 
 async function close() {
+  ++chatEntryRevision;
+  enteringChat = false;
   // 直接通知 Rust 关闭/销毁，由 Rust 侧负责清理状态
   // 不能先 resetToInputMode()，否则会提前清除 chat mode 导致竞态
   await closeOverlay(windowLabel);

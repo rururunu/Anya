@@ -387,7 +387,9 @@ impl Tool for SavePlanTool {
             let _ = std::fs::write(&active_ptr, content);
         }
 
-        crate::core::tools::plan_mode::shared_plan_mode_store().mark_plan_saved(session_id);
+        let plan_store = crate::core::tools::plan_mode::shared_plan_mode_store();
+        plan_store.mark_plan_saved(session_id);
+        plan_store.set_plan_path(session_id, Some(&clean_path));
         self.event_bus.emit(BusEvent::PlanUpdated {
             session_id: session_id.to_string(),
             path: clean_path.clone(),

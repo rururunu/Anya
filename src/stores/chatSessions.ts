@@ -40,6 +40,11 @@ export const useChatSessionsStore = defineStore("chatSessions", {
     sessionsLoading: false,
     titleGeneratingSessionIds: [] as string[],
     archiveVisualBySessionId: {} as Record<string, ArchiveVisualState>,
+    /**
+     * Window cursor per session. `oldestId` is the cursor for the next older
+     * page; `hasOlder` is false once the transcript start is reached.
+     */
+    historyPaging: {} as Record<string, { hasOlder: boolean; oldestId: string | null }>,
   }),
   getters: {
     overlayMessages(state): ChatMessage[] {
@@ -96,6 +101,33 @@ export const useChatSessionsStore = defineStore("chatSessions", {
       const next = { ...this.sessions };
       delete next[sessionId];
       this.sessions = next;
+      if (sessionId in this.historyPaging) {
+        const paging = { ...this.historyPaging };
+        delete paging[sessionId];
+        this.historyPaging = paging;
+      }
+    },
+    setHistoryPaging(sessionId: string, paging: { hasOlder: boolean; oldestId: string | null }) {
+      if (!sessionId) {
+        return;
+      }
+      this.historyPaging = { ...this.historyPaging, [sessionId]: paging };
+    },
+    /**
+     * Prepend an older page ahead of the loaded window. Ids already present are
+     * dropped so a re-fetch after a rewind cannot duplicate rows.
+     */
+    prependSessionMessages(sessionId: string, older: ChatMessage[]) {
+      if (!sessionId || older.length === 0) {
+        return;
+      }
+      const existing = this.sessions[sessionId] ?? [];
+      const known = new Set(existing.map((message) => message.id));
+      const fresh = older.filter((message) => !known.has(message.id));
+      if (fresh.length === 0) {
+        return;
+      }
+      this.setSessionMessages(sessionId, [...fresh, ...existing]);
     },
     resolveOverlaySessionId(preferred?: string) {
       // Prefer the event/request session id. Only fall back to the overlay draft

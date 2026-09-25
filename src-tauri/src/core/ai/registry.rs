@@ -279,6 +279,7 @@ mod tests {
             id: id.into(),
             name: id.into(),
             base_url: format!("https://{id}.example/v1"),
+            website_url: None,
             api_key: api_key.into(),
             models: "shared-model".into(),
             disabled_models: String::new(),

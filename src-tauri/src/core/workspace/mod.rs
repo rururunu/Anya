@@ -192,6 +192,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reorder_keeps_archived_workspaces_out_of_the_order() {
+        let manager = manager().await;
+        let first = manager.create(std::env::temp_dir()).await.unwrap();
+        let second = manager
+            .create(std::env::current_dir().unwrap())
+            .await
+            .unwrap();
+        let archived_root = std::env::temp_dir().join("anya-archived-reorder-regression");
+        std::fs::create_dir_all(&archived_root).unwrap();
+        let archived = manager.create(archived_root.clone()).await.unwrap();
+
+        manager.switch(archived.id.clone()).await.unwrap();
+        manager.set_archived(&archived.id, true).await.unwrap();
+        assert!(manager.current().is_none());
+        assert_eq!(manager.list().len(), 2);
+
+        manager
+            .reorder(&[second.id.clone(), first.id.clone()])
+            .await
+            .unwrap();
+        assert_eq!(
+            manager
+                .list()
+                .into_iter()
+                .map(|workspace| workspace.id)
+                .collect::<Vec<_>>(),
+            vec![second.id.clone(), first.id.clone()]
+        );
+
+        manager
+            .reorder(&[first.id.clone(), second.id.clone()])
+            .await
+            .unwrap();
+        manager.switch(first.id.clone()).await.unwrap();
+        assert_eq!(manager.current().unwrap().id, first.id);
+
+        let _ = std::fs::remove_dir_all(&archived_root);
+    }
+
+    #[tokio::test]
     async fn update_persists_custom_name_and_description() {
         let manager = manager().await;
         let workspace = manager.create(std::env::temp_dir()).await.unwrap();

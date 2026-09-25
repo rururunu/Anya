@@ -1,5 +1,6 @@
 mod adapters;
 mod app_state;
+pub mod boot_timing;
 mod commands;
 mod core;
 mod models;
@@ -169,15 +170,21 @@ pub fn run() {
                 .app_config_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
             crate::core::chat::telemetry::init_logging(&config_dir);
+            boot_timing::flush_pending();
+            boot_timing::phase("logging ready");
             // Stable root for mcp-remote OAuth tokens (package still appends mcp-remote-{ver}/).
             crate::core::mcp::init_mcp_remote_config_dir(config_dir.join("mcp-auth"));
             let settings = load_settings(app.handle());
+            boot_timing::phase("settings loaded");
             apply_runtime_settings(&settings);
+            boot_timing::phase("runtime settings applied");
             crate::services::pin_badge::start(app.handle().clone());
             app.manage(SettingsState::new(settings.clone()));
             app.manage(AppState::new(app.handle().clone()));
             crate::core::context::providers::local_api::start_server(app.handle().clone());
+            boot_timing::phase("local api server started");
             register_enabled_mcp_tools(app.handle());
+            boot_timing::phase("mcp registration queued");
             if settings.semantic_search_enabled {
                 crate::core::ai::embed::SemanticSearchEngine::enable(
                     crate::core::ai::embed::EmbeddingConfig {
@@ -189,17 +196,23 @@ pub fn run() {
                     },
                     crate::commands::semantic::model_cache_dir(app.handle()),
                 );
+                boot_timing::phase("semantic search engine enabled");
             }
             setup_tray(app)?;
+            boot_timing::phase("tray ready");
             if let Some(window) = app.get_webview_window("overlay") {
                 configure_overlay_window(&window);
             }
+            boot_timing::phase("overlay window configured");
             start_hotkey_listener(app.handle().clone());
+            boot_timing::phase("hotkey listener started");
             show_workbench_window(app.handle());
+            boot_timing::phase("workbench window shown");
             crate::services::webview_theme::apply_webview_theme(app.handle(), &settings);
             crate::services::desktop_pet::restore_desktop_pet_on_startup(app.handle());
             crate::services::computer_use_hud::init(app.handle());
             crate::core::remote::restore_gateway_if_enabled(app.handle());
+            boot_timing::phase("setup done");
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -293,6 +306,7 @@ pub fn run() {
             window::close_overlay_window,
             window::exit_app,
             window::set_overlay_chat_mode_command,
+            window::expand_overlay_for_chat,
             window::set_overlay_popup_open_command,
             window::take_overlay_context,
             window::open_image_preview,
@@ -312,6 +326,7 @@ pub fn run() {
             opencli::run_opencli_doctor,
             settings::get_app_settings,
             settings::set_app_settings,
+            settings::list_system_fonts,
             semantic::get_semantic_search_status,
             semantic::set_semantic_search,
             semantic::test_semantic_search_api,

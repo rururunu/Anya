@@ -12,6 +12,7 @@ use super::compose::{
 use super::outbound::Outbound;
 use super::payloads::{
     list_mcp_payload, list_remote_models_payload, list_skills_payload, session_history,
+    session_message_detail,
 };
 use super::send::send_msg;
 use super::workspace_files::{
@@ -73,6 +74,25 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
     let parsed: ClientMessage = match serde_json::from_str(text) {
         Ok(msg) => msg,
         Err(error) => {
+            // Old clients may send unknown types after a phone upgrade; reply so they
+            // do not hang on the requestId waiter.
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+                if let Some(request_id) = value.get("requestId").and_then(|v| v.as_str()) {
+                    let msg_type = value
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    tracing::debug!(error = %error, msg_type, "unsupported remote RPC");
+                    return send_msg(
+                        ws,
+                        &ServerMessage::rpc_err(
+                            request_id,
+                            &format!("unsupported method: {msg_type}"),
+                        ),
+                    )
+                    .await;
+                }
+            }
             tracing::debug!(error = %error, "drop undecodable remote frame");
             return Ok(());
         }
@@ -88,8 +108,26 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
         ClientMessage::SessionHistory {
             request_id,
             session_id,
+            detail,
+            limit,
+            before_message_id,
         } => {
-            let data = session_history(app, &session_id).await;
+            let data = session_history(
+                app,
+                &session_id,
+                detail.as_deref(),
+                limit,
+                before_message_id.as_deref(),
+            )
+            .await;
+            send_msg(ws, &ServerMessage::rpc_ok(request_id, data)).await
+        }
+        ClientMessage::SessionMessageDetail {
+            request_id,
+            session_id,
+            message_ids,
+        } => {
+            let data = session_message_detail(app, &session_id, &message_ids).await;
             send_msg(ws, &ServerMessage::rpc_ok(request_id, data)).await
         }
         ClientMessage::SessionRewind {
@@ -237,6 +275,41 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
             )
             .await
         }
+        ClientMessage::SessionRename {
+            request_id,
+            session_id,
+            title,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            if session_id.trim().is_empty() {
+                return send_msg(
+                    ws,
+                    &ServerMessage::rpc_err(request_id, "sessionId required"),
+                )
+                .await;
+            }
+            match state.core.chat().set_session_title(&session_id, &title) {
+                Ok(saved) => {
+                    let _ = app.emit("history-updated", json!({ "sessionId": session_id }));
+                    let snapshot = crate::core::remote::bridge::build_session_snapshot(app);
+                    crate::core::remote::bridge::broadcast_server_message(&ServerMessage::Event {
+                        name: "session.snapshot".into(),
+                        data: snapshot.as_object().cloned().unwrap_or_default(),
+                    });
+                    send_msg(
+                        ws,
+                        &ServerMessage::rpc_ok(
+                            request_id,
+                            json!({ "ok": true, "sessionId": session_id, "title": saved }),
+                        ),
+                    )
+                    .await
+                }
+                Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
+            }
+        }
         ClientMessage::SessionListArchived { request_id } => {
             let data = crate::core::remote::bridge::build_archived_session_list(app);
             send_msg(ws, &ServerMessage::rpc_ok(request_id, data)).await
@@ -286,6 +359,123 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
             )
             .await
         }
+        ClientMessage::WorkspacePin {
+            request_id,
+            workspace_id,
+            pinned,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            if workspace_id.trim().is_empty() {
+                return send_msg(
+                    ws,
+                    &ServerMessage::rpc_err(request_id, "workspaceId required"),
+                )
+                .await;
+            }
+            let manager = state.core.workspaces();
+            if let Err(message) = manager.set_pinned(&workspace_id, pinned).await {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await;
+            }
+            let _ = app.emit("workspaces-changed", manager.current());
+            let snapshot = crate::core::remote::bridge::build_session_snapshot(app);
+            crate::core::remote::bridge::broadcast_server_message(&ServerMessage::Event {
+                name: "session.snapshot".into(),
+                data: snapshot.as_object().cloned().unwrap_or_default(),
+            });
+            send_msg(
+                ws,
+                &ServerMessage::rpc_ok(
+                    request_id,
+                    json!({ "ok": true, "workspaceId": workspace_id, "pinned": pinned }),
+                ),
+            )
+            .await
+        }
+        ClientMessage::WorkspaceUpdate {
+            request_id,
+            workspace_id,
+            name,
+            description,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            if workspace_id.trim().is_empty() {
+                return send_msg(
+                    ws,
+                    &ServerMessage::rpc_err(request_id, "workspaceId required"),
+                )
+                .await;
+            }
+            let manager = state.core.workspaces();
+            match manager.update(&workspace_id, name, description).await {
+                Ok(workspace) => {
+                    let _ = app.emit("workspaces-changed", manager.current());
+                    let snapshot = crate::core::remote::bridge::build_session_snapshot(app);
+                    crate::core::remote::bridge::broadcast_server_message(&ServerMessage::Event {
+                        name: "session.snapshot".into(),
+                        data: snapshot.as_object().cloned().unwrap_or_default(),
+                    });
+                    send_msg(
+                        ws,
+                        &ServerMessage::rpc_ok(
+                            request_id,
+                            json!({
+                                "ok": true,
+                                "workspaceId": workspace.id,
+                                "name": workspace.name,
+                                "description": workspace.description,
+                                "pinned": workspace.pinned,
+                            }),
+                        ),
+                    )
+                    .await
+                }
+                Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
+            }
+        }
+        ClientMessage::WorkspaceWorkingTreeDiff {
+            request_id,
+            workspace_id,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            let manager = state.core.workspaces();
+            let root = match workspace_id.as_deref().map(str::trim).filter(|id| !id.is_empty()) {
+                Some(id) => manager
+                    .list()
+                    .into_iter()
+                    .find(|w| w.id == id)
+                    .or_else(|| {
+                        manager
+                            .list_archived()
+                            .into_iter()
+                            .find(|w| w.id == id)
+                    })
+                    .map(|w| w.root),
+                None => manager.current().map(|w| w.root),
+            };
+            let Some(root) = root else {
+                return send_msg(
+                    ws,
+                    &ServerMessage::rpc_ok(request_id, json!({ "diff": "" })),
+                )
+                .await;
+            };
+            match crate::commands::diff::working_tree_diff_at(std::path::Path::new(&root)) {
+                Ok(diff) => {
+                    send_msg(
+                        ws,
+                        &ServerMessage::rpc_ok(request_id, json!({ "diff": diff })),
+                    )
+                    .await
+                }
+                Err(message) => send_msg(ws, &ServerMessage::rpc_err(request_id, &message)).await,
+            }
+        }
         ClientMessage::WorkspaceListArchived { request_id } => {
             let Some(state) = app.try_state::<AppState>() else {
                 return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
@@ -310,6 +500,23 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 &ServerMessage::rpc_ok(request_id, json!({ "workspaces": workspaces })),
             )
             .await
+        }
+        ClientMessage::ContextEnvironment { request_id } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            crate::core::context::store::wait_for_completed_capture();
+            let context = state.core.chat().environment_context();
+            match serde_json::to_value(&context) {
+                Ok(payload) => send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await,
+                Err(error) => {
+                    send_msg(
+                        ws,
+                        &ServerMessage::rpc_err(request_id, &format!("serialize context: {error}")),
+                    )
+                    .await
+                }
+            }
         }
         ClientMessage::ImageGenOptions { request_id } => {
             let settings = match crate::services::settings_store::get_settings(app) {

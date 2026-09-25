@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.22                            |
+| **版本**   | v0.2.24                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -258,15 +258,17 @@ sequenceDiagram
   D-->>P: 206 Partial Content
 ```
 
-| 主题        | 约定                                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 路径 / 端口 | `/remote/v1`，端口 **8787**（局域网 `ws`，隧道 `wss`）                                                                   |
-| 鉴权        | 短时二维码令牌，随后存储设备凭证                                                                                         |
-| 保活        | 应用层 `ping` / `pong`（代理常丢原生 WS ping）                                                                           |
-| 手机 → 桌面 | 分片 `file.upload.*`（JSON+b64 **或** 二进制 WS 帧），可乱序，512KB，上限 **500MB**                                      |
-| 桌面 → 手机 | 卡片 → `file.download.begin` → HTTP `/f/{id}` `Range`（票据 10 分钟）。旧路径：`workspace.readFile` `mode=download` 分片 |
-| 预览        | 同一网关上的 HTTP `/p/{id}/` 反向代理（cookie / Referer 回退）                                                           |
-| 未绑定手机  | FAB / `chat.send` 无 `workspaceId` 视为快速提问——**不得**继承桌面当前工作区                                              |
+| 主题                 | 约定                                                                                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 路径 / 端口          | `/remote/v1`，端口 **8787**（局域网 `ws`，隧道 `wss`）                                                                                                                        |
+| 鉴权                 | 短时二维码令牌，随后存储设备凭证                                                                                                                                              |
+| 保活                 | 应用层 `ping` / `pong`（代理常丢原生 WS ping）                                                                                                                                |
+| 手机 → 桌面          | 分片 `file.upload.*`（JSON+b64 **或** 二进制 WS 帧），可乱序，512KB，上限 **500MB**                                                                                           |
+| 桌面 → 手机          | 卡片 → `file.download.begin` → HTTP `/f/{id}` `Range`（票据 10 分钟）。旧路径：`workspace.readFile` `mode=download` 分片                                                      |
+| 预览                 | 同一网关上的 HTTP `/p/{id}/` 反向代理（cookie / Referer 回退）                                                                                                                |
+| 未绑定手机           | FAB / `chat.send` 无 `workspaceId` 视为快速提问——**不得**继承桌面当前工作区                                                                                                   |
+| Companion ≥0.1.8 RPC | `session.rename`、`workspace.pin` / `workspace.update`、`workspace.workingTreeDiff`、`context.environment`（桌面端 ≥ **0.2.24**）                                             |
+| 历史 RPC             | `session.history` 支持 `limit` 与排他游标 `beforeMessageId`；显式 `detail: "light"` 省略执行详情，可用 `session.messageDetail` 按需获取。省略 `detail` 时仍返回完整历史格式。 |
 
 手机侧图示：[Companion 架构](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.zh-CN.md)。
 
@@ -347,9 +349,9 @@ sequenceDiagram
 | Overlay / Workbench   | `layouts/Overlay.vue`、`layouts/Main.vue`                      | 窗口壳；工作台内嵌 SettingsPage；导航在 `composables/workbench/`                                                                     |
 | 聊天 UI               | `components/chat/*`                                            | 消息列表、时间线、工具卡片、计划批准卡、输入栏（`ChatInputBar` + `input/*`）                                                         |
 | 聊天 composables      | `composables/chat/`                                            | `wireChatIpc`、`useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`、`useMessage{Scroll,PreviewRail}`、Ask User、附件 |
-| Chat store            | `stores/chat.ts`、`stores/chatSessions.ts`                     | Pinia façade；会话列表/归档/标题在 `chatSessions`；compose/stream helper 在旁路模块                                                  |
+| Chat store            | `stores/chat.ts`、`stores/chatSessions.ts`                     | Pinia façade；会话列表/归档/标题及历史分页游标在 `chatSessions`；compose/stream helper 在旁路模块                                    |
 | Workbench composables | `composables/workbench/`                                       | `useWorkbenchNavigation`、`useNavigationSidebar`、会话/工作区/审查生命周期                                                           |
-| 其他 stores           | `stores/setting.ts`、`chatModel.ts`、`plugins.ts`              | 设置、模型目录、用户插件                                                                                                             |
+| 其他 stores           | `stores/setting.ts`、`chatModel.ts`、`plugins.ts`              | 设置、带缓存与后台发现的模型目录、用户插件                                                                                           |
 | 主题                  | `services/theme/`                                              | 目录（浅色/深色）、`ThemeService` 应用路径、`themes.css` token                                                                       |
 | 聊天 services         | `services/chat/`                                               | 生图模式、本地图路径、保存图片、composer 分段、token 估算                                                                            |
 | IPC                   | `services/ipc/`                                                | 类型化 invoke 与事件订阅                                                                                                             |
@@ -781,6 +783,10 @@ API 路径会把 **查询与候选片段** 发到配置的嵌入主机。本地�
 | Companion FAB（无 workspaceId） | 无工作区     | 手机新会话——**不得**继承桌面当前选中的工作区 |
 
 悬浮窗与工作台共享会话存储；「在工作台打开」复用同一 `session_id`。工作区的排序、置顶、折叠状态和归档状态独立于聊天消息持久化。Companion 经网关投影同一存储。
+
+桌面端 `chat_history` IPC 先返回最新一页，并附带 `hasMore`、`oldestId` 和 `oldestTimestamp`。更早一页用 `beforeId` 定位，即使消息时间戳相同也不会拆错页；消息附属元数据只随当前页传输。Rust 会话存储仍保留完整历史供 Agent 使用。前端向上滚动时前插旧消息，并保持滚动锚点。
+
+`chatModel.ts` 从 `services/chat/modelListCache.ts` 或已配置模型 ID 预填选择器，随后在后台刷新服务商模型。`services/settings/startupCache.ts` 在设置 IPC 返回前预填输入栏的模型和思考控制；持久化设置仍是最终依据。导航展开 ID 通过 `composables/workbench/navigationCollapseState.ts` 存于浏览器存储，未列出的分组和工作区默认收起。
 
 ---
 

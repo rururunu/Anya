@@ -119,7 +119,7 @@
           </div>
         </header>
 
-        <div class="edit-form border-t border-border pt-4">
+        <div class="edit-form">
           <div class="field-row">
             <label>{{ t("settings.provider.apiKey") }}</label>
             <SecretInput v-model="deepseekKey" placeholder="sk-..." @blur="onDeepSeekKeyBlur" />
@@ -149,10 +149,18 @@
 
           <DeepSeekFilesPanel />
 
+          <p
+            class="provider-save-status"
+            :class="{ 'is-error': saveState === 'error' }"
+            role="status"
+            aria-live="polite"
+          >
+            {{ saveStatusLabel }}
+          </p>
           <div class="form-actions">
             <Button size="sm" class="h-8 w-full gap-1.5" @click="saveDeepSeekAndGoBack">
-              <Save class="size-3.5" />
-              {{ t("settings.provider.save") }}
+              <Check class="size-3.5" />
+              {{ t("settings.provider.done") }}
             </Button>
           </div>
         </div>
@@ -203,13 +211,13 @@
           </Button>
         </header>
 
-        <div class="edit-form border-t border-border pt-4">
+        <div class="edit-form">
           <div class="field-row">
             <label>{{ t("settings.provider.name") }}</label>
             <Input
               v-model="customName"
               :placeholder="t('settings.provider.namePlaceholder')"
-              class="h-8 text-xs"
+              class="h-9 text-sm"
               @blur="saveCustom"
             />
           </div>
@@ -219,7 +227,17 @@
             <Input
               v-model="customUrl"
               :placeholder="t('settings.provider.urlPlaceholder')"
-              class="h-8 text-xs font-mono"
+              class="h-9 text-sm font-mono"
+              @blur="saveCustom"
+            />
+          </div>
+
+          <div class="field-row">
+            <label>{{ t("settings.provider.websiteUrl") }}</label>
+            <Input
+              v-model="customWebsiteUrl"
+              :placeholder="t('settings.provider.websiteUrlPlaceholder')"
+              class="h-9 text-sm"
               @blur="saveCustom"
             />
           </div>
@@ -227,7 +245,7 @@
           <div class="field-row">
             <label>{{ t("settings.provider.apiProtocol") }}</label>
             <Select :model-value="customApiProtocol" @update:model-value="onProtocolChange">
-              <SelectTrigger class="h-8 w-full text-xs">
+              <SelectTrigger class="h-9 w-full text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -265,11 +283,18 @@
             @protocol-change="onModelProtocolChange"
           />
 
+          <p
+            class="provider-save-status"
+            :class="{ 'is-error': saveState === 'error' }"
+            role="status"
+            aria-live="polite"
+          >
+            {{ saveStatusLabel }}
+          </p>
           <div class="form-actions">
             <Button size="sm" class="h-8 w-full gap-1.5" @click="saveCustomAndGoBack">
-              <Plus v-if="isNewProvider" class="size-3.5" />
-              <Save v-else class="size-3.5" />
-              {{ isNewProvider ? t("settings.provider.add") : t("settings.provider.save") }}
+              <Check class="size-3.5" />
+              {{ t("settings.provider.done") }}
             </Button>
           </div>
         </div>
@@ -280,7 +305,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { Globe2, ChevronLeft, ChevronRight, Plus, Trash2, Save } from "@lucide/vue";
+import { Globe2, ChevronLeft, ChevronRight, Plus, Trash2, Check } from "@lucide/vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import DeepSeekIcon from "@/components/icons/DeepSeekIcon.vue";
 import ProviderModelList from "@/components/settings/ProviderModelList.vue";
@@ -349,6 +374,39 @@ async function openExternalUrl(url: string) {
 const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 
 const currentView = ref<"list" | "deepseek" | "custom">("list");
+const saveState = ref<"saved" | "saving" | "error">("saved");
+const saveError = ref("");
+const saveStatusLabel = computed(() =>
+  saveState.value === "saving"
+    ? t("settings.provider.saving")
+    : saveState.value === "error"
+      ? `${t("settings.provider.saveFailed")}${saveError.value ? `: ${saveError.value}` : ""}`
+      : t("settings.provider.autoSaved"),
+);
+let saveQueue: Promise<void> = Promise.resolve();
+let pendingSaves = 0;
+
+async function queueProviderSave(task: () => Promise<void>): Promise<boolean> {
+  pendingSaves += 1;
+  saveState.value = "saving";
+  saveError.value = "";
+  const run = saveQueue.then(task);
+  saveQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  try {
+    await run;
+    pendingSaves -= 1;
+    if (pendingSaves === 0) saveState.value = "saved";
+    return true;
+  } catch (error) {
+    pendingSaves -= 1;
+    saveError.value = error instanceof Error ? error.message : String(error);
+    saveState.value = "error";
+    return false;
+  }
+}
 const editingProviderId = ref<string | null>(null);
 const customPresetId = ref<string | undefined>(undefined);
 
@@ -370,6 +428,7 @@ const fetchModelsError = ref("");
 
 const customName = ref("");
 const customUrl = ref("");
+const customWebsiteUrl = ref("");
 const customKey = ref("");
 const customApiProtocol = ref<ProviderApiProtocol>(DEFAULT_PROVIDER_API_PROTOCOL);
 const customModelList = ref<string[]>([]);
@@ -395,10 +454,10 @@ watch(
 );
 
 watch(
-  [editingProviderId, customUrl],
-  ([id, url]) => {
+  [editingProviderId, customUrl, customWebsiteUrl],
+  ([id, url, websiteUrl]) => {
     if (!id) return;
-    ensureProviderFavicon(id, url);
+    ensureProviderFavicon(id, url, websiteUrl);
   },
   { immediate: true },
 );
@@ -488,6 +547,7 @@ function customProviderSubtitle(provider: CustomProviderConfig) {
 }
 
 function startEditDeepSeek() {
+  saveState.value = "saved";
   deepseekKey.value = settingStore.deepseekApiKey;
   deepseekModels.value = cloneModelEntries(settingStore.deepseekModels);
   fetchDeepSeekModelsError.value = "";
@@ -500,7 +560,7 @@ function startEditDeepSeek() {
 }
 
 async function onDeepSeekKeyBlur() {
-  await saveDeepSeek();
+  if (!(await saveDeepSeek())) return;
   if (deepseekModels.value.length === 0 && canFetchDeepSeekModels.value) {
     void fetchDeepSeekRemoteModels();
   }
@@ -561,33 +621,35 @@ async function fetchDeepSeekRemoteModels() {
 async function saveDeepSeek() {
   const nextKey = deepseekKey.value.trim();
   const nextModels = cloneModelEntries(deepseekModels.value);
+  return queueProviderSave(async () => {
+    if (
+      nextKey === settingStore.deepseekApiKey &&
+      JSON.stringify(nextModels) === JSON.stringify(settingStore.deepseekModels)
+    ) {
+      return;
+    }
 
-  if (
-    nextKey === settingStore.deepseekApiKey &&
-    JSON.stringify(nextModels) === JSON.stringify(settingStore.deepseekModels)
-  ) {
-    return;
-  }
-
-  await settingStore.update({
-    deepseekApiKey: nextKey,
-    deepseekModels: nextModels,
+    await settingStore.update({
+      deepseekApiKey: nextKey,
+      deepseekModels: nextModels,
+    });
+    await chatModelStore.refresh();
   });
-  await chatModelStore.refresh();
 }
 
 async function saveDeepSeekAndGoBack() {
-  await saveDeepSeek();
-  currentView.value = "list";
+  if (await saveDeepSeek()) currentView.value = "list";
 }
 
 function startEditCustom(id: string) {
+  saveState.value = "saved";
   const provider = settingStore.customProviders.find((p) => p.id === id);
   if (provider) {
     editingProviderId.value = id;
     customPresetId.value = provider.presetId;
     customName.value = provider.name;
     customUrl.value = provider.baseUrl;
+    customWebsiteUrl.value = provider.websiteUrl ?? "";
     customKey.value = provider.apiKey;
     customApiProtocol.value = normalizeProviderApiProtocol(provider.apiProtocol);
     customModelList.value = parseProviderModels(provider.models);
@@ -603,10 +665,12 @@ function newProviderId() {
 }
 
 function addBlankCustomProvider() {
+  saveState.value = "saved";
   editingProviderId.value = newProviderId();
   customPresetId.value = undefined;
   customName.value = "";
   customUrl.value = "";
+  customWebsiteUrl.value = "";
   customKey.value = "";
   customApiProtocol.value = DEFAULT_PROVIDER_API_PROTOCOL;
   customModelList.value = [];
@@ -683,10 +747,11 @@ async function fetchRemoteModels() {
 }
 
 async function saveCustom() {
-  if (!editingProviderId.value) return;
-
-  const nextName = customName.value.trim() || `Custom - ${editingProviderId.value}`;
+  const providerId = editingProviderId.value;
+  if (!providerId) return false;
+  const nextName = customName.value.trim() || `Custom - ${providerId}`;
   const nextUrl = customUrl.value.trim();
+  const nextWebsiteUrl = customWebsiteUrl.value.trim();
   const nextKey = customKey.value.trim();
   const nextModels = serializeProviderModels(customModelList.value);
   const nextDisabledModels = serializeProviderModels([...customDisabledModels.value]);
@@ -696,48 +761,50 @@ async function saveCustom() {
     customModelProtocols.value,
     customModelList.value,
   );
+  return queueProviderSave(async () => {
+    const list = [...settingStore.customProviders];
+    const index = list.findIndex((p) => p.id === providerId);
 
-  const list = [...settingStore.customProviders];
-  const index = list.findIndex((p) => p.id === editingProviderId.value);
+    const updatedProvider: CustomProviderConfig = {
+      id: providerId,
+      name: nextName,
+      baseUrl: nextUrl,
+      websiteUrl: nextWebsiteUrl || undefined,
+      apiKey: nextKey,
+      models: nextModels,
+      disabledModels: nextDisabledModels,
+      presetId: nextPresetId,
+      apiProtocol: nextProtocol,
+      modelProtocols: nextModelProtocols,
+    };
 
-  const updatedProvider: CustomProviderConfig = {
-    id: editingProviderId.value,
-    name: nextName,
-    baseUrl: nextUrl,
-    apiKey: nextKey,
-    models: nextModels,
-    disabledModels: nextDisabledModels,
-    presetId: nextPresetId,
-    apiProtocol: nextProtocol,
-    modelProtocols: nextModelProtocols,
-  };
-
-  if (index !== -1) {
-    const current = list[index];
-    if (
-      current.name === nextName &&
-      current.baseUrl === nextUrl &&
-      current.apiKey === nextKey &&
-      current.models === nextModels &&
-      (current.disabledModels ?? "") === nextDisabledModels &&
-      current.presetId === nextPresetId &&
-      normalizeProviderApiProtocol(current.apiProtocol) === nextProtocol &&
-      modelProtocolsEqual(current.modelProtocols, nextModelProtocols)
-    ) {
-      return;
+    if (index !== -1) {
+      const current = list[index];
+      if (
+        current.name === nextName &&
+        current.baseUrl === nextUrl &&
+        (current.websiteUrl ?? "") === nextWebsiteUrl &&
+        current.apiKey === nextKey &&
+        current.models === nextModels &&
+        (current.disabledModels ?? "") === nextDisabledModels &&
+        current.presetId === nextPresetId &&
+        normalizeProviderApiProtocol(current.apiProtocol) === nextProtocol &&
+        modelProtocolsEqual(current.modelProtocols, nextModelProtocols)
+      ) {
+        return;
+      }
+      list[index] = updatedProvider;
+    } else {
+      list.push(updatedProvider);
     }
-    list[index] = updatedProvider;
-  } else {
-    list.push(updatedProvider);
-  }
 
-  await settingStore.update({ customProviders: list });
-  await chatModelStore.refresh();
+    await settingStore.update({ customProviders: list });
+    await chatModelStore.refresh();
+  });
 }
 
 async function saveCustomAndGoBack() {
-  await saveCustom();
-  currentView.value = "list";
+  if (await saveCustom()) currentView.value = "list";
 }
 
 function onProtocolChange(value: unknown) {
@@ -807,6 +874,7 @@ async function deleteCustom(id: string | null) {
   });
   if (!confirmed) return;
 
+  await saveQueue;
   const list = settingStore.customProviders.filter((p) => p.id !== id);
   await settingStore.update({ customProviders: list });
   await chatModelStore.refresh();
@@ -825,12 +893,17 @@ async function deleteCustom(id: string | null) {
 .view-container {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   width: 100%;
 }
 
 .view-container > .settings-page-header {
   margin-bottom: 0;
+}
+
+.view-container > .settings-nav-list :deep(.settings-nav-row),
+.add-section .settings-nav-row {
+  padding: 14px 16px;
 }
 
 header.view-header {
@@ -856,8 +929,8 @@ header.view-header p {
 .add-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 4px;
+  gap: 10px;
+  padding-top: 8px;
 }
 
 .provider-block {
@@ -887,20 +960,20 @@ header.view-header.edit-header {
 }
 
 .back-btn {
-  font-size: 12px;
-  height: 28px;
+  font-size: 13px;
+  height: 32px;
 }
 
-.header-details h2 {
+header.view-header .header-details h2 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .edit-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .edit-title-icon {
@@ -909,9 +982,9 @@ header.view-header.edit-header {
 }
 
 .header-details p {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .delete-top-btn {
@@ -923,27 +996,33 @@ header.view-header.edit-header {
 .edit-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   width: 100%;
+  padding-top: 20px;
+  border-top: 1px solid var(--peek-border);
 }
 
 .field-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .field-row label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--peek-text);
 }
 
 .field-hint {
   margin: 0;
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--muted-foreground);
+}
+
+.edit-form :deep(input) {
+  min-height: 36px;
 }
 
 .provider-key-link {
@@ -990,6 +1069,17 @@ header.view-header.edit-header {
   display: flex;
   gap: 12px;
   width: 100%;
+}
+
+.provider-save-status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.provider-save-status.is-error {
+  color: var(--destructive);
 }
 
 .fade-slide-enter-active,

@@ -11,6 +11,7 @@ export const IPC_COMMANDS = {
   exitApp: "exit_app",
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",
+  listSystemFonts: "list_system_fonts",
   getAppInfo: "get_app_info",
   webviewGpuDisabled: "webview_gpu_disabled",
   relaunchApp: "relaunch_app",

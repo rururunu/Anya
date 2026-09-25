@@ -9,7 +9,7 @@
       @refresh="loadBalance"
     />
 
-    <SettingsPageHeader :title="copy.title" :description="copy.description">
+    <SettingsPageHeader :title="copy.title">
       <template #actions>
         <Select v-model="range" @update:model-value="applyRange">
           <SelectTrigger class="range-select"><SelectValue /></SelectTrigger>

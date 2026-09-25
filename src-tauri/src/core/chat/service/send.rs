@@ -472,13 +472,16 @@ impl ChatService {
             preferences: &prompt_preferences,
         });
         if overrides.resume_plan {
+            let plan_path =
+                crate::core::tools::plan_mode::shared_plan_mode_store().plan_path(&session_id);
             if let Some(current) = request
                 .messages
                 .iter_mut()
                 .rev()
                 .find(|message| matches!(message.role, Role::User))
             {
-                current.content = append_plan_checklist(&current.content, &self.tasks);
+                current.content =
+                    append_plan_checklist(&current.content, &self.tasks, plan_path.as_deref());
             }
         }
 
@@ -657,6 +660,7 @@ impl ChatService {
 fn append_plan_checklist(
     content: &str,
     tasks: &std::sync::Mutex<Vec<crate::core::tools::context::TaskItem>>,
+    plan_path: Option<&str>,
 ) -> String {
     let Ok(guard) = tasks.lock() else {
         return content.to_string();
@@ -664,10 +668,18 @@ fn append_plan_checklist(
     if guard.is_empty() {
         return content.to_string();
     }
+    // Name the file `save_plan` actually wrote: the default is derived from a
+    // timestamp + slug host-side, so `.anya/plan.md` would be a guess.
+    let plan_ref = match plan_path {
+        Some(path) => format!("previewed in sidebar / `{path}`"),
+        None => "previewed in the sidebar".to_string(),
+    };
     let mut lines = vec![
         content.trim_end().to_string(),
         String::new(),
-        "[System] Plan approved. Execute strictly according to the approved plan proposal (previewed in sidebar / `.anya/plan.md`) and complete the following steps one by one. Mark each finished step with `complete_plan_step` and evidence (path or check command):".to_string(),
+        format!(
+            "[System] Plan approved. Execute strictly according to the approved plan proposal ({plan_ref}) and complete the following steps one by one. Mark each finished step with `complete_plan_step` and evidence (path or check command):"
+        ),
     ];
     for (index, task) in guard.iter().enumerate() {
         lines.push(format!(
@@ -678,4 +690,38 @@ fn append_plan_checklist(
         ));
     }
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::tools::context::TaskItem;
+
+    fn sample_tasks() -> std::sync::Mutex<Vec<TaskItem>> {
+        std::sync::Mutex::new(vec![TaskItem {
+            content: "wire the plan path".into(),
+            status: "pending".into(),
+            active_form: None,
+            level: 0,
+        }])
+    }
+
+    #[test]
+    fn plan_checklist_names_the_actual_plan_file() {
+        let out = append_plan_checklist(
+            "approved",
+            &sample_tasks(),
+            Some(".anya/plans/20260921-101500-fix-scroll.md"),
+        );
+        assert!(out.contains("previewed in sidebar / `.anya/plans/20260921-101500-fix-scroll.md`"));
+        assert!(!out.contains(".anya/plan.md"));
+        assert!(out.contains("1. [pending] wire the plan path"));
+    }
+
+    #[test]
+    fn plan_checklist_omits_the_path_when_unknown() {
+        let out = append_plan_checklist("approved", &sample_tasks(), None);
+        assert!(out.contains("(previewed in the sidebar)"));
+        assert!(!out.contains(".anya/plan.md"));
+    }
 }

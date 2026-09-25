@@ -357,6 +357,11 @@ pub fn set_overlay_chat_mode_command(label: String, enabled: bool) {
 }
 
 #[tauri::command]
+pub fn expand_overlay_for_chat(window: WebviewWindow, zoom: f64) -> Result<(), String> {
+    crate::services::overlay_expand::expand(&window, zoom)
+}
+
+#[tauri::command]
 pub fn set_overlay_popup_open_command(label: String, open: bool) {
     set_overlay_popup_open(&label, open);
 }

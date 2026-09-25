@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import {
   listenChatContextNotice,
   listenChatDelta,
@@ -24,7 +25,7 @@ import { isPluginAgentSessionId } from "@/services/chat/pluginSession";
 import { createRafBatch } from "@/services/chat/rafBatch";
 import { recordToolActivityUsage } from "@/services/usage/resourceUsage";
 import { createLogger } from "@/services/logger";
-import { tr } from "@/services/i18n";
+import { planApprovePrompt } from "@/services/chat/planProposal";
 import { useChatStore } from "@/stores/chat";
 import { useChatSessionsStore } from "@/stores/chatSessions";
 import { useSettingStore } from "@/stores/setting";
@@ -335,7 +336,6 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
 
   // Companion ↔ desktop compose / plan sync (Remote Gateway).
   try {
-    const { listen } = await import("@tauri-apps/api/event");
     await listen<{
       sessionId?: string;
       compose?: {
@@ -388,8 +388,9 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
       }
       // Mirror desktop "批准并执行": leave plan gate and resume execution.
       // Approval text is persisted into history / Companion inbox.
+      const planPath = chatStore.sessionPlans[sessionId]?.path;
       void chatStore
-        .send(tr(settingStore.language, "planModeExecuteMessage"), sessionId, {
+        .send(planApprovePrompt(settingStore.language, planPath), sessionId, {
           resumePlan: true,
           skipAutoPlan: true,
         })

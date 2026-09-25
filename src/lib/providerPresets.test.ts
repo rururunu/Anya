@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { parseProviderModels, serializeProviderModels, syncRemoteModels } from "./providerPresets";
+import {
+  faviconUrlsForWebsite,
+  parseProviderModels,
+  serializeProviderModels,
+  syncRemoteModels,
+} from "./providerPresets";
 
 describe("providerPresets", () => {
+  it("resolves favicon candidates from the official website, not an API path", () => {
+    expect(faviconUrlsForWebsite("https://commandcode.ai/")).toEqual([
+      "https://www.google.com/s2/favicons?sz=64&domain=commandcode.ai",
+      "https://commandcode.ai/favicon.ico",
+    ]);
+    expect(faviconUrlsForWebsite("https://api.commandcode.ai/provider/v1/")[0]).toContain(
+      "domain=api.commandcode.ai",
+    );
+    expect(faviconUrlsForWebsite("invalid-url")).toEqual([]);
+  });
   it("parses comma and newline separated models and skips duplicates and empty parts", () => {
     const parsed = parseProviderModels(
       "deepseek-chat, deepseek-reasoner\n\ncustom-1，custom-2,deepseek-chat",

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local pnpm config (node-linker=hoisted; machine-specific, never commit)
+.npmrc
+
 # Local OAuth credentials
 agy-oauth.local.json
 google-oauth.local.json

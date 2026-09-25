@@ -1,26 +1,8 @@
 <template>
   <section :class="hideHeader ? 'settings-embedded' : 'settings-page'">
-    <SettingsPageHeader v-if="!hideHeader" :title="pageTitle" :description="pageDescription" />
+    <SettingsPageHeader v-if="!hideHeader" :title="pageTitle" />
 
     <SettingsEmptyState v-if="items.length === 0" :message="emptyText" />
-    <button
-      v-if="items.some((item) => advancedIds.has(item.id)) && !searching"
-      class="advanced-toggle"
-      type="button"
-      :aria-expanded="showAdvanced"
-      @click="showAdvanced = !showAdvanced"
-    >
-      {{
-        settingStore.language === "zh-CN"
-          ? showAdvanced
-            ? "收起高级选项"
-            : "显示高级选项"
-          : showAdvanced
-            ? "Hide advanced options"
-            : "Show advanced options"
-      }}
-    </button>
-
     <template v-for="(group, groupIndex) in groups" :key="group.id">
       <section class="settings-group">
         <h2 class="settings-group-title">{{ group.title }}</h2>
@@ -160,7 +142,10 @@
                     :disabled="chatModelStore.loading || availableModelOptions.length === 0"
                     @update:model-value="(v) => handleModelSelection(item.id, v)"
                   >
-                    <SelectTrigger class="w-full">
+                    <!-- Readout takes the leftover width so a long model name can only
+                         truncate; without it the trigger's intrinsic width pushes the
+                         refresh button out of the row. -->
+                    <SelectTrigger class="w-full min-w-0 flex-1">
                       <SelectValue :placeholder="modelStatusText">
                         <span
                           v-if="selectedModelOption(item.id)"
@@ -452,7 +437,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { RefreshCw } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
@@ -544,7 +529,6 @@ const props = withDefaults(
     items: SettingDefinition[];
     emptyText: string;
     pageTitle: string;
-    pageDescription?: string;
     hideHeader?: boolean;
     searching?: boolean;
     apiKeyDraft?: string;
@@ -618,7 +602,6 @@ const apiKeyPlaceholder = computed(() => tr(settingStore.language, "settings.api
 const groups = computed(() => {
   const map = new Map<string, SettingDefinition[]>();
   for (const item of props.items) {
-    if (!props.searching && !showAdvanced.value && advancedIds.has(item.id)) continue;
     const list = map.get(item.group) ?? [];
     list.push(item);
     map.set(item.group, list);
@@ -629,13 +612,6 @@ const groups = computed(() => {
     items: groupItems,
   }));
 });
-const showAdvanced = ref(false);
-const advancedIds = new Set([
-  "multimodalSplitAnalysis",
-  "passToolReasoning",
-  "continueThinkingAfterTools",
-  "hardwareAccelerationEnabled",
-]);
 
 const builtInThemeGroups = computed(() => {
   const allGroups = buildFullThemeGroups(settingStore.customThemes);
@@ -893,20 +869,6 @@ function onSearchSecretInput(id: string, value: string | number) {
 </script>
 
 <style scoped>
-.advanced-toggle {
-  margin-bottom: 16px;
-  padding: 7px 10px;
-  border: 1px solid var(--peek-border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--peek-text);
-  cursor: pointer;
-  font-size: 13px;
-}
-.advanced-toggle:focus-visible {
-  outline: 2px solid var(--peek-accent);
-  outline-offset: 2px;
-}
 .setting-desc-link {
   display: inline;
   margin: 0;

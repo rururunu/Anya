@@ -1,12 +1,12 @@
 /**
  * Domain favicons for custom model providers.
  *
- * Icons are keyed by hostname on disk so the same API host is only downloaded
- * once, then mapped in memory to each provider id for the UI.
+ * Icons are keyed by the selected website hostname on disk and mapped in
+ * memory to each provider id for the UI.
  */
 
 import { reactive } from "vue";
-import { faviconUrlForBaseUrl, hostnameFromBaseUrl } from "@/lib/providerPresets";
+import { faviconUrlsForWebsite, hostnameFromBaseUrl } from "@/lib/providerPresets";
 import { cacheInstallIcon, lookupInstallIcon, peekInstallIcon } from "@/services/iconCache";
 
 const srcById = reactive<Record<string, string | null>>({});
@@ -23,18 +23,32 @@ export function markProviderFaviconBroken(id: string | null | undefined): void {
   srcById[id] = null;
 }
 
-export function ensureProviderFavicon(id: string | null | undefined, baseUrl: string): void {
+export function ensureProviderFavicon(
+  id: string | null | undefined,
+  baseUrl: string,
+  websiteUrl?: string,
+): void {
   if (!id) return;
-  const hostname = hostnameFromBaseUrl(baseUrl);
-  const remote = faviconUrlForBaseUrl(baseUrl);
-  if (!hostname || !remote) return;
+  const sourceUrl = websiteUrl?.trim() || baseUrl;
+  const hostname = hostnameFromBaseUrl(sourceUrl);
+  const remotes = faviconUrlsForWebsite(sourceUrl);
+  if (!hostname || remotes.length === 0) {
+    hostnameById.delete(id);
+    srcById[id] = null;
+    return;
+  }
 
   if (hostnameById.get(id) === hostname && srcById[id]) return;
   hostnameById.set(id, hostname);
+  srcById[id] = null;
+
+  const setCurrent = (src: string | null) => {
+    if (hostnameById.get(id) === hostname) srcById[id] = src;
+  };
 
   const cached = peekInstallIcon("provider", hostname);
   if (cached) {
-    srcById[id] = cached;
+    setCurrent(cached);
     return;
   }
 
@@ -46,18 +60,29 @@ export function ensureProviderFavicon(id: string | null | undefined, baseUrl: st
     try {
       const existing = await lookupInstallIcon("provider", hostname);
       if (existing) {
-        srcById[id] = existing;
+        setCurrent(existing);
         return;
       }
-      srcById[id] = await cacheInstallIcon("provider", hostname, remote);
+      for (const remote of remotes) {
+        const cached = await cacheInstallIcon("provider", hostname, remote);
+        if (cached) {
+          setCurrent(cached);
+          return;
+        }
+      }
+      setCurrent(null);
     } catch {
-      srcById[id] = null;
+      setCurrent(null);
+    } finally {
+      inflight.delete(attemptKey);
     }
   })();
 }
 
-export function warmProviderFavicons(providers: Array<{ id: string; baseUrl: string }>): void {
+export function warmProviderFavicons(
+  providers: Array<{ id: string; baseUrl: string; websiteUrl?: string }>,
+): void {
   for (const provider of providers) {
-    ensureProviderFavicon(provider.id, provider.baseUrl);
+    ensureProviderFavicon(provider.id, provider.baseUrl, provider.websiteUrl);
   }
 }

@@ -29,34 +29,35 @@ describe("quoteFontFamily", () => {
 });
 
 describe("fontStack", () => {
-  it("uses Microsoft YaHei first for default Chinese UI", () => {
-    expect(fontStack("cjk")).toMatch(/^"Microsoft YaHei"/);
+  it("uses PingFang SC first for default Chinese UI", () => {
+    expect(fontStack("cjk")).toMatch(/^"PingFang SC"/);
   });
 
-  it("uses Source Sans 3 first for default English UI", () => {
-    expect(fontStack("latin")).toMatch(/^"Source Sans 3 Variable"/);
+  it("uses Inter Variable first for default English UI", () => {
+    expect(fontStack("latin")).toMatch(/^"Inter Variable"/);
   });
 
-  it("puts Cascadia Code first for default code", () => {
-    expect(fontStack("mono")).toMatch(/^"Cascadia Code"/);
+  it("puts Fira Code first for default code", () => {
+    expect(fontStack("mono")).toMatch(/^"Fira Code"/);
   });
 
   it("prepends a custom family and keeps fallbacks", () => {
     const stack = fontStack("cjk", "LXGW WenKai");
     expect(stack.startsWith('"LXGW WenKai"')).toBe(true);
-    expect(stack).toContain("Microsoft YaHei");
+    expect(stack).toContain("PingFang SC");
   });
 });
 
 describe("uiSansStack", () => {
-  it("puts Source Sans before YaHei so Latin is not YaHei", () => {
+  it("puts Latin faces before PingFang and the generic fallback after it", () => {
     const stack = uiSansStack({});
-    expect(stack.indexOf("Source Sans 3 Variable")).toBeLessThan(stack.indexOf("Microsoft YaHei"));
+    expect(stack.indexOf("Inter Variable")).toBeLessThan(stack.indexOf("PingFang SC"));
+    expect(stack.indexOf("PingFang SC")).toBeLessThan(stack.indexOf("sans-serif"));
   });
 
-  it("puts a chosen English font ahead of YaHei", () => {
+  it("puts a chosen English font ahead of PingFang", () => {
     const stack = uiSansStack({ fontLatin: "Calibri" });
-    expect(stack.indexOf("Calibri")).toBeLessThan(stack.indexOf("Microsoft YaHei"));
+    expect(stack.indexOf("Calibri")).toBeLessThan(stack.indexOf("PingFang SC"));
   });
 });
 
@@ -67,5 +68,12 @@ describe("fontSelectValue", () => {
 
   it("maps unknown families to custom", () => {
     expect(fontSelectValue("LXGW WenKai", "cjk")).toBe(FONT_CUSTOM);
+  });
+
+  it("uses installed font names from the system list", () => {
+    expect(fontSelectValue("noto sans sc", "cjk", ["Noto Sans SC", "LXGW WenKai"])).toBe(
+      "Noto Sans SC",
+    );
+    expect(fontSelectValue("LXGW WenKai", "cjk", ["Noto Sans SC"])).toBe(FONT_CUSTOM);
   });
 });

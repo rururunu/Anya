@@ -103,6 +103,11 @@ import { computed, nextTick, ref } from "vue";
 import { Check, Copy, FileQuestion, FileText, Plus, X } from "@lucide/vue";
 import Markdown from "@/components/chat/Markdown.vue";
 import { copyText } from "@/services/clipboard";
+import {
+  DEFAULT_PLAN_PATH,
+  planPathFromMessage,
+  savePlanFromMessage,
+} from "@/services/chat/planProposal";
 import { tr } from "@/services/i18n";
 import { useChatStore } from "@/stores/chat";
 import { useSettingStore } from "@/stores/setting";
@@ -138,27 +143,21 @@ const historicalPlan = computed<{ path: string; content: string } | null>(() => 
   // Look backwards for save_plan tool activity in messages
   for (let i = props.messages.length - 1; i >= 0; i -= 1) {
     const msg = props.messages[i];
-    if (!msg?.toolActivities?.length) continue;
-    for (let j = msg.toolActivities.length - 1; j >= 0; j -= 1) {
-      const act = msg.toolActivities[j];
-      if (act?.toolName === "save_plan" && act.arguments?.content) {
-        let extractedPath = String(act.arguments.path ?? "");
-        if (!extractedPath && typeof act.result === "string") {
-          const m = act.result.match(/Saved plan proposal to `([^`]+)`/);
-          if (m?.[1]) extractedPath = m[1];
-        }
-        return {
-          path: extractedPath || ".anya/plan.md",
-          content: String(act.arguments.content ?? ""),
-        };
-      }
-    }
+    if (!msg) continue;
+    const saved = savePlanFromMessage(msg);
+    if (!saved) continue;
+    return {
+      path: saved.path || planPathFromMessage(msg) || DEFAULT_PLAN_PATH,
+      content: saved.content,
+    };
   }
   return null;
 });
 
 const planPath = computed(
-  () => livePlan.value?.path ?? historicalPlan.value?.path ?? ".anya/plan.md",
+  // `||` not `??`: a live plan restored from history can carry an empty path,
+  // which must fall back to the history scan / default rather than blank out.
+  () => livePlan.value?.path || historicalPlan.value?.path || DEFAULT_PLAN_PATH,
 );
 const planContent = computed(() => livePlan.value?.content ?? historicalPlan.value?.content ?? "");
 

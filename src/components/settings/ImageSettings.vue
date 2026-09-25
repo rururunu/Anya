@@ -4,10 +4,7 @@
 
     <Transition name="fade-slide" mode="out-in">
       <div v-if="currentView === 'list'" key="list" class="view-container">
-        <SettingsPageHeader
-          :title="t('settings.image.title')"
-          :description="t('settings.image.description')"
-        />
+        <SettingsPageHeader :title="t('settings.image.title')" />
 
         <div class="settings-group">
           <h2 class="settings-group-title">{{ t("settings.image.providersTitle") }}</h2>

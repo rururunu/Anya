@@ -3,9 +3,19 @@
     <AppConfirmDialog ref="confirmDialogRef" />
 
     <header class="files-head">
-      <div>
-        <h3>{{ copy.title }}</h3>
-        <p>{{ copy.hint }}</p>
+      <div class="files-heading">
+        <button
+          type="button"
+          class="files-toggle"
+          :aria-controls="expanded ? 'deepseek-files-body' : undefined"
+          :aria-expanded="expanded"
+          @click="toggleExpanded"
+        >
+          <ChevronDown v-if="expanded" :size="14" class="files-chevron" />
+          <ChevronRight v-else :size="14" class="files-chevron" />
+          <span class="files-title">{{ copy.title }}</span>
+        </button>
+        <p v-if="expanded" class="files-hint">{{ copy.hint }}</p>
       </div>
       <div class="files-actions">
         <Button
@@ -25,52 +35,54 @@
       </div>
     </header>
 
-    <div v-if="!configured" class="files-empty">{{ copy.unconfigured }}</div>
-    <div v-else-if="loading && files.length === 0" class="files-empty">
-      <span class="loader" />
-      {{ copy.loading }}
+    <div v-if="expanded" id="deepseek-files-body" class="files-body">
+      <div v-if="!configured" class="files-empty">{{ copy.unconfigured }}</div>
+      <div v-else-if="loading && files.length === 0" class="files-empty">
+        <span class="loader" />
+        {{ copy.loading }}
+      </div>
+      <p v-else-if="error" class="files-error">{{ copy.error }}: {{ error }}</p>
+      <div v-else-if="files.length === 0" class="files-empty">{{ copy.empty }}</div>
+      <ul v-else class="files-list">
+        <li v-for="file in files" :key="file.id" class="files-row">
+          <div class="files-copy">
+            <strong>{{ file.filename }}</strong>
+            <span>{{ formatBytes(file.bytes) }} · {{ formatTime(file.createdAt) }}</span>
+            <span v-if="file.expiresAt" class="files-expires">
+              {{ copy.expires.replace("{date}", formatTime(file.expiresAt)) }}
+            </span>
+            <code>{{ file.id }}</code>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            class="files-delete"
+            :title="copy.delete"
+            :aria-label="copy.delete"
+            :disabled="deletingId === file.id"
+            @click="remove(file)"
+          >
+            <Trash2 :size="13" />
+          </Button>
+        </li>
+      </ul>
+      <Button
+        v-if="hasMore"
+        variant="outline"
+        size="sm"
+        class="h-7"
+        :disabled="loading"
+        @click="load(false)"
+      >
+        {{ copy.loadMore }}
+      </Button>
     </div>
-    <p v-else-if="error" class="files-error">{{ copy.error }}: {{ error }}</p>
-    <div v-else-if="files.length === 0" class="files-empty">{{ copy.empty }}</div>
-    <ul v-else class="files-list">
-      <li v-for="file in files" :key="file.id" class="files-row">
-        <div class="files-copy">
-          <strong>{{ file.filename }}</strong>
-          <span>{{ formatBytes(file.bytes) }} · {{ formatTime(file.createdAt) }}</span>
-          <span v-if="file.expiresAt" class="files-expires">
-            {{ copy.expires.replace("{date}", formatTime(file.expiresAt)) }}
-          </span>
-          <code>{{ file.id }}</code>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          class="files-delete"
-          :title="copy.delete"
-          :aria-label="copy.delete"
-          :disabled="deletingId === file.id"
-          @click="remove(file)"
-        >
-          <Trash2 :size="13" />
-        </Button>
-      </li>
-    </ul>
-    <Button
-      v-if="hasMore"
-      variant="outline"
-      size="sm"
-      class="h-7"
-      :disabled="loading"
-      @click="load(false)"
-    >
-      {{ copy.loadMore }}
-    </Button>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { RefreshCw, Trash2, Upload } from "@lucide/vue";
+import { ChevronDown, ChevronRight, RefreshCw, Trash2, Upload } from "@lucide/vue";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -89,6 +101,14 @@ const hasMore = ref(false);
 const deletingId = ref("");
 const cursor = ref<string | null>(null);
 
+/**
+ * Collapsed by default: the listing is long, so a folded panel should neither
+ * occupy space nor pay for a Files API round-trip it will not display.
+ */
+const FILES_PANEL_EXPANDED_KEY = "anya.deepseekFilesPanelExpanded.v1";
+const expanded = ref(readExpanded());
+const fetched = ref(false);
+
 const configured = computed(() => Boolean(settingStore.deepseekApiKey.trim()));
 const copy = computed(() => ({
   title: tr(settingStore.language, "files.title"),
@@ -106,6 +126,25 @@ const copy = computed(() => ({
   loadMore: tr(settingStore.language, "files.loadMore"),
 }));
 
+function readExpanded(): boolean {
+  try {
+    return localStorage.getItem(FILES_PANEL_EXPANDED_KEY) === "true";
+  } catch {
+    // Unavailable storage must not block rendering the panel.
+    return false;
+  }
+}
+
+function toggleExpanded() {
+  expanded.value = !expanded.value;
+  try {
+    localStorage.setItem(FILES_PANEL_EXPANDED_KEY, String(expanded.value));
+  } catch {
+    // Best effort: a blocked or full storage must not break toggling.
+  }
+  if (expanded.value && configured.value && !fetched.value) void load(true);
+}
+
 /** Load DeepSeek Files API listing, resetting when `reset` is true. */
 async function load(reset: boolean) {
   if (!configured.value) {
@@ -121,6 +160,7 @@ async function load(reset: boolean) {
     files.value = reset ? list.data : [...files.value, ...list.data];
     cursor.value = list.lastId ?? null;
     hasMore.value = list.hasMore;
+    fetched.value = true;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
     if (reset) files.value = [];
@@ -184,15 +224,17 @@ function formatTime(unixSeconds: number) {
 }
 
 watch(configured, (ready) => {
-  if (ready) void load(true);
-  else {
+  if (ready) {
+    if (expanded.value) void load(true);
+  } else {
     files.value = [];
     error.value = "";
+    fetched.value = false;
   }
 });
 
 onMounted(() => {
-  void load(true);
+  if (expanded.value) void load(true);
 });
 </script>
 
@@ -200,8 +242,8 @@ onMounted(() => {
 .files-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 4px;
+  gap: 12px;
+  padding-top: 20px;
   border-top: 1px solid var(--border);
 }
 
@@ -212,17 +254,47 @@ onMounted(() => {
   gap: 12px;
 }
 
-.files-head h3 {
+.files-heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.files-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin: 0;
-  font-size: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.files-chevron {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.files-title {
+  font-size: 13px;
   font-weight: 600;
 }
 
-.files-head p {
+.files-hint {
   margin: 4px 0 0;
-  font-size: 10px;
+  padding-left: 18px;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--muted-foreground);
+}
+
+.files-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .files-actions {
@@ -234,7 +306,7 @@ onMounted(() => {
 .files-empty,
 .files-error {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted-foreground);
 }
 
@@ -276,12 +348,12 @@ onMounted(() => {
 
 .files-copy span,
 .files-expires {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted-foreground);
 }
 
 .files-copy code {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted-foreground);
   word-break: break-all;
 }

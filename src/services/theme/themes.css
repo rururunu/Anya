@@ -229,6 +229,7 @@ html[data-theme] {
   --peek-font-sm: 13px;
   --peek-font-md: 14px;
   --peek-font-lg: 15px;
+  --peek-agent-font-size: 13px;
 
   --peek-elev-sm:
     0 1px 3px color-mix(in srgb, var(--peek-shadow) 18%, transparent),

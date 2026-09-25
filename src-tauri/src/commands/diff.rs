@@ -64,7 +64,11 @@ pub fn working_tree_diff(state: State<'_, AppState>) -> Result<String, String> {
     let Some(workspace) = state.core.workspaces().current() else {
         return Ok(String::new());
     };
-    let root = Path::new(&workspace.root);
+    working_tree_diff_at(Path::new(&workspace.root))
+}
+
+/** Unified + untracked diff for a workspace root (also used by Companion RPC). */
+pub fn working_tree_diff_at(root: &Path) -> Result<String, String> {
     if git_output(root, &["rev-parse", "--is-inside-work-tree"]).is_err() {
         return Ok(String::new());
     }

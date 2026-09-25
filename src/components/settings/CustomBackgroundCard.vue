@@ -279,8 +279,8 @@ function summonAnyaBackgroundDesign() {
 
 .settings-group-title {
   margin: 0;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 650;
   color: var(--peek-text);
 }
 
@@ -300,10 +300,10 @@ function summonAnyaBackgroundDesign() {
 }
 
 .settings-card {
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--peek-border);
-  background: var(--peek-surface);
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 55%, transparent);
+  background: var(--peek-list-bg);
 }
 
 .bg-active-layout {

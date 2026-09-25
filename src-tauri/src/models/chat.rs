@@ -256,6 +256,16 @@ pub struct ContextUsageResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ChatHistoryRequest {
     pub session_id: Option<String>,
+    /// Page size. `None` returns the whole transcript (legacy behaviour).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    /// Load messages strictly older than this timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_timestamp: Option<i64>,
+    /// Message id the cursor is anchored to. Resolved against the transcript so
+    /// equal timestamps cannot split or duplicate a page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,6 +282,14 @@ pub struct ChatHistoryResponse {
     /// Tokens from turns removed by rewind; still count as session consumption.
     #[serde(default)]
     pub consumed_tokens: usize,
+    /// True when messages older than `oldest_*` still exist in the session.
+    #[serde(default)]
+    pub has_more: bool,
+    /// Cursor for the next older page; `None` for an empty page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oldest_timestamp: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oldest_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

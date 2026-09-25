@@ -5,6 +5,7 @@ import App from "./App.vue";
 import router from "./router";
 import { wireChatIpc } from "@/composables/chat/wireChatIpc";
 import { hideBootSplash, waitForNextPaint } from "@/services/bootSplash";
+import { markBootPhase, reportBootPhases } from "@/services/bootTiming";
 import { markPeekWindow } from "@/services/overlay/appearance";
 import { installBrowserGuards } from "@/services/browserGuards";
 import { createLogger, rootLogger } from "@/services/logger";
@@ -82,6 +83,7 @@ const chatStore = useChatStore();
  * wire chat IPC listeners, then drop the HTML splash once paint is ready.
  */
 async function bootstrap() {
+  markBootPhase("bootstrap start");
   const webviewWindow = getCurrentWebviewWindow();
   const windowLabel = webviewWindow.label;
   const isOverlay =
@@ -99,10 +101,12 @@ async function bootstrap() {
   if (windowLabel === "workbench") {
     void router.replace("/workbench");
     applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
+    markBootPhase("cached theme painted");
     // Load persisted settings before Main mounts. Otherwise its first render
     // sees the default onboardingCompleted=false and opens the wizard before
     // the persisted value arrives.
     await settingStore.load();
+    markBootPhase("settings (ipc)");
     applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
@@ -110,9 +114,13 @@ async function bootstrap() {
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);
     app.mount("#app");
+    markBootPhase("mounted");
     await router.isReady();
+    markBootPhase("router ready");
     await waitForNextPaint();
+    markBootPhase("first paint");
     hideBootSplash({ fadeMs: 220 });
+    markBootPhase("splash hidden");
     void syncEnabledPluginUi();
   } else if (isOverlay) {
     markPeekWindow();
@@ -120,6 +128,7 @@ async function bootstrap() {
     void router.replace("/overlay");
     applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     await settingStore.load();
+    markBootPhase("settings (ipc)");
     applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
@@ -127,8 +136,11 @@ async function bootstrap() {
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);
     app.mount("#app");
+    markBootPhase("mounted");
     await router.isReady();
+    markBootPhase("router ready");
     await waitForNextPaint();
+    markBootPhase("first paint");
   } else if (isDesktopPet || isComputerUseSurface) {
     markPeekWindow();
     hideBootSplash({ fadeMs: 0 });
@@ -140,17 +152,22 @@ async function bootstrap() {
     void router.replace(route);
     applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     await settingStore.load();
+    markBootPhase("settings (ipc)");
     applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
       chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     app.mount("#app");
+    markBootPhase("mounted");
     await router.isReady();
+    markBootPhase("router ready");
     await waitForNextPaint();
+    markBootPhase("first paint");
   } else {
     applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     await settingStore.load();
+    markBootPhase("settings (ipc)");
     applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
@@ -162,6 +179,7 @@ async function bootstrap() {
   // Wire chat IPC events into the store: stream deltas, tool activity, plan
   // gate, file/url offers, and remote compose sync.
   await wireChatIpc({ chatStore, settingStore });
+  markBootPhase("ipc wired");
 
   if (windowLabel.startsWith("overlay-preview-")) {
     document.documentElement.classList.add("peek-window");
@@ -173,11 +191,16 @@ async function bootstrap() {
   await router.isReady();
   if (windowLabel !== "workbench" && !isOverlay && !isDesktopPet && !isComputerUseSurface) {
     app.mount("#app");
+    markBootPhase("mounted");
     await waitForNextPaint();
+    markBootPhase("first paint");
     hideBootSplash({ fadeMs: 180 });
+    markBootPhase("splash hidden");
   }
 
+  markBootPhase("ready");
   bootLog.info("ready", { windowLabel });
+  reportBootPhases(windowLabel);
 }
 
 void bootstrap().catch((err) => {

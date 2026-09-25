@@ -5,6 +5,10 @@ import { DEFAULT_CHAT_MODEL } from "@/constants/chat";
 import { getAppSettings, setAppSettings } from "@/services/ipc";
 import { applyOpacity, applyChromeFrostedGlass } from "@/services/overlay/appearance";
 import {
+  readCachedComposerSettings,
+  writeCachedComposerSettings,
+} from "@/services/settings/startupCache";
+import {
   normalizeChatMode,
   normalizeReasoningEffort,
   type AppLanguage,
@@ -210,10 +214,13 @@ function applySecretSettings(target: AppSettings, settings: AppSettings) {
 }
 
 export const useSettingStore = defineStore("setting", {
-  state: (): AppSettings => ({ ...defaultSettings }),
+  // Boot cache supplies the saved thinking strength / model so the composer renders
+  // them on the first frame instead of the `defaultSettings` placeholders.
+  state: (): AppSettings => ({ ...defaultSettings, ...(readCachedComposerSettings() ?? {}) }),
   actions: {
     applyPublicSettings(settings: AppSettings) {
       applyCommonSettings(this, settings);
+      writeCachedComposerSettings(this);
       applyTheme(settings);
       applyUiFonts(settings);
       applyZoom(this.zoom);
@@ -222,6 +229,7 @@ export const useSettingStore = defineStore("setting", {
     },
     applySettings(settings: AppSettings) {
       applyCommonSettings(this, settings);
+      writeCachedComposerSettings(this);
       applySecretSettings(this, settings);
       applyTheme(settings);
       applyUiFonts(settings);

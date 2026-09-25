@@ -22,8 +22,8 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square" />
-  <img alt="release" src="https://img.shields.io/badge/version-v0.2.22-4D6BFE?style=flat-square" />
-  <img alt="license" src="https://img.shields.io/badge/license-Unlicense-3DA639?style=flat-square" />
+  <img alt="release" src="https://img.shields.io/badge/version-v0.2.24-4D6BFE?style=flat-square" />
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-3DA639?style=flat-square" />
   <img alt="stack" src="https://img.shields.io/badge/Tauri%202%20%2B%20Vue%203%20%2B%20Rust-black?style=flat-square" />
 </p>
 
@@ -70,6 +70,8 @@
 | **工作区**   | 将会话绑定到项目目录，并支持置顶、排序、折叠、归档、恢复和直接打开目录。                           |
 | **快速提问** | 与悬浮窗发起的临时会话同一批记录；可在此继续、新建，或把长对话留在工作台，同时仍可在别处唤出浮窗。 |
 
+长会话先加载最新消息，向上滚动时再读取更早的记录，避免一次传输整段历史。侧栏分组与工作区默认收起，并记住手动展开的项目。
+
 ### 审查变更
 
 Agent 修改文件后，Anya 会给出按文件汇总，并提供 Diff 视图。
@@ -80,6 +82,7 @@ Agent 修改文件后，Anya 会给出按文件汇总，并提供 Diff 视图。
 
 - 任务列表与验证结果仍留在对话时间线中。
 - 打开 **审查** 可查看并排或统一 Diff。
+- 多文件大型 Diff 会在文件接近可视区域时渲染正文；变更导航仍可跳转到尚未渲染的文件。
 - 当前会话内由 Anya 应用的变更支持撤销（检查点）。
 
 ### 设置
@@ -91,6 +94,8 @@ Agent 修改文件后，Anya 会给出按文件汇总，并提供 Diff 视图。
 </p>
 
 常用项包括：服务商与模型协议、禁用模型、按模型族配置思考力度、视觉 / 多模态回退、语言、工具审批模式、Agent 展示密度、上下文窗口预算、**生图**提供商与模型，以及 **RAG 检索**（API 或本地嵌入；默认关闭）。
+
+设置搜索可匹配分类和具体选项；字体选择器列出系统已安装字体。模型选择器可先显示上次的列表，同时在后台刷新服务商模型。
 
 思考控制会跟随当前模型声明的能力。DeepSeek 提供 disabled / low / high / max；GPT、Grok、Claude、Qwen、Kimi 等兼容模型使用服务端支持的档位。发送请求前会自动限制不支持的值。
 
@@ -118,6 +123,8 @@ Anya 会尝试读取当前文本选区或资源管理器选中项；也可将图
 
 需要更大空间时，点击悬浮窗上的 **在工作区中打开对话**，即可把同一会话转到工作台——进度、工具调用与历史都会在那里继续。
 
+发送首条消息后，悬浮窗会先完成原生窗口展开，再显示对话内容，使输入区域在切换时保持原位。
+
 ### IDE 上下文插件
 
 安装配套插件后，VS Code / IntelliJ 可将当前文件、工作区、语言与选区推送到本机 Anya（尽力而为；Anya 未运行时不影响编辑器）。
@@ -135,6 +142,8 @@ Anya 会尝试读取当前文本选区或资源管理器选中项；也可将图
 2. 安装 Companion 后扫码（或填写主机 / 令牌）。深度链接：`anya://pair`。
 3. 同一 Wi-Fi 走 `ws://电脑:8787/remote/v1`；外出走 Cloudflare Quick Tunnel `wss://`。
 4. 手机 → 桌面走分片上传。桌面 → 手机：点卡片后经 HTTP `/f/{id}` Range 拉取（可断点）。手机 FAB 新建会话保持未绑定——不会继承桌面当前工作区。
+
+桌面网关向兼容的 Companion 客户端提供会话重命名、工作区置顶与编辑、工作区未提交 Diff 和环境信息接口。历史记录支持分页和精简响应，执行详情可按需加载。
 
 ```mermaid
 flowchart LR
@@ -169,6 +178,8 @@ Ask 不开放写文件 / Shell / Git；Agent 在审批策略下开放；Plan（�
 ### 时间线
 
 助手回合按发生顺序交错展示 **思考**、**回复正文** 与 **工具活动**（实时流式与历史回看均如此）。长思考不再把中途执行的命令与改动挤到看不见的位置。
+
+展开工具活动后，较长的输出仍会先折叠；需要时可继续展开全文。
 
 ### 集成
 
@@ -303,7 +314,7 @@ cd src-tauri && cargo test --lib
 pnpm tauri:build
 ```
 
-安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.22_x64.msi`。
+安装包输出为 `src-tauri/target/release/bundle/msi/Anya_0.2.24_x64.msi`。
 
 发布与应用内更新见 [发布与远程更新](./docs/release.zh-CN.md)。
 
@@ -311,7 +322,7 @@ pnpm tauri:build
 
 ## 许可证
 
-本项目采用 [Unlicense](./LICENSE)，相当于公共领域，几乎无限制使用、修改与分发。
+本项目采用 [MIT 许可证](./LICENSE)。使用、修改与分发时须保留版权声明和许可声明。
 
 ---
 

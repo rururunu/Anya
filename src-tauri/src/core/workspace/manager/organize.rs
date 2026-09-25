@@ -86,7 +86,11 @@ impl WorkspaceManager {
             .write()
             .map_err(|_| "Workspace lock is poisoned".to_string())?;
         for workspace in workspaces.iter_mut() {
-            workspace.sort_order = order[workspace.id.as_str()];
+            // Archived entries are not part of `ids`/`order`, so they keep their stored
+            // order instead of panicking on a missing key and poisoning the lock.
+            if let Some(sort_order) = order.get(workspace.id.as_str()) {
+                workspace.sort_order = *sort_order;
+            }
         }
         let updated_current = self.current().and_then(|current| {
             workspaces

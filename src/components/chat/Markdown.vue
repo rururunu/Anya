@@ -397,7 +397,7 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 
 <style scoped>
 .markdown-body {
-  font-size: 13px;
+  font-size: var(--peek-agent-font-size, 13px);
   font-weight: 500;
   line-height: 1.7;
   color: var(--peek-text);

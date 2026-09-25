@@ -207,8 +207,29 @@ pub async fn save_session_title(
 pub async fn load_session_summaries(
     pool: &SqlitePool,
 ) -> Result<Vec<crate::models::chat::ChatSessionSummary>, String> {
+    // One pass picks each session's first user/assistant text. The previous form
+    // ran two correlated subqueries for every session in the list.
     let rows = sqlx::query(
-        "SELECT
+        "WITH first_messages AS (
+            SELECT
+                session_id,
+                MAX(CASE WHEN role = 'user' THEN content END) AS preview_content,
+                MAX(CASE WHEN role = 'assistant' THEN content END) AS assistant_preview
+            FROM (
+                SELECT
+                    session_id,
+                    role,
+                    content,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY session_id, role ORDER BY timestamp ASC, id ASC
+                    ) AS position
+                FROM chat_messages
+                WHERE role IN ('user', 'assistant')
+            )
+            WHERE position = 1
+            GROUP BY session_id
+        )
+        SELECT
             m.session_id AS session_id,
             s.workspace_id AS workspace_id,
             s.title AS title,
@@ -218,22 +239,11 @@ pub async fn load_session_summaries(
             SUM(COALESCE(m.estimated_tokens, 0))
                 + COALESCE(MAX(s.consumed_tokens), 0) AS estimated_tokens,
             MAX(m.timestamp) AS updated_at,
-            (
-                SELECT u.content
-                FROM chat_messages u
-                WHERE u.session_id = m.session_id AND u.role = 'user'
-                ORDER BY u.timestamp ASC
-                LIMIT 1
-            ) AS preview_content,
-            (
-                SELECT a.content
-                FROM chat_messages a
-                WHERE a.session_id = m.session_id AND a.role = 'assistant'
-                ORDER BY a.timestamp ASC
-                LIMIT 1
-            ) AS assistant_preview
+            f.preview_content AS preview_content,
+            f.assistant_preview AS assistant_preview
          FROM chat_messages m
          LEFT JOIN chat_sessions s ON s.session_id = m.session_id
+         LEFT JOIN first_messages f ON f.session_id = m.session_id
          GROUP BY m.session_id
          ORDER BY updated_at DESC;",
     )

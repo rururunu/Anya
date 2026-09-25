@@ -1,7 +1,12 @@
+import { tr } from "@/services/i18n";
 import type { ChatMessage, TaskItem, ToolActivity } from "@/types/chat";
+import type { AppLanguage } from "@/types/setting";
 
 const PLAN_TASK_TOOLS = new Set(["update_tasks", "todo_write"]);
 const MUTATION_KINDS = new Set(["edit", "create", "delete", "move"]);
+
+/** Plan file used when save_plan never reported an explicit path. */
+export const DEFAULT_PLAN_PATH = ".anya/plan.md";
 
 export type SavedPlanProposal = {
   title?: string;
@@ -9,19 +14,43 @@ export type SavedPlanProposal = {
   content: string;
 };
 
-/** Last save_plan payload on this assistant turn, if any. */
-export function savePlanFromMessage(message: ChatMessage): SavedPlanProposal | null {
+/** Host tool result reporting the plan file it resolved and wrote. */
+const PLAN_PATH_RESULT_RE = /Saved plan proposal to `([^`]+)`/;
+
+/** Last save_plan call on this message that carried plan content. */
+function savePlanActivity(message: ChatMessage): ToolActivity | undefined {
   const activities = message.toolActivities ?? [];
   for (let i = activities.length - 1; i >= 0; i -= 1) {
     const activity = activities[i];
     if (activity?.toolName !== "save_plan") continue;
-    const content = String(activity.arguments?.content ?? "").trim();
-    if (!content) continue;
-    const title = String(activity.arguments?.title ?? "").trim() || undefined;
-    const path = String(activity.arguments?.path ?? "").trim() || undefined;
-    return { title, path, content };
+    if (!String(activity.arguments?.content ?? "").trim()) continue;
+    return activity;
   }
-  return null;
+  return undefined;
+}
+
+/**
+ * Plan file for one save_plan call: the explicit `path` argument when the agent
+ * passed one, otherwise the path the host resolved and reported back. The default
+ * (.anya/plans/<stamp>-<slug>.md) is chosen host-side, so it can only be recovered
+ * from the tool result.
+ */
+function planPathFromActivity(activity: ToolActivity): string | undefined {
+  const fromArgs = String(activity.arguments?.path ?? "").trim();
+  if (fromArgs) return fromArgs;
+  const result = typeof activity.result === "string" ? activity.result : "";
+  return result.match(PLAN_PATH_RESULT_RE)?.[1];
+}
+
+/** Last save_plan payload on this assistant turn, if any. */
+export function savePlanFromMessage(message: ChatMessage): SavedPlanProposal | null {
+  const activity = savePlanActivity(message);
+  if (!activity) return null;
+  return {
+    title: String(activity.arguments?.title ?? "").trim() || undefined,
+    path: planPathFromActivity(activity),
+    content: String(activity.arguments?.content ?? "").trim(),
+  };
 }
 
 /** First markdown heading in a plan proposal. */
@@ -117,6 +146,30 @@ export function planFromHistory(messages: ChatMessage[]): SavedPlanProposal | nu
     if (plan) return plan;
   }
   return null;
+}
+
+/** Plan file written by the last save_plan on this message, if reported. */
+export function planPathFromMessage(message: ChatMessage): string | undefined {
+  const activity = savePlanActivity(message);
+  return activity ? planPathFromActivity(activity) : undefined;
+}
+
+/** Plan file from the last save_plan still present in this history slice. */
+export function planPathFromMessages(messages: ChatMessage[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message) continue;
+    const path = planPathFromMessage(message);
+    if (path) return path;
+  }
+  return undefined;
+}
+
+/** Approve-and-execute prompt naming the plan file the agent must follow. */
+export function planApprovePrompt(language: AppLanguage | undefined, planPath?: string): string {
+  return tr(language, "planModeExecuteMessage", {
+    path: planPath?.trim() || DEFAULT_PLAN_PATH,
+  });
 }
 
 /** Approve-and-execute canned prompt that unlocks writers for one turn. */

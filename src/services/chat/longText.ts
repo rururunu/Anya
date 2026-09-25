@@ -21,6 +21,13 @@ export const SOFT_INJECT_FOLD_MIN_LINES = 4;
 export const SOFT_INJECT_FOLD_MIN_CHARS = 220;
 export const SOFT_INJECT_FOLD_VISIBLE_LINES = 3;
 
+/** Tool bodies fold later: expanding the activity is meant to show its output. */
+export const TOOL_BODY_FOLD_MIN_LINES = 16;
+export const TOOL_BODY_FOLD_MIN_CHARS = 1400;
+
+/** Visible lines while a tool body is folded. */
+export const TOOL_BODY_FOLD_VISIBLE_LINES = 12;
+
 /** Count lines after normalizing newlines. */
 export function countTextLines(text: string): number {
   if (!text) return 0;
@@ -50,6 +57,11 @@ export function shouldFoldUserMessage(text: string): boolean {
 /** True when a mid-turn inject card should start collapsed. */
 export function shouldFoldSoftInject(text: string): boolean {
   return exceedsFoldThreshold(text, SOFT_INJECT_FOLD_MIN_LINES, SOFT_INJECT_FOLD_MIN_CHARS);
+}
+
+/** True when an expanded tool body needs its own fold toggle. */
+export function shouldFoldToolBody(text: string): boolean {
+  return exceedsFoldThreshold(text, TOOL_BODY_FOLD_MIN_LINES, TOOL_BODY_FOLD_MIN_CHARS);
 }
 
 function exceedsFoldThreshold(text: string, minLines: number, minChars: number): boolean {

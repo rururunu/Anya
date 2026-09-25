@@ -77,36 +77,28 @@ export function gsapPickerEnter(el: Element, done: () => void) {
         return;
       }
 
-      const items = target.querySelectorAll<HTMLElement>(
-        ".command-item, .workspace-option, .workspace-new-row, .attach-chip, .attach-tab",
-      );
-      gsap.killTweensOf([target, ...items]);
+      gsap.killTweensOf(target);
 
       // Safety: if a tween is killed/interrupted mid-flight, still unlock Transition.
       const safety = gsap.delayedCall(Math.max(COMPOSER_ENTER, 0.11) + 0.35, finish);
 
-      const tl = gsap.timeline({
-        onComplete: () => {
-          safety.kill();
-          finish();
+      const complete = () => {
+        safety.kill();
+        finish();
+      };
+      // Animate one layer, not every row: duration/cost stays bounded for large lists.
+      gsap.fromTo(
+        target,
+        { opacity: 0, y: 3 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: COMPOSER_ENTER,
+          clearProps: "opacity,transform",
+          onComplete: complete,
+          onInterrupt: complete,
         },
-      });
-      tl.fromTo(target, { autoAlpha: 0 }, { autoAlpha: 1, duration: COMPOSER_ENTER });
-
-      if (items.length) {
-        tl.fromTo(
-          items,
-          { autoAlpha: 0, x: -4 },
-          {
-            autoAlpha: 1,
-            x: 0,
-            duration: 0.11,
-            stagger: 0.012,
-            clearProps: "transform",
-          },
-          0.04,
-        );
-      }
+      );
     },
     () => {
       clearGsapProps(target);
@@ -124,9 +116,13 @@ export function gsapPickerLeave(el: Element, done: () => void) {
   safeGsap(
     "pickerLeave",
     () => {
-      if (target.matches(".model-picker-list, .option-picker-list, .thinking-effort-panel")) {
-        const items = target.querySelectorAll<HTMLElement>(".command-item");
-        gsap.killTweensOf([target, ...items]);
+      if (
+        target.closest(".peek-panel") ||
+        target.matches(".model-picker-list, .option-picker-list, .thinking-effort-panel")
+      ) {
+        // In a native popup, out-in leave delays also delay window shrink/switch.
+        gsap.killTweensOf(target);
+        clearGsapProps(target, "opacity,transform,visibility");
         finish();
         return;
       }

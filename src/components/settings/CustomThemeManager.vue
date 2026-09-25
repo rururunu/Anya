@@ -33,7 +33,7 @@
       </div>
     </div>
 
-    <div class="settings-card">
+    <div class="settings-card theme-grid">
       <p v-if="settingStore.customThemes.length === 0" class="settings-empty">
         {{
           isZh
@@ -114,28 +114,24 @@
             </Button>
             <Button
               variant="ghost"
-              size="sm"
-              class="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              size="icon"
+              class="size-7 text-muted-foreground hover:text-foreground"
               :title="isZh ? '复制主题 JSON' : 'Copy Theme JSON'"
+              :aria-label="isZh ? '复制主题 JSON' : 'Copy Theme JSON'"
               @click="copyThemeJson(theme)"
             >
-              <Check v-if="copiedThemeId === theme.id" class="size-3.5 mr-1 text-primary" />
-              <Copy v-else class="size-3.5 mr-1" />
-              <span>
-                {{
-                  copiedThemeId === theme.id ? (isZh ? "已复制" : "Copied") : isZh ? "复制" : "Copy"
-                }}
-              </span>
+              <Check v-if="copiedThemeId === theme.id" class="size-3.5 text-primary" />
+              <Copy v-else class="size-3.5" />
             </Button>
             <Button
               variant="ghost"
-              size="sm"
-              class="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+              size="icon"
+              class="size-7 text-muted-foreground hover:text-destructive"
               :title="isZh ? '删除主题' : 'Delete'"
+              :aria-label="isZh ? '删除主题' : 'Delete'"
               @click="deleteTheme(theme)"
             >
-              <Trash2 class="size-3.5 mr-1" />
-              <span>{{ isZh ? "删除" : "Delete" }}</span>
+              <Trash2 class="size-3.5" />
             </Button>
           </div>
         </div>
@@ -323,7 +319,47 @@ function summonAnyaThemeDesign() {
 
 <style scoped>
 .custom-theme-group {
-  margin-bottom: var(--peek-space-5, 20px);
+  margin-bottom: 26px;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.theme-grid .settings-row {
+  display: flex;
+  min-width: 0;
+  min-height: 108px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 55%, transparent);
+  border-radius: 14px;
+  background: var(--peek-list-bg);
+}
+
+.theme-grid .settings-row-copy {
+  min-width: 0;
+}
+
+.theme-grid .settings-row-control {
+  width: 100%;
+  margin-top: auto;
+  justify-content: flex-end;
+}
+
+.theme-grid .settings-empty {
+  grid-column: 1 / -1;
+  border: 1px solid color-mix(in srgb, var(--peek-border) 55%, transparent);
+  border-radius: 14px;
+  background: var(--peek-list-bg);
 }
 
 .settings-group-header {
@@ -393,6 +429,12 @@ function summonAnyaThemeDesign() {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+@container settings-page (max-width: 760px) {
+  .theme-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .theme-import-box {

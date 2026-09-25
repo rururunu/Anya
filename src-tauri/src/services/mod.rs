@@ -3,6 +3,7 @@ pub mod computer_use_hud;
 pub mod desktop_pet;
 pub mod hotkey;
 pub mod overlay_native;
+pub mod overlay_expand;
 pub mod pin_badge;
 pub mod settings_store;
 pub mod webview_theme;

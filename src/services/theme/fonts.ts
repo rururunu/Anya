@@ -7,6 +7,8 @@ export const FONT_DEFAULT = "default";
 export const FONT_CUSTOM = "__custom__";
 
 export const LATIN_FALLBACK = [
+  "Inter Variable",
+  "Inter",
   "Source Sans 3 Variable",
   "Source Sans 3",
   "Calibri",
@@ -18,16 +20,17 @@ export const LATIN_FALLBACK = [
 ] as const;
 
 export const CJK_FALLBACK = [
+  "PingFang SC",
   "Microsoft YaHei",
   "微软雅黑",
   "Microsoft YaHei UI",
-  "PingFang SC",
   "Hiragino Sans GB",
   "Noto Sans SC",
   "sans-serif",
 ] as const;
 
 export const MONO_FALLBACK = [
+  "Fira Code",
   "Cascadia Code",
   "Cascadia Mono",
   "JetBrains Mono Variable",
@@ -85,9 +88,10 @@ export function fontStack(kind: FontKind, primary?: string): string {
   return [quoteFontFamily(name), ...rest.map(quoteFontFamily)].join(", ");
 }
 
-/** Combined UI sans: Latin first so English is not YaHei's Latin glyphs. */
+/** Keep the generic Latin fallback after the CJK families so it cannot mask them. */
 export function uiSansStack(settings: { fontLatin?: string; fontCjk?: string }): string {
-  return `${fontStack("latin", settings.fontLatin)}, ${fontStack("cjk", settings.fontCjk)}`;
+  const latin = fontStack("latin", settings.fontLatin).replace(/, sans-serif$/, "");
+  return `${latin}, ${fontStack("cjk", settings.fontCjk)}`;
 }
 
 /** Apply UI / code font CSS variables from stored family names (empty = default stack). */
@@ -137,22 +141,27 @@ export function fontPresetFamilies(kind: FontKind): string[] {
   ];
 }
 
-export function fontSelectValue(stored: string, kind: FontKind): string {
+export function fontSelectValue(
+  stored: string,
+  kind: FontKind,
+  availableFamilies: readonly string[] = fontPresetFamilies(kind),
+): string {
   const name = sanitizeFontName(stored);
   if (!name || name === FONT_DEFAULT) return FONT_DEFAULT;
-  if (isFontPreset(kind, name)) return name;
+  const installed = availableFamilies.find((family) => family.toLowerCase() === name.toLowerCase());
+  if (installed) return installed;
   return FONT_CUSTOM;
 }
 
 export function defaultFontLabel(kind: FontKind, language: AppLanguage): string {
   if (language === "zh-CN") {
-    if (kind === "cjk") return "默认（微软雅黑）";
-    if (kind === "latin") return "默认（Source Sans 3）";
-    return "默认（Cascadia Code）";
+    if (kind === "cjk") return "默认（PingFang SC）";
+    if (kind === "latin") return "默认（Inter Variable）";
+    return "默认（Fira Code）";
   }
-  if (kind === "cjk") return "Default (Microsoft YaHei)";
-  if (kind === "latin") return "Default (Source Sans 3)";
-  return "Default (Cascadia Code)";
+  if (kind === "cjk") return "Default (PingFang SC)";
+  if (kind === "latin") return "Default (Inter Variable)";
+  return "Default (Fira Code)";
 }
 
 export function customFontLabel(language: AppLanguage): string {

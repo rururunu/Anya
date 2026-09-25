@@ -403,7 +403,7 @@
             @mousedown.stop
             @click.stop="toggleAttachPanel"
           >
-            <Plus :size="15" :stroke-width="2.25" />
+            <span aria-hidden="true">+</span>
           </button>
 
           <div
@@ -645,7 +645,6 @@ import {
   Shield,
   ShieldCheck,
   ShieldOff,
-  Plus,
   ListChecks,
   Check,
   Ban,
@@ -5468,57 +5467,36 @@ defineExpose({
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 50%;
-  background: var(--peek-send-bg);
-  color: var(--peek-send-fg);
+  border-radius: 0;
+  background: transparent;
+  color: var(--peek-muted);
   padding: 0;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transform: translateZ(0);
-  transition:
-    background 120ms ease,
-    color 120ms ease,
-    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  font-family: var(--peek-font-sans);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1;
+  transition: color var(--motion-fast, 110ms) ease;
 }
 
 .attach-trigger-btn:hover {
-  transform: scale(1.03);
+  color: var(--peek-text);
 }
 
 .attach-trigger-btn:active {
-  transform: scale(0.97);
+  color: var(--peek-muted);
 }
 
 .attach-trigger-btn.open {
-  background: color-mix(in srgb, var(--peek-accent) 18%, var(--peek-send-bg));
-  color: var(--peek-accent);
-  transform: rotate(45deg);
+  color: var(--peek-text);
 }
 
-.attach-trigger-btn.open:hover {
-  transform: rotate(45deg) scale(1.03);
-}
-
-.attach-trigger-btn.open:active {
-  transform: rotate(45deg) scale(0.97);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .attach-trigger-btn,
-  .attach-trigger-btn:hover,
-  .attach-trigger-btn:active,
-  .attach-trigger-btn.open,
-  .attach-trigger-btn.open:hover,
-  .attach-trigger-btn.open:active {
-    transition: none;
-    transform: none;
-  }
-
-  .attach-trigger-btn.open {
-    transform: none;
-  }
+.attach-trigger-btn:focus-visible {
+  outline: 2px solid var(--peek-focus);
+  outline-offset: 2px;
 }
 
 .send-btn svg {

@@ -112,6 +112,10 @@ export function getAppSettings() {
   return ipcInvoke<AppSettings>(IPC_COMMANDS.getAppSettings);
 }
 
+export function listSystemFonts() {
+  return ipcInvoke<string[]>(IPC_COMMANDS.listSystemFonts);
+}
+
 export function setAppSettings(patch: AppSettingsPatch) {
   return ipcInvoke<AppSettings>(IPC_COMMANDS.setAppSettings, { patch });
 }
@@ -293,6 +297,10 @@ export function clearAllChatSessions() {
 
 export function setOverlayChatMode(label: string, enabled: boolean) {
   return ipcInvoke<void>(IPC_COMMANDS.setOverlayChatMode, { label, enabled });
+}
+
+export function expandOverlayForChat(zoom: number) {
+  return ipcInvoke<void>("expand_overlay_for_chat", { zoom });
 }
 
 export function setOverlayPopupOpen(label: string, open: boolean) {

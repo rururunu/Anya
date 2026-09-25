@@ -84,17 +84,15 @@ mod tests {
 
     #[test]
     fn stable_prompt_stays_structured_and_bounded() {
-        // Sections now carry worked examples (When to use / worked <example> blocks)
-        // instead of terse fragments, so the budget is generous rather than tight —
-        // this guards against runaway growth, not against detailed writing.
-        assert!(SYSTEM_PROMPT.len() < 60_000);
+        // The always-on prefix should carry rules, not repeat tool manuals/examples.
+        assert!(SYSTEM_PROMPT.len() < 34_000);
         assert!(!SYSTEM_PROMPT.contains("Manual acceptance checklist"));
         assert!(!SYSTEM_PROMPT.contains("Status legend"));
     }
 
     #[test]
-    fn stable_prompt_documents_key_decisions_with_examples() {
-        assert!(SYSTEM_PROMPT.contains("<example>"));
+    fn stable_prompt_documents_key_decisions_without_example_overhead() {
+        assert!(!SYSTEM_PROMPT.contains("<example>"));
         assert!(SYSTEM_PROMPT.contains("Executing actions with care"));
         assert!(SYSTEM_PROMPT.contains("Skill selection"));
     }

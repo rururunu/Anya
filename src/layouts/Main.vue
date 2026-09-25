@@ -246,7 +246,7 @@
 
             <nav
               class="session-list peek-scrollbar"
-              :class="{ 'is-dragging': Boolean(draggedWorkspaceId || draggedSessionId) }"
+              :class="{ 'is-dragging': Boolean(draggedSessionId) }"
               :aria-label="labels.conversations"
               @click.stop
             >
@@ -288,14 +288,7 @@
                     :key="workspace.id"
                     class="workspace-group"
                     :data-workspace-id="workspace.id"
-                    :class="{
-                      dragging: draggedWorkspaceId === workspace.id,
-                      'workspace-menu-open': workspaceMenuId === workspace.id,
-                      'drop-before':
-                        dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'before',
-                      'drop-after':
-                        dragOverWorkspaceId === workspace.id && workspaceDropPosition === 'after',
-                    }"
+                    :class="{ 'workspace-menu-open': workspaceMenuId === workspace.id }"
                   >
                     <div
                       class="workspace-row"
@@ -311,13 +304,12 @@
                       @click="onWorkspaceHeaderClick(workspace)"
                       @keydown.enter.self.prevent="onWorkspaceHeaderClick(workspace)"
                       @keydown.space.self.prevent="onWorkspaceHeaderClick(workspace)"
-                      @pointerdown="startWorkspacePointerDrag($event, workspace)"
                       @dragstart.prevent
                     >
                       <span class="workspace-collapse" aria-hidden="true" />
                       <span class="workspace-path-tip">
                         <TooltipProvider :delay-duration="280">
-                          <Tooltip :disabled="Boolean(draggedWorkspaceId || draggedSessionId)">
+                          <Tooltip :disabled="Boolean(draggedSessionId)">
                             <TooltipTrigger as-child>
                               <span class="workspace-group-header">
                                 <Folder v-if="collapsedWorkspaceIds.has(workspace.id)" :size="14" />
@@ -1327,9 +1319,6 @@ const {
   collapsedWorkspaceIds,
   collapsedNavigationSections,
   workspaceMenuId,
-  draggedWorkspaceId,
-  dragOverWorkspaceId,
-  workspaceDropPosition,
   draggedSessionId,
   sessionDropWorkspaceId,
   sessionDragGhost,
@@ -1337,7 +1326,6 @@ const {
   toggleNavigationSection,
   toggleWorkspaceMenu,
   handleWorkspaceClick,
-  startWorkspacePointerDrag,
   startSessionPointerDrag,
   consumeSuppressedSessionClick,
   moveWorkspacePointerDrag,
@@ -1691,6 +1679,18 @@ watch(settingsOpen, (open) => {
   container-type: size;
   container-name: workbench;
 }
+.workbench[data-theme="light"]:not(.has-custom-bg):not(.is-glass) {
+  --workbench-chrome-bg: #f1f4f4;
+}
+.workbench[data-theme="light"].is-glass:not(.has-custom-bg) {
+  --workbench-glass-tint: #f1f4f4;
+  --workbench-glass-fill: color-mix(
+    in srgb,
+    var(--workbench-glass-tint) var(--workbench-glass-opacity, 82%),
+    transparent
+  );
+  --workbench-glass-fill-covering: color-mix(in srgb, var(--workbench-glass-tint) 98%, transparent);
+}
 .workbench.navigation-closed:not(.is-settings) {
   --nav-col: 42px;
 }
@@ -1737,13 +1737,7 @@ watch(settingsOpen, (open) => {
 
 .workbench.is-glass .review-shell,
 .workbench.is-glass .conversation-pane {
-  background: color-mix(in srgb, var(--peek-list-bg) 95%, transparent);
-}
-
-.workbench.is-glass {
-  transform: none;
-  width: 100%;
-  height: 100%;
+  background: var(--peek-list-bg);
 }
 
 .workbench.is-glass .glass-chrome {
@@ -1773,7 +1767,7 @@ watch(settingsOpen, (open) => {
 
 /* Inactive / unfocused state: slightly deeper tint so background desktop doesn't distract */
 .workbench.is-glass.is-unfocused:not(.is-maximized) .glass-chrome {
-  background: color-mix(in srgb, var(--peek-sidebar) 92%, transparent);
+  background: color-mix(in srgb, var(--workbench-glass-tint, var(--peek-sidebar)) 92%, transparent);
 }
 
 /* Fullscreen / maximized: native blur is off (it ghosts icons). Use a
@@ -1876,8 +1870,8 @@ watch(settingsOpen, (open) => {
   border: 1px solid color-mix(in srgb, var(--peek-border) 60%, transparent) !important;
   border-right: 0 !important;
   border-bottom: 0 !important;
-  border-radius: var(--peek-radius-lg, 12px) 0 0 0 !important;
-  box-shadow: var(--peek-pane-shadow) !important;
+  border-radius: 20px 0 0 0 !important;
+  box-shadow: none !important;
 }
 
 .workbench.has-custom-bg.is-glass .conversation-pane {
@@ -2180,6 +2174,9 @@ button {
   padding: var(--peek-space-2, 8px) var(--peek-space-2, 8px) var(--peek-space-3, 12px);
   background: var(--peek-sidebar);
   overflow: hidden;
+}
+.workbench[data-theme="light"]:not(.has-custom-bg):not(.is-glass) .navigation-pane {
+  background: #f1f4f4;
 }
 .navigation-resize-handle {
   position: relative;
@@ -2643,15 +2640,35 @@ button {
   border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
   border-right: 0;
   border-bottom: 0;
-  border-radius: var(--peek-radius-lg, 12px) 0 0 0;
+  border-radius: 20px 0 0 0;
   background: var(--peek-list-bg);
-  box-shadow: var(--peek-pane-shadow);
+  box-shadow: none;
   container-type: size;
   container-name: conversation;
 }
 .conversation-pane.extension-open {
   background: var(--peek-list-bg);
 }
+
+/* Keep the existing geometry; separate the light composer from its canvas. */
+.workbench[data-theme="light"]:not(.has-custom-bg):not(.is-glass)
+  .conversation-pane:not(.extension-open),
+.workbench[data-theme="light"]:not(.has-custom-bg):not(.is-glass)
+  .conversation-pane:not(.extension-open)
+  .conversation-header {
+  background: #ffffff;
+}
+
+.workbench[data-theme="light"] .composer-wrap {
+  --peek-radius-composer: 20px;
+  --peek-placeholder: #989d9f;
+  --peek-composer-fill: #fffeff;
+  --peek-composer-border: #f3f3f3;
+  --peek-composer-border-focus: var(--peek-composer-border);
+  --peek-composer-shadow: 0 5px 18px rgb(31 31 40 / 6%), 0 1px 2px rgb(31 31 40 / 3%);
+  --peek-composer-shadow-focus: var(--peek-composer-shadow);
+}
+
 .conversation-header {
   flex: none;
   display: flex;

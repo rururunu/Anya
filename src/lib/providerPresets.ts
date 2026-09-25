@@ -16,13 +16,24 @@ export function hostnameFromBaseUrl(baseUrl: string): string | null {
 }
 
 /**
- * Google's favicon service resolves a real favicon for any reachable domain.
- * Custom providers always use this (cached on disk) instead of a model-vendor logo.
+ * Google's favicon service resolves an icon for a website hostname.
+ * The result is cached on disk instead of using a model-vendor logo.
  */
 export function faviconUrlForBaseUrl(baseUrl: string, size = 64): string | null {
   const hostname = hostnameFromBaseUrl(baseUrl);
   if (!hostname) return null;
   return `https://www.google.com/s2/favicons?sz=${size}&domain=${encodeURIComponent(hostname)}`;
+}
+
+export function faviconUrlsForWebsite(websiteUrl: string): string[] {
+  const favicon = faviconUrlForBaseUrl(websiteUrl);
+  if (!favicon) return [];
+  try {
+    const origin = new URL(websiteUrl.trim()).origin;
+    return [favicon, `${origin}/favicon.ico`];
+  } catch {
+    return [];
+  }
 }
 
 export function isCustomProviderConfigured(provider: { baseUrl: string; apiKey: string }): boolean {

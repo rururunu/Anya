@@ -10,6 +10,7 @@ import {
   normalizeImageGenCompose,
   type ImageGenCompose,
 } from "@/services/chat/imageGenMode";
+import { useChatModelStore } from "@/stores/chatModel";
 
 /** Per-conversation compose settings. Each conversation remembers its own
  * model / mode / approval choice and input draft; unopened sessions inherit
@@ -157,7 +158,6 @@ export async function syncComposeToRemote(
 ): Promise<void> {
   try {
     const { remoteSyncSessionCompose } = await import("@/commands/remote");
-    const { useChatModelStore } = await import("@/stores/chatModel");
     const chatModelStore = useChatModelStore();
     const match = chatModelStore.models.find(
       (model) =>

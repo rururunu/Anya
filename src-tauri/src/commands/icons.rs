@@ -53,7 +53,7 @@ fn kind_dir(app: &AppHandle, kind: &str) -> Result<PathBuf, String> {
 }
 
 fn find_existing(dir: &Path, key: &str) -> Option<PathBuf> {
-    for ext in ["png", "jpg", "webp", "gif", "svg"] {
+    for ext in ["png", "jpg", "webp", "gif", "svg", "ico"] {
         let path = dir.join(format!("{key}.{ext}"));
         if path.is_file() {
             return Some(path);
@@ -79,6 +79,9 @@ fn ext_from_url_or_ctype(url: &str, content_type: Option<&str>) -> &'static str 
     if lower_ctype.contains("image/png") {
         return "png";
     }
+    if lower_ctype.contains("image/x-icon") || lower_ctype.contains("image/vnd.microsoft.icon") {
+        return "ico";
+    }
     let path = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
     if path.ends_with(".jpg") || path.ends_with(".jpeg") {
         return "jpg";
@@ -91,6 +94,9 @@ fn ext_from_url_or_ctype(url: &str, content_type: Option<&str>) -> &'static str 
     }
     if path.ends_with(".svg") {
         return "svg";
+    }
+    if path.ends_with(".ico") {
+        return "ico";
     }
     "png"
 }
@@ -138,6 +144,7 @@ pub fn install_icon_data_url(app: &AppHandle, kind: &str, cache_key: &str) -> Op
         "webp" => "image/webp",
         "gif" => "image/gif",
         "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
         _ => "image/png",
     };
     use base64::Engine;
@@ -177,7 +184,7 @@ pub fn lookup_install_icons(
     Ok(out)
 }
 
-/// Cache an icon for an installed MCP/Skill.
+/// Cache an icon for an installed MCP, skill, or custom provider.
 /// Keyed by install identity; downloads only when that key is missing on disk.
 #[tauri::command]
 pub async fn cache_install_icon(
@@ -242,7 +249,7 @@ pub async fn cache_install_icon(
 pub fn clear_install_icon(app: AppHandle, kind: String, cache_key: String) -> Result<(), String> {
     let (kind, key) = sanitize_cache_key(&kind, &cache_key)?;
     let dir = kind_dir(&app, &kind)?;
-    for ext in ["png", "jpg", "webp", "gif", "svg", "urlsha"] {
+    for ext in ["png", "jpg", "webp", "gif", "svg", "ico", "urlsha"] {
         let path = dir.join(format!("{key}.{ext}"));
         let _ = std::fs::remove_file(path);
     }
