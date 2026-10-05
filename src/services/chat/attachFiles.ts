@@ -254,13 +254,13 @@ function hasFilesystemPath(path: string): boolean {
 function officeHint(name: string): string {
   const ext = extensionOf(name);
   if (ext === "pptx" || ext === "ppt") {
-    return "Use python-pptx (or Expand-Archive + read ppt/slides/*.xml) via run_shell on this absolute path.";
+    return "Use read_office_file on this saved path and load_skill presentations; legacy .ppt requires converting a copy first.";
   }
   if (ext === "docx" || ext === "doc") {
-    return "Use python-docx via run_shell on this absolute path.";
+    return "Use read_office_file on this saved path and load_skill documents; legacy .doc requires converting a copy first.";
   }
   if (ext === "xlsx" || ext === "xls") {
-    return "Use openpyxl / pandas via run_shell on this absolute path.";
+    return "Use read_office_file on this saved path and load_skill spreadsheets; legacy .xls requires converting a copy first.";
   }
   if (ext === "pdf") {
     return "Extract text with a PDF tool or Python (e.g. pypdf) via run_shell on this absolute path.";

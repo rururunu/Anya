@@ -199,6 +199,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
         event.messageId ?? event.message_id ?? "",
         event.kind ?? "",
         overlayDraftSessionId(),
+        event.snapshot,
       );
     }
   });

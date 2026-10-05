@@ -20,6 +20,238 @@ use crate::runtime::ToolManager;
 
 struct NullEventBus;
 
+struct RecoveringProvider {
+    calls: AtomicUsize,
+    fail_forever: bool,
+    error: &'static str,
+}
+
+#[tokio::test]
+async fn context_error_event_is_compacted_before_the_outer_turn_is_failed() {
+    struct ContextProvider(AtomicUsize);
+    #[async_trait]
+    impl AIProvider for ContextProvider {
+        fn id(&self) -> &'static str {
+            "custom-compatible"
+        }
+        async fn stream(
+            &self,
+            request: ChatRequest,
+            tx: mpsc::Sender<StreamEvent>,
+        ) -> Result<(), ProviderError> {
+            let _ = tx.send(StreamEvent::Start).await;
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                let error = "API 400: maximum context length exceeded";
+                let _ = tx.send(StreamEvent::Error(error.into())).await;
+                return Err(ProviderError::message(error));
+            }
+            assert!(request
+                .messages
+                .iter()
+                .any(|m| m.id.starts_with("compact-")));
+            assert!(request
+                .messages
+                .iter()
+                .any(|m| m.content.contains("Preserved task state")));
+            let _ = tx
+                .send(StreamEvent::TurnComplete {
+                    content: "continued after compact".into(),
+                    reasoning: None,
+                    tool_calls: vec![],
+                    finish_reason: Some("stop".into()),
+                })
+                .await;
+            let _ = tx.send(StreamEvent::Finish).await;
+            Ok(())
+        }
+    }
+    let tools = Arc::new(ToolManager::new(ToolRegistry::new()));
+    let (ctx, db) = make_ctx(tools.registry());
+    let mut request = base_request();
+    let mut large = request.messages[0].clone();
+    large.id = "large-round".into();
+    large.role = Role::Assistant;
+    large.content = "x".repeat(200_000);
+    request.messages.push(large);
+    let (tx, mut rx) = mpsc::channel(64);
+    AgentRunner::new(Arc::new(ContextProvider(AtomicUsize::new(0))), tools)
+        .with_max_turn_tokens(1_000_000)
+        .run(
+            request,
+            ctx,
+            tx,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(Mutex::new(std::collections::VecDeque::new())),
+        )
+        .await
+        .unwrap();
+    while let Some(event) = rx.recv().await {
+        assert!(!matches!(event, StreamEvent::Error(_)));
+    }
+    let _ = std::fs::remove_file(db);
+}
+
+#[async_trait]
+impl AIProvider for RecoveringProvider {
+    fn id(&self) -> &'static str {
+        "recovering-test"
+    }
+    async fn stream(
+        &self,
+        request: ChatRequest,
+        tx: mpsc::Sender<StreamEvent>,
+    ) -> Result<(), ProviderError> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let _ = tx.send(StreamEvent::Start).await;
+        if !self.fail_forever && call == 0 {
+            let _ = tx
+                .send(StreamEvent::ToolCall(tool_call("committed", "read_a")))
+                .await;
+            let _ = tx.send(StreamEvent::Finish).await;
+            return Ok(());
+        }
+        if self.fail_forever || call == 1 {
+            // An uncommitted tool delta must never be executed, even if it is
+            // complete JSON when the stream breaks.
+            let _ = tx
+                .send(StreamEvent::Delta("interrupted draft".into()))
+                .await;
+            let _ = tx
+                .send(StreamEvent::ToolCall(tool_call("partial", "read_a")))
+                .await;
+            let _ = tx.send(StreamEvent::Error(self.error.into())).await;
+            return Err(ProviderError::message(self.error));
+        }
+        assert_eq!(
+            request
+                .messages
+                .iter()
+                .filter(|m| m.role == Role::Tool)
+                .count(),
+            1
+        );
+        let _ = tx
+            .send(StreamEvent::TurnComplete {
+                content: "recovered result".into(),
+                reasoning: None,
+                tool_calls: vec![],
+                finish_reason: Some("stop".into()),
+            })
+            .await;
+        let _ = tx.send(StreamEvent::Finish).await;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn pending_round_recovery_does_not_reexecute_committed_tools() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(CountingTool {
+        name: "read_a",
+        read_only: true,
+        counter: counter.clone(),
+        parallel_peak: Arc::new(AtomicUsize::new(0)),
+        active: Arc::new(AtomicUsize::new(0)),
+        payload: "committed evidence".into(),
+    }));
+    let tools = Arc::new(ToolManager::new(registry));
+    let provider = Arc::new(RecoveringProvider {
+        calls: AtomicUsize::new(0),
+        fail_forever: false,
+        error: "Connection interrupted, please retry",
+    });
+    let (ctx, db) = make_ctx(tools.registry());
+    let runner = AgentRunner::new(provider.clone(), tools);
+    let (tx, mut rx) = mpsc::channel(64);
+    runner
+        .run(
+            base_request(),
+            ctx,
+            tx,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(Mutex::new(std::collections::VecDeque::new())),
+        )
+        .await
+        .unwrap();
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
+    let mut recovered = false;
+    while let Some(event) = rx.recv().await {
+        assert!(
+            !matches!(event, StreamEvent::Error(_)),
+            "recoverable errors must stay internal"
+        );
+        if let StreamEvent::TurnComplete { content, .. } = event {
+            recovered = content == "recovered result";
+        }
+    }
+    assert!(recovered);
+    let _ = std::fs::remove_file(db);
+}
+
+#[tokio::test]
+async fn recovery_is_bounded_and_authentication_errors_are_not_retried() {
+    for (error, expected_calls) in [
+        ("Connection interrupted, please retry", 4),
+        ("API 401: invalid credentials", 1),
+    ] {
+        let tools = Arc::new(ToolManager::new(ToolRegistry::new()));
+        let provider = Arc::new(RecoveringProvider {
+            calls: AtomicUsize::new(0),
+            fail_forever: true,
+            error,
+        });
+        let (ctx, db) = make_ctx(tools.registry());
+        let (tx, _rx) = mpsc::channel(64);
+        let result = AgentRunner::new(provider.clone(), tools)
+            .run(
+                base_request(),
+                ctx,
+                tx,
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(Mutex::new(std::collections::VecDeque::new())),
+            )
+            .await;
+        assert!(result.is_err());
+        assert_eq!(provider.calls.load(Ordering::SeqCst), expected_calls);
+        let _ = std::fs::remove_file(db);
+    }
+}
+
+#[tokio::test]
+async fn cancellation_interrupts_recovery_wait() {
+    let tools = Arc::new(ToolManager::new(ToolRegistry::new()));
+    let provider = Arc::new(RecoveringProvider {
+        calls: AtomicUsize::new(0),
+        fail_forever: true,
+        error: "API 503: unavailable",
+    });
+    let (ctx, db) = make_ctx(tools.registry());
+    let cancelled = ctx.cancelled.clone();
+    let cancel = cancelled.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        cancel.store(true, Ordering::Relaxed);
+    });
+    let (tx, _rx) = mpsc::channel(64);
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        AgentRunner::new(provider.clone(), tools).run(
+            base_request(),
+            ctx,
+            tx,
+            cancelled,
+            Arc::new(Mutex::new(std::collections::VecDeque::new())),
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(result, Err(ProviderError::Cancelled)));
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+    let _ = std::fs::remove_file(db);
+}
+
 #[tokio::test]
 async fn transient_retry_is_bounded_and_only_applies_to_reads() {
     struct FlakyTool {
@@ -475,7 +707,7 @@ async fn finishes_without_tools() {
     let tools = Arc::new(ToolManager::new(ToolRegistry::new()));
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     runner
         .run(
             base_request(),
@@ -517,7 +749,7 @@ async fn completion_claim_without_mutation_is_rejected() {
     let tools = Arc::new(ToolManager::new(ToolRegistry::new()));
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     let mut request = base_request();
     request.messages[0].content = "修改配置文件，把超时改成30秒".into();
     runner
@@ -614,7 +846,7 @@ async fn completion_claim_without_mutation_forces_actual_work() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     let mut request = base_request();
     request.messages[0].content = "修改配置文件，把超时改成30秒".into();
     runner
@@ -673,7 +905,7 @@ async fn task_update_does_not_verify_completion() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     let mut request = base_request();
     request.messages[0].content = "修改配置文件".into();
     runner
@@ -760,7 +992,7 @@ async fn completion_claim_after_mutation_and_verification_is_kept() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     let mut request = base_request();
     request.messages[0].content = "修改配置文件，把超时改成30秒".into();
     runner
@@ -820,7 +1052,7 @@ async fn completion_claim_after_mutation_without_verification_is_rejected() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     let mut request = base_request();
     request.messages[0].content = "修改配置文件".into();
     runner
@@ -863,7 +1095,7 @@ async fn question_only_request_with_completion_answer_has_no_caveat() {
     let tools = Arc::new(ToolManager::new(ToolRegistry::new()));
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     let mut request = base_request();
     request.messages[0].content = "介绍一下Rust".into();
     runner
@@ -967,7 +1199,7 @@ async fn runs_read_only_tools_in_parallel() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     runner
         .run(
             base_request(),
@@ -1019,7 +1251,7 @@ async fn stops_at_max_steps() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::with_limits(provider, tools, 2, 200_000, TOOL_OUTPUT_MAX_CHARS);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     runner
         .run(
             base_request(),
@@ -1079,7 +1311,7 @@ async fn truncates_tool_output_for_model() {
         seen_tool_chars: Mutex::new(None),
     });
     let runner = AgentRunner::with_limits(recorder.clone(), tools, 30, 200_000, 100);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     runner
         .run(
             base_request(),
@@ -1159,7 +1391,7 @@ async fn continues_when_token_budget_exceeded_without_hard_stop() {
     // Tiny window trips mid-turn compact path; without prior history to fold,
     // Codex-style behavior is to keep going instead of hard-stopping.
     let runner = AgentRunner::with_limits(provider, tools, 30, 50, TOOL_OUTPUT_MAX_CHARS);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     runner
         .run(
             base_request(),
@@ -1233,7 +1465,7 @@ async fn stops_after_repeated_identical_tool_error() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     runner
         .run(
             base_request(),
@@ -1289,7 +1521,7 @@ async fn challenges_then_continues_after_consecutive_failures() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     runner
         .run(
             base_request(),
@@ -1340,7 +1572,7 @@ async fn stops_after_consecutive_failures() {
     });
     let (ctx, db) = make_ctx(tools.registry());
     let runner = AgentRunner::new(provider, tools);
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::channel(128);
     runner
         .run(
             base_request(),

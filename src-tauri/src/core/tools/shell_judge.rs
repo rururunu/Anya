@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use crate::core::ai::provider::AIProvider;
+use crate::core::ai::provider::{AIProvider, ProviderTaskGuard};
 use crate::core::runtime::{
     ChatMessage, ChatRequest, MessageStatus, RequestContext, Role, StreamEvent,
 };
@@ -108,9 +108,9 @@ async fn collect_answer(
     request: ChatRequest,
 ) -> Result<String, String> {
     let (tx, mut rx) = mpsc::channel::<StreamEvent>(16);
-    let provider_task = tauri::async_runtime::spawn(async move {
-        let _ = provider.stream(request, tx).await;
-    });
+    let mut provider_task = ProviderTaskGuard(tauri::async_runtime::spawn(async move {
+        provider.stream(request, tx).await
+    }));
     let mut content = String::new();
     while let Some(event) = rx.recv().await {
         match event {
@@ -131,7 +131,7 @@ async fn collect_answer(
             _ => {}
         }
     }
-    let _ = provider_task.await;
+    let _ = (&mut provider_task.0).await;
     Ok(content)
 }
 

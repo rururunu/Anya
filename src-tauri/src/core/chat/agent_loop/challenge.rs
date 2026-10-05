@@ -147,6 +147,11 @@ pub struct CompletionGate {
     /// Disable all challenges for this gate instance (eval ablation).
     disabled: bool,
     length_retries: u32,
+    /// Distinct successful results replenish continuation budgets. Repeating
+    /// identical reads does not buy an endless series of completion retries.
+    progress_seen: HashSet<u64>,
+    pending_shell_jobs: HashMap<String, String>,
+    background_retries: u32,
 }
 
 impl CompletionGate {
@@ -188,6 +193,48 @@ impl CompletionGate {
     /// Record a batch with mutation pass first, then verification — fixes parallel
     /// waves where a read arrives before a write in the outcome list.
     pub fn record_tool_outcomes(&mut self, tools: &ToolManager, outcomes: &[ToolOutcome]) {
+        let mut finished_jobs = Vec::new();
+        for outcome in outcomes {
+            let args: serde_json::Value =
+                serde_json::from_str(&outcome.arguments).unwrap_or_default();
+            if outcome.tool_name == "run_shell"
+                && outcome.success
+                && args["run_in_background"].as_bool() == Some(true)
+                && !crate::core::tools::shell_jobs::background_allowed(
+                    args["command"].as_str().unwrap_or(""),
+                )
+            {
+                self.pending_shell_jobs
+                    .insert(outcome.result.trim().to_string(), outcome.arguments.clone());
+            }
+            if matches!(
+                outcome.tool_name.as_str(),
+                "wait_for_shell" | "read_shell_output" | "stop_shell"
+            ) {
+                let id = args["job_id"].as_str().unwrap_or("");
+                if outcome.result.starts_with("status: done")
+                    || (outcome.tool_name == "stop_shell" && outcome.success)
+                {
+                    if let Some(arguments) = self.pending_shell_jobs.remove(id) {
+                        let mut args: serde_json::Value =
+                            serde_json::from_str(&arguments).unwrap_or_default();
+                        args["run_in_background"] = false.into();
+                        finished_jobs.push(ToolOutcome {
+                            call_id: outcome.call_id.clone(),
+                            tool_name: "run_shell".into(),
+                            arguments: args.to_string(),
+                            result: outcome.result.clone(),
+                            success: outcome.success,
+                            user_denied: false,
+                        });
+                    }
+                } else if outcome.success && self.pending_shell_jobs.contains_key(id) {
+                    // The model really polled the job; continue waiting instead
+                    // of spending the no-action completion budget.
+                    self.background_retries = 0;
+                }
+            }
+        }
         for outcome in outcomes
             .iter()
             .filter(|o| o.success && provides_completion_evidence(o))
@@ -232,6 +279,9 @@ impl CompletionGate {
             }
         }
         self.refresh_verification();
+        if !finished_jobs.is_empty() {
+            self.record_tool_outcomes(tools, &finished_jobs);
+        }
     }
 
     pub fn note_verified_paths(&mut self, paths: impl IntoIterator<Item = String>) {
@@ -319,6 +369,21 @@ impl CompletionGate {
         if !outcome.success {
             return;
         }
+        if !matches!(
+            outcome.tool_name.as_str(),
+            "update_tasks" | "save_plan" | "wait_for_shell" | "read_shell_output"
+        ) {
+            use std::hash::{Hash, Hasher};
+            let mut fingerprint = std::collections::hash_map::DefaultHasher::new();
+            (&outcome.tool_name, &outcome.arguments, &outcome.result).hash(&mut fingerprint);
+            if self.progress_seen.insert(fingerprint.finish()) {
+                self.empty_completion_retries = 0;
+                self.verification_retries = 0;
+                self.goal_coverage_retries = 0;
+                self.open_tasks_retries = 0;
+                self.length_retries = 0;
+            }
+        }
         let key = super::failure::failure_key(outcome);
         let new_evidence = self
             .success_repeats
@@ -405,6 +470,28 @@ impl CompletionGate {
             };
         }
 
+        if !self.pending_shell_jobs.is_empty() {
+            if self.background_retries < 3 {
+                self.background_retries += 1;
+                let jobs = self
+                    .pending_shell_jobs
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                push_completion_feedback(request, user_msg_index, content, reasoning,
+                    &format!("[System] Finite shell jobs are still pending: {jobs}. Call wait_for_shell/read_shell_output until they exit. Do not restart them or claim completion from a job ID."));
+                return ChallengeOutcome::ContinueWithChallenge {
+                    status_kind: "wait_background_jobs".into(),
+                };
+            }
+            return ChallengeOutcome::Finish {
+                content: "任务尚未完成：后台命令仍在运行，已保留任务 ID 和输出。".into(),
+                reasoning: non_empty(reasoning),
+                finish_reason: Some("unverified_completion".into()),
+            };
+        }
+
         if self.require_image && !self.image_succeeded {
             if self.image_retries < MAX_COMPLETION_RETRIES {
                 self.image_retries += 1;
@@ -427,17 +514,20 @@ impl CompletionGate {
         }
 
         if finish_reason.as_deref() == Some("length")
-            && content.trim().is_empty()
-            && self.length_retries < MAX_COMPLETION_RETRIES
+            && self.length_retries
+                < if content.trim().is_empty() {
+                    MAX_COMPLETION_RETRIES
+                } else {
+                    3
+                }
         {
             self.length_retries += 1;
-            push_completion_feedback(
-                request,
-                user_msg_index,
-                content,
-                reasoning,
-                LENGTH_EXCEEDED_CHALLENGE,
-            );
+            let feedback = if content.trim().is_empty() {
+                LENGTH_EXCEEDED_CHALLENGE
+            } else {
+                "[System] The previous response was truncated by the output limit. Continue from where it stopped, without repeating its text. Complete remaining work before finishing."
+            };
+            push_completion_feedback(request, user_msg_index, content, reasoning, feedback);
             return ChallengeOutcome::ContinueWithChallenge {
                 status_kind: "length_no_tools".to_string(),
             };
@@ -496,10 +586,7 @@ impl CompletionGate {
             };
         }
 
-        if self.mutation_succeeded
-            && self.open_task_count > 0
-            && self.open_tasks_retries < MAX_COMPLETION_RETRIES
-        {
+        if self.open_task_count > 0 && self.open_tasks_retries < MAX_COMPLETION_RETRIES {
             self.open_tasks_retries += 1;
             push_completion_feedback(
                 request,
@@ -544,7 +631,7 @@ impl CompletionGate {
             request,
             self.mutation_succeeded,
             self.verification_succeeded,
-            self.mutation_succeeded && self.open_task_count > 0,
+            self.open_task_count > 0,
         );
         ChallengeOutcome::Finish {
             content: final_content,
@@ -602,18 +689,10 @@ fn looks_like_local_dev_server(tool_name: &str, arguments: &str) -> bool {
         .and_then(|v| v.as_str())
         .unwrap_or(arguments)
         .to_ascii_lowercase();
-    const MARKERS: &[&str] = &[
-        "npm ",
-        "npm.cmd",
-        "pnpm ",
-        "yarn ",
-        "vite",
-        "next dev",
-        "nuxt",
-        "webpack-dev-server",
-        "npx ",
-    ];
-    MARKERS.iter().any(|marker| command.contains(marker))
+    crate::core::tools::shell_jobs::background_allowed(&command)
+        && ["dev", "vite", "watch", "serve"]
+            .iter()
+            .any(|marker| command.contains(marker))
 }
 
 fn paths_match(goal: &str, mutated: &str) -> bool {
@@ -981,6 +1060,100 @@ fn has_completion_claim(content: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn real_progress_replenishes_completion_budget_but_identical_reads_do_not() {
+        use super::*;
+        let tools = ToolManager::new(crate::core::tools::registry::ToolRegistry::new());
+        let mut gate = CompletionGate::new();
+        gate.verification_retries = 1;
+        let outcome = ToolOutcome {
+            call_id: "read1".into(),
+            tool_name: "read_file".into(),
+            arguments: "{}".into(),
+            result: "new evidence".into(),
+            success: true,
+            user_denied: false,
+        };
+        gate.record_tool_outcome(&tools, &outcome);
+        assert_eq!(gate.verification_retries, 0);
+        gate.verification_retries = 1;
+        gate.record_tool_outcome(&tools, &outcome);
+        assert_eq!(gate.verification_retries, 1);
+    }
+
+    #[test]
+    fn finite_background_job_must_exit_before_completion() {
+        use super::*;
+        let tools = ToolManager::new(crate::core::tools::registry::ToolRegistry::new());
+        let mut gate = CompletionGate::new();
+        gate.record_tool_outcome(
+            &tools,
+            &ToolOutcome {
+                call_id: "launch".into(),
+                tool_name: "run_shell".into(),
+                arguments: r#"{"command":"cargo check","run_in_background":true}"#.into(),
+                result: "job-1".into(),
+                success: true,
+                user_denied: false,
+            },
+        );
+        let mut request = empty_request();
+        let mut user_idx = None;
+        assert!(matches!(
+            gate.evaluate_final_answer(
+                &mut request,
+                &mut user_idx,
+                "done".into(),
+                String::new(),
+                Some("stop".into())
+            ),
+            ChallengeOutcome::ContinueWithChallenge { .. }
+        ));
+        gate.record_tool_outcome(
+            &tools,
+            &ToolOutcome {
+                call_id: "wait".into(),
+                tool_name: "wait_for_shell".into(),
+                arguments: r#"{"job_id":"job-1"}"#.into(),
+                result: "status: done\nexit_code: Some(0)\nchecked".into(),
+                success: true,
+                user_denied: false,
+            },
+        );
+        assert!(gate.pending_shell_jobs.is_empty());
+        assert!(!looks_like_local_dev_server(
+            "run_shell",
+            r#"{"command":"pnpm build","run_in_background":true}"#
+        ));
+    }
+
+    #[test]
+    fn nonempty_truncated_answer_is_continued() {
+        use super::*;
+        let mut gate = CompletionGate::new();
+        let mut request = empty_request();
+        let mut user_idx = None;
+        assert!(matches!(
+            gate.evaluate_final_answer(
+                &mut request,
+                &mut user_idx,
+                "partial answer".into(),
+                String::new(),
+                Some("length".into())
+            ),
+            ChallengeOutcome::ContinueWithChallenge { .. }
+        ));
+        assert!(request
+            .messages
+            .iter()
+            .any(|m| m.content == "partial answer"));
+        assert!(request
+            .messages
+            .last()
+            .unwrap()
+            .content
+            .contains("Continue from where"));
+    }
     use super::*;
 
     #[test]

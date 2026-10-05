@@ -28,10 +28,9 @@ fn balance_action(method: &str) -> Result<&str, ToolError> {
 
 fn get_balance(app: &AppHandle) -> Result<Value, ToolError> {
     let settings = get_settings(app).map_err(ToolError::new)?;
-    let report = tauri::async_runtime::block_on(deepseek::get_user_balance(
-        &settings.deepseek_api_key,
-    ))
-    .map_err(|error| ToolError::new(error.to_string()))?;
+    let report =
+        tauri::async_runtime::block_on(deepseek::get_user_balance(&settings.deepseek_api_key))
+            .map_err(|error| ToolError::new(error.to_string()))?;
     serde_json::to_value(report)
         .map_err(|error| ToolError::new(format!("serialize balance: {error}")))
 }

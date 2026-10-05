@@ -98,6 +98,7 @@ pub fn on_bus_event(event: &BusEvent) {
             session_id,
             message_id,
             kind,
+            snapshot,
         } => {
             broadcast_server_message(&ServerMessage::Event {
                 name: "chat.status".into(),
@@ -105,6 +106,7 @@ pub fn on_bus_event(event: &BusEvent) {
                     "sessionId": session_id,
                     "messageId": message_id,
                     "kind": kind,
+                    "snapshot": snapshot,
                 })
                 .as_object()
                 .cloned()

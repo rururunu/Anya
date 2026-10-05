@@ -202,25 +202,23 @@ mod tests {
         );
     }
 
-    /// A direct child that never exits on its own (e.g. a wrapper process
-    /// whose real work is already done but which keeps running) must still
-    /// be recognized as finished once the model judge says so — well before
-    /// the hard `shell_timeout_secs` ceiling.
+    /// A completion-looking summary can precede additional work. Model
+    /// suggestions must not override the live process's actual exit.
     #[test]
-    fn foreground_recovers_when_lingering_process_is_judged_finished() {
+    fn completion_suggestion_does_not_kill_a_live_process() {
         let cancelled = Arc::new(AtomicBool::new(false));
         let started = Instant::now();
         let (context, db_path) = context_with_verdict("FINISHED");
         let result = run_foreground(
-            "Write-Output 'build succeeded'; Start-Sleep -Seconds 300",
+            "Write-Output 'build succeeded'; Start-Sleep -Seconds 17; Write-Output 'actual completion'",
             None,
             &cancelled,
             Some(&context),
         )
         .expect("run");
         assert!(
-            started.elapsed() < Duration::from_secs(45),
-            "lingering process was not reclaimed promptly: {}s",
+            started.elapsed() >= Duration::from_secs(17),
+            "process was stopped before actual completion: {}s",
             started.elapsed().as_secs()
         );
         assert!(
@@ -228,8 +226,8 @@ mod tests {
             "missing output: {result}"
         );
         assert!(
-            result.contains("note:"),
-            "expected idle-completion note: {result}"
+            result.contains("actual completion") && result.contains("exit_code: 0"),
+            "lost natural completion: {result}"
         );
         drop(context);
         let _ = std::fs::remove_file(db_path);
@@ -314,14 +312,17 @@ mod tests {
         };
         assert_eq!(
             next_wait_action(&policy(), &unconfirmed),
-            WaitAction::Stalled
+            WaitAction::KeepWaiting
         );
 
         let no_judge = WaitSnapshot {
             judge_rounds_left: 0,
             ..stalled
         };
-        assert_eq!(next_wait_action(&policy(), &no_judge), WaitAction::Stalled);
+        assert_eq!(
+            next_wait_action(&policy(), &no_judge),
+            WaitAction::KeepWaiting
+        );
     }
 
     /// Without a usable activity signal, "quiet" and "stuck" are the same
@@ -404,29 +405,31 @@ mod tests {
         assert!(started.elapsed() >= Duration::from_secs(5));
     }
 
-    /// A process that produces nothing and burns no CPU is stuck, and must be
-    /// reclaimed after the stall window instead of holding the turn until the
-    /// absolute ceiling.
+    /// Low CPU and silence can describe a healthy I/O wait.
     #[test]
-    fn stuck_commands_are_reclaimed_before_the_ceiling() {
+    fn silent_io_wait_is_not_stopped_at_the_stall_window() {
         let cancelled = Arc::new(AtomicBool::new(false));
         let policy = WaitPolicy {
-            ceiling: Duration::from_secs(600),
-            stall: Duration::from_secs(2),
+            ceiling: Duration::from_secs(20),
+            stall: Duration::from_millis(200),
         };
         let started = Instant::now();
-        let error =
-            run_foreground_with_policy("Start-Sleep -Seconds 300", None, &cancelled, None, policy)
-                .expect_err("an idle process must be reported as stuck");
+        let result = run_foreground_with_policy(
+            "Start-Sleep -Seconds 2; Write-Output 'download done'",
+            None,
+            &cancelled,
+            None,
+            policy,
+        )
+        .expect("a silent wait can be healthy");
         assert!(
             started.elapsed() < Duration::from_secs(30),
             "stuck command was not reclaimed promptly: {}s",
             started.elapsed().as_secs()
         );
-        let message = error.to_string();
         assert!(
-            message.contains("no progress"),
-            "unexpected stall message: {message}"
+            result.contains("download done") && result.contains("exit_code: 0"),
+            "unexpected result: {result}"
         );
     }
 

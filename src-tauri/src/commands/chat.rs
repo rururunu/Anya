@@ -127,17 +127,13 @@ pub async fn chat_history(
         request.before_timestamp,
         request.before_id.as_deref(),
     );
-    let oldest_timestamp = messages
-        .first()
-        .map(|message| message.timestamp as i64);
+    let oldest_timestamp = messages.first().map(|message| message.timestamp as i64);
     let oldest_id = messages.first().map(|message| message.id.clone());
 
     // Per-message side tables follow the same window, otherwise they would
     // restore the very payload growth this paging exists to avoid.
-    let window_ids: std::collections::HashSet<String> = messages
-        .iter()
-        .map(|message| message.id.clone())
-        .collect();
+    let window_ids: std::collections::HashSet<String> =
+        messages.iter().map(|message| message.id.clone()).collect();
 
     let last_cache_usage = crate::core::chat::db::load_session_cache_usage(
         &state.core.chat().conversation().db_pool(),
@@ -163,7 +159,11 @@ pub async fn chat_history(
     .into_iter()
     .filter(|(message_id, _)| window_ids.contains(message_id))
     .collect();
-    let consumed_tokens = state.core.chat().conversation().consumed_tokens(&session_id);
+    let consumed_tokens = state
+        .core
+        .chat()
+        .conversation()
+        .consumed_tokens(&session_id);
 
     Ok(ChatHistoryResponse {
         session_id,

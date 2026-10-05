@@ -123,9 +123,9 @@ async fn dispatch_verb(
             }
             act(session, &p).await
         }
-        "move" | "hover" => Ok(
-            "hover/move is discouraged; use act (click/type) with name/role instead".into(),
-        ),
+        "move" | "hover" => {
+            Ok("hover/move is discouraged; use act (click/type) with name/role instead".into())
+        }
         "browser" => browser(session, args).await,
         "tab" => tab(session, args).await,
         other => Err(format!("unknown computer action `{other}`")),
@@ -151,7 +151,9 @@ async fn see(session: &GhostSession, args: &Value) -> Result<String, String> {
     if mode == "text" {
         if let Some(name) = args["name"].as_str() {
             if let Some(t) = &scoped {
-                let _ = session.find_background(&t.title, By::name(name), None).await;
+                let _ = session
+                    .find_background(&t.title, By::name(name), None)
+                    .await;
                 return with_temporary_raise(session, &t.title, || async {
                     let text = session
                         .get_text(By::name(name))
@@ -188,7 +190,10 @@ async fn see(session: &GhostSession, args: &Value) -> Result<String, String> {
     }
 
     let elements = match (mode, window) {
-        ("fast", None) => session.describe_screen_fast().await.map_err(|e| e.to_string())?,
+        ("fast", None) => session
+            .describe_screen_fast()
+            .await
+            .map_err(|e| e.to_string())?,
         _ => session
             .describe_screen(window)
             .await
@@ -264,16 +269,10 @@ async fn act(session: &GhostSession, args: &Value) -> Result<String, String> {
             let text_owned = text.map(|s| s.to_string());
             let action_owned = action.to_string();
             return with_temporary_raise(session, &title, || async {
-                session
-                    .click_at(cx, cy)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                session.click_at(cx, cy).await.map_err(|e| e.to_string())?;
                 if action_owned == "type" {
                     if let Some(txt) = text_owned.as_deref() {
-                        session
-                            .paste_text(txt)
-                            .await
-                            .map_err(|e| e.to_string())?;
+                        session.paste_text(txt).await.map_err(|e| e.to_string())?;
                     }
                 }
                 Ok(json!({
@@ -351,10 +350,7 @@ async fn find(session: &GhostSession, args: &Value) -> Result<String, String> {
     };
 
     if let Some(t) = resolve_target(session, args).await {
-        match session
-            .find_background(&t.title, by.clone(), index)
-            .await
-        {
+        match session.find_background(&t.title, by.clone(), index).await {
             Ok(found) => {
                 return Ok(json!({
                     "ok": true,
@@ -558,7 +554,10 @@ async fn assert_tool(session: &GhostSession, args: &Value) -> Result<String, Str
             let expected = args["expected"].as_str().unwrap_or("");
             if let Some(t) = resolve_target(session, args).await {
                 return with_temporary_raise(session, &t.title, || async {
-                    let got = session.get_text(by.clone()).await.map_err(|e| e.to_string())?;
+                    let got = session
+                        .get_text(by.clone())
+                        .await
+                        .map_err(|e| e.to_string())?;
                     if got != expected {
                         return Err(format!("assert value: expected {expected:?}, got {got:?}"));
                     }
@@ -603,7 +602,9 @@ async fn window(session: &GhostSession, args: &Value) -> Result<String, String> 
             Ok(json!({ "windows": list, "anchor": anchor }).to_string())
         }
         "focus" | "anchor" => {
-            let name = args["name"].as_str().ok_or("window focus/anchor needs name")?;
+            let name = args["name"]
+                .as_str()
+                .ok_or("window focus/anchor needs name")?;
             let t = session
                 .resolve_target(Some(name))
                 .await
@@ -646,10 +647,7 @@ async fn window(session: &GhostSession, args: &Value) -> Result<String, String> 
                 Some(a) if !a.is_empty() => format!("{exe} {a}"),
                 _ => exe.to_string(),
             };
-            let pid = session
-                .launch(&cmdline)
-                .await
-                .map_err(|e| e.to_string())?;
+            let pid = session.launch(&cmdline).await.map_err(|e| e.to_string())?;
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             let tip = std::path::Path::new(exe)
                 .file_stem()
@@ -722,8 +720,8 @@ async fn key(session: &GhostSession, args: &Value) -> Result<String, String> {
             }
             return Ok(v.to_string());
         }
-        let ctrl_only = mods.len() == 1
-            && matches!(mods[0].to_ascii_lowercase().as_str(), "ctrl" | "control");
+        let ctrl_only =
+            mods.len() == 1 && matches!(mods[0].to_ascii_lowercase().as_str(), "ctrl" | "control");
         if ctrl_only {
             if let Some(cmd) = ghost_session::EditCommand::from_ctrl_key(&key_name) {
                 let cmd_name = match cmd {
@@ -750,10 +748,7 @@ async fn key(session: &GhostSession, args: &Value) -> Result<String, String> {
         let keys_owned = keys.to_string();
         return with_temporary_raise(session, &title, || async {
             if mods.is_empty() {
-                session
-                    .press(&key_name)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                session.press(&key_name).await.map_err(|e| e.to_string())?;
             } else {
                 let mod_refs: Vec<&str> = mods.iter().map(|s| s.as_str()).collect();
                 session
@@ -773,10 +768,7 @@ async fn key(session: &GhostSession, args: &Value) -> Result<String, String> {
     }
 
     if mods.is_empty() {
-        session
-            .press(&key_name)
-            .await
-            .map_err(|e| e.to_string())?;
+        session.press(&key_name).await.map_err(|e| e.to_string())?;
     } else {
         let mod_refs: Vec<&str> = mods.iter().map(|s| s.as_str()).collect();
         session
@@ -808,7 +800,9 @@ fn parse_key_combo(keys: &str) -> Result<(Vec<String>, String), String> {
         (parts, key)
     };
     if key.is_empty() {
-        return Err(format!("key: malformed {keys:?} — missing key after modifiers"));
+        return Err(format!(
+            "key: malformed {keys:?} — missing key after modifiers"
+        ));
     }
     if modifiers.iter().any(|m| m.is_empty()) {
         return Err(format!("key: malformed {keys:?} — empty modifier segment"));
@@ -867,10 +861,7 @@ async fn scroll(session: &GhostSession, args: &Value) -> Result<String, String> 
                     .map_err(|e| e.to_string())?;
                 tokio::time::sleep(std::time::Duration::from_millis(120)).await;
             }
-            let found = session
-                .find_background(&t.title, by, None)
-                .await
-                .is_ok();
+            let found = session.find_background(&t.title, by, None).await.is_ok();
             return Ok(json!({
                 "ok": found,
                 "found": found,
@@ -1043,19 +1034,19 @@ async fn click_at(session: &GhostSession, args: &Value) -> Result<String, String
     let y = args["y"].as_i64().ok_or("click needs y")? as i32;
     // Canvas / games ignore posted WM_*: pass real=true (or input=real) for SendInput.
     let want_real = args["real"].as_bool().unwrap_or(false)
-        || args["input"]
-            .as_str()
-            .is_some_and(|s| matches!(s.to_ascii_lowercase().as_str(), "real" | "foreground" | "sendinput"));
+        || args["input"].as_str().is_some_and(|s| {
+            matches!(
+                s.to_ascii_lowercase().as_str(),
+                "real" | "foreground" | "sendinput"
+            )
+        });
 
     if let Some(t) = resolve_target(session, args).await {
         if want_real {
             let title = t.title.clone();
             let target_json = t.to_json();
             return with_temporary_raise(session, &title, || async {
-                session
-                    .click_at(x, y)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                session.click_at(x, y).await.map_err(|e| e.to_string())?;
                 Ok(json!({
                     "ok": true,
                     "x": x,
@@ -1090,10 +1081,7 @@ async fn click_at(session: &GhostSession, args: &Value) -> Result<String, String
                 .into(),
         );
     }
-    session
-        .click_at(x, y)
-        .await
-        .map_err(|e| e.to_string())?;
+    session.click_at(x, y).await.map_err(|e| e.to_string())?;
     Ok(json!({
         "ok": true,
         "x": x,
@@ -1125,17 +1113,11 @@ async fn browser(session: &GhostSession, args: &Value) -> Result<String, String>
             Ok(v.to_string())
         }
         "tabs" => {
-            let tabs = session
-                .browser_tabs(id)
-                .await
-                .map_err(|e| e.to_string())?;
+            let tabs = session.browser_tabs(id).await.map_err(|e| e.to_string())?;
             Ok(serde_json::to_string_pretty(&tabs).unwrap_or_default())
         }
         "close" => {
-            session
-                .browser_close(id)
-                .await
-                .map_err(|e| e.to_string())?;
+            session.browser_close(id).await.map_err(|e| e.to_string())?;
             Ok(json!({ "ok": true }).to_string())
         }
         other => Err(format!(
@@ -1157,7 +1139,9 @@ async fn tab(session: &GhostSession, args: &Value) -> Result<String, String> {
             Ok(json!({ "target_id": tid, "url": url }).to_string())
         }
         "close" => {
-            let tid = args["target_id"].as_str().ok_or("tab close needs target_id")?;
+            let tid = args["target_id"]
+                .as_str()
+                .ok_or("tab close needs target_id")?;
             session
                 .tab_close(browser_id, tid)
                 .await
@@ -1188,7 +1172,9 @@ async fn tab(session: &GhostSession, args: &Value) -> Result<String, String> {
                     Ok(json!({ "ok": true, "url": url }).to_string())
                 }
                 "click" => {
-                    let sel = args["selector"].as_str().ok_or("tab click needs selector")?;
+                    let sel = args["selector"]
+                        .as_str()
+                        .ok_or("tab click needs selector")?;
                     let timeout = args["timeout_ms"].as_u64().unwrap_or(10_000);
                     tab.click(sel, timeout).await.map_err(|e| e.to_string())?;
                     Ok(json!({ "ok": true, "selector": sel }).to_string())

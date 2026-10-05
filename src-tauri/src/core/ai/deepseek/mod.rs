@@ -20,6 +20,7 @@ pub use models::list_models;
 pub use models::{list_openai_compatible_models, normalize_models_url};
 pub(crate) use models::{normalize_chat_completions_url, normalize_images_generations_url};
 pub use provider::DeepSeekProvider;
+pub(crate) use stream::is_retryable_stream_error;
 pub(crate) use stream::RETRY_BACKOFF;
 
 #[cfg(test)]

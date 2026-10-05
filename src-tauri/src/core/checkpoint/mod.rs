@@ -87,8 +87,8 @@ impl CheckpointStore {
         index.checkpoints.retain(|c| c.turn != checkpoint.turn);
         index.checkpoints.push(checkpoint.clone());
         index.checkpoints.sort_by_key(|c| c.turn);
-        fs::write(
-            self.index_path(session_id),
+        crate::core::tools::file_io::atomic_write(
+            &self.index_path(session_id),
             serde_json::to_string_pretty(&index)?,
         )?;
         Ok(())
@@ -145,8 +145,8 @@ impl CheckpointStore {
                 }
                 let dir = self.session_dir(session_id);
                 fs::create_dir_all(&dir)?;
-                fs::write(
-                    self.index_path(session_id),
+                crate::core::tools::file_io::atomic_write(
+                    &self.index_path(session_id),
                     serde_json::to_string_pretty(&index)?,
                 )?;
             }
@@ -202,7 +202,7 @@ impl CheckpointStore {
             );
         }
         // Keep disk in sync so file restore still works after a mid-turn crash.
-        let _ = self.persist_active_turn(session_id, turn);
+        self.persist_active_turn(session_id, turn)?;
         Ok(())
     }
 
@@ -233,12 +233,30 @@ impl CheckpointStore {
         workspace_root: &Path,
     ) -> Result<usize, ToolError> {
         let index = self.load_index(session_id)?;
-        let Some(checkpoint) = index.checkpoints.iter().find(|c| c.turn == turn) else {
+        if !index.checkpoints.iter().any(|c| c.turn == turn) {
             return Err(ToolError::new(format!("checkpoint turn {turn} not found")));
-        };
+        }
+        // The earliest pre-change snapshot for each file is its state before
+        // the selected turn. Include files first touched in later turns.
+        let mut checkpoints: Vec<_> = index
+            .checkpoints
+            .iter()
+            .filter(|c| c.turn >= turn)
+            .collect();
+        checkpoints.sort_by_key(|c| c.turn);
+        let mut files = HashMap::new();
+        for checkpoint in checkpoints {
+            for snap in &checkpoint.files {
+                let root = checkpoint
+                    .workspace_root
+                    .as_deref()
+                    .map(Path::new)
+                    .unwrap_or(workspace_root);
+                files.entry(root.join(&snap.path)).or_insert(snap);
+            }
+        }
         let mut restored = 0usize;
-        for snap in &checkpoint.files {
-            let abs = workspace_root.join(&snap.path);
+        for (abs, snap) in files {
             match &snap.content {
                 None => {
                     if abs.exists() {
@@ -250,7 +268,7 @@ impl CheckpointStore {
                     if let Some(parent) = abs.parent() {
                         fs::create_dir_all(parent)?;
                     }
-                    fs::write(&abs, content)?;
+                    crate::core::tools::file_io::atomic_write(&abs, content)?;
                     restored += 1;
                 }
             }
@@ -264,8 +282,8 @@ impl CheckpointStore {
         index.checkpoints.retain(|c| c.turn < turn);
         let dir = self.session_dir(session_id);
         fs::create_dir_all(&dir)?;
-        fs::write(
-            self.index_path(session_id),
+        crate::core::tools::file_io::atomic_write(
+            &self.index_path(session_id),
             serde_json::to_string_pretty(&index)?,
         )?;
         Ok(())
@@ -277,7 +295,7 @@ impl CheckpointStore {
             return Ok(CheckpointIndex::default());
         }
         let raw = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw).unwrap_or_default())
+        Ok(serde_json::from_str(&raw)?)
     }
 }
 
@@ -309,6 +327,69 @@ pub fn shared_checkpoint_store() -> &'static CheckpointStore {
 mod tests {
     use super::*;
     use crate::core::tools::preview::ChangeKind;
+
+    #[test]
+    fn rewind_includes_later_files_and_earliest_state() {
+        let base = std::env::temp_dir().join(format!("anya-rewind-multi-{}", uuid::Uuid::new_v4()));
+        let workspace = base.join("workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        let store = CheckpointStore::new(base.join("checkpoints"));
+        for (turn, files) in [
+            (0, vec![]),
+            (
+                1,
+                vec![FileSnap {
+                    path: "a.txt".into(),
+                    content: Some("original".into()),
+                }],
+            ),
+            (
+                2,
+                vec![
+                    FileSnap {
+                        path: "a.txt".into(),
+                        content: Some("after first".into()),
+                    },
+                    FileSnap {
+                        path: "b.txt".into(),
+                        content: Some("old b".into()),
+                    },
+                    FileSnap {
+                        path: "new.txt".into(),
+                        content: None,
+                    },
+                ],
+            ),
+        ] {
+            store
+                .write_checkpoint(
+                    "session",
+                    &Checkpoint {
+                        turn,
+                        time: 0,
+                        prompt: String::new(),
+                        files,
+                        user_message_id: Some(format!("user-{turn}")),
+                        workspace_root: Some(workspace.to_string_lossy().into_owned()),
+                    },
+                )
+                .unwrap();
+        }
+        for name in ["a.txt", "b.txt", "new.txt"] {
+            fs::write(workspace.join(name), "latest").unwrap();
+        }
+        assert_eq!(store.restore_code("session", 0, &workspace).unwrap(), 3);
+        assert_eq!(
+            fs::read_to_string(workspace.join("a.txt")).unwrap(),
+            "original"
+        );
+        assert_eq!(
+            fs::read_to_string(workspace.join("b.txt")).unwrap(),
+            "old b"
+        );
+        assert!(!workspace.join("new.txt").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn begin_turn_persists_conversation_checkpoint_immediately() {

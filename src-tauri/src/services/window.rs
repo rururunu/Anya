@@ -313,10 +313,7 @@ fn spawn_overlay_context_enrichment(
                 context.selected_images = partial.selected_images;
             }
         }
-        crate::core::context::provider::environment_provider::collect_deferred(
-            &mut context,
-            window.as_ref().map(|info| info.process_name.as_str()),
-        );
+        crate::core::context::provider::environment_provider::collect_deferred(&mut context);
         if context != before {
             {
                 let mut pending = pending_contexts();
@@ -558,7 +555,12 @@ fn place_and_show_overlay_at_mouse(
             tracing::debug!(label = %label_str, source = "toggle_overlay", "overlay interactive ready");
             show_and_focus_overlay(&window);
             let _ = window.emit_to(&label_str, "overlay-shown", ());
-            spawn_overlay_context_enrichment(app.clone(), label_str, context.clone(), source_window);
+            spawn_overlay_context_enrichment(
+                app.clone(),
+                label_str,
+                context.clone(),
+                source_window,
+            );
             mark_blur_guard();
         }
     } else {

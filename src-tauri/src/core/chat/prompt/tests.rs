@@ -7,6 +7,28 @@ use crate::core::runtime::{ChatMessage, MessageStatus, RequestContext, Role};
 use crate::models::settings::{AppLanguage, ReasoningLanguage};
 
 #[test]
+fn dsh_prompt_omits_legacy_tool_policies_and_keeps_stable_prefix() {
+    let context = RequestContext { workspace: Some(crate::core::runtime::request::WorkspaceContext { name: "project".into(), root: r"C:\project".into() }), ..Default::default() };
+    let preferences = PromptPreferences { minimal_coding: true, plan_mode: true, suggest_plan_request: true, ..Default::default() };
+    let build = |memory| PromptBuilder::build_dsh(PromptBuildInput {
+        request_id: "r", session_id: "s", history: &[], context: &context,
+        project_rules: Some("Project-specific rule"), recalled_memories: Some(memory),
+        preferred_resources: None, provider: Some("deepseek".into()), preferences: &preferences,
+    });
+    let first = build("one"); let second = build("two");
+    assert!(first.messages[0].id.starts_with("dsh-identity-"));
+    let prefix = first.messages.iter().position(|m| m.id == "memories-s").unwrap();
+    assert_eq!(first.messages[..prefix], second.messages[..prefix]);
+    assert!(first.messages.iter().any(|m| m.content == "Project-specific rule"));
+    let text = first.messages.iter().map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n");
+    assert!(!text.contains("run_shell")); assert!(!text.contains("request_plan_mode")); assert!(!text.contains("save_plan"));
+    assert!(!text.contains("read_file")); assert!(text.contains("(read, glob, grep,"));
+    let old = PromptBuilder::build(PromptBuildInput { request_id:"r",session_id:"s",history:&[],context:&context,project_rules:None,recalled_memories:None,preferred_resources:None,provider:Some("other".into()),preferences:&preferences });
+    assert!(old.messages.iter().any(|m| m.id == "system-s"));
+    assert!(!old.messages.iter().any(|m| m.id.starts_with("dsh-")));
+}
+
+#[test]
 fn collaboration_models_are_injected_only_when_configured() {
     let context = RequestContext::default();
     let preferences = PromptPreferences {
@@ -650,27 +672,6 @@ fn optional_policies_never_shift_stable_prefix_slots() {
         .messages
         .iter()
         .any(|m| m.id.starts_with("collaboration-models-") || m.id.starts_with("minimal-coding-")));
-}
-
-#[test]
-fn office_context_is_injected_into_prompt() {
-    let context = RequestContext {
-        office_context: Some(crate::core::office::OfficeContext {
-            app: "word".to_string(),
-            is_foreground: true,
-            document_name: Some("Report.docx".to_string()),
-            selected_text: Some("draft paragraph".to_string()),
-            ..crate::core::office::OfficeContext::default()
-        }),
-        ..RequestContext::default()
-    };
-    let mut messages = Vec::new();
-    inject_context(&mut messages, "session-1", &context);
-    assert!(messages.is_empty());
-    let live = format_volatile_context(&context).expect("office live");
-    assert!(live.contains("[Microsoft Word Context]"));
-    assert!(live.contains("Report.docx"));
-    assert!(live.contains("word_get_selection"));
 }
 
 #[test]

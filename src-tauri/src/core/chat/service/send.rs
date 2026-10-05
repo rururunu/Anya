@@ -315,16 +315,19 @@ impl ChatService {
                 session_id: session_id.clone(),
                 message_id: assistant_message.id.clone(),
                 kind: "context_compacting".to_string(),
+                snapshot: None,
             });
         }
-        let compact = compact::prepare_history_for_prompt(
+        let compact = if provider.uses_dsh_tools() { compact::prepare_dsh_history_for_prompt(
+            &history, &context, &session_id, context_window, Some(&summarizer),
+        ).await } else { compact::prepare_history_for_prompt(
             &history,
             &context,
             &session_id,
             context_window,
             Some(&summarizer),
         )
-        .await;
+        .await };
         if may_compact {
             let kind = compact
                 .notice
@@ -343,6 +346,7 @@ impl ChatService {
                 session_id: session_id.clone(),
                 message_id: assistant_message.id.clone(),
                 kind,
+                snapshot: None,
             });
         }
         if let Some(notice) = &compact.notice {
@@ -460,7 +464,8 @@ impl ChatService {
             companion_origin: shared_session_origin_store().is_companion(&session_id),
             image_mode: image_mode_options.as_ref().map(ImageModePolicy::from),
         };
-        let mut request = PromptBuilder::build(PromptBuildInput {
+        let build_prompt = if provider.uses_dsh_tools() { PromptBuilder::build_dsh } else { PromptBuilder::build };
+        let mut request = build_prompt(PromptBuildInput {
             request_id: &assistant_message.id,
             session_id: &session_id,
             history: &compact.messages,

@@ -93,6 +93,9 @@ impl FailureBreaker {
                 continue;
             }
             if outcome.success {
+                let key = failure_key(outcome);
+                self.repeated_tool_errors.remove(&key);
+                self.challenged_keys.remove(&key);
                 any_success = true;
                 continue;
             }
@@ -273,6 +276,22 @@ mod tests {
             success,
             user_denied: false,
         }
+    }
+
+    #[test]
+    fn successful_retry_resets_the_identical_error_streak() {
+        let mut breaker = FailureBreaker::new();
+        let failed = || outcome("read_file", "{}", "network error", false);
+        assert_eq!(breaker.check(&[failed()]), FailureAction::Continue);
+        assert!(matches!(
+            breaker.check(&[failed()]),
+            FailureAction::Challenge { .. }
+        ));
+        assert_eq!(
+            breaker.check(&[outcome("read_file", "{}", "recovered", true)]),
+            FailureAction::Continue
+        );
+        assert_eq!(breaker.check(&[failed()]), FailureAction::Continue);
     }
 
     #[test]

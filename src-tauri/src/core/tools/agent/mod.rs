@@ -68,7 +68,9 @@ async fn run_subagent_with_scope(
         .clone()
         .ok_or_else(|| ToolError::new("registry unavailable"))?;
     let child = ctx.child_subagent(prompt);
-    let full_prompt = build_subagent_prompt(ctx, prompt, in_scope_paths);
+    let mut prompt_context = ctx.clone();
+    prompt_context.provider = Some(Arc::clone(&provider));
+    let full_prompt = build_subagent_prompt(&prompt_context, prompt, in_scope_paths);
     execute_child(
         provider,
         ctx.provider.clone(),
@@ -260,6 +262,10 @@ async fn execute_child(
     read_only: bool,
     parent_subagent_id: Option<String>,
 ) -> Result<String, ToolError> {
+    let dsh_parent = child.provider.as_ref().is_some_and(|provider| provider.uses_dsh_tools());
+    // Request-level recovery retains completed tools; restarting a writable dsh
+    // child would lose that boundary and could apply the same mutation twice.
+    let can_restart_child = read_only || !(dsh_parent || provider.uses_dsh_tools());
     let subagent_id = child
         .subagent_id
         .clone()
@@ -288,7 +294,7 @@ async fn execute_child(
     // shared gateway under concurrent parallel-subagent load can still fail
     // every attempt within that short window. Give the whole child one more
     // independent run after backing off, before accepting the failure.
-    if result
+    if can_restart_child && result
         .as_ref()
         .err()
         .is_some_and(is_transient_provider_error)
@@ -303,7 +309,7 @@ async fn execute_child(
         )
         .await;
     }
-    if result.as_ref().err().is_some_and(is_unservable_model_error) {
+    if can_restart_child && result.as_ref().err().is_some_and(is_unservable_model_error) {
         if let Some(fallback) = fallback {
             result =
                 AgentRunner::run_subagent(fallback, registry, child, full_prompt, read_only).await;
@@ -322,6 +328,7 @@ async fn execute_child(
     });
 
     match result {
+        Ok(answer) if dsh_parent => Ok(answer),
         Ok(answer) => Ok(format_subagent_return(&workspace, &session_id, &subagent_id, &answer)),
         Err(error) => Err(ToolError::new(format!(
             "subagent failed: {error}\n\n### Conclusion\nFailed.\n\n### Evidence\n- See error above."
@@ -383,6 +390,9 @@ fn build_subagent_prompt(
     prompt: &str,
     in_scope_paths: Option<&[String]>,
 ) -> String {
+    if ctx.provider.as_ref().is_some_and(|provider| provider.uses_dsh_tools()) {
+        return prompt.to_string();
+    }
     let mut parts = vec![SUBAGENT_PROMPT.to_string(), String::new()];
     parts.push(build_parent_handoff(ctx, in_scope_paths));
     parts.push(format!("## Assignment\n{prompt}"));
@@ -521,12 +531,10 @@ pub async fn execute_async_tool(
             let skill = args["name"].as_str().unwrap_or("");
             crate::core::tools::skills::require_skill_enabled(skill)?;
             let task = args["task"].as_str().unwrap_or("");
-            let prompt = if matches!(skill, "docx" | "docx_skill" | "word_docx") {
-                crate::core::tools::skills::build_docx_prompt(task, &ctx.workspace_root)?
-            } else {
-                let body = crate::core::tools::skills::resolve_skill_body(skill)?;
-                format!("{body}\n\n## Task\n{task}")
-            };
+            let prompt = format!(
+                "{}\n\n## Task\n{task}",
+                crate::core::tools::skills::skill_prompt(skill, ctx)?
+            );
             let read_only = args["read_only"].as_bool().unwrap_or(false);
             let model = model_token(&args);
             run_subagent(ctx, &prompt, read_only, model.as_deref()).await
@@ -561,7 +569,10 @@ pub async fn execute_async_tool(
         "docx" => {
             crate::core::tools::skills::require_skill_enabled("docx")?;
             let task = args["task"].as_str().unwrap_or("");
-            let prompt = crate::core::tools::skills::build_docx_prompt(task, &ctx.workspace_root)?;
+            let prompt = format!(
+                "{}\n\n## Task\n{task}",
+                crate::core::tools::skills::skill_prompt("documents", ctx)?
+            );
             run_subagent(ctx, &prompt, false, None).await
         }
         "pandoc" => {
@@ -580,7 +591,7 @@ async fn run_builtin_skill(
     read_only: bool,
 ) -> Result<String, ToolError> {
     crate::core::tools::skills::require_skill_enabled(skill)?;
-    let body = crate::core::tools::skills::resolve_skill_body(skill)?;
+    let body = crate::core::tools::skills::skill_prompt(skill, ctx)?;
     let prompt = format!("{body}\n\n## Task\n{task}");
     run_subagent(ctx, &prompt, read_only, None).await
 }

@@ -10,19 +10,29 @@ use crate::runtime::tool::{Tool, ToolContext, ToolError};
 /// The only dispatch boundary exposed to the AI runtime.
 pub struct ToolManager {
     registry: Arc<ToolRegistry>,
+    dsh: bool,
 }
 
 #[allow(dead_code)]
 impl ToolManager {
     pub fn new(registry: ToolRegistry) -> Self {
+        let dsh = registry.names().iter().any(|name| name == "read");
         Self {
             registry: Arc::new(registry),
+            dsh,
         }
     }
 
     pub(crate) fn from_registry(registry: Arc<ToolRegistry>) -> Self {
-        Self { registry }
+        let dsh = registry.names().iter().any(|name| name == "read");
+        Self { registry, dsh }
     }
+
+    pub fn dsh_contract(self: &Arc<Self>) -> Self {
+        Self { registry: Arc::new(crate::core::tools::dsh::registry(Arc::clone(self))), dsh: true }
+    }
+
+    pub fn is_dsh(&self) -> bool { self.dsh }
 
     pub fn schemas(&self) -> Vec<Value> {
         self.registry.schemas()
@@ -132,11 +142,11 @@ impl ToolManager {
     }
 
     pub fn read_only(&self) -> Self {
-        Self::new(self.registry.filter_read_only())
+        Self { registry: Arc::new(self.registry.filter_read_only()), dsh: self.dsh }
     }
 
     pub fn ask_mode(&self) -> Self {
-        Self::new(self.registry.filter_for_ask_mode())
+        Self { registry: Arc::new(self.registry.filter_for_ask_mode()), dsh: self.dsh }
     }
 
     pub fn image_mode(&self) -> Self {

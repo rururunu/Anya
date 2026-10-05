@@ -375,7 +375,12 @@ function isSkillInstalled(entry: SmitherySkillSummary) {
   return skills.value.some((skill) => isSameSkillInstall(skill, entry));
 }
 
-const PLATFORM_BUILTIN_SKILLS = new Set(["plugin_creator"]);
+const PLATFORM_BUILTIN_SKILLS = new Set([
+  "plugin_creator",
+  "documents",
+  "spreadsheets",
+  "presentations",
+]);
 
 function isPlatformBuiltin(name: string) {
   return PLATFORM_BUILTIN_SKILLS.has(name);

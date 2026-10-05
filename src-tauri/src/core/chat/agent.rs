@@ -95,6 +95,18 @@ impl AgentRunner {
             request_id = %request.request_id,
             provider = ?request.provider,
         );
+        if self.provider.uses_dsh_tools() && !self.tools.is_dsh() {
+            let adapted = Self {
+                provider: Arc::clone(&self.provider),
+                tools: Arc::new(self.tools.dsh_contract()),
+                max_steps: self.max_steps,
+                max_turn_tokens: self.max_turn_tokens,
+                tool_output_max_chars: self.tool_output_max_chars,
+            };
+            let mut context = tool_ctx;
+            context.registry = Some(adapted.tools.registry());
+            return adapted.run_loop(request, context, tx, cancelled, soft_queue).instrument(span).await;
+        }
         self.run_loop(request, tool_ctx, tx, cancelled, soft_queue)
             .instrument(span)
             .await
@@ -110,14 +122,39 @@ impl AgentRunner {
     ) -> Result<(), ProviderError> {
         let mut tool_executor =
             ToolExecutor::new(Arc::clone(&self.tools), self.tool_output_max_chars);
+        if self.tools.is_dsh() {
+            let text = crate::core::tools::dsh::tool_prompt(&self.tools.schemas());
+            let mut guidance = request.messages.first().cloned().unwrap_or_else(|| ChatMessage { id: String::new(), session_id: request.session_id.clone(), role: Role::System, content: String::new(), reasoning: None, work_timeline: None, tool_activities: None, tool_calls: None, tool_call_id: None, name: None, status: MessageStatus::Done, timestamp: 0, estimated_tokens: None });
+            if request.messages.first().is_none_or(|m| m.role != Role::System) {
+                let mut identity = guidance.clone();
+                identity.id = format!("dsh-identity-{}", request.session_id);
+                identity.role = Role::System;
+                identity.content = crate::core::tools::dsh::IDENTITY.trim().into();
+                request.messages.insert(0, identity);
+            }
+            guidance.id = format!("dsh-tools-{}", request.session_id);
+            guidance.role = Role::System;
+            guidance.content = text;
+            guidance.reasoning = None;
+            guidance.tool_calls = None;
+            guidance.tool_call_id = None;
+            request.messages.insert(1, guidance);
+            if self.tools.registry().names().iter().any(|name| name == "skill") {
+                let mut catalog = request.messages[1].clone();
+                catalog.id = format!("dsh-skills-{}", request.session_id);
+                catalog.content = crate::core::tools::dsh::skill_catalog();
+                request.messages.insert(2, catalog);
+            }
+        }
         let mut steps = 0u32;
-        let mut context_compacted = false;
+        let mut context_recoveries = 0u32;
         let mut failure_breaker = FailureBreaker::new();
         let mut completion_gate = CompletionGate::new();
         completion_gate.set_workspace_root(tool_ctx.workspace_root.clone());
         let mut verification_queue = VerificationQueue::default();
         let mut task_state = super::agent_loop::task_state::TaskState::new(&request);
-        let mut criteria_challenged = false;
+        let mut criteria_retries = 0u32;
+        let mut progress_evidence = std::collections::HashSet::new();
         let mut discovered_tools = std::collections::HashSet::new();
         if crate::core::tools::image_mode::is_image_mode(&request.session_id) {
             completion_gate.require_image();
@@ -188,7 +225,29 @@ impl AgentRunner {
                 persist_mid_turn_compact(&tool_ctx, outcome);
             }
 
-            task_state.inject(&mut request);
+            if !self.tools.is_dsh() { task_state.inject(&mut request); }
+            else {
+                let plan_id = format!("dsh-plan-{}", request.session_id);
+                request.messages.retain(|m| m.id != plan_id);
+                if crate::core::tools::plan_mode::shared_plan_mode_store().is_active(tool_ctx.root_session_id()) {
+                    let mut policy = request.messages[0].clone();
+                    policy.id = plan_id;
+                    policy.content = "Plan mode is active. Inspect and research with read-only tools. Do not modify files or run shell commands. Present the complete markdown plan with exit_plan_mode for user review. Continue execution only after approval. Delegated agents must remain read-only.".into();
+                    request.messages.insert(3.min(request.messages.len()), policy);
+                }
+                for notice in crate::core::tools::dsh::completion_notices(&tool_ctx.session_id) {
+                    if let Some(mut message) = request.messages.last().cloned() {
+                        message.id = uuid::Uuid::new_v4().to_string();
+                        message.role = Role::User;
+                        message.content = notice;
+                        message.reasoning = None;
+                        message.tool_calls = None;
+                        message.tool_call_id = None;
+                        message.name = None;
+                        request.messages.push(message);
+                    }
+                }
+            }
             let tools = frozen_tools
                 .get_or_insert_with(|| {
                     self.tools.focused_schemas(
@@ -205,78 +264,80 @@ impl AgentRunner {
                     .iter()
                     .filter_map(|schema| schema["function"]["name"].as_str().map(str::to_owned)),
             );
-            crate::core::chat::prompt::ensure_plan_mode_prompt(
-                &mut request.messages,
-                tool_ctx.root_session_id(),
-            );
-            let (turn_tx, turn_rx) = mpsc::channel::<StreamEvent>(64);
-            let provider = Arc::clone(&self.provider);
-            let turn_request = request.clone();
+            if !self.tools.is_dsh() {
+                crate::core::chat::prompt::ensure_plan_mode_prompt(&mut request.messages, tool_ctx.root_session_id());
+            }
             let stream_turn_span = tracing::info_span!(
                 target: "peek.agent",
                 "agent.stream_turn",
                 session_id = %request.session_id,
                 step = steps,
             );
-            let provider_task = tauri::async_runtime::spawn(
-                async move { provider.stream(turn_request, turn_tx).await }
-                    .instrument(stream_turn_span.clone()),
-            );
-
+            let turn_result = self
+                .stream_with_recovery(&request, &tx, &cancelled)
+                .instrument(stream_turn_span)
+                .await;
+            let turn = match turn_result {
+                Ok(turn) => turn,
+                Err(error) => {
+                    // Reactive compaction: the provider rejected the request for
+                    // exceeding the context window. Fold history and retry only
+                    // while each recovery actually reduces the request size,
+                    // instead of hard-failing the turn.
+                    if error.is_context_window_exceeded() && context_recoveries < 3 {
+                        context_recoveries += 1;
+                        let before_tokens = estimate_request_tokens(&request);
+                        if let Some(mut outcome) = mid_turn_compact::force_compact(
+                            &self.provider,
+                            self.max_turn_tokens,
+                            &mut request,
+                            &mut user_msg_index,
+                            &mut used_tokens,
+                            &tx,
+                        )
+                        .await
+                        {
+                            last_compact_msg_len = request.messages.len();
+                            outcome.summary.content.push_str(&format!(
+                                "\n\n[Preserved task state]\n{}",
+                                task_state.snapshot()
+                            ));
+                            if let Some(message) = request
+                                .messages
+                                .iter_mut()
+                                .find(|m| m.id == outcome.summary.id)
+                            {
+                                message.content = outcome.summary.content.clone();
+                            }
+                            persist_mid_turn_compact(&tool_ctx, outcome);
+                            if estimate_request_tokens(&request) < before_tokens {
+                                let _ = tx
+                                    .send(StreamEvent::Status {
+                                        kind: format!("stream_retry:{context_recoveries}:3"),
+                                    })
+                                    .await;
+                                continue;
+                            }
+                        }
+                    }
+                    return Err(error);
+                }
+            };
+            context_recoveries = 0;
             let StreamTurnResult {
                 content,
                 reasoning,
                 tool_calls,
                 finish_reason,
-            } = stream_turn::collect_stream_turn(turn_rx, &tx, &cancelled)
-                .instrument(stream_turn_span)
-                .await
-                .map_err(|error| {
-                    provider_task.abort();
-                    error
-                })?;
-
-            let provider_result = provider_task.await.map_err(|error| {
-                ProviderError::message(format!("provider task failed: {error}"))
-            })?;
-            if let Err(error) = provider_result {
-                // Reactive compaction: the provider rejected the request for
-                // exceeding the context window. Fold prior history once and retry
-                // instead of hard-failing the turn.
-                if error.is_context_window_exceeded() && !context_compacted {
-                    context_compacted = true;
-                    if let Some(mut outcome) = mid_turn_compact::force_compact(
-                        &self.provider,
-                        self.max_turn_tokens,
-                        &mut request,
-                        &mut user_msg_index,
-                        &mut used_tokens,
-                        &tx,
-                    )
-                    .await
-                    {
-                        last_compact_msg_len = request.messages.len();
-                        outcome.summary.content.push_str(&format!(
-                            "\n\n[Preserved task state]\n{}",
-                            task_state.snapshot()
-                        ));
-                        if let Some(message) = request
-                            .messages
-                            .iter_mut()
-                            .find(|m| m.id == outcome.summary.id)
-                        {
-                            message.content = outcome.summary.content.clone();
-                        }
-                        persist_mid_turn_compact(&tool_ctx, outcome);
-                        continue;
-                    }
-                }
-                return Err(error);
-            }
+            } = turn;
 
             used_tokens += estimate_tokens(&content) + estimate_tokens(&reasoning);
 
             if tool_calls.is_empty() {
+                if self.tools.is_dsh() {
+                    let _ = tx.send(StreamEvent::TurnComplete { content, reasoning: non_empty(reasoning), tool_calls: vec![], finish_reason }).await;
+                    break;
+                }
                 if task_state.execution_paused() {
                     let _ = tx
                         .send(StreamEvent::TurnComplete {
@@ -325,8 +386,8 @@ impl AgentRunner {
                 }
                 let unresolved = task_state.unresolved_criteria();
                 if !unresolved.is_empty() {
-                    if !criteria_challenged {
-                        criteria_challenged = true;
+                    if criteria_retries < 3 {
+                        criteria_retries += 1;
                         push_challenge_message(&mut request, &mut user_msg_index,
                             &format!("[System] Acceptance criteria still lack successful evidence: {}. Complete and verify them, then update_tasks with evidence call IDs, or report the blocker.", unresolved.join("; ")));
                         steps += 1;
@@ -377,25 +438,15 @@ impl AgentRunner {
                             timestamp: now_millis(),
                             estimated_tokens: None,
                         });
-                        if drain_soft_injects(
-                            &soft_queue,
-                            &mut request,
-                            &tx,
-                            &mut user_msg_index,
-                        )
-                        .await
+                        if drain_soft_injects(&soft_queue, &mut request, &tx, &mut user_msg_index)
+                            .await
                         {
                             steps += 1;
                             continue;
                         }
                         tokio::task::yield_now().await;
-                        if drain_soft_injects(
-                            &soft_queue,
-                            &mut request,
-                            &tx,
-                            &mut user_msg_index,
-                        )
-                        .await
+                        if drain_soft_injects(&soft_queue, &mut request, &tx, &mut user_msg_index)
+                            .await
                         {
                             steps += 1;
                             continue;
@@ -452,6 +503,19 @@ impl AgentRunner {
             completion_gate.record_tool_outcomes(&self.tools, &outcomes);
             verification_queue.record(&outcomes, &tool_ctx.workspace_root);
             for outcome in &outcomes {
+                if outcome.success
+                    && !matches!(
+                        outcome.tool_name.as_str(),
+                        "update_tasks" | "save_plan" | "wait_for_shell" | "read_shell_output"
+                    )
+                    && progress_evidence.insert((
+                        outcome.tool_name.clone(),
+                        outcome.arguments.clone(),
+                        outcome.result.clone(),
+                    ))
+                {
+                    criteria_retries = 0;
+                }
                 task_state.record(outcome);
                 if outcome.success && outcome.tool_name == "search_tools" {
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&outcome.result) {
@@ -548,6 +612,68 @@ impl AgentRunner {
         Ok(())
     }
 
+    /// Recover only the pending model round. Previously committed tools remain
+    /// in request.messages and are never executed again by this recovery path.
+    async fn stream_with_recovery(
+        &self,
+        request: &ChatRequest,
+        tx: &mpsc::Sender<StreamEvent>,
+        cancelled: &Arc<AtomicBool>,
+    ) -> Result<StreamTurnResult, ProviderError> {
+        for recovery in 0..=3u32 {
+            if cancelled.load(Ordering::Relaxed) || tx.is_closed() {
+                return Err(ProviderError::cancelled());
+            }
+            let (turn_tx, turn_rx) = mpsc::channel(64);
+            let provider = Arc::clone(&self.provider);
+            let turn_request = request.clone();
+            let provider_task =
+                tauri::async_runtime::spawn(
+                    async move { provider.stream(turn_request, turn_tx).await },
+                );
+            let collected = stream_turn::collect_stream_turn(turn_rx, tx, cancelled).await;
+            let result = match collected {
+                Ok(turn) => match provider_task.await {
+                    Ok(Ok(())) => Ok(turn),
+                    Ok(Err(error)) => Err(error),
+                    Err(error) => Err(ProviderError::message(format!(
+                        "provider task failed: {error}"
+                    ))),
+                },
+                Err(error) => {
+                    provider_task.abort();
+                    Err(error)
+                }
+            };
+            match result {
+                Err(error)
+                    if recovery < 3
+                        && crate::core::ai::deepseek::is_retryable_stream_error(&error) =>
+                {
+                    #[cfg(not(test))]
+                    let delay = std::time::Duration::from_secs(10 * (1 << recovery));
+                    #[cfg(test)]
+                    let delay = std::time::Duration::from_millis(20 * (1 << recovery));
+                    tracing::warn!(session_id = %request.session_id, recovery = recovery + 1, ?delay, %error, "recovering pending agent round");
+                    let _ = tx
+                        .send(StreamEvent::Status {
+                            kind: format!("stream_retry:{}:3", recovery + 1),
+                        })
+                        .await;
+                    let deadline = tokio::time::Instant::now() + delay;
+                    while tokio::time::Instant::now() < deadline {
+                        if cancelled.load(Ordering::Relaxed) || tx.is_closed() {
+                            return Err(ProviderError::cancelled());
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                }
+                result => return result,
+            }
+        }
+        unreachable!("bounded recovery returns on its final attempt")
+    }
+
     pub async fn run_subagent(
         provider: Arc<dyn AIProvider>,
         registry: Arc<ToolRegistry>,
@@ -555,10 +681,11 @@ impl AgentRunner {
         prompt: String,
         read_only: bool,
     ) -> Result<String, ToolError> {
+        let mut tool_ctx = tool_ctx;
+        tool_ctx.provider = Some(Arc::clone(&provider));
         let active_tools = Arc::new(ToolManager::new(registry.filter_for_subagent(read_only)));
-        let runner = AgentRunner::new(provider, active_tools)
-            .with_max_steps(24)
-            .with_max_turn_tokens(48_000);
+        tool_ctx.registry = Some(active_tools.registry());
+        let runner = AgentRunner::new(provider, active_tools).with_max_turn_tokens(48_000);
         let (tx, mut rx) = mpsc::channel::<StreamEvent>(64);
         let cancelled = Arc::clone(&tool_ctx.cancelled);
         let soft_queue = Arc::new(Mutex::new(VecDeque::new()));

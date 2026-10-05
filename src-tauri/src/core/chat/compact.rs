@@ -245,6 +245,34 @@ pub async fn prepare_history_for_prompt(
     }
 }
 
+/// First shrink large tool payloads; summarize only if the remeasured history is still full.
+/// This operates on a request copy, preserving durable reasoning and tool-call identifiers.
+pub async fn prepare_dsh_history_for_prompt(
+    history: &[ChatMessage], context: &RequestContext, session_id: &str,
+    context_window: usize, summarizer: Option<&dyn ConversationSummarizer>,
+) -> CompactResult {
+    let mut messages = history.to_vec();
+    if measure_context_usage(&messages, context, None, context_window).usage_ratio >= COMPACT_TRIGGER_RATIO {
+        trim_dsh_tool_payloads(&mut messages);
+    }
+    prepare_history_for_prompt(&messages, context, session_id, context_window, summarizer).await
+}
+
+pub(crate) fn trim_dsh_tool_payloads(messages: &mut [ChatMessage]) {
+        for message in messages {
+            if message.role == Role::Tool {
+                message.content = limits::truncate_tool_output(&message.content, 8000);
+                message.estimated_tokens = None;
+            }
+            if let Some(activities) = message.tool_activities.as_mut() {
+                message.estimated_tokens = None;
+                for activity in activities {
+                    if let Some(result) = activity.result.as_mut() { *result = limits::truncate_tool_output(result, 8000); }
+                }
+            }
+        }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ContextUsageExtras {
     pub rules_tokens: usize,
@@ -479,7 +507,9 @@ pub async fn compact_after_user(
         return None;
     }
     let after = &messages[user_idx + 1..];
-    let folded_outcome = fold_compactable(after, session_id, summarizer, false).await?;
+    // Called only under context pressure: even a short round can contain a
+    // huge tool result. Completed tools may be summarized safely.
+    let folded_outcome = fold_compactable(after, session_id, summarizer, true).await?;
     let mut new_messages = messages[..=user_idx].to_vec();
     new_messages.extend(folded_outcome.messages);
     Some(CompactPriorResult {
@@ -504,8 +534,8 @@ async fn fold_compactable(
     // Already over the 80% trigger: a handful of huge turns can fill 1M
     // without reaching 8+ messages. Fold the whole short prior into a summary
     // and keep only the caller's current user turn.
-    // In-flight tool compact keeps a full tail and will not fold a short
-    // tool loop (completion / mutation gates still need those rows).
+    // Short in-flight rounds may also be folded: the live completion gates
+    // and preserved task snapshot retain their execution evidence.
     let keep = if compactable.len() > keep_count {
         keep_count
     } else if fold_all_when_short {
@@ -517,7 +547,31 @@ async fn fold_compactable(
         return None;
     }
 
-    let split_at = compactable.len() - keep;
+    let mut split_at = compactable.len() - keep;
+    // Keep each retained tool result with its assistant tool-call message.
+    // Splitting a parallel batch would cause a provider protocol error.
+    loop {
+        let mut safe_split = split_at;
+        for message in &compactable[split_at..] {
+            if let Some(id) = message.tool_call_id.as_deref() {
+                if let Some(parent) = compactable[..split_at].iter().position(|message| {
+                    message
+                        .tool_calls
+                        .as_ref()
+                        .is_some_and(|calls| calls.iter().any(|call| call.id == id))
+                }) {
+                    safe_split = safe_split.min(parent);
+                }
+            }
+        }
+        if safe_split == split_at {
+            break;
+        }
+        split_at = safe_split;
+    }
+    if split_at == 0 {
+        return None;
+    }
     let folded = &compactable[..split_at];
     let kept = &compactable[split_at..];
 
@@ -691,10 +745,14 @@ fn fold_priority(message: &ChatMessage) -> u8 {
         Role::Tool => {
             let name = message.name.as_deref().unwrap_or("");
             let failed = message.content.to_ascii_lowercase().contains("error")
-                || message.content.contains("exit_code: 1");
+                || message.content.contains("exit_code: 1") || message.content.contains("[exit code: 1]");
             let write = matches!(
                 name,
                 "write_file"
+                    | "write"
+                    | "edit"
+                    | "pwsh"
+                    | "bash"
                     | "apply_patch"
                     | "replace_in_file"
                     | "replace_many_in_file"
@@ -958,6 +1016,30 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn dsh_trims_tool_results_before_summary_and_preserves_reasoning_and_ids() {
+        struct UnexpectedSummary;
+        #[async_trait]
+        impl ConversationSummarizer for UnexpectedSummary {
+            async fn summarize(&self, _: &str) -> Result<String, String> { panic!("tool trimming should avoid the summary call") }
+        }
+        let mut assistant = assistant_msg("a", "");
+        assistant.reasoning = Some("verbatim reasoning\n ".into());
+        assistant.tool_calls = Some(vec![crate::core::runtime::ToolCallPayload { id:"c1".into(), name:"read".into(), arguments:r#"{"file_path":"large.txt"}"#.into(), thought_signature: None }]);
+        let mut tool = tool_msg("t", &"x".repeat(240_000));
+        tool.name = Some("read".into());
+        let history = vec![user_msg("u", "Inspect large.txt"), assistant, tool, user_msg("last", "Explain the result")];
+        let result = prepare_dsh_history_for_prompt(&history, &RequestContext::default(), "s1", 32_000, Some(&UnexpectedSummary)).await;
+        assert!(result.notice.is_none());
+        let kept_assistant = result.messages.iter().find(|m| m.id == "a").unwrap();
+        assert_eq!(kept_assistant.reasoning, history[1].reasoning);
+        assert_eq!(kept_assistant.tool_calls, history[1].tool_calls);
+        let kept_tool = result.messages.iter().find(|m| m.id == "t").unwrap();
+        assert_eq!(kept_tool.tool_call_id.as_deref(), Some("c1"));
+        assert!(kept_tool.content.chars().count() < 8100);
+        assert_eq!(history[2].content.len(), 240_000);
+    }
+
     #[test]
     fn resume_history_keeps_approval_as_final_user_turn() {
         // service.rs resume construction: the current turn's empty assistant
@@ -1155,6 +1237,66 @@ mod tests {
             timestamp: 3,
             estimated_tokens: None,
         }
+    }
+
+    #[tokio::test]
+    async fn compact_preserves_parallel_tool_call_pairs() {
+        let mut first = assistant_msg("a0", "previous round");
+        first.tool_calls = Some(vec![crate::core::runtime::ToolCallPayload {
+            id: "old".into(),
+            name: "read_file".into(),
+            arguments: "{}".into(),
+            thought_signature: None,
+        }]);
+        let mut first_result = tool_msg("t0", "old result");
+        first_result.tool_call_id = Some("old".into());
+        let mut parallel = assistant_msg("a1", "parallel round");
+        parallel.tool_calls = Some(
+            (0..7)
+                .map(|i| crate::core::runtime::ToolCallPayload {
+                    id: format!("c{i}"),
+                    name: "read_file".into(),
+                    arguments: "{}".into(),
+                    thought_signature: None,
+                })
+                .collect(),
+        );
+        let mut messages = vec![user_msg("u0", "read files"), first, first_result, parallel];
+        for i in 0..7 {
+            let mut result = tool_msg(&format!("t{i}"), "result");
+            result.tool_call_id = Some(format!("c{i}"));
+            messages.push(result);
+        }
+        let folded = compact_after_user(&messages, 0, "s1", None).await.unwrap();
+        assert!(folded.messages.iter().any(|m| m.id == "a1"));
+        for message in &folded.messages {
+            if let Some(id) = &message.tool_call_id {
+                assert!(folded.messages.iter().any(|parent| parent
+                    .tool_calls
+                    .as_ref()
+                    .is_some_and(|calls| calls.iter().any(|c| &c.id == id))));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn short_oversized_round_can_be_compacted() {
+        let messages = vec![
+            user_msg("u0", "analyze output"),
+            assistant_msg("a0", "analysis"),
+            tool_msg("t0", &"x".repeat(200_000)),
+        ];
+        let folded = compact_after_user(&messages, 0, "s1", None).await.unwrap();
+        assert_eq!(folded.messages[0].id, "u0");
+        assert!(folded.messages.iter().any(is_compaction_summary));
+        assert!(
+            folded
+                .messages
+                .iter()
+                .map(estimate_message_tokens)
+                .sum::<usize>()
+                < messages.iter().map(estimate_message_tokens).sum()
+        );
     }
 
     #[tokio::test]

@@ -73,6 +73,10 @@ impl ToolRegistry {
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        // Exact contracts win over compatibility aliases (dsh owns read/write).
+        if let Some(tool) = self.tools.get(name.trim()) {
+            return Some(Arc::clone(tool));
+        }
         let name = normalize_tool_name(name);
         if let Some(tool) = self.tools.get(name) {
             return Some(Arc::clone(tool));
@@ -135,7 +139,7 @@ impl ToolRegistry {
         name: &str,
         args: &Value,
     ) -> Result<Arc<dyn Tool>, ToolError> {
-        let name = normalize_tool_name(name);
+        let name = if self.tools.contains_key(name.trim()) { name.trim() } else { normalize_tool_name(name) };
         if name.is_empty() {
             return Err(ToolError::new(self.unknown_tool_message("")));
         }
@@ -216,7 +220,7 @@ impl ToolRegistry {
                 if tool.read_only()
                     || matches!(
                         name.as_str(),
-                        "update_tasks" | "ask_user" | "todo_write" | "manage_plugin"
+                        "update_tasks" | "ask_user" | "ask_user_question" | "todo_write" | "manage_plugin"
                     )
                 {
                     filtered.register(tool);
@@ -230,10 +234,10 @@ impl ToolRegistry {
     pub fn filter_for_subagent(&self, read_only: bool) -> ToolRegistry {
         let mut filtered = ToolRegistry::new();
         for name in self.names() {
-            if crate::core::tools::agent::is_async_runtime_tool(&name) {
+            if name == "subagent" || crate::core::tools::agent::is_async_runtime_tool(&name) {
                 continue;
             }
-            if name == "save_plan" || name == "request_plan_mode" {
+            if name == "save_plan" || name == "request_plan_mode" || name == "exit_plan_mode" {
                 continue;
             }
             if let Some(tool) = self.get(&name) {

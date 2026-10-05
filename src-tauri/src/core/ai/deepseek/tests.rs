@@ -28,6 +28,54 @@ fn sample_request(messages: Vec<ChatMessage>) -> ChatRequest {
     }
 }
 
+#[tokio::test]
+async fn sqlite_restart_preserves_reasoning_and_tool_pair_for_replay() {
+    let root = std::env::temp_dir().join(format!("anya-replay-{}", uuid::Uuid::new_v4()));
+    let path = root.join("chat.db");
+    let pool = crate::core::chat::db::init_db(&path).await.unwrap();
+    let mut assistant = assistant_with_reasoning();
+    assistant.reasoning = Some("  original reasoning\n\n".into());
+    assistant.tool_calls = Some(vec![crate::core::runtime::ToolCallPayload {
+        id:"call-restart".into(),name:"read".into(),arguments:json!({"file_path":"a.txt"}).to_string(),thought_signature:None
+    }]);
+    assistant.timestamp = 1;
+    let mut tool = assistant.clone();
+    tool.id = "result-restart".into();
+    tool.role = Role::Tool;
+    tool.content = "1: payload".into();
+    tool.reasoning = None;
+    tool.tool_calls = None;
+    tool.tool_call_id = Some("call-restart".into());
+    tool.name = Some("read".into());
+    tool.timestamp = 2;
+    for message in [&assistant, &tool] { crate::core::chat::db::save_message(&pool, message).await.unwrap(); }
+    pool.close().await;
+    let reopened = crate::core::chat::db::init_db(&path).await.unwrap();
+    let loaded = crate::core::chat::db::load_all_messages(&reopened).await.unwrap();
+    assert_eq!(loaded[0].reasoning, assistant.reasoning);
+    assert_eq!(loaded[0].tool_calls, assistant.tool_calls);
+    assert_eq!(loaded[1].tool_call_id, tool.tool_call_id);
+    let mut request = sample_request(loaded);
+    request.tools = vec![json!({"type":"function","function":{"name":"read","parameters":{"type":"object"}}})].into();
+    let body = build_api_body(&request,"deepseek-flash",true,ReasoningEffort::High,false,true,true);
+    assert_eq!(body["messages"][0]["reasoning_content"], "  original reasoning\n\n");
+    assert_eq!(body["messages"][0]["tool_calls"][0]["id"],body["messages"][1]["tool_call_id"]);
+    reopened.close().await;
+}
+
+#[test]
+fn local_image_refs_preserve_parentheses_in_workspace_paths() {
+    let root = std::env::temp_dir().join(format!("anya-image-{} (copy)", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("image.png");
+    image::RgbImage::new(1, 1).save(&path).unwrap();
+    let mut message = assistant_with_reasoning();
+    message.role = Role::User;
+    message.content = format!("![image]({})", path.display());
+    let value = message_to_api_json(&message, false, false);
+    assert!(value["content"][0]["image_url"]["url"].as_str().unwrap().starts_with("data:image/"));
+}
+
 fn assistant_with_reasoning() -> ChatMessage {
     ChatMessage {
         id: "msg-a".into(),

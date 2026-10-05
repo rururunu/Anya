@@ -135,6 +135,10 @@ pub async fn perform_rewind(
         .find(|checkpoint| checkpoint.turn == request.turn)
         .ok_or_else(|| format!("checkpoint turn {} not found", request.turn))?;
 
+    if (restore == "conversation" || restore == "both") && checkpoint.user_message_id.is_none() {
+        return Err("checkpoint has no user_message_id for conversation rewind".into());
+    }
+
     if restore == "code" || restore == "both" {
         let session_root = state
             .core
@@ -182,7 +186,9 @@ pub async fn perform_rewind(
             .chat()
             .restore_progress_after_rewind(&request.session_id);
         // Drop later checkpoints for this session after rewind turn
-        let _ = shared_checkpoint_store().drop_from_turn(&request.session_id, request.turn);
+        shared_checkpoint_store()
+            .drop_from_turn(&request.session_id, request.turn)
+            .map_err(|error| error.to_string())?;
     }
 
     remote::push_session_rewound(&request.session_id, request.turn);
@@ -198,7 +204,13 @@ fn restore_checkpoint_code(
     checkpoint: &Checkpoint,
     workspace_root: Option<&std::path::Path>,
 ) -> Result<usize, String> {
-    if checkpoint.files.is_empty() {
+    if checkpoint.files.is_empty()
+        && !store
+            .list(session_id)
+            .map_err(|e| e.to_string())?
+            .iter()
+            .any(|c| c.turn >= checkpoint.turn && !c.files.is_empty())
+    {
         return Ok(0);
     }
     let root = workspace_root.ok_or_else(|| "no workspace selected for code rewind".to_string())?;

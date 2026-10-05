@@ -64,9 +64,9 @@ pub async fn prepare(session: &GhostSession, action: &str, args: &Value) -> Prep
 
 fn is_window_scoped(action: &str, args: &Value) -> bool {
     match action {
-        "see" | "find" | "find_control" | "findControl" | "act" | "key" | "hotkey"
-        | "click" | "click_control" | "clickControl" | "set_value" | "setValue" | "type"
-        | "scroll" | "drag" | "assert" | "screenshot" => true,
+        "see" | "find" | "find_control" | "findControl" | "act" | "key" | "hotkey" | "click"
+        | "click_control" | "clickControl" | "set_value" | "setValue" | "type" | "scroll"
+        | "drag" | "assert" | "screenshot" => true,
         "wait" => matches!(
             args["for"].as_str().unwrap_or("ms"),
             "element" | "value" | "idle" | "text"
@@ -197,8 +197,7 @@ pub fn attach_target_json(mut body: Value, target: Option<&WindowTarget>) -> Val
     };
     match body {
         Value::Object(ref mut m) => {
-            m.entry("target".to_string())
-                .or_insert_with(|| t.to_json());
+            m.entry("target".to_string()).or_insert_with(|| t.to_json());
             body
         }
         other => json!({ "result": other, "target": t.to_json() }),

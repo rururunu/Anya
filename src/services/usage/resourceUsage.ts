@@ -33,6 +33,8 @@ const SKILL_TOOL_IDS = new Set([
 
 const SKILL_TOOL_ALIASES: Record<string, string> = {
   review_security: "security_review",
+  generate_word: "documents",
+  docx: "documents",
 };
 
 function emptyStore(): ResourceUsageStore {
@@ -193,7 +195,7 @@ export function resourceFromToolActivity(
         : typeof args?.skill === "string"
           ? args.skill.trim()
           : "";
-    return skill ? { kind: "skill", id: skill } : null;
+    return skill ? { kind: "skill", id: SKILL_TOOL_ALIASES[skill] ?? skill } : null;
   }
 
   if (SKILL_TOOL_IDS.has(name)) {

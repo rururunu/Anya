@@ -3,10 +3,29 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use crate::core::ai::provider::{AIProvider, ProviderError};
+use crate::core::ai::provider::{AIProvider, ProviderError, ProviderTaskGuard};
 use crate::core::runtime::{ChatMessage, ChatRequest, Role, StreamEvent, ToolCallPayload};
 
 use super::{TokenAccuracy, TokenCategory, TokenUsage, TokenizerRegistry};
+
+// Also end calls cancelled by dropping the stream future, before normal usage
+// collection can finish. A process crash can still leave a start-only record.
+struct MetricsEndGuard {
+    started: std::time::Instant,
+    identity: Option<serde_json::Value>,
+}
+impl Drop for MetricsEndGuard {
+    fn drop(&mut self) {
+        if let Some(mut value) = self.identity.take() {
+            value["kind"] = serde_json::json!("model_call");
+            value["timestamp"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
+            value["duration_ms"] = serde_json::json!(self.started.elapsed().as_millis());
+            value["succeeded"] = serde_json::json!(false);
+            value["outcome"] = serde_json::json!("interrupted");
+            crate::core::chat::telemetry::record_provider_metrics(&value);
+        }
+    }
+}
 
 pub struct TokenAccountant {
     registry: Arc<TokenizerRegistry>,
@@ -141,18 +160,39 @@ impl AIProvider for AccountingProvider {
         self.inner.id()
     }
 
+    fn uses_dsh_tools(&self) -> bool {
+        self.inner.uses_dsh_tools()
+    }
+
     async fn stream(
         &self,
         request: ChatRequest,
         tx: mpsc::Sender<StreamEvent>,
     ) -> Result<(), ProviderError> {
+        let started = std::time::Instant::now();
+        let call_id = uuid::Uuid::new_v4().to_string();
+        let request_id = request.request_id.clone();
+        let session_id = request.session_id.clone();
+        let mut metrics_end = MetricsEndGuard { started, identity: self.uses_dsh_tools().then(|| serde_json::json!({
+            "call_id":call_id,"request_id":request_id,"session_id":session_id,"model":self.model,
+            "cache_hit_tokens":null,"cache_hit_ratio":null,"reasoning_tokens":null,"completion_tokens":null,
+            "first_provider_event_ms":null,"first_content_ms":null,"retry_count":null
+        })) };
+        if self.uses_dsh_tools() {
+            crate::core::chat::telemetry::record_provider_metrics(&serde_json::json!({"kind":"model_call_start", "call_id":call_id, "request_id":request_id, "session_id":session_id, "model":self.model, "timestamp":chrono::Utc::now().to_rfc3339()}));
+        }
+        let mut first_event_ms = None;
+        let mut first_content_ms = None;
+        let mut retries = 0usize;
         let mut input = self
             .accountant
             .count_request(&self.model, &self.provider, &request);
         let (inner_tx, mut inner_rx) = mpsc::channel(64);
         let inner = Arc::clone(&self.inner);
-        let task =
-            tauri::async_runtime::spawn(async move { inner.stream(request, inner_tx).await });
+        let metrics_context = (call_id.clone(), request_id.clone(), session_id.clone());
+        let mut task = ProviderTaskGuard(tauri::async_runtime::spawn(async move {
+            crate::core::chat::telemetry::PROVIDER_METRICS_CONTEXT.scope(metrics_context, inner.stream(request, inner_tx)).await
+        }));
         let mut provider_usage: Option<TokenUsage> = None;
         let mut content = String::new();
         let mut reasoning = String::new();
@@ -160,6 +200,17 @@ impl AIProvider for AccountingProvider {
         let mut saw_finish = false;
 
         while let Some(event) = inner_rx.recv().await {
+            if !matches!(&event, StreamEvent::Start | StreamEvent::Status { .. }) { first_event_ms.get_or_insert(started.elapsed().as_millis()); }
+            if matches!(&event, StreamEvent::Delta(text) if !text.is_empty()) { first_content_ms.get_or_insert(started.elapsed().as_millis()); }
+            if matches!(&event, StreamEvent::Status { kind } if kind.starts_with("stream_retry:")) { retries += 1; }
+            if let Some(value) = metrics_end.identity.as_mut() {
+                value["first_provider_event_ms"] = serde_json::json!(first_event_ms);
+                value["first_content_ms"] = serde_json::json!(first_content_ms);
+                value["retry_count"] = serde_json::json!(retries);
+            }
+            if self.uses_dsh_tools() && matches!(&event, StreamEvent::Status { kind } if kind.starts_with("stream_retry:")) {
+                content.clear(); reasoning.clear(); tool_calls.clear(); provider_usage = None;
+            }
             match &event {
                 StreamEvent::Delta(value) => content.push_str(value),
                 StreamEvent::Reasoning(value) => reasoning.push_str(value),
@@ -187,11 +238,11 @@ impl AIProvider for AccountingProvider {
                 _ => {}
             }
             if tx.send(event).await.is_err() {
-                break;
+                return Err(ProviderError::cancelled());
             }
         }
 
-        let result = task
+        let result = (&mut task.0)
             .await
             .map_err(|error| ProviderError::message(error.to_string()))?;
         let output = self.accountant.count_output(
@@ -215,6 +266,21 @@ impl AIProvider for AccountingProvider {
         if usage.accuracy == TokenAccuracy::Exact && input.accuracy != TokenAccuracy::Exact {
             usage.accuracy = TokenAccuracy::Mixed;
         }
+        if self.uses_dsh_tools() {
+            let cached = usage.cache_read_tokens;
+            let prompt_total = usage.input_tokens + cached.unwrap_or(0);
+            crate::core::chat::telemetry::record_provider_metrics(&serde_json::json!({
+                "kind":"model_call", "timestamp": chrono::Utc::now().to_rfc3339(),
+                "call_id":call_id, "request_id":request_id, "session_id":session_id, "model":self.model,
+                "duration_ms":started.elapsed().as_millis(), "first_provider_event_ms":first_event_ms, "first_content_ms":first_content_ms,
+                "retry_count":retries, "succeeded":result.is_ok(), "cache_hit_tokens":cached,
+                "cache_hit_ratio":cached.and_then(|n| (prompt_total > 0).then_some(n as f64 / prompt_total as f64)),
+                "reasoning_tokens":usage.reasoning_tokens, "completion_tokens":usage.output_tokens,
+                "body_output_tokens":usage.reasoning_tokens.map(|n| usage.output_tokens.saturating_sub(n)),
+                "usage_accuracy":usage.accuracy
+            }));
+            metrics_end.identity = None;
+        }
         let _ = tx.send(StreamEvent::Usage(usage)).await;
         if saw_finish {
             let _ = tx.send(StreamEvent::Finish).await;
@@ -227,6 +293,59 @@ impl AIProvider for AccountingProvider {
 mod tests {
     use super::*;
     use crate::core::runtime::{MessageStatus, RequestContext};
+
+    #[tokio::test]
+    async fn cancelling_accounting_wrapper_aborts_silent_inner_provider() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        struct SilentProvider(Arc<AtomicBool>);
+        struct Dropped(Arc<AtomicBool>);
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+        #[async_trait]
+        impl AIProvider for SilentProvider {
+            fn id(&self) -> &'static str {
+                "silent-test"
+            }
+            async fn stream(
+                &self,
+                _request: ChatRequest,
+                tx: mpsc::Sender<StreamEvent>,
+            ) -> Result<(), ProviderError> {
+                let _probe = Dropped(self.0.clone());
+                let _ = tx.send(StreamEvent::Start).await;
+                std::future::pending::<()>().await;
+                Ok(())
+            }
+        }
+        let dropped = Arc::new(AtomicBool::new(false));
+        let provider = AccountingProvider::new(Arc::new(SilentProvider(dropped.clone())), "test");
+        let request = ChatRequest {
+            request_id: "cancel".into(),
+            session_id: "s".into(),
+            messages: vec![],
+            context: RequestContext::default(),
+            provider: None,
+            stream: true,
+            tools: Arc::from([]),
+            temperature: None,
+            max_tokens: None,
+        };
+        let (tx, mut rx) = mpsc::channel(16);
+        let wrapper = tokio::spawn(async move { provider.stream(request, tx).await });
+        rx.recv().await.unwrap();
+        wrapper.abort();
+        let _ = wrapper.await;
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !dropped.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("silent inner request leaked after cancellation");
+    }
 
     struct UsageProvider;
 

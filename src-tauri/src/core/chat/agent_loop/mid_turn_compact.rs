@@ -56,6 +56,12 @@ pub async fn maybe_compact(
     if COMPACT_DISABLED.load(Ordering::Relaxed) {
         return None;
     }
+    if provider.uses_dsh_tools() && max_turn_tokens > 0 {
+        if estimate_request_tokens(request) >= mid_turn_compact_threshold(max_turn_tokens) {
+            compact::trim_dsh_tool_payloads(&mut request.messages);
+        }
+        *used_tokens = estimate_request_tokens(request);
+    }
     let compact_at = mid_turn_compact_threshold(max_turn_tokens);
     if compact_at == 0 || *used_tokens < compact_at {
         return None;

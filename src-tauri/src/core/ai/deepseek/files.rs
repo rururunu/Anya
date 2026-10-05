@@ -298,14 +298,8 @@ async fn ensure_file_id(api_key: &str, raw: &str) -> Result<String, ProviderErro
     if let Some(cached) = cached_file_id(&digest) {
         return Ok(cached);
     }
-    let uploaded = upload_file(
-        api_key,
-        bytes,
-        &filename,
-        &mime,
-        Some(CHAT_EXPIRES_SECONDS),
-    )
-    .await?;
+    let uploaded =
+        upload_file(api_key, bytes, &filename, &mime, Some(CHAT_EXPIRES_SECONDS)).await?;
     remember_file_id(&digest, &uploaded.id);
     Ok(uploaded.id)
 }
@@ -315,8 +309,7 @@ async fn load_image_for_upload(raw: &str) -> Result<(Vec<u8>, String, String), P
     let bytes = if value.starts_with("http://") || value.starts_with("https://") {
         download_bytes(value).await?
     } else {
-        crate::core::ai::image_gen::decode_image_source(value)
-            .map_err(ProviderError::message)?
+        crate::core::ai::image_gen::decode_image_source(value).map_err(ProviderError::message)?
     };
     let filename = if value.starts_with("http://") || value.starts_with("https://") {
         value
@@ -347,7 +340,11 @@ fn prepare_image_bytes(
         return Ok((bytes, mime.to_string(), filename));
     }
     let jpeg = encode_jpeg(&bytes)?;
-    Ok((jpeg, "image/jpeg".into(), filename_for_mime(filename, "image/jpeg")))
+    Ok((
+        jpeg,
+        "image/jpeg".into(),
+        filename_for_mime(filename, "image/jpeg"),
+    ))
 }
 
 fn filename_for_mime(filename: &str, mime: &str) -> String {
@@ -424,14 +421,16 @@ async fn read_success(response: reqwest::Response) -> Result<String, ProviderErr
         .await
         .unwrap_or_else(|_| "unknown error".to_string());
     if !status.is_success() {
-        return Err(ProviderError::message(format!("Files API {status}: {text}")));
+        return Err(ProviderError::message(format!(
+            "Files API {status}: {text}"
+        )));
     }
     Ok(text)
 }
 
 fn image_markdown_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"!\[image\]\((.*?)\)").expect("image markdown regex"))
+    RE.get_or_init(|| Regex::new(r"!\[image\]\(((?:[^()\r\n]|\([^()\r\n]*\))*)\)").expect("image markdown regex"))
 }
 
 fn cached_file_id(digest: &str) -> Option<String> {

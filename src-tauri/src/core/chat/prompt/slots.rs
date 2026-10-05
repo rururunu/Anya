@@ -258,11 +258,6 @@ pub(super) fn format_volatile_context(context: &RequestContext) -> Option<String
             blocks.push(format!("[IDE Live Context]\n{}", lines.join("\n\n")));
         }
     }
-    if let Some(office) = &context.office_context {
-        blocks.push(crate::core::office::context::format_office_context_block(
-            office,
-        ));
-    }
     if !context.selected_files.is_empty() {
         let files = truncate_chars(&context.selected_files.join("\n"), SELECTED_FILES_MAX_CHARS);
         blocks.push(format!(

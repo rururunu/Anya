@@ -1,7 +1,7 @@
 {
   "name": "Anya",
   "private": true,
-  "version": "0.2.24",
+  "version": "0.2.25",
   "license": "MIT",
   "description": "Hand your work & questions to Anya anytime.",
   "type": "module",
@@ -25,7 +25,9 @@
     "test:watch": "vitest",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "sync-skills": "node scripts/sync-external-skills.mjs",
-    "prepare": "simple-git-hooks"
+    "prepare": "simple-git-hooks",
+    "build:office-runtime": "node scripts/build-office-runtime.mjs",
+    "test:office-runtime": "node --test scripts/office/runtime.test.mjs"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm lint-staged"
@@ -93,21 +95,29 @@
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
+    "@deepseek-ai/libreoffice-kit": "0.1.5",
+    "@deepseek-ai/libreoffice-kit-win32-x64": "0.1.5",
     "@eslint/js": "^9.22.0",
     "@tauri-apps/cli": "^2",
     "@types/dompurify": "^3.2.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/eslint-config-typescript": "^14.5.0",
     "@vue/test-utils": "^2.4.11",
+    "docx": "9.5.1",
+    "esbuild": "0.25.12",
     "eslint": "^9.22.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-vue": "^10.10.0",
+    "exceljs": "4.4.0",
+    "fast-xml-parser": "5.11.2",
     "globals": "^16.0.0",
     "happy-dom": "^20.11.1",
     "jsdom": "^29.1.1",
+    "jszip": "3.10.1",
     "lint-staged": "^17.3.0",
+    "pptxgenjs": "4.0.1",
     "prettier": "^3.9.6",
     "simple-git-hooks": "^2.13.1",
     "typescript": "~5.6.2",

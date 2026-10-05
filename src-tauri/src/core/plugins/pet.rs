@@ -156,7 +156,9 @@ fn parse_spritesheet(plugin_id: &str, params: &Value) -> Result<PetAppearance, T
         .and_then(|value| value.as_str())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| ToolError::new("pet.setAppearance spritesheet requires source (pet.json)"))?;
+        .ok_or_else(|| {
+            ToolError::new("pet.setAppearance spritesheet requires source (pet.json)")
+        })?;
     Ok(PetAppearance {
         mode: "spritesheet".to_string(),
         kind: Some("spritesheet".to_string()),
@@ -231,8 +233,9 @@ mod tests {
 
     #[test]
     fn parses_companion_mode() {
-        let appearance = parse_mode(&json!({ "mode": "companion", "config": { "accent": "#3366ff" } }))
-            .expect("companion mode");
+        let appearance =
+            parse_mode(&json!({ "mode": "companion", "config": { "accent": "#3366ff" } }))
+                .expect("companion mode");
         assert_eq!(appearance.mode, "companion");
         assert!(appearance.config.is_some());
     }

@@ -1,0 +1,32 @@
+{
+  "id": "office_spreadsheets_workflow",
+  "prompt": "Inspect the spreadsheets workflow for a saved Office file and explain how its output is validated.",
+  "requiresDocumentRuntime": true,
+  "script": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "load_skill",
+          "arguments": {
+            "name": "spreadsheets"
+          }
+        }
+      ]
+    },
+    {
+      "content": "The saved-file workflow uses the bundled JavaScript runtime with package validation and rendering checks.",
+      "tool_calls": []
+    }
+  ],
+  "assertions": [
+    {
+      "type": "toolCalled",
+      "name": "load_skill"
+    },
+    {
+      "type": "answerContains",
+      "text": "saved-file"
+    }
+  ]
+}

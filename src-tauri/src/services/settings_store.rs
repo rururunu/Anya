@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -8,6 +8,39 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::models::settings::AppSettings;
 
 static WEBVIEW_GPU_DISABLED: AtomicBool = AtomicBool::new(false);
+static SETTINGS_WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+fn read_valid_settings(path: &Path) -> Result<(serde_json::Value, AppSettings), String> {
+    let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if !parsed.is_object() {
+        return Err("settings must be an object".into());
+    }
+    let settings = serde_json::from_value(parsed.clone()).map_err(|e| e.to_string())?;
+    Ok((parsed, settings))
+}
+
+fn read_settings_with_backup(path: &Path) -> Result<(serde_json::Value, AppSettings), String> {
+    read_valid_settings(path).or_else(|_| read_valid_settings(&path.with_extension("json.bak")))
+}
+
+fn persist_settings_file(path: &Path, settings: &AppSettings) -> Result<(), String> {
+    let _guard = SETTINGS_WRITE_LOCK.lock().map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    if read_valid_settings(path).is_ok() {
+        let previous = fs::read(path).map_err(|e| e.to_string())?;
+        crate::core::tools::file_io::atomic_write(&path.with_extension("json.bak"), previous)
+            .map_err(|e| e.to_string())?;
+    } else if path.exists() {
+        // Keep the damaged original for recovery before an explicit save.
+        let damaged = path.with_extension(format!("json.corrupt-{}", uuid::Uuid::new_v4()));
+        fs::copy(path, damaged).map_err(|e| e.to_string())?;
+    }
+    crate::core::tools::file_io::atomic_write(path, raw).map_err(|e| e.to_string())
+}
 
 const SETTINGS_FILE: &str = "settings.json";
 const RELEASE_APP_IDENTIFIER: &str = "ai.anya.desktop";
@@ -55,9 +88,9 @@ pub fn configure_prestart_webview() {
         })
         .join(SETTINGS_FILE);
     let settings_file = if path.is_file() { path } else { legacy_path };
-    let parsed = fs::read_to_string(&settings_file)
+    let parsed = read_settings_with_backup(&settings_file)
         .ok()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+        .map(|(value, _)| value);
     let hardware_acceleration_enabled = parsed
         .as_ref()
         .and_then(|settings| settings.get("hardwareAccelerationEnabled"))
@@ -144,13 +177,13 @@ pub fn load_settings(app: &AppHandle) -> AppSettings {
         migrate_legacy_settings_file(&path);
     }
 
-    let raw = match fs::read_to_string(&path) {
-        Ok(raw) => raw,
-        Err(_) => return AppSettings::default(),
+    let (parsed, mut settings) = match read_settings_with_backup(&path) {
+        Ok(settings) => settings,
+        Err(error) => {
+            tracing::error!(%error, "settings could not be loaded; preserving original files");
+            return AppSettings::default();
+        }
     };
-
-    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
-    let mut settings: AppSettings = serde_json::from_value(parsed.clone()).unwrap_or_default();
     let has_restricted_shell = parsed
         .as_object()
         .is_some_and(|obj| obj.contains_key("restrictedShell"));
@@ -161,12 +194,26 @@ pub fn load_settings(app: &AppHandle) -> AppSettings {
         settings.pending_restricted_shell_upgrade_notice = true;
     }
     let before_pins = settings.mcp_servers.clone();
+    let timeout_migrated = migrate_shell_timeout(&mut settings);
     let settings = normalize_settings(settings);
     // Persist package-pin migrations so disk matches the runtime spawn args.
-    if settings.mcp_servers != before_pins {
+    if settings.mcp_servers != before_pins || timeout_migrated {
         let _ = persist_settings(app, &settings);
     }
     settings
+}
+
+fn migrate_shell_timeout(settings: &mut AppSettings) -> bool {
+    if settings.shell_timeout_migrated {
+        return false;
+    }
+    // 120 seconds was the old unrestricted default. Other values and
+    // restricted-shell limits are intentional and remain untouched.
+    if !settings.restricted_shell && settings.shell_timeout_secs == 120 {
+        settings.shell_timeout_secs = 3600;
+    }
+    settings.shell_timeout_migrated = true;
+    true
 }
 
 fn normalize_settings(mut settings: AppSettings) -> AppSettings {
@@ -183,12 +230,7 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
 pub fn persist_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
     let path = settings_path(app)?;
 
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-
-    let raw = serde_json::to_string_pretty(settings).map_err(|error| error.to_string())?;
-    fs::write(path, raw).map_err(|error| error.to_string())
+    persist_settings_file(&path, settings)
 }
 
 pub fn get_settings(app: &AppHandle) -> Result<AppSettings, String> {
@@ -205,14 +247,13 @@ pub fn get_settings(app: &AppHandle) -> Result<AppSettings, String> {
 
 pub fn set_settings(app: &AppHandle, next: AppSettings) -> Result<AppSettings, String> {
     let next = normalize_settings(next);
-    persist_settings(app, &next)?;
-
     let state = app
         .try_state::<SettingsState>()
         .ok_or_else(|| "settings state is unavailable".to_string())?;
 
     {
         let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
+        persist_settings(app, &next)?;
         *settings = next.clone();
     }
 
@@ -268,6 +309,66 @@ pub fn broadcast_settings(app: &AppHandle, settings: &AppSettings) {
 #[cfg(test)]
 mod tests {
     use crate::models::settings::AppSettings;
+
+    #[test]
+    fn corrupted_settings_recover_backup_without_destroying_original() {
+        let base = std::env::temp_dir().join(format!("anya-settings-{}", uuid::Uuid::new_v4()));
+        let path = base.join("settings.json");
+        let mut settings = AppSettings::default();
+        settings.shell_timeout_secs = 777;
+        super::persist_settings_file(&path, &settings).unwrap();
+        settings.shell_timeout_secs = 888;
+        super::persist_settings_file(&path, &settings).unwrap();
+        std::fs::write(&path, "{broken").unwrap();
+        let (_, recovered) = super::read_settings_with_backup(&path).unwrap();
+        assert_eq!(recovered.shell_timeout_secs, 777);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{broken");
+        super::persist_settings_file(&path, &recovered).unwrap();
+        assert_eq!(
+            super::read_valid_settings(&path)
+                .unwrap()
+                .1
+                .shell_timeout_secs,
+            777
+        );
+        assert!(std::fs::read_dir(&base).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("corrupt-")));
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn invalid_settings_without_backup_are_preserved() {
+        let base =
+            std::env::temp_dir().join(format!("anya-settings-invalid-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("settings.json");
+        std::fs::write(&path, "null").unwrap();
+        assert!(super::read_settings_with_backup(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "null");
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn shell_timeout_migration_is_once_and_preserves_custom_limits() {
+        for (restricted, original, expected) in
+            [(false, 120, 3600), (true, 120, 120), (false, 90, 90)]
+        {
+            let mut settings = AppSettings {
+                restricted_shell: restricted,
+                shell_timeout_secs: original,
+                shell_timeout_migrated: false,
+                ..AppSettings::default()
+            };
+            assert!(super::migrate_shell_timeout(&mut settings));
+            assert_eq!(settings.shell_timeout_secs, expected);
+            settings.shell_timeout_secs = 120;
+            assert!(!super::migrate_shell_timeout(&mut settings));
+            assert_eq!(settings.shell_timeout_secs, 120);
+        }
+    }
 
     #[test]
     fn frosted_glass_keeps_webview_gpu_enabled() {

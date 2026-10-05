@@ -19,7 +19,7 @@ pub fn build_activity_view(
         title.push_str(" (fuzzy)");
     }
     let detail = match tool_name {
-        "run_shell" | "read_shell_output" | "wait_for_shell" => {
+        "run_shell" | "read_shell_output" | "wait_for_shell" | "pwsh" | "bash" | "job_output" => {
             let cmd = args["command"]
                 .as_str()
                 .or_else(|| args["job_id"].as_str())
@@ -38,27 +38,9 @@ pub fn build_activity_view(
                 ))
             }
         }
-        "read_file"
-        | "list_folder"
-        | "find_files"
-        | "search_files"
-        | "Grep"
-        | "list_symbols"
-        | "search_codebase"
-        | "fetch_url"
-        | "web_search"
-        | "browser_read"
-        | "get_context"
-        | "get_workspace"
-        | "word_get_document_content"
-        | "word_get_selection"
-        | "word_get_document_range"
-        | "word_get_document_paragraphs"
-        | "word_list_comments"
-        | "excel_get_selection"
-        | "excel_get_used_range"
-        | "ppt_get_selection"
-        | "ppt_get_slide_text" => result
+        "read_file" | "read_office_file" | "list_folder" | "find_files" | "search_files"
+        | "Grep" | "list_symbols" | "search_codebase" | "fetch_url" | "web_search"
+        | "browser_read" | "get_context" | "get_workspace" => result
             .filter(|value| !should_hide_result_detail(tool_name, value))
             .map(str::to_string),
         _ => result
@@ -85,6 +67,7 @@ fn should_hide_result_detail(tool_name: &str, result: &str) -> bool {
     if matches!(
         tool_name,
         "read_file"
+            | "read_office_file"
             | "list_folder"
             | "find_files"
             | "search_files"
@@ -96,15 +79,6 @@ fn should_hide_result_detail(tool_name: &str, result: &str) -> bool {
             | "browser_read"
             | "get_context"
             | "get_workspace"
-            | "word_get_document_content"
-            | "word_get_selection"
-            | "word_get_document_range"
-            | "word_get_document_paragraphs"
-            | "word_list_comments"
-            | "excel_get_selection"
-            | "excel_get_used_range"
-            | "ppt_get_selection"
-            | "ppt_get_slide_text"
     ) {
         return true;
     }
@@ -129,48 +103,18 @@ fn should_hide_result_detail(tool_name: &str, result: &str) -> bool {
 
 fn activity_kind(tool_name: &str) -> String {
     match tool_name {
-        "run_shell" | "read_shell_output" | "wait_for_shell" | "stop_shell" => "shell".into(),
-        "write_file" => "create".into(),
+        "run_shell" | "read_shell_output" | "wait_for_shell" | "stop_shell" | "pwsh" | "bash" | "job_output" | "job_kill" => "shell".into(),
+        "write_file" | "write" => "create".into(),
+        "edit" => "edit".into(),
         "apply_patch" | "replace_in_file" | "replace_many_in_file" | "edit_notebook_cell" => {
             "edit".into()
         }
         "delete_text_range" | "delete_go_symbol" => "delete".into(),
         "move_path" => "move".into(),
-        "read_file"
-        | "list_folder"
-        | "find_files"
-        | "search_files"
-        | "Grep"
-        | "list_symbols"
-        | "search_codebase"
-        | "lsp"
-        | "fetch_url"
-        | "web_search"
-        | "browser_read"
-        | "get_context"
-        | "get_workspace"
-        | "word_get_document_content"
-        | "word_get_selection"
-        | "word_get_document_range"
-        | "word_get_document_paragraphs"
-        | "word_list_comments"
-        | "excel_get_selection"
-        | "excel_get_used_range"
-        | "ppt_get_selection"
-        | "ppt_get_slide_text" => "read".into(),
-        "word_replace_selection"
-        | "word_insert_text"
-        | "word_insert_table"
-        | "word_apply_font"
-        | "word_save_document"
-        | "word_add_comment"
-        | "word_accept_all_revisions"
-        | "word_reject_all_revisions"
-        | "excel_set_selection"
-        | "excel_save_workbook"
-        | "ppt_replace_selection"
-        | "ppt_insert_text"
-        | "ppt_save_presentation" => "edit".into(),
+        "read_file" | "read_office_file" | "list_folder" | "find_files" | "search_files"
+        | "Grep" | "list_symbols" | "search_codebase" | "lsp" | "fetch_url" | "web_search"
+        | "browser_read" | "get_context" | "get_workspace" => "read".into(),
+        "prepare_office_runtime" => "read".into(),
         "generate_image" => "image".into(),
         _ => "other".into(),
     }
@@ -179,7 +123,7 @@ fn activity_kind(tool_name: &str) -> String {
 /// Cursor-style titles: `Verb Object Constraints` — no colon, no repeated “file”.
 fn build_title(tool_name: &str, args: &Value) -> String {
     match tool_name {
-        "run_shell" => {
+        "run_shell" | "pwsh" | "bash" => {
             let description = args["description"].as_str().unwrap_or("").trim();
             if !description.is_empty() {
                 truncate(description, 120)
@@ -196,7 +140,7 @@ fn build_title(tool_name: &str, args: &Value) -> String {
         "read_shell_output" => format!("Read output {}", job_arg(args)),
         "stop_shell" => format!("Stop {}", job_arg(args)),
 
-        "read_file" => {
+        "read_file" | "read_office_file" | "read" | "read_image" => {
             let path = display_path(path_arg(args));
             match line_range(args) {
                 Some(range) => format!("Read {path} {range}"),
@@ -240,7 +184,8 @@ fn build_title(tool_name: &str, args: &Value) -> String {
             }
         }
 
-        "write_file" => format!("Write {}", display_path(path_arg(args))),
+        "write_file" | "write" => format!("Write {}", display_path(path_arg(args))),
+        "edit" => format!("Edit {}", display_path(path_arg(args))),
         "replace_in_file" => format!("Edit {}", display_path(path_arg(args))),
         "replace_many_in_file" => {
             let n = args["edits"].as_array().map(|a| a.len()).unwrap_or(0);
@@ -307,7 +252,7 @@ fn build_title(tool_name: &str, args: &Value) -> String {
                 format!("Subagents ({n})")
             }
         }
-        "ask_user" => "Ask user".into(),
+        "ask_user" | "ask_user_question" => "Ask user".into(),
         "request_plan_mode" => "Request Plan mode".into(),
         "share_to_companion" => "Share file".into(),
         "share_preview_url" => "Share preview URL".into(),
@@ -374,29 +319,6 @@ fn build_title(tool_name: &str, args: &Value) -> String {
         }
         "git_commit" => "Git commit".into(),
 
-        "word_get_document_content" => "Read Word".into(),
-        "word_get_selection" => "Read Word selection".into(),
-        "word_get_document_range" => word_range_title(args),
-        "word_get_document_paragraphs" => "Read Word paragraphs".into(),
-        "word_list_comments" => "List Word comments".into(),
-        "word_replace_selection" => "Edit Word selection".into(),
-        "word_insert_text" => "Insert Word text".into(),
-        "word_insert_table" => "Insert Word table".into(),
-        "word_apply_font" => "Apply Word font".into(),
-        "word_add_comment" => "Add Word comment".into(),
-        "word_accept_all_revisions" => "Accept Word revisions".into(),
-        "word_reject_all_revisions" => "Reject Word revisions".into(),
-        "word_save_document" => "Save Word".into(),
-        "excel_get_selection" => "Read Excel selection".into(),
-        "excel_get_used_range" => "Read Excel range".into(),
-        "excel_set_selection" => "Edit Excel selection".into(),
-        "excel_save_workbook" => "Save Excel".into(),
-        "ppt_get_selection" => "Read PPT selection".into(),
-        "ppt_get_slide_text" => "Read PPT slide".into(),
-        "ppt_replace_selection" => "Edit PPT selection".into(),
-        "ppt_insert_text" => "Insert PPT text".into(),
-        "ppt_save_presentation" => "Save PPT".into(),
-
         "save_memory" => "Save memory".into(),
         "search_memory" => {
             let q = truncate(args["query"].as_str().unwrap_or(""), 60);
@@ -418,7 +340,8 @@ fn build_title(tool_name: &str, args: &Value) -> String {
         "read_chat" => format!("Read chat {}", args["session_id"].as_str().unwrap_or("")),
         "list_chats" => "List chats".into(),
 
-        "load_skill" => format!("Load skill {}", args["name"].as_str().unwrap_or("")),
+        "load_skill" | "skill" => format!("Load skill {}", args["name"].as_str().unwrap_or("")),
+        "present" => format!("交付 {} 个文件", args["files"].as_array().map_or(0, Vec::len)),
         "run_skill" => format!("Run skill {}", args["name"].as_str().unwrap_or("")),
         "list_skills" => "List skills".into(),
 
@@ -521,7 +444,7 @@ fn format_diff(old: &str, new: &str) -> String {
 }
 
 fn path_arg(args: &Value) -> &str {
-    args["path"].as_str().unwrap_or(".")
+    args["file_path"].as_str().or_else(|| args["path"].as_str()).unwrap_or(".")
 }
 
 fn job_arg(args: &Value) -> &str {
@@ -581,17 +504,6 @@ fn line_range(args: &Value) -> Option<String> {
     let limit = args["limit"].as_u64().unwrap_or(500).max(1);
     let end = offset.saturating_add(limit).saturating_sub(1);
     Some(format!("L{offset}-{end}"))
-}
-
-fn word_range_title(args: &Value) -> String {
-    let start = args["start_char"]
-        .as_u64()
-        .or_else(|| args["start"].as_u64());
-    let end = args["end_char"].as_u64().or_else(|| args["end"].as_u64());
-    match (start, end) {
-        (Some(s), Some(e)) => format!("Read Word chars {s}-{e}"),
-        _ => "Read Word range".into(),
-    }
 }
 
 fn humanize_tool_name(name: &str) -> String {

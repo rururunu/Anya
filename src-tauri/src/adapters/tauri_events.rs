@@ -98,6 +98,7 @@ impl EventBus for TauriEventBus {
                 session_id,
                 message_id,
                 kind,
+                snapshot,
             } => {
                 let _ = self.app.emit(
                     "chat-status",
@@ -105,6 +106,7 @@ impl EventBus for TauriEventBus {
                         session_id,
                         message_id,
                         kind,
+                        snapshot,
                     },
                 );
             }

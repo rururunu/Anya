@@ -8,7 +8,7 @@ mod runner;
 mod sse;
 mod types;
 
-pub(crate) use errors::emit_stream_error;
+pub(crate) use errors::{emit_stream_error, is_retryable_stream_error};
 pub(crate) use runner::{run_anthropic_stream, run_chat_stream, run_responses_stream};
 pub(crate) use types::RETRY_BACKOFF;
 
@@ -181,6 +181,9 @@ mod retry_tests {
 
     #[test]
     fn retries_transient_deepseek_http_errors_but_not_client_errors() {
+        assert!(is_retryable_stream_error(&ProviderError::message(
+            "API 520: unavailable"
+        )));
         assert!(is_retryable_stream_error(&ProviderError::message(
             r#"DeepSeek API 500 Internal Server Error: {"type":"error"}"#
         )));

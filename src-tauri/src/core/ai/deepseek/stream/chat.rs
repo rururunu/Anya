@@ -22,6 +22,7 @@ pub(super) async fn read_sse_stream(
     let mut pending_utf8 = Vec::new();
     let mut buffer = String::new();
     let mut outcome = StreamReadOutcome::default();
+    let started = std::time::Instant::now();
     let mut content = String::new();
     let mut reasoning = String::new();
     let mut tool_calls: HashMap<usize, ToolCallBuilder> = HashMap::new();
@@ -47,6 +48,7 @@ pub(super) async fn read_sse_stream(
             if payload.is_empty() {
                 continue;
             }
+            outcome.first_sse_ms.get_or_insert(started.elapsed().as_millis());
             if payload == "[DONE]" {
                 outcome.saw_done = true;
                 break;
@@ -57,13 +59,14 @@ pub(super) async fn read_sse_stream(
             })?;
 
             if let Some(usage) = parsed.usage {
+                let cache_reported = usage.cache_reported();
                 let (cache_read, reasoning) = if is_deepseek {
                     (
                         usage.cache_read_tokens(),
                         usage.completion_tokens_details.reasoning_tokens,
                     )
                 } else {
-                    (0, 0)
+                    (0, None)
                 };
                 let input = usage.prompt_tokens.saturating_sub(cache_read);
                 let _ = tx
@@ -71,8 +74,8 @@ pub(super) async fn read_sse_stream(
                         input,
                         usage.completion_tokens,
                         "provider/usage",
-                        is_deepseek.then_some(cache_read),
-                        (is_deepseek && reasoning > 0).then_some(reasoning),
+                        (is_deepseek && cache_reported).then_some(cache_read),
+                        reasoning,
                     )))
                     .await;
             }
@@ -92,6 +95,7 @@ pub(super) async fn read_sse_stream(
                 }
                 if let Some(content_chunk) = choice.delta.content.as_deref() {
                     if !content_chunk.is_empty() {
+                        outcome.first_text_ms.get_or_insert(started.elapsed().as_millis());
                         outcome.emitted = true;
                         content.push_str(content_chunk);
                         let _ = tx.send(StreamEvent::Delta(content_chunk.to_string())).await;

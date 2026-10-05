@@ -48,6 +48,7 @@ pub fn register_all(
     }
 
     reg!(ReadFileTool);
+    reg!(crate::core::tools::present::PresentTool);
     reg!(discovery::SearchToolsTool);
     reg!(ListFolderTool);
     reg!(FindFilesTool);

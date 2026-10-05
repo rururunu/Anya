@@ -264,24 +264,6 @@ export interface ChatSendRequest {
   softInject?: boolean;
 }
 
-export interface OfficeContext {
-  app: string;
-  isForeground: boolean;
-  documentPath?: string;
-  documentName?: string;
-  selectedText?: string;
-  selectionStart?: number;
-  selectionEnd?: number;
-  documentTitle?: string;
-  pageCount?: number;
-  activeSheet?: string;
-  cellAddress?: string;
-  slideIndex?: number;
-  slideCount?: number;
-  trackChangesEnabled?: boolean;
-  pendingRevisions?: number;
-}
-
 /** 与 Rust `RequestContext` 对齐 — overlay 唤起时采集的上下文 */
 export interface CapturedContext {
   selection?: string;
@@ -294,7 +276,6 @@ export interface CapturedContext {
   gitStatus?: string;
   lastShellExecution?: string;
   ideContext?: IDEContext;
-  officeContext?: OfficeContext;
 }
 
 export interface CursorPosition {
@@ -344,6 +325,7 @@ export interface ChatStatusEvent {
   sessionId: string;
   messageId: string;
   kind: string;
+  snapshot?: ChatMessage;
 }
 
 export interface ChatUserContentEvent {

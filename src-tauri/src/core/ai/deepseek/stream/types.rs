@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::time::Duration;
 
-pub(crate) const RETRY_BACKOFF: Duration = Duration::from_millis(500);
+pub(crate) const RETRY_BACKOFF: Duration = Duration::from_secs(2);
 
 pub(super) const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 pub(super) const MAX_STREAM_ATTEMPTS: u32 = 5;
@@ -23,7 +23,7 @@ pub(super) struct ApiTokenUsage {
     pub(super) completion_tokens: usize,
     /// First-party DeepSeek field. Prefer this when present.
     #[serde(default)]
-    prompt_cache_hit_tokens: usize,
+    prompt_cache_hit_tokens: Option<usize>,
     #[serde(default)]
     prompt_tokens_details: ApiPromptTokensDetails,
     #[serde(default)]
@@ -33,20 +33,21 @@ pub(super) struct ApiTokenUsage {
 impl ApiTokenUsage {
     pub(super) fn cache_read_tokens(&self) -> usize {
         self.prompt_cache_hit_tokens
-            .max(self.prompt_tokens_details.cached_tokens)
+            .unwrap_or(0).max(self.prompt_tokens_details.cached_tokens.unwrap_or(0))
     }
+    pub(super) fn cache_reported(&self) -> bool { self.prompt_cache_hit_tokens.is_some() || self.prompt_tokens_details.cached_tokens.is_some() }
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct ApiPromptTokensDetails {
     #[serde(default)]
-    cached_tokens: usize,
+    cached_tokens: Option<usize>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct ApiCompletionTokensDetails {
     #[serde(default)]
-    pub(super) reasoning_tokens: usize,
+    pub(super) reasoning_tokens: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,6 +131,8 @@ mod tool_call_builder_tests {
 
 #[derive(Debug, Default)]
 pub(crate) struct StreamReadOutcome {
+    pub(crate) first_sse_ms: Option<u128>,
+    pub(crate) first_text_ms: Option<u128>,
     pub(crate) saw_done: bool,
     pub(crate) emitted: bool,
     pub(crate) finish_reason: Option<String>,
@@ -148,6 +151,7 @@ impl StreamReadOutcome {
             emitted: false,
             saw_done,
             finish_reason,
+            ..Self::default()
         }
     }
 }

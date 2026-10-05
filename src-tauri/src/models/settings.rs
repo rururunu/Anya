@@ -486,12 +486,14 @@ pub struct AppSettings {
     /// Absolute ceiling for one foreground shell command, in seconds (min 5).
     /// Deliberately generous: a command that keeps making progress should be
     /// allowed to finish, so this is a safety net rather than the usual way a
-    /// command ends. Stuck commands are caught by `shell_stall_timeout_secs`.
+    /// command ends. Silent I/O waits are never proof of a stuck process.
     #[serde(default = "default_shell_timeout_secs")]
     pub shell_timeout_secs: u64,
-    /// How long a foreground command may make no progress at all — no new
-    /// output and no CPU consumed by its process tree — before it is treated
-    /// as stuck, in seconds (min 5).
+    /// Migration marker; preserves an explicitly chosen timeout after upgrade.
+    #[serde(default)]
+    pub shell_timeout_migrated: bool,
+    /// Idle interval before an advisory completion check, in seconds (min 5).
+    /// The check never overrides the actual process exit or absolute ceiling.
     #[serde(default = "default_shell_stall_timeout_secs")]
     pub shell_stall_timeout_secs: u64,
     /// Automatically run one lightweight build/test verification pass after
@@ -730,6 +732,7 @@ impl Default for AppSettings {
             allow_outside_workspace_writes: false,
             restricted_shell: true,
             shell_timeout_secs: default_shell_timeout_secs(),
+            shell_timeout_migrated: true,
             shell_stall_timeout_secs: default_shell_stall_timeout_secs(),
             auto_verify_after_edits: true,
             pending_restricted_shell_upgrade_notice: false,
@@ -922,6 +925,7 @@ impl AppSettings {
                 .shell_timeout_secs
                 .unwrap_or(self.shell_timeout_secs)
                 .max(5),
+            shell_timeout_migrated: self.shell_timeout_migrated,
             shell_stall_timeout_secs: patch
                 .shell_stall_timeout_secs
                 .unwrap_or(self.shell_stall_timeout_secs)
@@ -1230,7 +1234,10 @@ mod tests {
         assert_eq!(json["websiteUrl"], "https://commandcode.ai/");
         let restored: super::CustomProviderConfig =
             serde_json::from_value(json).expect("deserialize");
-        assert_eq!(restored.website_url.as_deref(), Some("https://commandcode.ai/"));
+        assert_eq!(
+            restored.website_url.as_deref(),
+            Some("https://commandcode.ai/")
+        );
         assert_eq!(
             restored.model_protocols.get("minimax-m3"),
             Some(&super::ModelWireProtocol::AnthropicMessages)

@@ -1,6 +1,13 @@
 import type { AppLanguage } from "@/types/setting";
 
 export const uiEn = {
+  "delivery.open": "Open file",
+  "delivery.preview": "Preview image",
+  "delivery.reveal": "Show in folder",
+  "delivery.error": "Unable to open this file. It may have been moved or deleted.",
+  "delivery.file": "File",
+  "delivery.all": "All deliverables",
+  "delivery.collapse": "Collapse",
   "settings.sections.general": "General",
   "settings.sections.intelligence": "AI & Agent",
   "settings.sections.extensions": "Extensions",
@@ -272,6 +279,13 @@ export type UiI18nKey = keyof typeof uiEn;
 type UiLocale = Partial<Record<UiI18nKey, string>>;
 
 const zhCN: UiLocale = {
+  "delivery.open": "打开文件",
+  "delivery.preview": "预览图片",
+  "delivery.reveal": "在文件夹中显示",
+  "delivery.error": "无法打开文件，它可能已被移动或删除。",
+  "delivery.file": "文件",
+  "delivery.all": "全部交付文件",
+  "delivery.collapse": "收起",
   "settings.sections.general": "通用",
   "settings.sections.intelligence": "AI 与 Agent",
   "settings.sections.extensions": "扩展",

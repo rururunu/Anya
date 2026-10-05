@@ -335,6 +335,7 @@ export interface AppSettingsPatch {
   allowOutsideWorkspaceWrites?: boolean;
   restrictedShell?: boolean;
   shellTimeoutSecs?: number;
+  shellTimeoutMigrated?: boolean;
   shellStallTimeoutSecs?: number;
   autoVerifyAfterEdits?: boolean;
   pendingRestrictedShellUpgradeNotice?: boolean;

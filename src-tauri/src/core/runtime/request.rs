@@ -30,8 +30,6 @@ pub struct RequestContext {
     pub last_shell_execution: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ide_context: Option<IDEContext>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub office_context: Option<crate::core::office::OfficeContext>,
 }
 
 impl RequestContext {

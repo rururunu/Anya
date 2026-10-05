@@ -11,7 +11,7 @@ pub(super) fn parse_multimodal_content(content: &str) -> Value {
         return json!(content);
     }
 
-    let re = match regex::Regex::new(r"!\[image\]\((.*?)\)") {
+    let re = match regex::Regex::new(r"!\[image\]\(((?:[^()\r\n]|\([^()\r\n]*\))*)\)") {
         Ok(re) => re,
         Err(_) => return json!(content),
     };

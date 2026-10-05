@@ -77,14 +77,6 @@ pub enum AgentDebugEvent {
         summary: String,
         timestamp_ms: u64,
     },
-    OfficeRuntime {
-        session_id: String,
-        phase: String,
-        tool: Option<String>,
-        success: bool,
-        summary: String,
-        error: Option<String>,
-    },
 }
 
 #[cfg(test)]
@@ -139,22 +131,5 @@ mod tests {
         assert_eq!(value["data"]["runId"], "run-1");
         assert_eq!(value["data"]["subagentId"], "child-1");
         assert_eq!(value["data"]["readOnly"], true);
-    }
-
-    #[test]
-    fn office_runtime_event_serializes_for_frontend_transport() {
-        let value = serde_json::to_value(AgentDebugEvent::OfficeRuntime {
-            session_id: "session-1".to_string(),
-            phase: "tool".to_string(),
-            tool: Some("word_get_selection".to_string()),
-            success: true,
-            summary: "12 chars".to_string(),
-            error: None,
-        })
-        .unwrap();
-
-        assert_eq!(value["type"], "officeRuntime");
-        assert_eq!(value["data"]["sessionId"], "session-1");
-        assert_eq!(value["data"]["tool"], "word_get_selection");
     }
 }

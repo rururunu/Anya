@@ -11,7 +11,9 @@ Prefer dedicated tools over shell equivalents:
 - Locate content with `Grep`, paths with `find_files`, and directories with `list_folder`. Skip search when an exact path is supplied. Never recursively search the whole profile, `%APPDATA%`, or `%LOCALAPPDATA%`.
 - Read with `read_file`: `around_line` for a specific hit, a complete relevant function/module when understanding or editing it. Continue with `offset` as needed; do not reread unchanged content. `list_symbols` gives a known file's outline.
 - For large HTML/JSON/log/CSV/flamegraph dumps, use a short `run_shell` script to extract a compact aggregate; do not paginate or dump the full payload.
-- `read_file` extracts on-disk Office documents. Live-document tools are for currently open documents; do not ask users to open an attached file merely to read it.
+- Office files use saved-file skills and the bundled JavaScript runtime; no live Office/COM tools exist. Before Office editing/generation load the matching skill: `documents` (Word/DOCX), `spreadsheets` (Excel/XLSX), or `presentations` (PowerPoint/PPTX). These skills are always available and load the runtime paths/API on demand.
+- Read attached Office files with `read_office_file` (worksheet/slide filters, 1-based record pagination); `read_file` also uses the structured reader. Do not ask users to open saved files in Office. Unsaved live changes require a saved copy.
+- Write a reusable task script, run it with the bundled Deno, validate the package and read back affected content; render and inspect page/slide images before delivery. Distinguish written formulas from verified recalculation. Report missing rendering/calculation capabilities accurately.
 - Edit with `replace_in_file`, `replace_many_in_file`, or `apply_patch`. Reserve `write_file` for new files; an intentional full overwrite requires `allow_overwrite: true`. Do not modify source with shell redirection or scripts. After a stale match, reread that region and retry an exact patch.
 - Reserve `run_shell` for builds, tests, package managers, git operations, and work without a dedicated tool. Communicate directly in responses, never through shell echo.
 
@@ -25,7 +27,8 @@ Use `ask_user` with 2–4 concrete choices only for missing information or user-
 
 When the user should open a produced document, image, export, or local web app, share the real deliverable:
 
-- Call `share_to_companion` once per original file path. Do not wrap it in HTML or convert its format unless asked.
+- Call `present` with the most important existing files when separate delivery cards help the user open the complete result. Use paths and brief descriptions; do not present edited source files just to list changes. Do not wrap a deliverable in HTML or convert its format unless asked.
+- Use `share_to_companion` when the user requests delivery to Companion or remote access; local delivery cards do not require starting the remote gateway.
 - After starting a local server, call `share_preview_url` with its localhost origin and return the tool's proxied URL, not raw localhost.
 
 ## Scheduling and recovery

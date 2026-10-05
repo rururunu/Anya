@@ -13,7 +13,8 @@ use crate::core::tools::context::{Tool, ToolContext};
 use crate::core::tools::error::ToolError;
 use crate::core::tools::fs_skip;
 
-use super::{office, resolve_read};
+use super::resolve_read;
+use crate::core::tools::skills::office_runtime;
 
 /// Recursive listing without a cap walks huge trees (and still emits
 /// `node_modules`-adjacent leftovers) — that stalls both the tool and the
@@ -42,7 +43,7 @@ impl Tool for ReadFileTool {
         "read_file"
     }
     fn description(&self) -> &str {
-        "Read a file by path (relative to workspace root). Prefer this over shell cat/Get-Content/type. Unknown location: Grep first. A symbol/call-site hit: around_line. A key source file you must understand or edit: read from the start (default window, hard-capped per call); if truncated, continue with offset. Do not open a file from line 1 to hunt for a symbol. Large dumps (HTML flamegraphs, JSON, logs, CSV) must not be paginated: extract with a short run_shell script that prints a compact aggregate. .docx/.xlsx/.pptx are extracted to plain text automatically."
+        "Read a file by path (relative to workspace root). Prefer this over shell cat/Get-Content/type. Unknown location: Grep first. A symbol/call-site hit: around_line. A key source file you must understand or edit: read from the start (default window, hard-capped per call); if truncated, continue with offset. Do not open a file from line 1 to hunt for a symbol. Large dumps (HTML flamegraphs, JSON, logs, CSV) must not be paginated: extract with a short run_shell script that prints a compact aggregate. .docx/.xlsx/.pptx return structured saved-file records; for those files offset/limit count records, not lines. Prefer read_office_file for worksheet/slide filters."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -78,20 +79,15 @@ impl Tool for ReadFileTool {
         let path = args["path"].as_str().unwrap_or("");
         let mut window = parse_line_window(&args);
         let resolved = resolve_read(ctx, self.name(), path)?;
-        if office::is_office_document(&resolved) {
-            let extracted = office::extract_office_plain_text(&resolved)?;
-            let size = extracted.len() as u64;
-            shrink_window_for_large_file(&mut window, size);
-            let slice = numbered_slice(&extracted, &window);
-            return Ok(format_read_result(
-                path,
-                size,
-                &window,
-                &slice.body,
-                slice.last_seen,
-                slice.truncated,
-                looks_like_dump(Path::new(path), size),
-            ));
+        if office_runtime::is_office_document(&resolved) {
+            return office_runtime::read_file(
+                ctx,
+                &resolved,
+                &json!({
+                    "offset": args["offset"].as_u64().unwrap_or(1),
+                    "limit": args["limit"].as_u64().unwrap_or(100).min(500),
+                }),
+            );
         }
         let size = fs::metadata(&resolved)?.len();
         if probe_binary(&resolved)? {
@@ -158,12 +154,6 @@ struct LineWindow {
     offset: usize,
     limit: usize,
     around_line: Option<usize>,
-}
-
-struct NumberedSlice {
-    body: String,
-    last_seen: usize,
-    truncated: bool,
 }
 
 fn positive_usize(args: &Value, key: &str) -> Option<usize> {
@@ -309,35 +299,6 @@ fn format_read_result(
     out.push_str(body);
     out.push_str(&window_footer(window, last_seen, truncated, large_dump));
     out
-}
-
-fn numbered_slice(text: &str, window: &LineWindow) -> NumberedSlice {
-    let mut body = String::new();
-    let mut used_bytes = 0usize;
-    let mut last_seen = 0usize;
-    let mut truncated = false;
-    for (idx, line) in text.lines().enumerate() {
-        last_seen = idx + 1;
-        if last_seen < window.offset {
-            continue;
-        }
-        if last_seen >= window.offset + window.limit {
-            truncated = true;
-            break;
-        }
-        let row = format_numbered_line(last_seen, line);
-        if used_bytes + row.len() > MAX_READ_CONTENT_BYTES && !body.is_empty() {
-            truncated = true;
-            break;
-        }
-        body.push_str(&row);
-        used_bytes += row.len();
-    }
-    NumberedSlice {
-        body,
-        last_seen,
-        truncated,
-    }
 }
 
 impl Tool for ListFolderTool {
@@ -562,6 +523,48 @@ mod tests {
             cancelled: Arc::new(AtomicBool::new(false)),
         };
         (ctx, db)
+    }
+
+    #[test]
+    fn saved_office_read_uses_bundled_runtime_and_record_pagination() {
+        use std::io::Write;
+        if crate::core::plugins::deno_path().is_none()
+            || !Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/office/runtime.mjs")
+                .is_file()
+        {
+            eprintln!("skip Office integration: build runtime and fetch Deno first");
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("anya-office-中文 {}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let file = fs::File::create(root.join("sample.docx")).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file(
+            "word/document.xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>first</w:t></w:r></w:p><w:p><w:r><w:t>second</w:t></w:r></w:p></w:body></w:document>"#).unwrap();
+        zip.finish().unwrap();
+        let (ctx, db) = make_ctx(root.clone());
+        let prompt = crate::core::tools::skills::skill_prompt("documents", &ctx).unwrap();
+        assert!(prompt.contains("file://"));
+        assert!(prompt.contains("runtime.mjs"));
+        let output = ReadFileTool
+            .execute(&ctx, json!({"path":"sample.docx", "offset":2, "limit":1}))
+            .unwrap();
+        let value: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(value["total"], 2);
+        assert_eq!(value["records"][0]["text"], "second");
+        ctx.cancelled
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(ReadFileTool
+            .execute(&ctx, json!({"path":"sample.docx"}))
+            .is_err());
+        drop(ctx);
+        fs::remove_dir_all(root).unwrap();
+        let _ = fs::remove_file(db);
     }
 
     #[test]

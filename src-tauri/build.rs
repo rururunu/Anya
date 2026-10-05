@@ -1,22 +1,7 @@
 use std::fs;
-use std::path::{Path, PathBuf};
-
-fn warn_if_docx_vendor_missing() {
-    let manifest_dir = match std::env::var_os("CARGO_MANIFEST_DIR") {
-        Some(value) => PathBuf::from(value),
-        None => return,
-    };
-    let marker = manifest_dir.join("prompts/skills/vendor/docx/scripts/merge_runs.py");
-    println!("cargo:rerun-if-changed=prompts/skills/vendor/docx");
-    if !marker.is_file() {
-        println!(
-            "cargo:warning=docx skill vendor missing; run `pnpm sync-skills` before using #skill:docx"
-        );
-    }
-}
+use std::path::Path;
 
 fn main() {
-    warn_if_docx_vendor_missing();
     if let Ok(triple) = std::env::var("TARGET") {
         println!("cargo:rustc-env=TARGET_TRIPLE={triple}");
     }

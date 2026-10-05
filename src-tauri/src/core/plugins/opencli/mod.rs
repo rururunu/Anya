@@ -84,11 +84,7 @@ fn dispatch(action: &str, args: &Value) -> Result<String, ToolError> {
                     "browser needs a simple session name (e.g. work)",
                 ));
             }
-            let op = args
-                .get("op")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .trim();
+            let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("").trim();
             if op.is_empty() {
                 return Err(ToolError::new(
                     "browser needs op (open|state|click|type|fill|select|keys|wait|get|find|extract|scroll|back|eval|screenshot|network|tab|close|…)",
@@ -210,7 +206,9 @@ fn is_safe_token(s: &str) -> bool {
 fn reject_dangerous(argv: &[String]) -> Result<(), ToolError> {
     for a in argv {
         if a.contains('\0') || a.contains('\n') || a.contains('\r') {
-            return Err(ToolError::new("opencli args must not contain control chars"));
+            return Err(ToolError::new(
+                "opencli args must not contain control chars",
+            ));
         }
         if a.starts_with('$') || a.starts_with('`') {
             return Err(ToolError::new("opencli args must not start with $ or `"));

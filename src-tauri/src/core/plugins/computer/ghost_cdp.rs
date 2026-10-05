@@ -75,7 +75,9 @@ async fn see(session: &GhostSession, args: &Value, r: &CdpRoute) -> Result<Value
         }));
     }
     let limit = args["limit"].as_u64().unwrap_or(150) as usize;
-    let name_filter = args["name_filter"].as_str().or_else(|| args["name"].as_str());
+    let name_filter = args["name_filter"]
+        .as_str()
+        .or_else(|| args["name"].as_str());
     let els = session
         .cdp_describe(r, limit.max(1), name_filter, None)
         .await
@@ -165,7 +167,10 @@ async fn act(
                 .unwrap_or(0);
             match matches.into_iter().nth(pos) {
                 Some(m) => (m, total),
-                None => session.cdp_find(r, &by, None).await.map_err(|e| e.to_string())?,
+                None => session
+                    .cdp_find(r, &by, None)
+                    .await
+                    .map_err(|e| e.to_string())?,
             }
         }
         _ => session
@@ -297,10 +302,7 @@ async fn click_at(
             .await
             .map_err(|e| e.to_string())?
     };
-    r.tab
-        .click_at(vx, vy)
-        .await
-        .map_err(|e| e.to_string())?;
+    r.tab.click_at(vx, vy).await.map_err(|e| e.to_string())?;
     Ok(json!({
         "ok": true,
         "mode": "cdp",
@@ -339,19 +341,13 @@ async fn scroll(session: &GhostSession, args: &Value, r: &CdpRoute) -> Result<Va
             if session.cdp_find(r, &by, None).await.is_ok() {
                 return Ok(json!({ "ok": true, "found": true, "mode": "cdp" }));
             }
-            r.tab
-                .scroll("", dx, dy)
-                .await
-                .map_err(|e| e.to_string())?;
+            r.tab.scroll("", dx, dy).await.map_err(|e| e.to_string())?;
             tokio::time::sleep(std::time::Duration::from_millis(120)).await;
         }
         let found = session.cdp_find(r, &by, None).await.is_ok();
         return Ok(json!({ "ok": found, "found": found, "mode": "cdp" }));
     }
-    r.tab
-        .scroll("", dx, dy)
-        .await
-        .map_err(|e| e.to_string())?;
+    r.tab.scroll("", dx, dy).await.map_err(|e| e.to_string())?;
     Ok(json!({
         "ok": true,
         "mode": "cdp",
@@ -360,11 +356,7 @@ async fn scroll(session: &GhostSession, args: &Value, r: &CdpRoute) -> Result<Va
     }))
 }
 
-async fn assert_tool(
-    session: &GhostSession,
-    args: &Value,
-    r: &CdpRoute,
-) -> Result<Value, String> {
+async fn assert_tool(session: &GhostSession, args: &Value, r: &CdpRoute) -> Result<Value, String> {
     let kind = args["kind"].as_str().unwrap_or("exists");
     let by = locator(args)?;
     match kind {
@@ -407,7 +399,9 @@ async fn wait(session: &GhostSession, args: &Value, r: &CdpRoute) -> Result<Valu
                     return Ok(json!({ "ok": true, "for": "element", "mode": "cdp" }));
                 }
                 if start.elapsed().as_millis() as u64 >= timeout_ms {
-                    return Err(format!("wait for=element timed out ({timeout_ms}ms) via CDP"));
+                    return Err(format!(
+                        "wait for=element timed out ({timeout_ms}ms) via CDP"
+                    ));
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(80)).await;
             }

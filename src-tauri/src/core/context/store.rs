@@ -131,9 +131,9 @@ fn now_millis() -> u64 {
 ///
 /// Alt+Alt show must not wait on those providers; they run after the window is visible.
 pub fn snapshot_foreground() -> (RequestContext, Option<WindowInfo>) {
-    let window = WindowDetector::detect().ok().filter(|window| {
-        !window.process_name.eq_ignore_ascii_case("Anya.exe")
-    });
+    let window = WindowDetector::detect()
+        .ok()
+        .filter(|window| !window.process_name.eq_ignore_ascii_case("Anya.exe"));
     let captured = ChatContext {
         window: window.clone(),
         ..ChatContext::empty()
@@ -265,7 +265,6 @@ fn map_to_request_context(context: Option<&ChatContext>) -> RequestContext {
         git_status: None,
         last_shell_execution: None,
         ide_context: None,
-        office_context: None,
     }
 }
 

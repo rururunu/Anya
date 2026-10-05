@@ -164,11 +164,7 @@ pub fn is_desktop_pet_visible(app: &AppHandle) -> bool {
 /// 应用启动时按上次记录的开关恢复宠物显示。
 pub fn restore_desktop_pet_on_startup(app: &AppHandle) {
     let persisted = load_persisted(app);
-    if let Some(size) = persisted
-        .size
-        .as_deref()
-        .and_then(PetSize::parse)
-    {
+    if let Some(size) = persisted.size.as_deref().and_then(PetSize::parse) {
         if let Ok(mut guard) = runtime_state().lock() {
             guard.size = size;
             guard.appearance = persisted.appearance.clone();

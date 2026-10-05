@@ -388,6 +388,7 @@ impl ConversationManager {
     }
 
     pub fn delete_session(&self, session_id: &str) {
+        crate::core::tools::dsh::clear_session(session_id);
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.remove(session_id);
         }

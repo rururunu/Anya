@@ -35,12 +35,45 @@ fn store() -> &'static Mutex<HashMap<String, ActiveUpload>> {
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn valid_session_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 180
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+// Reject redirects anywhere below the trusted root, including Windows junctions.
+fn checked_upload_dir(root: &Path, parts: &[&str]) -> Result<PathBuf, String> {
+    let mut path = root.to_path_buf();
+    for part in parts {
+        path.push(part);
+        match fs::symlink_metadata(&path) {
+            Ok(meta) => {
+                #[cfg(windows)]
+                let redirect = {
+                    use std::os::windows::fs::MetadataExt;
+                    meta.file_attributes() & 0x400 != 0
+                };
+                #[cfg(not(windows))]
+                let redirect = meta.file_type().is_symlink();
+                if redirect || !meta.is_dir() {
+                    return Err("upload directory contains a redirect or non-directory".into());
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Ok(path)
+}
+
 pub fn inbox_dir(app: &AppHandle, session_id: &str) -> Option<PathBuf> {
     let sid = session_id.trim();
-    if sid.is_empty() {
+    if !valid_session_id(sid) {
         return None;
     }
-    Some(config_dir(app).join("companion-inbox").join(sid))
+    checked_upload_dir(&config_dir(app), &["companion-inbox", sid]).ok()
 }
 
 pub fn inbox_root_if_exists(app: &AppHandle, session_id: &str) -> Option<PathBuf> {
@@ -50,7 +83,7 @@ pub fn inbox_root_if_exists(app: &AppHandle, session_id: &str) -> Option<PathBuf
 
 pub fn cleanup_session_uploads(app: &AppHandle, session_id: &str, workspace_root: Option<&Path>) {
     let sid = session_id.trim();
-    if sid.is_empty() {
+    if !valid_session_id(sid) {
         return;
     }
     abort_session_uploads(sid);
@@ -58,8 +91,9 @@ pub fn cleanup_session_uploads(app: &AppHandle, session_id: &str, workspace_root
         let _ = fs::remove_dir_all(dir);
     }
     if let Some(root) = workspace_root {
-        let dir = root.join(".anya").join("uploads").join(sid);
-        let _ = fs::remove_dir_all(dir);
+        if let Ok(dir) = checked_upload_dir(root, &[".anya", "uploads", sid]) {
+            let _ = fs::remove_dir_all(dir);
+        }
     }
 }
 
@@ -76,6 +110,9 @@ pub fn begin(
         ));
     }
     let session_id = allocate_session_id(session_id);
+    if !valid_session_id(&session_id) {
+        return Err("invalid session id".into());
+    }
     if let Some(ws) = bound_workspace(app, &session_id, workspace_id) {
         if let Some(state) = app.try_state::<AppState>() {
             state
@@ -266,11 +303,11 @@ fn dest_dir(
     workspace_id: Option<&str>,
 ) -> Result<PathBuf, String> {
     if let Some(ws) = bound_workspace(app, session_id, workspace_id) {
-        return Ok(ws.root.join(".anya").join("uploads").join(session_id));
+        return checked_upload_dir(&ws.root, &[".anya", "uploads", session_id]);
     }
     inbox_dir(app, session_id)
-        .map(|root| root.join(".anya").join("uploads"))
-        .ok_or_else(|| "missing session id".to_string())
+        .ok_or_else(|| "invalid session id or upload directory".to_string())
+        .and_then(|root| checked_upload_dir(&root, &[".anya", "uploads"]))
 }
 
 fn rel_path_for(
@@ -325,6 +362,35 @@ fn unique_name(dir: &Path, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_ids_cannot_escape_upload_root() {
+        for id in [
+            "",
+            ".",
+            "..",
+            "../victim",
+            "..\\victim",
+            "C:\\victim",
+            "/victim",
+            "x:y",
+            "a.",
+            "a ",
+        ] {
+            assert!(!valid_session_id(id), "accepted {id}");
+        }
+        assert!(valid_session_id(&Uuid::new_v4().to_string()));
+        assert!(valid_session_id("session_1"));
+    }
+
+    #[test]
+    fn upload_dir_rejects_non_directory_components() {
+        let base = std::env::temp_dir().join(format!("anya-upload-path-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        fs::write(base.join(".anya"), "file").unwrap();
+        assert!(checked_upload_dir(&base, &[".anya", "uploads", "session"]).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn sanitizes_path_separators_and_dots() {

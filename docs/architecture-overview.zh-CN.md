@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.24                            |
+| **版本**   | v0.2.25                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -49,7 +49,7 @@ flowchart LR
   User((用户)) -->|热键 / 托盘 / 输入| Host[Anya 进程]
   Phone[Anya Companion] -->|WS /remote/v1 · HTTP /f /p| Host
   IDE[IDE 插件] -->|上下文推送| Host
-  Host -->|COM| Office[Word / Excel / PPT]
+  Host -->|Skills + Deno| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[模型服务商]
   Host -->|HTTPS / stdio| Aux[MCP · 搜索 · mem0]
   Host -.->|可选 /embeddings| Emb[嵌入 API]
@@ -61,7 +61,7 @@ flowchart LR
 | 用户              | 全局热键、托盘、输入栏、Diff 审查、工作台内嵌设置                      |
 | Anya Companion    | 安卓远程；局域网 `ws` 或 Cloudflare `wss`；文件走 HTTP Range `/f/`     |
 | IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）                         |
-| Microsoft Office  | COM：文档上下文与 `word_*` / `excel_*` / `ppt_*` 工具                  |
+| Microsoft Office  | 保存文件技能 + 内置 Deno/JavaScript 文档运行时                         |
 | 模型服务商        | 鉴权 HTTPS SSE；支持 Chat Completions、Responses 或 Anthropic Messages |
 | 嵌入              | 可选 RAG：OpenAI 兼容 `/embeddings` 或本地 ONNX（`fastembed`）         |
 | MCP / 搜索 / mem0 | 可选；在设置中显式启用                                                 |
@@ -100,7 +100,7 @@ flowchart TB
 
   subgraph Adapters["L4 Adapters"]
     Rt["crate::runtime<br/>git · search · browser · shell"]
-    OfficeCore["core/office · core/mcp · core/lsp"]
+    OfficeCore["core/tools/skills · core/mcp · core/lsp"]
     Remote["core/remote<br/>gateway · upload · download · preview"]
     Svc["services/<br/>window · hotkey · settings · oauth · pin_badge"]
   end
@@ -122,12 +122,12 @@ flowchart TB
   Chat --> Bus
 ```
 
-| 层              | 位置                                                    | 职责                                                | 禁止                     |
-| --------------- | ------------------------------------------------------- | --------------------------------------------------- | ------------------------ |
-| L1 Presentation | `src/{layouts,components,composables,stores,pages}`     | 渲染、本地 UX 状态、RAF 合并流式增量                | 调用 Provider 或执行工具 |
-| L2 Bridge       | `src/services/ipc`、`commands/`、`adapters/`            | 序列化 IPC DTO；将 `BusEvent` 投影为 Tauri emit     | 承载业务策略             |
-| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                  | 聊天生命周期、Agent 循环、工具、提示词、持久化      | 依赖 Vue / DOM           |
-| L4 Adapters     | `runtime/`、`services/`、`core/{office,mcp,lsp,remote}` | OS、COM、HTTP 客户端、MCP 传输、Companion WS / HTTP | 驱动 Agent 主循环        |
+| 层              | 位置                                                          | 职责                                                     | 禁止                     |
+| --------------- | ------------------------------------------------------------- | -------------------------------------------------------- | ------------------------ |
+| L1 Presentation | `src/{layouts,components,composables,stores,pages}`           | 渲染、本地 UX 状态、RAF 合并流式增量                     | 调用 Provider 或执行工具 |
+| L2 Bridge       | `src/services/ipc`、`commands/`、`adapters/`                  | 序列化 IPC DTO；将 `BusEvent` 投影为 Tauri emit          | 承载业务策略             |
+| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                        | 聊天生命周期、Agent 循环、工具、提示词、持久化           | 依赖 Vue / DOM           |
+| L4 Adapters     | `runtime/`、`services/`、`core/{tools/skills,mcp,lsp,remote}` | OS、文档脚本、HTTP 客户端、MCP 传输、Companion WS / HTTP | 驱动 Agent 主循环        |
 
 ### 3.2 前端依赖规则
 
@@ -146,7 +146,7 @@ UI → composables → stores → services → services/ipc → Tauri
 lib / main
   → commands（IPC 门面）
   → core::*（领域）
-  → runtime / office / mcp（适配）
+  → runtime / document scripts / mcp（适配）
 services（window、hotkey、settings）→ 按需依赖 core
 ```
 
@@ -161,7 +161,7 @@ services（window、hotkey、settings）→ 按需依赖 core
 ```mermaid
 flowchart TB
   subgraph Process["Anya.exe"]
-    Rust["Rust 宿主<br/>hotkey · tray · COM · SQLite · AgentRuntime · Gateway"]
+    Rust["Rust 宿主<br/>hotkey · tray · Deno · SQLite · AgentRuntime · Gateway"]
     WV1["WebView: workbench<br/>对话 · 审查 · 内嵌设置"]
     WV2["WebView: overlay"]
     WV4["WebView: image-preview"]
@@ -302,37 +302,37 @@ sequenceDiagram
 
 ### 5.1 Rust 领域（`src-tauri/src/core`）
 
-| 模块               | 路径                                       | 职责                                                                                                                                                                  |
-| ------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Chat service       | `core/chat/service/`                       | 入口：落库、解析上下文/模型、启动或 soft-inject（`mod.rs` façade）                                                                                                    |
-| Stream manager     | `core/chat/stream/`                        | 后台任务、取消、流式聚合、UI 事件、时间线文本                                                                                                                         |
-| Agent runner       | `core/chat/agent.rs`                       | **主** model↔tools 循环                                                                                                                                               |
-| Agent loop 策略    | `core/chat/agent_loop/`                    | stream_turn、tools、challenge、compact、post_edit_verify、soft_inject、failure                                                                                        |
-| 会话存储           | `core/chat/conversation_manager/`          | façade + `messages` / `activity` / `session` / `branch` / `helpers`；SQLite + work timeline                                                                           |
-| DB / journal       | `core/chat/db/`、`core/chat/journal.rs`    | Schema、存取、崩溃恢复（`db/{schema,messages,sessions,tool_activity}`）                                                                                               |
-| 提示词（markdown） | `core/chat/prompts/`、`prompts/*.md`       | system / tools / policies / skills（`include_str!`）                                                                                                                  |
-| Prompt 组装        | `core/chat/prompt/`                        | 固定槽位组装（`PromptBuilder` + `slots`）；易变语境与 `#skill` chips 挂在用户消息尾部；agent-state 只追加；整轮冻结 tool schemas（DeepSeek 磁盘缓存要求精确前缀单元） |
-| Agent runtime      | `core/agent/runtime/`                      | Run 状态机、取消、soft-inject、debug                                                                                                                                  |
-| AI providers       | `core/ai/`                                 | 聊天 Provider 注册表、DeepSeek/Gemini、多模态；**Images API** 独立（`image_gen`）                                                                                     |
-| DeepSeek / OpenAI  | `core/ai/deepseek/`                        | `provider`、`messages/`、`stream/`、`anthropic`、`models`、`multimodal`                                                                                               |
-| Shell jobs         | `core/tools/shell_jobs/`                   | 前台/后台 shell 进程生命周期与输出                                                                                                                                    |
-| 工作区注册表       | `core/workspace/`                          | SQLite 工作区列表（`manager/`、`db`、`helpers`）                                                                                                                      |
-| MCP 客户端         | `core/mcp/`                                | stdio JSON-RPC（`manager`、`process`、`runtime`、`command`、`remote_auth`）                                                                                           |
-| Images API         | `core/ai/image_gen.rs`                     | `POST /v1/images/generations` / `edits`，走设置 → 生图（`image_providers`）                                                                                           |
-| Image markdown     | `core/ai/image_markdown.rs`                | 抽取 / 剥离 `![edit-region]`，供聊天、vision、Images 共用                                                                                                             |
-| 嵌入 / RAG         | `core/ai/embed.rs`、`commands/semantic.rs` | 可选 retrieve-then-rerank；API 或本地 ONNX                                                                                                                            |
-| Tools              | `core/tools/`                              | 注册表、审批、plan/image mode 门禁、文件、shell、skills、子 Agent                                                                                                     |
-| 工作区索引         | `core/tools/workspace_index.rs`            | 分块关键词索引，落在 `.anya/index`（增量 JSONL）；经 `fs_skip` 跳过 `.anya`                                                                                           |
-| Plan mode          | `core/tools/plan_mode.rs`                  | 会话级写操作门禁；Agent 可通过 `request_plan_mode` 征求进入                                                                                                           |
-| Image mode         | `core/tools/image_mode.rs`                 | 会话级生图工具栏参数；工具白名单 + challenge                                                                                                                          |
-| Context            | `core/context/`                            | IDE、选区、剪贴板、环境、Office 提示                                                                                                                                  |
-| Checkpoint         | `core/checkpoint/`                         | 已应用文件变更的撤销 / 审查                                                                                                                                           |
-| Token              | `core/token/`                              | 用量记账（含缓存命中 / reasoning token）与持久化                                                                                                                      |
-| MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/office`      | 外部协议适配                                                                                                                                                          |
-| 协议类型           | `core/runtime/`                            | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`                                                                                                                      |
-| Event bus          | `core/event/`                              | 领域事件                                                                                                                                                              |
-| 插件               | `core/plugins/`                            | 清单、授权、Deno host、官方捆绑；**computer-use** 在 `computer/`（UIA、截屏、`launch`）                                                                               |
-| Remote gateway     | `core/remote/`                             | WS `/remote/v1`；`gateway/`、`state/`、`bridge/`、配对、隧道、上传、**下载 `/f/`**、预览 `/p/`                                                                        |
+| 模块               | 路径                                        | 职责                                                                                                                                                                  |
+| ------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chat service       | `core/chat/service/`                        | 入口：落库、解析上下文/模型、启动或 soft-inject（`mod.rs` façade）                                                                                                    |
+| Stream manager     | `core/chat/stream/`                         | 后台任务、取消、流式聚合、UI 事件、时间线文本                                                                                                                         |
+| Agent runner       | `core/chat/agent.rs`                        | **主** model↔tools 循环                                                                                                                                               |
+| Agent loop 策略    | `core/chat/agent_loop/`                     | stream_turn、tools、challenge、compact、post_edit_verify、soft_inject、failure                                                                                        |
+| 会话存储           | `core/chat/conversation_manager/`           | façade + `messages` / `activity` / `session` / `branch` / `helpers`；SQLite + work timeline                                                                           |
+| DB / journal       | `core/chat/db/`、`core/chat/journal.rs`     | Schema、存取、崩溃恢复（`db/{schema,messages,sessions,tool_activity}`）                                                                                               |
+| 提示词（markdown） | `core/chat/prompts/`、`prompts/*.md`        | system / tools / policies / skills（`include_str!`）                                                                                                                  |
+| Prompt 组装        | `core/chat/prompt/`                         | 固定槽位组装（`PromptBuilder` + `slots`）；易变语境与 `#skill` chips 挂在用户消息尾部；agent-state 只追加；整轮冻结 tool schemas（DeepSeek 磁盘缓存要求精确前缀单元） |
+| Agent runtime      | `core/agent/runtime/`                       | Run 状态机、取消、soft-inject、debug                                                                                                                                  |
+| AI providers       | `core/ai/`                                  | 聊天 Provider 注册表、DeepSeek/Gemini、多模态；**Images API** 独立（`image_gen`）                                                                                     |
+| DeepSeek / OpenAI  | `core/ai/deepseek/`                         | `provider`、`messages/`、`stream/`、`anthropic`、`models`、`multimodal`                                                                                               |
+| Shell jobs         | `core/tools/shell_jobs/`                    | 前台/后台 shell 进程生命周期与输出                                                                                                                                    |
+| 工作区注册表       | `core/workspace/`                           | SQLite 工作区列表（`manager/`、`db`、`helpers`）                                                                                                                      |
+| MCP 客户端         | `core/mcp/`                                 | stdio JSON-RPC（`manager`、`process`、`runtime`、`command`、`remote_auth`）                                                                                           |
+| Images API         | `core/ai/image_gen.rs`                      | `POST /v1/images/generations` / `edits`，走设置 → 生图（`image_providers`）                                                                                           |
+| Image markdown     | `core/ai/image_markdown.rs`                 | 抽取 / 剥离 `![edit-region]`，供聊天、vision、Images 共用                                                                                                             |
+| 嵌入 / RAG         | `core/ai/embed.rs`、`commands/semantic.rs`  | 可选 retrieve-then-rerank；API 或本地 ONNX                                                                                                                            |
+| Tools              | `core/tools/`                               | 注册表、审批、plan/image mode 门禁、文件、shell、skills、子 Agent                                                                                                     |
+| 工作区索引         | `core/tools/workspace_index.rs`             | 分块关键词索引，落在 `.anya/index`（增量 JSONL）；经 `fs_skip` 跳过 `.anya`                                                                                           |
+| Plan mode          | `core/tools/plan_mode.rs`                   | 会话级写操作门禁；Agent 可通过 `request_plan_mode` 征求进入                                                                                                           |
+| Image mode         | `core/tools/image_mode.rs`                  | 会话级生图工具栏参数；工具白名单 + challenge                                                                                                                          |
+| Context            | `core/context/`                             | IDE、选区、剪贴板、环境                                                                                                                                               |
+| Checkpoint         | `core/checkpoint/`                          | 已应用文件变更的撤销 / 审查                                                                                                                                           |
+| Token              | `core/token/`                               | 用量记账（含缓存命中 / reasoning token）与持久化                                                                                                                      |
+| MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/tools/skills` | 外部协议适配                                                                                                                                                          |
+| 协议类型           | `core/runtime/`                             | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`                                                                                                                      |
+| Event bus          | `core/event/`                               | 领域事件                                                                                                                                                              |
+| 插件               | `core/plugins/`                             | 清单、授权、Deno host、官方捆绑；**computer-use** 在 `computer/`（UIA、截屏、`launch`）                                                                               |
+| Remote gateway     | `core/remote/`                              | WS `/remote/v1`；`gateway/`、`state/`、`bridge/`、配对、隧道、上传、**下载 `/f/`**、预览 `/p/`                                                                        |
 
 ### 5.2 命名：三处 “runtime”
 
@@ -417,9 +417,20 @@ flowchart LR
   Store --> UI[MessageList / AgentWorkDetails]
 ```
 
-Provider 内可重试的传输错误会在再次尝试前发出 `chat-status`，
-`kind = stream_retry:{attempt}:{max}`。Store 清空该消息半截内容；后端同时
-`reset_work_timeline`，避免重复拼接。
+临时传输错误和 HTTP 408、429、5xx 在 Provider 内最多尝试五次，采用指数退避、
+随机延迟并遵循 `Retry-After`。随后 Agent 最多再恢复三次失败的模型轮次；
+已完成的工具不会重放。重试通过 `chat-status` 发出
+`kind = stream_retry:{attempt}:{max}` 和已提交消息快照，后端与界面只丢弃失败尝试，
+保留已完成的正文、思考、工具证据和时间线。
+
+所有兼容模型的上下文超限都会触发压缩，最多连续尝试三次有效缩减；保留的工具结果
+与对应 Assistant 调用成对保留。不同的成功证据会重置完成检查预算；输出截断和
+未满足的验收条件在有界预算内继续执行。子 Agent 使用失败与进展保护，取消固定 24 步上限。
+
+有限的长 Shell 命令可以后台执行，并须轮询到真实退出后才能确认完成。前台命令仅在
+进程退出、用户取消或达到明确的运行上限时结束；模型判断和静默 I/O 等待不会杀进程。
+旧的非受限 Shell 120 秒默认值一次性迁移到 3600 秒，保留自定义和受限模式限额。
+恢复保留内存中的请求和现有执行日志、检查点；不提供应用重启后的自动执行续接。
 
 ### 6.3 调用栈（检索用）
 
@@ -632,7 +643,7 @@ flowchart TB
 [4] 可选策略后缀（协作 / minimal-coding / plan hint / plan-mode / …）
 [5] 插件 prompt 后缀（块按序排序，保证确定性）
 [6..] 历史 + 当前用户
-       └─ `#skill` / `#mcp` chips 与易变 IDE/git/剪贴板/Office
+       └─ `#skill` / `#mcp` chips 与易变 IDE/git/剪贴板
           追加在**当前用户**文本末尾（绝不插入前缀中段的 system 槽）
 ```
 
@@ -824,6 +835,16 @@ flowchart LR
 Companion 不得再长出第二套 Agent 运行时。
 
 ---
+
+### 15.1 v0.2.25 原生工具与交付链路
+
+模型解析结果决定是否使用 `core/tools/dsh/`，而不是仅依据服务商名称。普通模型、DeepSeek 主任务和子任务分别选择自身工具集；`present` 同时存在于通用注册表。导入的静态契约位于 `prompts/dsh/`，执行与审批沿用 Anya 宿主，详见 [DeepSeek 原生链路](./deepseek-harness.zh-CN.md)。
+
+`core/tools/present.rs` 验证路径权限与普通文件，返回版本化文件元数据；`agent_loop/tools.rs` 和 `db/tool_activity.rs` 保留成功交付的结构化结果。前端 `presentedFiles.ts` 从完成的主任务工具活动中提取卡片，`PresentedFiles.vue` 渲染交互，`DeliveryFileIcon.vue` 使用本地 SVG。没有新增独立交付表，也不通过扫描最终回复生成卡片，详见 [文件交付](./file-delivery.zh-CN.md)。
+
+`core/tools/skills/office_runtime.rs` 承接保存文件工作流，`scripts/build-office-runtime.mjs` 生成打包资源。Office 渲染是技能执行能力，当前交付卡片没有 Office/PDF 内置预览侧栏。
+
+调用诊断写入配置目录的 JSONL，`scripts/deepseek-metrics-report.mjs` 汇总用量、耗时和独立验收结果。reasoning 与工具调用配对、请求副本裁剪及模型阶段重试保留已完成工具边界；这不代表进程崩溃后能自动续跑全部任务。此前提出的 journal 队列可靠性、生命周期治理及进一步虚拟化尚不属于此次版本新增能力。
 
 ## 16. 相关源码入口
 

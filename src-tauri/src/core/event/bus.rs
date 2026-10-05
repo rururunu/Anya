@@ -72,6 +72,7 @@ pub enum BusEvent {
         session_id: String,
         message_id: String,
         kind: String,
+        snapshot: Option<Box<ChatMessage>>,
     },
     ChatUserContent {
         session_id: String,

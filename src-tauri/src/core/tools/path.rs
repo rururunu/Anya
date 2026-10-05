@@ -175,11 +175,13 @@ mod tests {
             fn emit(&self, _event: BusEvent) {}
         }
 
-        shared_tool_approval_store().set_session_mode("s-always", Some(ToolApprovalMode::AlwaysAllow));
+        shared_tool_approval_store()
+            .set_session_mode("s-always", Some(ToolApprovalMode::AlwaysAllow));
         let db = std::env::temp_dir().join(format!("peek-path-allow-{}.db", uuid::Uuid::new_v4()));
         let ws = std::env::temp_dir().join(format!("peek-ws-allow-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&ws);
-        let outside = std::env::temp_dir().join(format!("peek-outside-read-{}.txt", uuid::Uuid::new_v4()));
+        let outside =
+            std::env::temp_dir().join(format!("peek-outside-read-{}.txt", uuid::Uuid::new_v4()));
         let _ = std::fs::write(&outside, "ok");
         let ctx = ToolContext {
             workspace_root: ws,
@@ -284,7 +286,8 @@ mod tests {
         let db = std::env::temp_dir().join(format!("peek-path-aw-{}.db", uuid::Uuid::new_v4()));
         let ws = std::env::temp_dir().join(format!("peek-ws-aw-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&ws);
-        let outside = std::env::temp_dir().join(format!("peek-outside-aw-{}.txt", uuid::Uuid::new_v4()));
+        let outside =
+            std::env::temp_dir().join(format!("peek-outside-aw-{}.txt", uuid::Uuid::new_v4()));
         let ctx = ToolContext {
             workspace_root: ws,
             request_context: Default::default(),
@@ -334,7 +337,8 @@ mod tests {
         let db = std::env::temp_dir().join(format!("peek-path-auto-{}.db", uuid::Uuid::new_v4()));
         let ws = std::env::temp_dir().join(format!("peek-ws-auto-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&ws);
-        let outside = std::env::temp_dir().join(format!("peek-outside-auto-{}.txt", uuid::Uuid::new_v4()));
+        let outside =
+            std::env::temp_dir().join(format!("peek-outside-auto-{}.txt", uuid::Uuid::new_v4()));
         let ctx = ToolContext {
             workspace_root: ws,
             request_context: Default::default(),

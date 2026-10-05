@@ -488,7 +488,21 @@ mod message_persistence_tests {
         save_message(&pool, &message).await.unwrap();
         let loaded = load_all_messages(&pool).await.unwrap();
 
-        assert_eq!(loaded, vec![message]);
+        assert_eq!(loaded, vec![message.clone()]);
+        // Structured delivery metadata must not be cut into invalid JSON on
+        // persistence, even when it exceeds the normal tool-text budget.
+        message.id = "delivery-1".into();
+        let metadata = json!({"version":1,"files":[{
+            "path":"report.pdf","absolutePath":"C:\\work\\report.pdf","name":"report.pdf",
+            "description":"x".repeat(crate::core::chat::limits::STORED_TOOL_RESULT_MAX_CHARS + 100),"size":123
+        }]}).to_string();
+        let activity = &mut message.tool_activities.as_mut().unwrap()[0];
+        activity.tool_name = "present".into();
+        activity.result = Some(metadata.clone());
+        save_message(&pool, &message).await.unwrap();
+        let restored = load_all_messages(&pool).await.unwrap();
+        let delivery = restored.iter().find(|m| m.id == "delivery-1").unwrap();
+        assert_eq!(delivery.tool_activities.as_ref().unwrap()[0].result.as_deref(), Some(metadata.as_str()));
     }
 
     #[tokio::test]

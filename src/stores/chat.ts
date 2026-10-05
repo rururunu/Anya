@@ -66,7 +66,12 @@ import {
   messagesHistoryFingerprint,
   settleInterruptedMessages,
 } from "./chatHistory";
-import { appendTimelineText, appendTimelineInject, findLastMessageIndex } from "./chatStream";
+import {
+  appendTimelineText,
+  appendTimelineInject,
+  findLastMessageIndex,
+  rollbackStreamAttempt,
+} from "./chatStream";
 import { useChatSessionsStore } from "./chatSessions";
 import { planFromHistory, tasksFromHistory } from "@/services/chat/planProposal";
 import { optimisticUserMatchesServer } from "@/services/chat/optimisticMatch";
@@ -1118,6 +1123,7 @@ export const useChatStore = defineStore("chat", {
       messageId: string,
       kind: string,
       fallbackSessionId?: string,
+      snapshot?: ChatMessage,
     ) {
       const resolvedSessionId = this.resolveOverlaySessionId(
         resolveSessionId(sessionId, fallbackSessionId),
@@ -1135,15 +1141,8 @@ export const useChatStore = defineStore("chat", {
       const next = [...messages];
       const current = next[index];
       if (kind.startsWith("stream_retry")) {
-        const keptActivities = current.toolActivities?.filter(
-          (activity) => activity.status !== "running",
-        );
         next[index] = {
-          ...current,
-          content: "",
-          reasoning: undefined,
-          workTimeline: undefined,
-          toolActivities: keptActivities?.length ? keptActivities : undefined,
+          ...rollbackStreamAttempt(current, snapshot),
           activityStatus: kind,
           status: "streaming",
         };

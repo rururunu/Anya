@@ -135,8 +135,7 @@ fn accepted_plan_switch(raw: &str) -> bool {
 
 fn label_accepts_plan(label: &str) -> bool {
     let trimmed = label.trim();
-    trimmed.contains(PLAN_SWITCH_ACCEPT_LABEL)
-        || trimmed.eq_ignore_ascii_case("Switch to Plan")
+    trimmed.contains(PLAN_SWITCH_ACCEPT_LABEL) || trimmed.eq_ignore_ascii_case("Switch to Plan")
 }
 
 #[cfg(test)]
@@ -157,7 +156,8 @@ mod tests {
 
     #[test]
     fn skipped_picker_stays_agent() {
-        let raw = r#"{"skipped":true,"answers":[{"header":"切换到计划","question":"q","selected":[]}]}"#;
+        let raw =
+            r#"{"skipped":true,"answers":[{"header":"切换到计划","question":"q","selected":[]}]}"#;
         assert!(!accepted_plan_switch(raw));
     }
 

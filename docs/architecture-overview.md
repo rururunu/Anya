@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.24                                            |
+| **Version** | v0.2.25                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -52,7 +52,7 @@ flowchart LR
   User((User)) -->|hotkey / tray / input| Host[Anya process]
   Phone[Anya Companion] -->|WS /remote/v1 · HTTP /f /p| Host
   IDE[IDE plugins] -->|context push| Host
-  Host -->|COM| Office[Word / Excel / PPT]
+  Host -->|Skills + Deno| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[Model providers]
   Host -->|HTTPS / stdio| Aux[MCP · search · mem0]
   Host -.->|optional /embeddings| Emb[Embeddings API]
@@ -64,7 +64,7 @@ flowchart LR
 | User                | Global hotkey, tray, composer, review UI, embedded settings                    |
 | Anya Companion      | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`      |
 | IDE plugins         | Best-effort local context push (file, workspace, selection)                    |
-| Microsoft Office    | COM for document context and `word_*` / `excel_*` / `ppt_*` tools              |
+| Microsoft Office    | Saved-file skills + bundled Deno/JavaScript document runtime                   |
 | Model providers     | Authenticated HTTPS SSE; Chat Completions, Responses, or Anthropic Messages    |
 | Embeddings          | Optional RAG: OpenAI-compatible `/embeddings` or local ONNX (`fastembed`)      |
 | MCP / search / mem0 | Optional; enabled explicitly in settings                                       |
@@ -104,7 +104,7 @@ flowchart TB
 
   subgraph Adapters["L4 Adapters"]
     Rt["crate::runtime<br/>git · search · browser · shell"]
-    OfficeCore["core/office · core/mcp · core/lsp"]
+    OfficeCore["core/tools/skills · core/mcp · core/lsp"]
     Remote["core/remote<br/>gateway · upload · download · preview"]
     Svc["services/<br/>window · hotkey · settings · oauth · pin_badge"]
   end
@@ -126,12 +126,12 @@ flowchart TB
   Chat --> Bus
 ```
 
-| Layer           | Location                                                | Responsibility                                            | Must not                        |
-| --------------- | ------------------------------------------------------- | --------------------------------------------------------- | ------------------------------- |
-| L1 Presentation | `src/{layouts,components,composables,stores,pages}`     | Render, local UX state, RAF-batched stream merge          | Call providers or execute tools |
-| L2 Bridge       | `src/services/ipc`, `commands/`, `adapters/`            | Serialize IPC DTOs; map `BusEvent` → Tauri emits          | Own business policy             |
-| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                  | Chat lifecycle, agent loop, tools, prompts, persistence   | Depend on Vue / DOM             |
-| L4 Adapters     | `runtime/`, `services/`, `core/{office,mcp,lsp,remote}` | OS, COM, HTTP clients, MCP transport, Companion WS / HTTP | Drive the agent loop            |
+| Layer           | Location                                                      | Responsibility                                                         | Must not                        |
+| --------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------- |
+| L1 Presentation | `src/{layouts,components,composables,stores,pages}`           | Render, local UX state, RAF-batched stream merge                       | Call providers or execute tools |
+| L2 Bridge       | `src/services/ipc`, `commands/`, `adapters/`                  | Serialize IPC DTOs; map `BusEvent` → Tauri emits                       | Own business policy             |
+| L3 Domain       | `core/{chat,ai,tools,agent,context,…}`                        | Chat lifecycle, agent loop, tools, prompts, persistence                | Depend on Vue / DOM             |
+| L4 Adapters     | `runtime/`, `services/`, `core/{tools/skills,mcp,lsp,remote}` | OS, document scripts, HTTP clients, MCP transport, Companion WS / HTTP | Drive the agent loop            |
 
 ### 3.2 Frontend dependency rule
 
@@ -150,7 +150,7 @@ Chat image helpers (`saveChatImage`, `localImageSrc`, `imageGenMode`, …) live 
 lib / main
   → commands (IPC façade)
   → core::* (domain)
-  → runtime / office / mcp (adapters)
+  → runtime / document scripts / mcp (adapters)
 services (window, hotkey, settings) → core where needed
 ```
 
@@ -166,7 +166,7 @@ One OS process, multiple WebView labels. Domain state is shared in-process.
 ```mermaid
 flowchart TB
   subgraph Process["Anya.exe"]
-    Rust["Rust host<br/>hotkey · tray · COM · SQLite · AgentRuntime · Gateway"]
+    Rust["Rust host<br/>hotkey · tray · Deno · SQLite · AgentRuntime · Gateway"]
     WV1["WebView: workbench<br/>chat · review · embedded settings"]
     WV2["WebView: overlay"]
     WV4["WebView: image-preview"]
@@ -321,37 +321,37 @@ sequenceDiagram
 
 ### 5.1 Rust domain (`src-tauri/src/core`)
 
-| Module              | Path                                       | Role                                                                                                                                                                                                             |
-| ------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Chat service        | `core/chat/service/`                       | Entry: persist messages, resolve context/model, start or soft-inject (`mod.rs` façade)                                                                                                                           |
-| Stream manager      | `core/chat/stream/`                        | Background task, cancel, stream aggregation, UI events, timeline text                                                                                                                                            |
-| Agent runner        | `core/chat/agent.rs`                       | **Primary** model↔tools loop                                                                                                                                                                                     |
-| Agent loop policies | `core/chat/agent_loop/`                    | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure                                                                                                                                   |
-| Conversation store  | `core/chat/conversation_manager/`          | Façade + `messages` / `activity` / `session` / `branch` / `helpers`; SQLite + work timeline                                                                                                                      |
-| DB / journal        | `core/chat/db/`, `core/chat/journal.rs`    | Schema, save/load, crash recovery (`db/{schema,messages,sessions,tool_activity}`)                                                                                                                                |
-| Prompts (markdown)  | `core/chat/prompts/`, `prompts/*.md`       | System / tools / policies / skills markdown (`include_str!`)                                                                                                                                                     |
-| Prompt builder      | `core/chat/prompt/`                        | Slot assembly (`PromptBuilder` + `slots`) for KV-cache-stable prefixes; volatile + `#skill` chips on user tail; agent-state append-only; tool schemas frozen per turn (DeepSeek disk cache = exact prefix units) |
-| Agent runtime       | `core/agent/runtime/`                      | Run state machine, cancel, soft-inject queue, debug                                                                                                                                                              |
-| AI providers        | `core/ai/`                                 | Chat provider registry, DeepSeek/Gemini, multimodal; **Images API** is separate (`image_gen`)                                                                                                                    |
-| DeepSeek / OpenAI   | `core/ai/deepseek/`                        | `provider`, `messages/`, `stream/`, `anthropic`, `models`, `multimodal`                                                                                                                                          |
-| Shell jobs          | `core/tools/shell_jobs/`                   | Foreground/background shell process lifecycle and output                                                                                                                                                         |
-| Workspace registry  | `core/workspace/`                          | SQLite-backed workspace list (`manager/`, `db`, `helpers`)                                                                                                                                                       |
-| MCP client          | `core/mcp/`                                | stdio JSON-RPC (`manager`, `process`, `runtime`, `command`, `remote_auth`)                                                                                                                                       |
-| Images API          | `core/ai/image_gen.rs`                     | `POST /v1/images/generations` / `edits` via Settings → Image (`image_providers`)                                                                                                                                 |
-| Image markdown      | `core/ai/image_markdown.rs`                | Extract / strip `![edit-region]` refs shared by chat, vision, and Images                                                                                                                                         |
-| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs` | Optional retrieve-then-rerank; API or local ONNX                                                                                                                                                                 |
-| Tools               | `core/tools/`                              | Registry, approval, plan/image mode gates, files, shell, skills, agent tools                                                                                                                                     |
-| Workspace index     | `core/tools/workspace_index.rs`            | Chunked keyword index under `.anya/index` (incremental JSONL); skips `.anya` via `fs_skip`                                                                                                                       |
-| Plan mode           | `core/tools/plan_mode.rs`                  | Session write gate; Agent may ask via `request_plan_mode`                                                                                                                                                        |
-| Image mode          | `core/tools/image_mode.rs`                 | Per-session toolbar options for `generate_image`; tool whitelist + challenge                                                                                                                                     |
-| Context             | `core/context/`                            | IDE, selection, clipboard, environment, Office hints                                                                                                                                                             |
-| Checkpoint          | `core/checkpoint/`                         | Undo / review of applied file changes                                                                                                                                                                            |
-| Token               | `core/token/`                              | Accounting (incl. cache-read / reasoning tokens), usage persistence                                                                                                                                              |
-| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/office`      | External protocol adapters                                                                                                                                                                                       |
-| Protocol types      | `core/runtime/`                            | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                                                                                                                                                 |
-| Event bus           | `core/event/`                              | Domain events                                                                                                                                                                                                    |
-| Plugins             | `core/plugins/`                            | Manifest, grants, Deno host, official bundles; **computer-use** in `computer/` (UIA, capture, launch)                                                                                                            |
-| Remote gateway      | `core/remote/`                             | WS `/remote/v1`; `gateway/`, `state/`, `bridge/`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`                                                                                                     |
+| Module              | Path                                        | Role                                                                                                                                                                                                             |
+| ------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chat service        | `core/chat/service/`                        | Entry: persist messages, resolve context/model, start or soft-inject (`mod.rs` façade)                                                                                                                           |
+| Stream manager      | `core/chat/stream/`                         | Background task, cancel, stream aggregation, UI events, timeline text                                                                                                                                            |
+| Agent runner        | `core/chat/agent.rs`                        | **Primary** model↔tools loop                                                                                                                                                                                     |
+| Agent loop policies | `core/chat/agent_loop/`                     | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure                                                                                                                                   |
+| Conversation store  | `core/chat/conversation_manager/`           | Façade + `messages` / `activity` / `session` / `branch` / `helpers`; SQLite + work timeline                                                                                                                      |
+| DB / journal        | `core/chat/db/`, `core/chat/journal.rs`     | Schema, save/load, crash recovery (`db/{schema,messages,sessions,tool_activity}`)                                                                                                                                |
+| Prompts (markdown)  | `core/chat/prompts/`, `prompts/*.md`        | System / tools / policies / skills markdown (`include_str!`)                                                                                                                                                     |
+| Prompt builder      | `core/chat/prompt/`                         | Slot assembly (`PromptBuilder` + `slots`) for KV-cache-stable prefixes; volatile + `#skill` chips on user tail; agent-state append-only; tool schemas frozen per turn (DeepSeek disk cache = exact prefix units) |
+| Agent runtime       | `core/agent/runtime/`                       | Run state machine, cancel, soft-inject queue, debug                                                                                                                                                              |
+| AI providers        | `core/ai/`                                  | Chat provider registry, DeepSeek/Gemini, multimodal; **Images API** is separate (`image_gen`)                                                                                                                    |
+| DeepSeek / OpenAI   | `core/ai/deepseek/`                         | `provider`, `messages/`, `stream/`, `anthropic`, `models`, `multimodal`                                                                                                                                          |
+| Shell jobs          | `core/tools/shell_jobs/`                    | Foreground/background shell process lifecycle and output                                                                                                                                                         |
+| Workspace registry  | `core/workspace/`                           | SQLite-backed workspace list (`manager/`, `db`, `helpers`)                                                                                                                                                       |
+| MCP client          | `core/mcp/`                                 | stdio JSON-RPC (`manager`, `process`, `runtime`, `command`, `remote_auth`)                                                                                                                                       |
+| Images API          | `core/ai/image_gen.rs`                      | `POST /v1/images/generations` / `edits` via Settings → Image (`image_providers`)                                                                                                                                 |
+| Image markdown      | `core/ai/image_markdown.rs`                 | Extract / strip `![edit-region]` refs shared by chat, vision, and Images                                                                                                                                         |
+| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs`  | Optional retrieve-then-rerank; API or local ONNX                                                                                                                                                                 |
+| Tools               | `core/tools/`                               | Registry, approval, plan/image mode gates, files, shell, skills, agent tools                                                                                                                                     |
+| Workspace index     | `core/tools/workspace_index.rs`             | Chunked keyword index under `.anya/index` (incremental JSONL); skips `.anya` via `fs_skip`                                                                                                                       |
+| Plan mode           | `core/tools/plan_mode.rs`                   | Session write gate; Agent may ask via `request_plan_mode`                                                                                                                                                        |
+| Image mode          | `core/tools/image_mode.rs`                  | Per-session toolbar options for `generate_image`; tool whitelist + challenge                                                                                                                                     |
+| Context             | `core/context/`                             | IDE, selection, clipboard, environment                                                                                                                                                                           |
+| Checkpoint          | `core/checkpoint/`                          | Undo / review of applied file changes                                                                                                                                                                            |
+| Token               | `core/token/`                               | Accounting (incl. cache-read / reasoning tokens), usage persistence                                                                                                                                              |
+| MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/tools/skills` | External protocol adapters                                                                                                                                                                                       |
+| Protocol types      | `core/runtime/`                             | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                                                                                                                                                 |
+| Event bus           | `core/event/`                               | Domain events                                                                                                                                                                                                    |
+| Plugins             | `core/plugins/`                             | Manifest, grants, Deno host, official bundles; **computer-use** in `computer/` (UIA, capture, launch)                                                                                                            |
+| Remote gateway      | `core/remote/`                              | WS `/remote/v1`; `gateway/`, `state/`, `bridge/`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`                                                                                                     |
 
 ### 5.2 Naming: three “runtime” modules
 
@@ -436,10 +436,25 @@ flowchart LR
   Store --> UI[MessageList / AgentWorkDetails]
 ```
 
-Transport errors that are retried inside the provider emit `chat-status` with
-`kind = stream_retry:{attempt}:{max}` before a new attempt. The store clears
-partial assistant content for that message so tokens are not duplicated. The
-backend also resets `work_timeline` on retry.
+Transient transport and HTTP errors (408, 429, 5xx) use five provider attempts
+with exponential backoff, jitter, and `Retry-After`. The agent can then recover
+the pending model round up to three more times; committed tools are never replayed.
+Retries emit `chat-status` with `kind = stream_retry:{attempt}:{max}` and a
+committed message snapshot. The backend and UI discard only the failed attempt,
+preserving completed text, reasoning, tool evidence, and timeline entries.
+
+Context-limit errors from every compatible model trigger compaction, with up to
+three consecutive shrinking attempts. Compaction keeps retained tool results
+paired with their assistant calls. Completion budgets reset on distinct successful
+evidence; truncated answers and unresolved criteria continue within bounded budgets.
+Subagents use the same failure/progress guards instead of a fixed 24-step ceiling.
+
+Finite long shell commands may run in the background and must be polled to actual
+exit before completion. Foreground commands stop on process exit, cancellation,
+or their explicit ceiling; model suggestions and silent I/O waits do not kill them.
+The legacy unrestricted 120-second default migrates once to 3600 seconds, while
+custom and restricted-shell limits are preserved. Recovery keeps the live request
+and existing journal/checkpoints; it does not resume execution after an app restart.
 
 ### 6.3 Call stack (reference)
 
@@ -662,7 +677,7 @@ leading unit across steps and turns.
 [4] optional policy suffix (collab / minimal-coding / plan hint / plan-mode / …)
 [5] plugin prompt suffix (blocks sorted for determinism)
 [6..] history + current user
-       └─ preferred #skill / #mcp chips + live IDE/git/clipboard/office
+       └─ preferred #skill / #mcp chips + live IDE/git/clipboard
           appended to the **current user** text (never mid-prefix system slots)
 ```
 
@@ -894,6 +909,16 @@ Avoid introducing a parallel agent loop beside `AgentRunner`.
 Companion must not grow a second Agent runtime.
 
 ---
+
+### 15.1 Native tools and delivery in v0.2.25
+
+The resolved model determines whether `core/tools/dsh/` is selected, rather than the provider name alone. Main and child tasks select their own tool sets; `present` is also available in the general registry. Imported static contracts live in `prompts/dsh/`; execution and approval use the Anya host. See [native DeepSeek tools](./deepseek-harness.md).
+
+`core/tools/present.rs` validates path permissions and regular files and returns versioned metadata. `agent_loop/tools.rs` and `db/tool_activity.rs` preserve successful structured delivery results. On the frontend, `presentedFiles.ts` derives cards from completed main-task tool activities, `PresentedFiles.vue` renders interactions and `DeliveryFileIcon.vue` uses local SVGs. No separate delivery table or final-response scanning is introduced. See [file delivery](./file-delivery.md).
+
+`core/tools/skills/office_runtime.rs` hosts saved-file workflows; `scripts/build-office-runtime.mjs` produces bundled resources. Office rendering is a skill capability; delivery cards currently have no built-in Office/PDF preview sidebar.
+
+Call diagnostics go to configuration-directory JSONL files; `scripts/deepseek-metrics-report.mjs` aggregates usage, latency and independently judged outcomes. Reasoning/tool pairing, request-copy trimming and model-phase retries preserve completed tool boundaries; this does not imply automatic task resumption after every process crash. Proposed journal queue reliability, lifecycle cleanup and further virtualization are not new capabilities of this release.
 
 ## 16. Related source entry points
 

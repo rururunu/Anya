@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "@/types/chat";
-import { appendTimelineInject, appendTimelineText, withTimelineInject } from "./chatStream";
+import {
+  appendTimelineInject,
+  appendTimelineText,
+  withTimelineInject,
+  rollbackStreamAttempt,
+} from "./chatStream";
 
 function assistant(timeline?: ChatMessage["workTimeline"]): ChatMessage {
   return {
@@ -13,6 +18,23 @@ function assistant(timeline?: ChatMessage["workTimeline"]): ChatMessage {
     workTimeline: timeline,
   };
 }
+
+describe("rollbackStreamAttempt", () => {
+  it("keeps completed rounds and drops only the interrupted attempt", () => {
+    const committed = {
+      ...assistant([{ type: "content" as const, id: "c1", content: "saved" }]),
+      content: "saved",
+      reasoning: "verified",
+    };
+    const current = { ...committed, content: "saved partial", reasoning: "verified unfinished" };
+    expect(rollbackStreamAttempt(current, committed)).toMatchObject({
+      content: "saved",
+      reasoning: "verified",
+      workTimeline: committed.workTimeline,
+    });
+    expect(rollbackStreamAttempt(current, { ...committed, id: "other" }).content).toBe("");
+  });
+});
 
 describe("appendTimelineInject", () => {
   it("pins the follow-up so later content starts a new segment after it", () => {

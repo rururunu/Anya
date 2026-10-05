@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::core::tools::context::{Tool, ToolContext};
 use crate::core::tools::error::ToolError;
-use crate::core::tools::shell_jobs::{background_allowed, run_foreground, ShellJobStore};
+use crate::core::tools::shell_jobs::{run_foreground, ShellJobStore};
 
 pub(super) struct RunShellTool {
     pub jobs: Arc<ShellJobStore>,
@@ -17,7 +17,7 @@ impl Tool for RunShellTool {
         "run_shell"
     }
     fn description(&self) -> &str {
-        "Run a PowerShell command in the project workspace directory. Prefer dedicated file/search/git tools when they cover the task.\n\nUsage:\n- Always pass a short description (3-8 words) for the UI header.\n- Keep finite commands (Git, file reads, status checks, tests, builds, Docker inspection) in the foreground. Long builds are fine there: a command that keeps making progress is allowed to run to completion, and the result reports how long it took, so never estimate elapsed time yourself.\n- A command is only cut short when it hits the absolute ceiling, or when it makes no progress at all (no output, no CPU) and completion cannot be confirmed; both cases say so explicitly in the result.\n- Background mode only for persistent processes: Get-Content -Wait, log following, watchers, dev servers, or foreground container services — never to avoid waiting.\n- Logs: prefer bounded reads (Get-Content -Tail N, docker logs --tail N). Use follow mode only when live monitoring is requested, then background + read_shell_output.\n- Docker: start with read-only inspection (docker ps / compose ps / inspect / bounded logs). Build/start/restart/stop only when required. Never run destructive cleanup (docker system prune, compose down -v, volume/image deletion) without explicit user authorization.\n- When rtk is installed, use it to compact large output and fall back to the native command when needed.\n- Large dumps (HTML flamegraphs, JSON, logs): a finite parse/aggregate script that prints a compact summary is appropriate; never cat/Get-Content the whole file."
+        "Run a PowerShell command in the project workspace directory. Prefer dedicated file/search/git tools when they cover the task.\n\nUsage:\n- Always pass a short description (3-8 words) for the UI header.\n- Use foreground for short finite commands. For long builds, tests, or downloads, set run_in_background=true, retain the returned job ID, and poll read_shell_output/wait_for_shell until the actual exit code is available. Never relaunch an existing job to check progress.\n- Foreground commands end on actual process exit, user cancellation, or the configured absolute ceiling. Quiet output and model completion suggestions do not prove process completion.\n- Background mode also supports persistent processes: Get-Content -Wait, log following, watchers, dev servers, or foreground container services. Finite background commands must be awaited before claiming completion.\n- Logs: prefer bounded reads (Get-Content -Tail N, docker logs --tail N). Use follow mode only when live monitoring is requested, then background + read_shell_output.\n- Docker: start with read-only inspection (docker ps / compose ps / inspect / bounded logs). Build/start/restart/stop only when required. Never run destructive cleanup (docker system prune, compose down -v, volume/image deletion) without explicit user authorization.\n- When rtk is installed, use it to compact large output and fall back to the native command when needed.\n- Large dumps (HTML flamegraphs, JSON, logs): a finite parse/aggregate script that prints a compact summary is appropriate; never cat/Get-Content the whole file."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -30,7 +30,7 @@ impl Tool for RunShellTool {
                 },
                 "run_in_background": {
                     "type": "boolean",
-                    "description": "Only for persistent processes (follow/watch/dev server/foreground service). Finite commands are forced to foreground."
+                    "description": "Use for long builds, tests, downloads, or persistent processes. Returns a job ID; use wait_for_shell/read_shell_output until a finite command exits."
                 }
             },
             "required": ["command"]
@@ -49,7 +49,7 @@ impl Tool for RunShellTool {
             )?;
         }
         crate::core::tools::sandbox::reject_user_plugin_hunt(command)?;
-        if args["run_in_background"].as_bool().unwrap_or(false) && background_allowed(command) {
+        if args["run_in_background"].as_bool().unwrap_or(false) {
             return self.jobs.spawn_background(
                 command.to_string(),
                 Some(&ctx.workspace_root),

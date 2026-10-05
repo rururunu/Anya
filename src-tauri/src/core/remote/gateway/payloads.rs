@@ -452,8 +452,7 @@ pub(super) async fn session_message_detail(
     )
     .await
     .unwrap_or_default();
-    let wanted: std::collections::HashSet<&str> =
-        message_ids.iter().map(String::as_str).collect();
+    let wanted: std::collections::HashSet<&str> = message_ids.iter().map(String::as_str).collect();
     match state.core.chat().history(session_id) {
         Ok(messages) => {
             let mapped: Vec<serde_json::Value> = messages

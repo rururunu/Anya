@@ -67,7 +67,7 @@ fn is_connection_error(message: &str) -> bool {
     .any(|needle| lower.contains(needle))
 }
 
-pub(super) fn is_retryable_stream_error(error: &ProviderError) -> bool {
+pub(crate) fn is_retryable_stream_error(error: &ProviderError) -> bool {
     match error {
         ProviderError::Cancelled => false,
         ProviderError::Message(message) => {
@@ -75,7 +75,7 @@ pub(super) fn is_retryable_stream_error(error: &ProviderError) -> bool {
                 return false;
             }
             if let Some(status) = deepseek_http_status(message) {
-                return matches!(status, 429 | 500 | 502 | 503 | 504);
+                return status == 408 || status == 429 || (500..=599).contains(&status);
             }
             message == USER_STREAM_INTERRUPTED
                 || message == USER_STREAM_STALLED

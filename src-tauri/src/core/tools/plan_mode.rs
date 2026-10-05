@@ -164,7 +164,9 @@ impl PlanModeStore {
             return Ok(());
         }
         self.mark_awaiting_approval(session_id);
-        Err(ToolError::new(PLAN_GATE_BLOCKED))
+        Err(ToolError::new(if matches!(tool_name, "write" | "edit" | "pwsh" | "bash" | "job_kill") {
+            "plan mode is active: writer tools and shell are not allowed. Present the complete plan using exit_plan_mode for user review; continue only after approval."
+        } else { PLAN_GATE_BLOCKED }))
     }
 }
 
@@ -188,6 +190,9 @@ fn plan_mode_allowed(tool_name: &str, read_only: bool) -> bool {
         "save_plan"
             | "update_tasks"
             | "ask_user"
+            | "ask_user_question"
+            | "exit_plan_mode"
+            | "subagent"
             | "share_to_companion"
             | "share_preview_url"
             | "todo_write"

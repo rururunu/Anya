@@ -444,17 +444,16 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
             };
             let manager = state.core.workspaces();
-            let root = match workspace_id.as_deref().map(str::trim).filter(|id| !id.is_empty()) {
+            let root = match workspace_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+            {
                 Some(id) => manager
                     .list()
                     .into_iter()
                     .find(|w| w.id == id)
-                    .or_else(|| {
-                        manager
-                            .list_archived()
-                            .into_iter()
-                            .find(|w| w.id == id)
-                    })
+                    .or_else(|| manager.list_archived().into_iter().find(|w| w.id == id))
                     .map(|w| w.root),
                 None => manager.current().map(|w| w.root),
             };

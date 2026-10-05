@@ -12,6 +12,18 @@ pub enum ProviderError {
     Message(String),
 }
 
+/// Spawned provider work stays owned by its caller when cancellation or a
+/// timeout drops the collection future.
+pub(crate) struct ProviderTaskGuard(
+    pub tauri::async_runtime::JoinHandle<Result<(), ProviderError>>,
+);
+
+impl Drop for ProviderTaskGuard {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 impl ProviderError {
     pub fn message(value: impl Into<String>) -> Self {
         Self::Message(value.into())
@@ -46,6 +58,11 @@ impl From<String> for ProviderError {
 #[async_trait]
 pub trait AIProvider: Send + Sync {
     fn id(&self) -> &'static str;
+
+    /// Model identity, not the transport implementation, selects the dsh contract.
+    fn uses_dsh_tools(&self) -> bool {
+        false
+    }
 
     async fn stream(
         &self,

@@ -38,9 +38,7 @@ pub fn permission_label(perm: &str) -> &'static str {
         "agent.prompt" => "Append instructions to the agent system prompt",
         "ui.workbench" => "Load UI into the workbench (same page as Anya, including stores)",
         "computer" => "See the desktop (screenshot) and control mouse/keyboard",
-        "opencli" => {
-            "Run OpenCLI (site adapters + Browser Bridge on your logged-in Chrome)"
-        }
+        "opencli" => "Run OpenCLI (site adapters + Browser Bridge on your logged-in Chrome)",
         "deepseek.balance" => {
             "Read the DeepSeek account balance using Anya's stored API key (ctx.host.rpc)"
         }

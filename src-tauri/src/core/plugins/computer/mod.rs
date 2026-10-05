@@ -59,8 +59,8 @@ pub fn requires_tool_approval(full_name: &str) -> bool {
         "see" | "find" | "assert" | "wait" | "screenshot" | "screen_info" | "list_windows"
         | "find_control" | "playbook" => false,
         "act" | "window" | "key" | "hotkey" | "scroll" | "drag" | "clipboard" | "browser"
-        | "tab" | "focus_window" | "click_control" | "set_value" | "launch" | "click"
-        | "type" | "move" | "hover" => true,
+        | "tab" | "focus_window" | "click_control" | "set_value" | "launch" | "click" | "type"
+        | "move" | "hover" => true,
         other => TOOLS.contains(&other),
     }
 }
@@ -193,8 +193,12 @@ mod ghost_smoke {
     #[test]
     #[ignore]
     fn ghost_notepad_smoke() {
-        let list = ghost_bridge::call("computer-use", "window", &serde_json::json!({ "op": "list" }))
-            .expect("list windows");
+        let list = ghost_bridge::call(
+            "computer-use",
+            "window",
+            &serde_json::json!({ "op": "list" }),
+        )
+        .expect("list windows");
         assert!(list.contains("Windows:"), "got: {list}");
 
         let launched = ghost_bridge::call(
@@ -203,7 +207,10 @@ mod ghost_smoke {
             &serde_json::json!({ "op": "launch", "exe": "notepad" }),
         )
         .expect("launch notepad");
-        assert!(launched.contains("pid") || launched.contains("ok"), "got: {launched}");
+        assert!(
+            launched.contains("pid") || launched.contains("ok"),
+            "got: {launched}"
+        );
 
         std::thread::sleep(std::time::Duration::from_millis(800));
 

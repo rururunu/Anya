@@ -172,6 +172,7 @@ impl TurnSpan {
 pub fn init_logging(config_dir: &Path) {
     let logs_dir = config_dir.join("logs");
     let _ = std::fs::create_dir_all(&logs_dir);
+    let _ = PROVIDER_METRICS_DIR.set(logs_dir.clone());
     install_panic_hook(&logs_dir);
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -197,6 +198,31 @@ pub fn init_logging(config_dir: &Path) {
         .with(stdout_layer)
         .with(file_layer)
         .try_init();
+}
+
+static PROVIDER_METRICS_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+static PROVIDER_METRICS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+tokio::task_local! {
+    pub(crate) static PROVIDER_METRICS_CONTEXT: (String, String, String);
+}
+
+/// Persist numeric diagnostics only; never record API keys, prompts or tool arguments.
+pub(crate) fn record_provider_metrics(value: &serde_json::Value) {
+    let mut value = value.clone();
+    let _ = PROVIDER_METRICS_CONTEXT.try_with(|(call, request, session)| {
+        if let Some(object) = value.as_object_mut() {
+            object.entry("call_id").or_insert_with(|| serde_json::json!(call));
+            object.entry("request_id").or_insert_with(|| serde_json::json!(request));
+            object.entry("session_id").or_insert_with(|| serde_json::json!(session));
+        }
+    });
+    tracing::info!(target: "peek.provider", metrics = %value, "DeepSeek call metrics");
+    let Some(dir) = PROVIDER_METRICS_DIR.get() else { return; };
+    let Ok(_guard) = PROVIDER_METRICS_LOCK.lock() else { return; };
+    let path = dir.join(format!("deepseek-calls-{}.jsonl", Utc::now().format("%Y-%m-%d")));
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{value}");
+    }
 }
 
 /// Crash 现场落盘：panic 走同步 append 写到当天日志文件，不依赖可能丢数据的异步 writer。

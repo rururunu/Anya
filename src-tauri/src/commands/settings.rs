@@ -18,7 +18,10 @@ fn installed_font_families() -> Result<Vec<String>, String> {
     ) -> i32 {
         let families = &mut *(data.0 as *mut Vec<String>);
         let face = &(*font).lfFaceName;
-        let length = face.iter().position(|&unit| unit == 0).unwrap_or(face.len());
+        let length = face
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(face.len());
         let name = String::from_utf16_lossy(&face[..length]);
         if !name.is_empty() && !name.starts_with('@') {
             families.push(name);
@@ -81,7 +84,10 @@ mod tests {
     #[test]
     fn lists_installed_fonts() {
         let families = super::installed_font_families().expect("Windows font enumeration succeeds");
-        assert!(!families.is_empty(), "Windows font enumeration returned no fonts");
+        assert!(
+            !families.is_empty(),
+            "Windows font enumeration returned no fonts"
+        );
     }
 }
 

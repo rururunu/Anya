@@ -133,6 +133,8 @@ pub struct ChatStatusEvent {
     pub session_id: String,
     pub message_id: String,
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<Box<ChatMessage>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

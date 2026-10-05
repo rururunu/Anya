@@ -12,7 +12,7 @@ use crate::core::tools::error::ToolError;
 use crate::core::tools::memory::skills_dir;
 use crate::core::tools::registry::ToolRegistry;
 
-mod docx_assets;
+pub(crate) mod office_runtime;
 
 fn enabled_builtin_skills() -> &'static Mutex<HashSet<String>> {
     static ENABLED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -44,8 +44,10 @@ pub fn canonical_builtin_name(name: &str) -> Option<&'static str> {
         "research" | "research_topic" => Some("research"),
         "review" | "review_code" => Some("review"),
         "security_review" | "review_security" => Some("security_review"),
-        "generate_word" | "generate_docx" | "word" => Some("generate_word"),
-        "docx" | "docx_skill" | "word_docx" => Some("docx"),
+        "documents" | "generate_word" | "generate_docx" | "word" | "docx" | "docx_skill"
+        | "word_docx" => Some("documents"),
+        "spreadsheets" | "excel" | "xlsx" => Some("spreadsheets"),
+        "presentations" | "powerpoint" | "pptx" => Some("presentations"),
         "pandoc" | "convert_document" | "md2docx" => Some("pandoc"),
         "plugin_creator"
         | "create_plugin"
@@ -58,7 +60,7 @@ pub fn canonical_builtin_name(name: &str) -> Option<&'static str> {
 
 /// Whether a skill name may be used by the agent.
 /// User-installed skills are always allowed; built-ins require Settings opt-in
-/// except platform specs (`plugin_creator`) which stay on so the agent can
+/// except platform specs and file-based Office workflows which stay on so the agent can
 /// look up the plugin contract instead of grepping Anya source.
 pub fn is_skill_enabled(name: &str) -> bool {
     match canonical_builtin_name(name) {
@@ -72,7 +74,10 @@ pub fn is_skill_enabled(name: &str) -> bool {
 }
 
 fn is_platform_skill(canon: &str) -> bool {
-    matches!(canon, "plugin_creator")
+    matches!(
+        canon,
+        "plugin_creator" | "documents" | "spreadsheets" | "presentations"
+    )
 }
 
 pub fn require_skill_enabled(name: &str) -> Result<(), ToolError> {
@@ -85,25 +90,16 @@ pub fn require_skill_enabled(name: &str) -> Result<(), ToolError> {
     )))
 }
 
-pub(crate) fn materialize_docx_for_workspace(workspace_root: &Path) -> Result<PathBuf, ToolError> {
-    docx_assets::materialize_docx_skill(workspace_root)
-}
-
-/// Build the docx skill prompt (playbook + materialized OOXML helper scripts).
-pub(crate) fn build_docx_prompt(task: &str, workspace_root: &Path) -> Result<String, ToolError> {
-    let skill_dir = materialize_docx_for_workspace(workspace_root)?;
-    let scripts = skill_dir.join("scripts");
-    let body = resolve_skill_body("docx")?;
-    Ok(format!(
-        "{body}\n\n## Runtime assets\n\
-         Docx helper scripts materialized to:\n\
-         `{dir}`\n\n\
-         Set `SCRIPTS` = `{scripts}` in all shell examples (replace `{{SCRIPTS}}` placeholders).\n\
-         Example: `python \"{scripts}/merge_runs.py\" file.docx`\n\n\
-         ## Task\n{task}",
-        dir = skill_dir.display(),
-        scripts = scripts.display(),
-    ))
+pub(crate) fn skill_prompt(name: &str, ctx: &ToolContext) -> Result<String, ToolError> {
+    let body = resolve_skill_body(name)?;
+    if matches!(
+        canonical_builtin_name(name),
+        Some("documents" | "spreadsheets" | "presentations")
+    ) {
+        Ok(format!("{body}\n\n{}", office_runtime::prepare(ctx)?))
+    } else {
+        Ok(body)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,13 +138,16 @@ const EXPLORE_SKILL: &str = include_str!("../../../../prompts/skills/explore.md"
 const RESEARCH_SKILL: &str = include_str!("../../../../prompts/skills/research.md");
 const REVIEW_SKILL: &str = include_str!("../../../../prompts/skills/review.md");
 const SECURITY_REVIEW_SKILL: &str = include_str!("../../../../prompts/skills/security_review.md");
-const GENERATE_WORD_SKILL: &str = include_str!("../../../../prompts/skills/generate_word.md");
-const DOCX_SKILL: &str = include_str!("../../../../prompts/skills/docx.md");
+const DOCUMENTS_SKILL: &str = include_str!("../../../../prompts/skills/documents.md");
+const SPREADSHEETS_SKILL: &str = include_str!("../../../../prompts/skills/spreadsheets.md");
+const PRESENTATIONS_SKILL: &str = include_str!("../../../../prompts/skills/presentations.md");
 const PANDOC_SKILL: &str = include_str!("../../../../prompts/skills/pandoc.md");
 const PLUGIN_CREATOR_SKILL: &str = include_str!("../../../../prompts/skills/plugin_creator.md");
 
 pub fn register_all(registry: &mut ToolRegistry) {
     registry.register(Arc::new(LoadSkillTool));
+    registry.register(Arc::new(PrepareOfficeRuntimeTool));
+    registry.register(Arc::new(ReadOfficeFileTool));
     registry.register(Arc::new(RunSkillTool));
     registry.register(Arc::new(ListSkillsTool));
     registry.register(Arc::new(InstallSkillTool));
@@ -166,6 +165,7 @@ pub fn is_skill_tool(name: &str) -> bool {
     matches!(
         name,
         "load_skill"
+            | "prepare_office_runtime"
             | "run_skill"
             | "list_skills"
             | "install_skill"
@@ -186,8 +186,10 @@ fn builtin_skill_body(name: &str) -> Option<&'static str> {
         "research" | "research_topic" => Some(RESEARCH_SKILL),
         "review" | "review_code" => Some(REVIEW_SKILL),
         "security_review" | "review_security" => Some(SECURITY_REVIEW_SKILL),
-        "generate_word" | "generate_docx" | "word" => Some(GENERATE_WORD_SKILL),
-        "docx" | "docx_skill" | "word_docx" => Some(DOCX_SKILL),
+        "documents" | "generate_word" | "generate_docx" | "word" | "docx" | "docx_skill"
+        | "word_docx" => Some(DOCUMENTS_SKILL),
+        "spreadsheets" | "excel" | "xlsx" => Some(SPREADSHEETS_SKILL),
+        "presentations" | "powerpoint" | "pptx" => Some(PRESENTATIONS_SKILL),
         "pandoc" | "convert_document" | "md2docx" => Some(PANDOC_SKILL),
         "plugin_creator"
         | "create_plugin"
@@ -257,8 +259,9 @@ fn list_builtin_names() -> Vec<&'static str> {
         "research",
         "review",
         "security_review",
-        "generate_word",
-        "docx",
+        "documents",
+        "spreadsheets",
+        "presentations",
         "pandoc",
         "plugin_creator",
     ]
@@ -614,6 +617,53 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), ToolError> {
     Ok(())
 }
 
+struct ReadOfficeFileTool;
+impl Tool for ReadOfficeFileTool {
+    fn name(&self) -> &str {
+        "read_office_file"
+    }
+    fn description(&self) -> &str {
+        "Read saved DOCX/XLSX/XLSM/PPTX files as structured paragraphs, tables, addressed cells/formulas or ordered slides. Uses bundled JavaScript; no Office/COM. Paginate by 1-based record offset; use sheet/slide filters. Load documents/spreadsheets/presentations before editing or generating."
+    }
+    fn parameters_schema(&self) -> Value {
+        json!({"type":"object", "properties":{
+        "path":{"type":"string"}, "offset":{"type":"integer", "minimum":1}, "limit":{"type":"integer", "minimum":1, "maximum":500}, "sheet":{"type":"string"}, "slide":{"type":"integer", "minimum":1}
+    }, "required":["path"]})
+    }
+    fn read_only(&self) -> bool {
+        true
+    }
+    fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
+        let path = crate::core::tools::path::resolve_tool_path(
+            ctx,
+            args["path"].as_str().unwrap_or(""),
+            crate::core::tools::path_permission::PathAccess::Read,
+            self.name(),
+        )?;
+        office_runtime::read_file(ctx, &path, &args)
+    }
+}
+
+struct PrepareOfficeRuntimeTool;
+
+impl Tool for PrepareOfficeRuntimeTool {
+    fn name(&self) -> &str {
+        "prepare_office_runtime"
+    }
+    fn description(&self) -> &str {
+        "Resolve bundled Deno and materialize offline Word/Excel/PowerPoint JavaScript libraries plus API reference. Prefer load_skill documents/spreadsheets/presentations for the full workflow. No live Office or COM."
+    }
+    fn parameters_schema(&self) -> Value {
+        json!({"type":"object", "properties":{}})
+    }
+    fn read_only(&self) -> bool {
+        true
+    }
+    fn execute(&self, ctx: &ToolContext, _args: Value) -> Result<String, ToolError> {
+        office_runtime::prepare(ctx)
+    }
+}
+
 struct LoadSkillTool;
 
 impl Tool for LoadSkillTool {
@@ -633,10 +683,10 @@ impl Tool for LoadSkillTool {
     fn read_only(&self) -> bool {
         true
     }
-    fn execute(&self, _ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
+    fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
         let name = args["name"].as_str().unwrap_or("");
         require_skill_enabled(name)?;
-        resolve_skill_body(name)
+        skill_prompt(name, ctx)
     }
 }
 
@@ -664,12 +714,7 @@ impl Tool for RunSkillTool {
         let name = args["name"].as_str().unwrap_or("");
         require_skill_enabled(name)?;
         let task = args["task"].as_str().unwrap_or("");
-        let prompt = if matches!(name, "docx" | "docx_skill" | "word_docx") {
-            build_docx_prompt(task, &ctx.workspace_root)?
-        } else {
-            let body = resolve_skill_body(name)?;
-            format!("{body}\n\n## Task\n{task}")
-        };
+        let prompt = format!("{}\n\n## Task\n{task}", skill_prompt(name, ctx)?);
         run_subagent_sync(ctx, &prompt, args["read_only"].as_bool().unwrap_or(false))
     }
 }
@@ -847,7 +892,7 @@ impl Tool for GenerateWordTool {
         "generate_word"
     }
     fn description(&self) -> &str {
-        "Generate a .docx Word document with the generate_word skill (python-docx)."
+        "Create a saved Word DOCX using the documents skill and bundled JavaScript runtime with render/validate workflow."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -865,13 +910,13 @@ impl Tool for GenerateWordTool {
     fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
         require_skill_enabled("generate_word")?;
         let task = args["task"].as_str().unwrap_or("");
-        let body = resolve_skill_body("generate_word")?;
+        let body = skill_prompt("documents", ctx)?;
         let prompt = format!("{body}\n\n## Task\n{task}");
         run_subagent_sync(ctx, &prompt, false)
     }
 }
 
-/// Anthropic-style docx skill: docx-js creation + OOXML edit/validate helpers.
+/// Backward-compatible shortcut for the file-based documents workflow.
 struct DocxSkillTool;
 
 impl Tool for DocxSkillTool {
@@ -879,7 +924,7 @@ impl Tool for DocxSkillTool {
         "docx"
     }
     fn description(&self) -> &str {
-        "Create or edit Word .docx with the docx skill (docx-js, OOXML unzip/edit, tracked changes, comments, validate). Materializes helper scripts to .anya/docx."
+        "Create or edit saved Word DOCX with the documents skill, bundled JavaScript libraries, targeted OOXML editing and render/validate workflow."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -902,7 +947,7 @@ impl Tool for DocxSkillTool {
     fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
         require_skill_enabled("docx")?;
         let task = args["task"].as_str().unwrap_or("");
-        let prompt = build_docx_prompt(task, &ctx.workspace_root)?;
+        let prompt = format!("{}\n\n## Task\n{task}", skill_prompt("documents", ctx)?);
         run_subagent_sync(ctx, &prompt, false)
     }
 }
@@ -947,6 +992,32 @@ impl Tool for PandocSkillTool {
 #[cfg(test)]
 mod tests {
     use super::{is_skill_enabled, resolve_skill_body};
+
+    #[test]
+    fn office_workflows_are_always_available_and_legacy_aliases_use_documents() {
+        for name in [
+            "documents",
+            "spreadsheets",
+            "presentations",
+            "generate_word",
+            "docx",
+        ] {
+            assert!(is_skill_enabled(name));
+        }
+        assert_eq!(
+            resolve_skill_body("generate_word").unwrap(),
+            resolve_skill_body("documents").unwrap()
+        );
+        assert_eq!(
+            resolve_skill_body("docx").unwrap(),
+            resolve_skill_body("documents").unwrap()
+        );
+        for name in ["documents", "spreadsheets", "presentations"] {
+            let body = resolve_skill_body(name).unwrap();
+            assert!(body.contains("renderOffice"));
+            assert!(body.contains("saved"));
+        }
+    }
 
     #[test]
     fn plugin_creator_is_always_enabled() {

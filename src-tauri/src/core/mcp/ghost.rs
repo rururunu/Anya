@@ -132,10 +132,7 @@ fn download_and_extract(dir: &Path) -> Result<(), String> {
         .send()
         .map_err(|e| format!("download Ghost: {e}"))?;
     if !response.status().is_success() {
-        return Err(format!(
-            "download Ghost failed: HTTP {}",
-            response.status()
-        ));
+        return Err(format!("download Ghost failed: HTTP {}", response.status()));
     }
     let bytes = response
         .bytes()
@@ -143,9 +140,7 @@ fn download_and_extract(dir: &Path) -> Result<(), String> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes.as_ref()))
         .map_err(|e| format!("open Ghost zip: {e}"))?;
     for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| format!("zip entry: {e}"))?;
+        let mut file = archive.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
         let name = file
             .enclosed_name()
             .ok_or_else(|| "unsafe zip path".to_string())?

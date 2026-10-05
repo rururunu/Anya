@@ -78,11 +78,11 @@ describe("resourceUsage", () => {
     });
     expect(resourceFromToolActivity("run_skill", { name: "docx" })).toEqual({
       kind: "skill",
-      id: "docx",
+      id: "documents",
     });
     expect(resourceFromToolActivity("generate_word")).toEqual({
       kind: "skill",
-      id: "generate_word",
+      id: "documents",
     });
     expect(resourceFromToolActivity("review_security")).toEqual({
       kind: "skill",

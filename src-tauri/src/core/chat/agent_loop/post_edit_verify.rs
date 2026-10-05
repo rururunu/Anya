@@ -387,8 +387,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(javascript_checks(&root), vec!["pnpm run typecheck"]);
-        std::fs::write(root.join("package.json"), r#"{"scripts":{"test":"vitest run"}}"#)
-            .unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"scripts":{"test":"vitest run"}}"#,
+        )
+        .unwrap();
         assert_eq!(javascript_checks(&root), vec!["pnpm run test"]);
         std::fs::write(root.join("package.json"), r#"{"scripts":{}}"#).unwrap();
         assert!(javascript_checks(&root).is_empty());

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 pub(crate) struct WaitPolicy {
     /// Absolute ceiling — a safety net, not the normal way a command ends.
     pub(crate) ceiling: Duration,
-    /// How long a command may make no progress at all before it counts stuck.
+    /// Idle interval before an advisory completion check.
     pub(crate) stall: Duration,
 }
 
@@ -50,21 +50,19 @@ pub(crate) enum WaitAction {
     Judge,
     /// Absolute ceiling reached.
     Timeout,
-    /// No output, no CPU, and no confirmation that work continues.
-    Stalled,
 }
 
-/// Decide what to do with a still-running command. Progress — not elapsed
-/// time — is what keeps a command alive, so a long build that keeps working
-/// runs to completion while a process that does nothing at all is reclaimed
-/// quickly.
+/// Decide when to inspect a still-running command. Only the explicit ceiling
+/// can stop it; silence alone does not prove a stalled process.
 pub(crate) fn next_wait_action(policy: &WaitPolicy, snap: &WaitSnapshot) -> WaitAction {
     if snap.elapsed >= policy.ceiling {
         return WaitAction::Timeout;
     }
     if snap.activity_measurable && snap.since_progress >= policy.stall {
         if snap.stall_unconfirmed || snap.judge_rounds_left == 0 {
-            return WaitAction::Stalled;
+            // Silence and low CPU also describe network/I/O waits. An LLM's
+            // uncertainty is not evidence that the process can be killed.
+            return WaitAction::KeepWaiting;
         }
         return WaitAction::Judge;
     }
@@ -78,7 +76,7 @@ pub(crate) fn next_wait_action(policy: &WaitPolicy, snap: &WaitSnapshot) -> Wait
     WaitAction::KeepWaiting
 }
 
-/// Runs a shell command in the foreground until it completes, stalls, or is cancelled.
+/// Runs a command until process exit, cancellation, or its explicit ceiling.
 pub fn run_foreground(
     command: &str,
     cwd: Option<&std::path::Path>,
@@ -249,30 +247,15 @@ pub(crate) fn run_foreground_with_policy(
                         );
                         match judge_shell_completion(ctx, command, &output) {
                             CompletionVerdict::Finished => {
-                                terminate_process_tree(&mut child);
-                                let exit_code = child.wait().ok().and_then(|status| status.code());
-                                drain_until_quiet(
-                                    &stdout_rx,
-                                    &stderr_rx,
-                                    &mut stdout_bytes,
-                                    &mut stderr_bytes,
-                                    &mut stdout_eof,
-                                    &mut stderr_eof,
+                                // Only actual process exit proves completion.
+                                // A summary in the output can precede later work.
+                                tracing::debug!(
+                                    pid = child.id(),
+                                    "shell completion suggestion ignored while process is alive"
                                 );
-                                let result = format!(
-                                    "exit_code: {}\nduration: {}\n{}{}",
-                                    exit_code.unwrap_or(-1),
-                                    format_duration(started.elapsed()),
-                                    format_streams(
-                                        &decode_process_bytes(&stdout_bytes),
-                                        &decode_process_bytes(&stderr_bytes),
-                                    ),
-                                    NOTE_IDLE_FINISHED,
-                                );
-                                crate::core::context::provider::environment_provider::record_shell_execution(
-                                    command, cwd, &result,
-                                );
-                                return Ok(result);
+                                last_progress = Instant::now();
+                                stall_unconfirmed = false;
+                                cpu_at_progress = probe.cpu_time();
                             }
                             CompletionVerdict::Running => {
                                 last_progress = Instant::now();
@@ -282,7 +265,7 @@ pub(crate) fn run_foreground_with_policy(
                             CompletionVerdict::Unknown => stall_unconfirmed = true,
                         }
                     }
-                    WaitAction::Timeout | WaitAction::Stalled => {
+                    WaitAction::Timeout => {
                         terminate_process_tree(&mut child);
                         let exit_code = child.wait().ok().and_then(|status| status.code());
                         drain_until_quiet(
@@ -293,31 +276,18 @@ pub(crate) fn run_foreground_with_policy(
                             &mut stdout_eof,
                             &mut stderr_eof,
                         );
-                        let reason = if action == WaitAction::Stalled {
-                            format!(
-                                "command made no progress for {} and was stopped",
-                                format_duration(policy.stall),
-                            )
-                        } else {
-                            format!(
-                                "command hit the {} ceiling and was stopped",
-                                format_duration(policy.ceiling),
-                            )
-                        };
-                        let note = if action == WaitAction::Stalled {
-                            NOTE_STALLED
-                        } else {
-                            ""
-                        };
+                        let reason = format!(
+                            "command hit the {} ceiling and was stopped",
+                            format_duration(policy.ceiling)
+                        );
                         let result = format!(
-                            "{reason} (duration: {}, exit_code: {:?})\n{}{}",
+                            "{reason} (duration: {}, exit_code: {:?})\n{}",
                             format_duration(started.elapsed()),
                             exit_code,
                             format_streams(
                                 &decode_process_bytes(&stdout_bytes),
                                 &decode_process_bytes(&stderr_bytes),
                             ),
-                            note,
                         );
                         crate::core::context::provider::environment_provider::record_shell_execution(
                             command, cwd, &result,

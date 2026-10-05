@@ -46,8 +46,8 @@ pub struct EvalTask {
     pub assertions: Vec<EvalAssertion>,
     #[serde(default, alias = "setup_files")]
     pub setup_files: Vec<EvalSetupFile>,
-    #[serde(default, alias = "skip_unless_office")]
-    pub skip_unless_office: Option<String>,
+    #[serde(default)]
+    pub requires_document_runtime: bool,
     /// Force plan-mode gate for this task (independent of CLI `--plan-mode`).
     #[serde(default, alias = "plan_mode")]
     pub plan_mode: bool,
@@ -381,8 +381,8 @@ pub async fn run_eval(options: EvalOptions) -> Result<EvalReport, String> {
 }
 
 async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> TaskResult {
-    if let Some(app) = task.skip_unless_office.as_deref() {
-        if !options.include_office || !crate::core::office::office_app_available(app) {
+    if task.requires_document_runtime {
+        if !options.include_office || crate::core::plugins::deno_path().is_none() {
             return TaskResult {
                 id: task.id.clone(),
                 passed: true,
@@ -392,7 +392,7 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
                 finish_reason: None,
                 statuses: Vec::new(),
                 errors: vec![format!(
-                    "skipped: {app} evaluation not enabled or unavailable"
+                    "skipped: document runtime evaluation not enabled or unavailable"
                 )],
                 metrics: EvalMetrics::default(),
             };
@@ -436,7 +436,7 @@ async fn run_one_task(task: &EvalTask, options: &EvalOptions, seed: u32) -> Task
         Arc::clone(&conversation),
         Arc::clone(&event_bus),
     );
-    crate::core::office::register_tools(&mut registry);
+    crate::core::tools::skills::register_all(&mut registry);
     let tools = Arc::new(ToolManager::new(registry));
     let registry = tools.registry();
     let provider: Arc<dyn AIProvider> = if let Some(config) = &options.live {

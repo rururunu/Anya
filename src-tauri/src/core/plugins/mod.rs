@@ -36,9 +36,10 @@ pub use capability::{
     KNOWN_CAPABILITY_CATEGORIES,
 };
 pub use computer::{
-    delete_computer_playbook, get_computer_playbook, list_computer_playbooks, stop_engine as stop_computer_engine,
-    ComputerPlaybook,
+    delete_computer_playbook, get_computer_playbook, list_computer_playbooks,
+    stop_engine as stop_computer_engine, ComputerPlaybook,
 };
+pub(crate) use deno::deno_path;
 
 /// Whether a plugin agent tool requires the tool-approval picker.
 pub fn requires_tool_approval(full_name: &str) -> bool {

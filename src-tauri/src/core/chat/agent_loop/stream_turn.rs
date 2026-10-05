@@ -39,8 +39,8 @@ mod tests {
 /// Delta/Reasoning/Status/Usage/UserContentPatch events to the outer `tx` as
 /// they arrive, and folding everything else into a [`StreamTurnResult`].
 ///
-/// Returns `Err` on cancellation or a provider-reported error (the error is
-/// also forwarded to `tx` before returning).
+/// Errors stay inside the agent until recovery is exhausted. Forwarding them
+/// here would make the outer lifecycle terminate before the agent can recover.
 pub async fn collect_stream_turn(
     mut turn_rx: mpsc::Receiver<StreamEvent>,
     tx: &mpsc::Sender<StreamEvent>,
@@ -64,7 +64,13 @@ pub async fn collect_stream_turn(
             return Err(ProviderError::cancelled());
         }
         match event {
-            StreamEvent::Start => {}
+            StreamEvent::Start => {
+                let _ = tx
+                    .send(StreamEvent::Status {
+                        kind: "provider_round_started".into(),
+                    })
+                    .await;
+            }
             StreamEvent::Delta(delta) => {
                 content.push_str(&delta);
                 let _ = tx.send(StreamEvent::Delta(delta)).await;
@@ -116,7 +122,6 @@ pub async fn collect_stream_turn(
             }
             StreamEvent::Finish => break,
             StreamEvent::Error(message) => {
-                let _ = tx.send(StreamEvent::Error(message.clone())).await;
                 return Err(ProviderError::message(message));
             }
         }

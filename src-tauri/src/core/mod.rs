@@ -1,4 +1,4 @@
-//! Domain core: chat, agent orchestration, AI providers, tools, context, office.
+//! Domain core: chat, agent orchestration, AI providers, tools, context.
 //!
 //! Request flow overview: `docs/architecture-overview.md`.
 //! Chat protocol types live in [`runtime`]; pluggable tool adapters live in
@@ -12,7 +12,6 @@ pub mod context;
 pub mod event;
 pub mod lsp;
 pub mod mcp;
-pub mod office;
 pub mod plugins;
 pub mod remote;
 pub mod rules;

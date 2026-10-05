@@ -86,3 +86,12 @@ src-tauri/plugins/**/node_modules/
 Thumbs.db
 Desktop.ini
 
+
+# Office document libraries bundled before Tauri dev/build
+src-tauri/resources/office/
+
+# Root build and document QA outputs
+/target/
+
+# Generated legacy harness dependency snapshot
+/src-tauri/harness/vendor/

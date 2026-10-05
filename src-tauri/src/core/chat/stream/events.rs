@@ -100,21 +100,24 @@ pub(crate) fn finish_with_error(
     error: String,
 ) {
     let reasoning = non_empty_string(reasoning);
+    let content = if content.trim().is_empty() {
+        error.clone()
+    } else {
+        format!("{content}\n\n{error}")
+    };
     conversation.update_message(
         session_id,
         message_id,
         MessageStatus::Error,
-        Some(error.clone()),
+        Some(content.clone()),
         Some(reasoning),
     );
 
     event_bus.emit(crate::core::event::BusEvent::ChatError {
         session_id: session_id.to_string(),
         message_id: message_id.to_string(),
-        message: error,
+        message: content,
     });
-
-    let _ = content;
 }
 
 pub(crate) fn non_empty_string(value: String) -> Option<String> {
@@ -254,6 +257,13 @@ pub(crate) fn handle_stream_event(
                 );
             } else if kind == "soft_injected" {
                 ctx.turn_span.soft_inject(0);
+            } else if kind == "provider_round_started" {
+                *ctx.stable_content_len = ctx.content.len();
+                *ctx.stable_reasoning_len = ctx.reasoning.len();
+                *ctx.stable_timeline_len = ctx
+                    .conversation
+                    .work_timeline_len(ctx.session_id, ctx.assistant_message_id);
+                return StreamEventOutcome::Continue;
             } else if kind.starts_with("tools:") {
                 if let Ok(count) = kind.trim_start_matches("tools:").parse::<u32>() {
                     ctx.turn_span.add_tools(count);
@@ -268,6 +278,14 @@ pub(crate) fn handle_stream_event(
             ctx.event_bus.emit(BusEvent::ChatStatus {
                 session_id: ctx.session_id.to_string(),
                 message_id: ctx.assistant_message_id.to_string(),
+                snapshot: if kind.starts_with("stream_retry") {
+                    ctx.conversation
+                        .find_message(ctx.assistant_message_id)
+                        .ok()
+                        .map(|(_, message)| Box::new(message))
+                } else {
+                    None
+                },
                 kind,
             });
             StreamEventOutcome::Continue

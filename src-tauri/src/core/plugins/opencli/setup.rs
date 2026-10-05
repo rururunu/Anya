@@ -232,9 +232,7 @@ fn version_of(bin: &str, args: &[&str]) -> Option<String> {
         .lines()
         .map(str::trim)
         .find(|l| {
-            !l.is_empty()
-                && !l.starts_with("npm warn")
-                && !l.eq_ignore_ascii_case("--- stderr ---")
+            !l.is_empty() && !l.starts_with("npm warn") && !l.eq_ignore_ascii_case("--- stderr ---")
         })?
         .to_string();
     if line.starts_with("failed") || line.contains("not found") || line.contains("不是内部") {
@@ -256,7 +254,11 @@ pub struct Captured {
     pub text: String,
 }
 
-pub fn run_capture_public(bin: &str, argv: &[String], timeout_secs: u64) -> Result<Captured, String> {
+pub fn run_capture_public(
+    bin: &str,
+    argv: &[String],
+    timeout_secs: u64,
+) -> Result<Captured, String> {
     run_capture(bin, argv, timeout_secs)
 }
 

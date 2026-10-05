@@ -137,6 +137,10 @@ impl AIProvider for DeepSeekProvider {
         "deepseek"
     }
 
+    fn uses_dsh_tools(&self) -> bool {
+        crate::core::ai::registry::looks_like_deepseek_model(&(self.resolve_model)())
+    }
+
     async fn stream(
         &self,
         request: ChatRequest,
@@ -175,7 +179,20 @@ impl DeepSeekProvider {
         )
         .map(WireProtocol::from);
         let primary_wire = resolve_wire_protocol(primary_protocol, cached);
-        let effort = self.effort();
+        let configured_policy = std::env::var("ANYA_DEEPSEEK_REASONING_POLICY").ok().as_deref() == Some("configured");
+        let effort = if self.uses_dsh_tools() && !configured_policy { dsh_task_effort(&request, self.effort()) } else { self.effort() };
+        if self.uses_dsh_tools() {
+            let task_class = if request.request_id.starts_with("title-") { "title" }
+                else if request.request_id.starts_with("compact-") { "summary" }
+                else if dsh_task_effort(&request, ReasoningEffort::High) == ReasoningEffort::Low { "simple_question" }
+                else { "configured_task" };
+            crate::core::chat::telemetry::record_provider_metrics(&serde_json::json!({
+                "kind":"reasoning_policy", "model":primary_model, "task_class":task_class,
+                "configured_effort":self.effort(), "selected_effort":effort,
+                "policy_mode":if configured_policy { "configured" } else { "adaptive" },
+                "policy_version":1, "timestamp":chrono::Utc::now().to_rfc3339()
+            }));
+        }
         let pass_tool_reasoning = self.pass_tool_reasoning();
         let continue_thinking_after_tools = self.continue_thinking_after_tools();
         let include_thinking = !guess_url.contains("generativelanguage.googleapis.com");
@@ -191,7 +208,13 @@ impl DeepSeekProvider {
         }
 
         let _ = tx.send(StreamEvent::Start).await;
-        let client = reqwest::Client::new();
+        // Bound connection/header/body silence, without imposing a total
+        // duration limit on a response that keeps streaming.
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .read_timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|error| ProviderError::message(format!("network error: {error}")))?;
 
         let mut model = primary_model.clone();
         let mut api_key = primary_api_key.clone();
@@ -257,10 +280,7 @@ impl DeepSeekProvider {
             }
         }
 
-        // Only DeepSeek models get the reactive "context window exceeded →
-        // compact and retry" path; custom OpenAI-compatible providers keep the
-        // existing surface-error behavior.
-        let is_deepseek = model.trim().to_ascii_lowercase().starts_with("deepseek");
+        // Leave context errors to the agent's compaction recovery for every model.
         match dispatch_configured_protocol(
             &client,
             &request,
@@ -277,9 +297,41 @@ impl DeepSeekProvider {
         .await
         {
             Ok(()) => Ok(()),
-            Err(error) if is_deepseek && error.is_context_window_exceeded() => Err(error),
+            Err(error) if error.is_context_window_exceeded() => Err(error),
             Err(error) => emit_stream_error(&tx, error).await,
         }
+    }
+}
+
+fn dsh_task_effort(request: &ChatRequest, configured: ReasoningEffort) -> ReasoningEffort {
+    let question = request.messages.iter().rev().find(|m| m.role == crate::core::runtime::Role::User)
+        .map(|m| m.content.trim()).unwrap_or("");
+    dsh_task_effort_for(&request.request_id, question, configured)
+}
+
+fn dsh_task_effort_for(request_id: &str, question: &str, configured: ReasoningEffort) -> ReasoningEffort {
+    if request_id.starts_with("title-") || request_id.starts_with("compact-") { return ReasoningEffort::Disabled; }
+    let lower = question.to_ascii_lowercase();
+    let complex = ["project", "code", "function", "debug", "review", "analy", "prove", "test", "why", "how", "this", "that", "项目", "代码", "函数", "报错", "分析", "证明", "推导", "为什么", "如何", "上面", "刚才", "之前", "http", "\\", "```"].iter().any(|term| lower.contains(term));
+    if question.chars().count() <= 120 && !complex && crate::runtime::tool::is_question_only_text(question)
+        && matches!(configured, ReasoningEffort::Medium | ReasoningEffort::High | ReasoningEffort::Xhigh | ReasoningEffort::Max) {
+        return ReasoningEffort::Low;
+    }
+    configured
+}
+
+#[cfg(test)]
+mod task_effort_tests {
+    use super::*;
+    #[test]
+    fn auxiliary_and_simple_tasks_save_reasoning_without_lowering_complex_work() {
+        assert_eq!(dsh_task_effort_for("title-1", "Title", ReasoningEffort::High), ReasoningEffort::Disabled);
+        assert_eq!(dsh_task_effort_for("compact-1", "Summarize", ReasoningEffort::Max), ReasoningEffort::Disabled);
+        assert_eq!(dsh_task_effort_for("r", "What is Rust?", ReasoningEffort::High), ReasoningEffort::Low);
+        assert_eq!(dsh_task_effort_for("r", "为什么这个项目的测试失败？", ReasoningEffort::High), ReasoningEffort::High);
+        assert_eq!(dsh_task_effort_for("r", "为我修复这个错误", ReasoningEffort::Max), ReasoningEffort::Max);
+        assert_eq!(dsh_task_effort_for("r", "What is Rust?", ReasoningEffort::Disabled), ReasoningEffort::Disabled);
+        assert_eq!(dsh_task_effort_for("r", "What is Rust?\n\nAnalyze this project code", ReasoningEffort::High), ReasoningEffort::High);
     }
 }
 

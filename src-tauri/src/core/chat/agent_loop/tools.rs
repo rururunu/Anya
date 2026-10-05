@@ -43,7 +43,8 @@ impl ToolExecutor {
             .as_ref()
             .is_some_and(|names| !names.contains(name))
         {
-            return Err(ToolError::new(format!("Tool {name} is not allowed in the current tool set. Use an available tool or search_tools to discover capabilities permitted in this mode.")));
+            let guidance = if self.tools.is_dsh() { "Use a tool from the provided tool definitions." } else { "Use an available tool or search_tools to discover capabilities permitted in this mode." };
+            return Err(ToolError::new(format!("Tool {name} is not allowed in the current tool set. {guidance}")));
         }
         Ok(())
     }
@@ -96,7 +97,7 @@ impl ToolExecutor {
             execution_context.parent_activity_id = Some(started.activity_id.clone());
             let tool_name = started.tool_name.clone();
             let hooked = self.ensure_available(&started.tool_name).and_then(|()| {
-                crate::core::plugins::before_tool(&started.tool_name, started.args.clone())
+                if self.tools.is_dsh() { Ok(started.args.clone()) } else { crate::core::plugins::before_tool(&started.tool_name, started.args.clone()) }
             });
             let max_chars = self.tool_output_max_chars;
             async move {
@@ -152,7 +153,7 @@ impl ToolExecutor {
         execution_context.parent_activity_id = Some(started.activity_id.clone());
         let tool_name = started.tool_name.clone();
         let tool_args = match self.ensure_available(&started.tool_name).and_then(|()| {
-            crate::core::plugins::before_tool(&started.tool_name, started.args.clone())
+            if self.tools.is_dsh() { Ok(started.args.clone()) } else { crate::core::plugins::before_tool(&started.tool_name, started.args.clone()) }
         }) {
             Ok(args) => args,
             Err(error) => {
@@ -240,9 +241,18 @@ impl ToolExecutor {
         let user_denied = execution.as_ref().err().is_some_and(ToolError::is_terminal);
         let (raw_result, success) = match execution {
             Ok(value) => {
-                let success = started.tool_name != "run_shell"
+                let success = !matches!(started.tool_name.as_str(), "pwsh" | "bash" | "job_output")
+                    || !value.contains("[exit code:")
+                    || value.lines().rev().find_map(|line| line.strip_prefix("[exit code:").and_then(|n| n.strip_suffix(']')).and_then(|n| n.trim().parse::<i32>().ok())) == Some(0);
+                let success = success && (started.tool_name != "run_shell"
                     || !value.starts_with("exit_code:")
-                    || super::post_edit_verify::shell_exit_code_ok(&value);
+                    || super::post_edit_verify::shell_exit_code_ok(&value));
+                let success = success
+                    && !(matches!(
+                        started.tool_name.as_str(),
+                        "wait_for_shell" | "read_shell_output"
+                    ) && value.starts_with("status: done")
+                        && !super::post_edit_verify::shell_exit_code_ok(&value));
                 (value, success)
             }
             Err(error) => (
@@ -256,7 +266,11 @@ impl ToolExecutor {
                 false,
             ),
         };
-        let result = preserve_tool_output(&tool_ctx.workspace_root, &raw_result, max_chars);
+        let mut result = preserve_tool_output(&tool_ctx.workspace_root, &raw_result, max_chars);
+        if self.tools.is_dsh() { result = result.replace("; read_file for omitted evidence.", "; read for omitted evidence."); }
+        // Keep delivery metadata complete for cards and restart replay, even
+        // when the model-facing tool output is clipped or spilled.
+        let activity_result = if started.tool_name == "present" && success { raw_result.clone() } else { result.clone() };
         let finished = build_activity_view(&started.tool_name, &started.args, Some(&result));
         let detail = finished.detail.or(started.preview_detail);
         let display_sid = tool_ctx.root_session_id().to_string();
@@ -272,7 +286,7 @@ impl ToolExecutor {
                 kind: finished.kind.clone(),
                 detail: detail.clone(),
                 arguments: Some(started.args.clone()),
-                result: Some(result.clone()),
+                result: Some(activity_result.clone()),
                 preview: started.tool_preview.clone(),
                 success,
                 status: if success { "done" } else { "error" }.to_string(),
@@ -292,10 +306,10 @@ impl ToolExecutor {
                 detail,
                 arguments: started.args.clone(),
                 preview: started.tool_preview,
-                result: result.clone(),
+                result: activity_result,
                 success,
             });
-        crate::core::plugins::after_tool(&started.tool_name, success, &result);
+        if !self.tools.is_dsh() { crate::core::plugins::after_tool(&started.tool_name, success, &result); }
         ToolOutcome {
             call_id: started.call_id,
             tool_name: started.tool_name.clone(),

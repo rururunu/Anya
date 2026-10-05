@@ -5,6 +5,25 @@
 import { stripSoftInjectMarker } from "@/services/chat/softInject";
 import type { ChatMessage, WorkTimelineItem } from "@/types/chat";
 
+/** Restore the backend's committed prefix rather than erasing completed work. */
+export function rollbackStreamAttempt(current: ChatMessage, snapshot?: ChatMessage): ChatMessage {
+  const valid = snapshot?.id === current.id && snapshot.sessionId === current.sessionId;
+  const keptActivities = current.toolActivities?.filter(
+    (activity) => activity.status !== "running",
+  );
+  return {
+    ...current,
+    content: valid ? snapshot.content : "",
+    reasoning: valid ? snapshot.reasoning : undefined,
+    workTimeline: valid ? snapshot.workTimeline : undefined,
+    toolActivities: valid
+      ? snapshot.toolActivities
+      : keptActivities?.length
+        ? keptActivities
+        : undefined,
+  };
+}
+
 /**
  * Append a text chunk (reasoning or regular content) to the work timeline,
  * merging into the trailing segment when it's the same kind so consecutive

@@ -86,7 +86,30 @@ pub struct PromptBuildInput<'a> {
 pub struct PromptBuilder;
 
 impl PromptBuilder {
+    /// DeepSeek receives the dsh tool guidance rather than Anya's legacy tool instructions.
+    pub fn build_dsh(input: PromptBuildInput<'_>) -> ChatRequest {
+        let mut request = Self::build_inner(input, true);
+        let session = request.session_id.clone();
+        request.messages.retain(|m| !["system", "plugin-prompts", "plan-mode", "plan-request-hint"].iter().any(|kind| m.id == format!("{kind}-{session}")));
+        inject_system_block(&mut request.messages, &session, "dsh-identity", Some(crate::core::tools::dsh::IDENTITY));
+        for message in &mut request.messages {
+            if message.id == format!("context-{session}") {
+                let shell = if cfg!(windows) { "pwsh" } else { "bash" };
+                message.content = message.content.replace("(read_file, find_files, search, shell)", &format!("(read, glob, grep, {shell})"));
+            }
+        }
+        if let Some(index) = request.messages.iter().position(|m| m.id == format!("dsh-identity-{session}")) {
+            let identity = request.messages.remove(index);
+            request.messages.insert(0, identity);
+        }
+        request
+    }
+
     pub fn build(input: PromptBuildInput<'_>) -> ChatRequest {
+        Self::build_inner(input, false)
+    }
+
+    fn build_inner(input: PromptBuildInput<'_>, dsh: bool) -> ChatRequest {
         let PromptBuildInput {
             request_id,
             session_id,
@@ -114,7 +137,7 @@ impl PromptBuilder {
         inject_system_block(&mut messages, session_id, "rules", project_rules);
 
         // [3] Optional policy suffix — toggles only hang here.
-        inject_optional_policy_suffix(
+        if !dsh { inject_optional_policy_suffix(
             &mut messages,
             session_id,
             &preferences.collaboration_models,
@@ -123,8 +146,8 @@ impl PromptBuilder {
             preferences.suggest_plan_request,
             preferences.companion_origin,
             preferences.image_mode.as_ref(),
-        );
-        let plugin_prompts = if cfg!(test) {
+        ); }
+        let plugin_prompts = if cfg!(test) || dsh {
             None
         } else {
             crate::core::plugins::shared_runtime().plugin_prompt_suffix()

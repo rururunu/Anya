@@ -24,7 +24,8 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 use app_state::AppState;
 use commands::{
     app, ask, chat, computer_use, deepseek_files, desktop_pet, diff, harness, icons, mcp, opencli,
-    permission, plugins, remote, semantic, settings, skills, token_usage, updater, window, workspace,
+    permission, plugins, remote, semantic, settings, skills, token_usage, updater, window,
+    workspace,
 };
 use services::app_lifecycle;
 use services::overlay_native::clear_minimize_pending;

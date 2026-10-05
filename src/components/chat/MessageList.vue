@@ -233,6 +233,11 @@
                 @review="$emit('reviewChanges')"
                 @review-file="$emit('reviewFile', $event)"
               />
+              <PresentedFiles
+                v-if="item.message.status === 'done'"
+                :message="item.message"
+                @preview-image="emit('previewImage', $event)"
+              />
               <div
                 v-if="
                   item.message.content.trim() ||
@@ -333,6 +338,7 @@ import {
 } from "@lucide/vue";
 import AgentWorkDetails from "@/components/chat/AgentWorkDetails.vue";
 import CodeChangesSummary from "@/components/chat/CodeChangesSummary.vue";
+import PresentedFiles from "@/components/chat/PresentedFiles.vue";
 import PlanApprovalCard from "@/components/chat/PlanApprovalCard.vue";
 import AssistantActivityIndicator from "@/components/chat/AssistantActivityIndicator.vue";
 import MascotFace, { type MascotState } from "@/components/icons/MascotFace.vue";

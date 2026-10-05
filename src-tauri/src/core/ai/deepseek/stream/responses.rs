@@ -23,6 +23,7 @@ pub(super) async fn read_responses_sse_stream(
     let mut pending_utf8 = Vec::new();
     let mut buffer = String::new();
     let mut outcome = StreamReadOutcome::default();
+    let started = std::time::Instant::now();
     let mut content = String::new();
     let mut reasoning = String::new();
     let mut tool_calls: HashMap<usize, ToolCallBuilder> = HashMap::new();
@@ -53,6 +54,7 @@ pub(super) async fn read_responses_sse_stream(
             if payload.is_empty() {
                 continue;
             }
+            outcome.first_sse_ms.get_or_insert(started.elapsed().as_millis());
             if payload == "[DONE]" {
                 outcome.saw_done = true;
                 break;
@@ -94,7 +96,7 @@ pub(super) async fn read_responses_sse_stream(
                         } else {
                             cache_read.filter(|value| *value > 0)
                         },
-                        reasoning_tokens.filter(|value| *value > 0),
+                        if is_deepseek { reasoning_tokens } else { reasoning_tokens.filter(|value| *value > 0) },
                     )))
                     .await;
             }
@@ -102,6 +104,7 @@ pub(super) async fn read_responses_sse_stream(
                 let _ = tx.send(StreamEvent::Reasoning(tick.reasoning_delta)).await;
             }
             if !tick.content_delta.is_empty() {
+                outcome.first_text_ms.get_or_insert(started.elapsed().as_millis());
                 let _ = tx.send(StreamEvent::Delta(tick.content_delta)).await;
             }
 

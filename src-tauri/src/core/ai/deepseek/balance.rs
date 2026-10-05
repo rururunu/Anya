@@ -42,9 +42,8 @@ struct RawBalanceInfo {
 
 /// Parse a DeepSeek `/user/balance` JSON payload.
 pub fn parse_balance_payload(text: &str) -> Result<DeepSeekBalanceReport, ProviderError> {
-    let payload: RawBalanceResponse = serde_json::from_str(text).map_err(|error| {
-        ProviderError::message(format!("invalid balance payload: {error}"))
-    })?;
+    let payload: RawBalanceResponse = serde_json::from_str(text)
+        .map_err(|error| ProviderError::message(format!("invalid balance payload: {error}")))?;
     Ok(DeepSeekBalanceReport {
         configured: true,
         is_available: Some(payload.is_available),

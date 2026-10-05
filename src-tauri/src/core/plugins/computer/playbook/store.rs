@@ -249,7 +249,9 @@ pub(super) fn parse_steps(value: &Value) -> Result<Vec<PlaybookStep>, ToolError>
 }
 
 fn str_field(item: &Value, key: &str) -> Option<String> {
-    item.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    item.get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 fn format_playbook(pb: &Playbook) -> String {
@@ -366,7 +368,11 @@ pub fn dispatch(args: &Value) -> Result<String, ToolError> {
             Ok(format!("Playbooks ({}):\n{}", all.len(), lines.join("\n")))
         }
         "lookup" | "get" => {
-            if let Some(id) = args.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+            if let Some(id) = args
+                .get("id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
                 return Ok(format_playbook(&load_one(id)?));
             }
             let query = args
