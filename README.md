@@ -23,6 +23,7 @@
 | ---------------------- | ---------------------------------------------------------------------------------------------------- |
 | **Ask anywhere**       | Double-tap Alt to open the overlay with files or images.                                             |
 | **Work on projects**   | Organize workspaces and chats, run tasks, and review changes.                                        |
+| **Personalize Anya**   | Set up a local profile and avatar, review usage activity, and import or export profile information.  |
 | **Handle documents**   | Generate, read, convert, and render Word / Excel / PowerPoint files; deliver them as cards.          |
 | **Choose your model**  | Configure DeepSeek, OpenAI-compatible, or Anthropic-compatible providers.                            |
 | **Extend your tools**  | Use skills, MCP, and plugins; manually enable computer use and OpenCLI.                              |
@@ -33,6 +34,8 @@ DeepSeek models use natively integrated dsh tools and prompts, with cache usage,
 ## Get started
 
 Alt+Alt captures selected text before the overlay takes focus and displays a compact inline reference tag. Chrome / Edge users can optionally install the [Selection Bridge](./browser-extension/README.md) for webpage selection and source URLs.
+
+The **Profile** settings page shows local usage insights and lets you transfer your profile, settings, and API keys. Treat exported files as sensitive. A factory reset is available from the profile actions.
 
 1. Download and install the MSI from [Releases](../../releases).
 2. Open **Settings**, add a model provider, and configure its credentials.
@@ -84,6 +87,7 @@ Built with **Tauri 2 + Vue 3 + TypeScript + Rust**.
 - [DeepSeek integration](./docs/deepseek-harness.md)
 - [Office workflows](./docs/office.md)
 - [File delivery](./docs/file-delivery.md)
+- [Browser Selection Bridge](./browser-extension/README.md)
 - [Plugin development](./docs/plugin-system.md)
 - [Releases and updates](./docs/release.md)
 

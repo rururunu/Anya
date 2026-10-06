@@ -24,6 +24,10 @@
 
 许可和来源位于 `src/assets/material-file-icons/`；`public/licenses/material-icon-theme-MIT.txt` 随前端构建分发。更新时同时更新 SVG、许可与来源版本，不需要安装 VS Code 插件或运行时联网。
 
+## 个人资料与重置
+
+个人资料设置页支持导入或导出设置、本地资料、头像及 Token 用量偏好。导出文件可能包含服务商凭据和 API Key，请安全保存和传输；可读取的本地背景图片会嵌入导出文件。恢复出厂设置提供两种范围：仅删除个人信息并保留设置，或删除全部本地应用数据和设置。操作会关闭并重启 Anya；工作区中的项目文件会保留。删除不可撤销，建议先导出需要保留的信息。
+
 ## 源码与验证
 
 - Rust：`src-tauri/src/core/tools/present.rs`、`core/chat/agent_loop/tools.rs`、`core/chat/db/tool_activity.rs`。

@@ -52,21 +52,23 @@ flowchart LR
   User((User)) -->|hotkey / tray / input| Host[Anya process]
   Phone[Anya Companion] -->|WS /remote/v1 · HTTP /f /p| Host
   IDE[IDE plugins] -->|context push| Host
+  Browser[Chrome / Edge extension] -->|selected text · loopback| Host
   Host -->|Skills + Deno| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[Model providers]
   Host -->|HTTPS / stdio| Aux[MCP · search · mem0]
   Host --> Disk[(SQLite · settings · index)]
 ```
 
-| Actor / system      | Interaction                                                                 |
-| ------------------- | --------------------------------------------------------------------------- |
-| User                | Global hotkey, tray, composer, review UI, embedded settings                 |
-| Anya Companion      | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`   |
-| IDE plugins         | Best-effort local context push (file, workspace, selection)                 |
-| Microsoft Office    | Saved-file skills + bundled Deno/JavaScript document runtime                |
-| Model providers     | Authenticated HTTPS SSE; Chat Completions, Responses, or Anthropic Messages |
-| MCP / search / mem0 | Optional; enabled explicitly in settings                                    |
-| Local disk          | Chat DB, settings, `.anya/index`, updater pubkey, checkpoints               |
+| Actor / system           | Interaction                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| User                     | Global hotkey, tray, composer, review UI, embedded settings                              |
+| Anya Companion           | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`                |
+| IDE plugins              | Best-effort local context push (file, workspace, selection)                              |
+| Browser Selection Bridge | Optional extension forwards selected webpage text to the local host; no browsing history |
+| Microsoft Office         | Saved-file skills + bundled Deno/JavaScript document runtime                             |
+| Model providers          | Authenticated HTTPS SSE; Chat Completions, Responses, or Anthropic Messages              |
+| MCP / search / mem0      | Optional; enabled explicitly in settings                                                 |
+| Local disk               | Chat DB, settings, `.anya/index`, updater pubkey, checkpoints                            |
 
 ---
 
@@ -360,19 +362,21 @@ sequenceDiagram
 
 ### 5.3 Frontend (`src/`)
 
-| Area                        | Path                                                           | Role                                                                                                                                                                    |
-| --------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overlay / Workbench layouts | `layouts/Overlay.vue`, `layouts/Main.vue`                      | Window shells; workbench embeds SettingsPage; nav in `composables/workbench/`                                                                                           |
-| Chat UI                     | `components/chat/*`                                            | Message list, timeline, tool cards, plan approval, composer (`ChatInputBar` + `input/*`)                                                                                |
-| Chat composables            | `composables/chat/`                                            | `wireChatIpc`, `useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`, `useMessage{Scroll,PreviewRail}`, `useConversationFind`, attachments, ask-user flow |
-| Chat store                  | `stores/chat.ts`, `stores/chatSessions.ts`                     | Pinia façade; session list/archive/title and history page cursors in `chatSessions`; compose/stream helpers in sibling modules                                          |
-| Workbench composables       | `composables/workbench/`                                       | `useWorkbenchNavigation`, `useNavigationSidebar`, sessions/workspaces/review lifecycle                                                                                  |
-| Other stores                | `stores/setting.ts`, `chatModel.ts`, `plugins.ts`              | Settings, cached model catalog with background discovery, user plugins                                                                                                  |
-| Theme                       | `services/theme/`                                              | Catalog (light/dark), `ThemeService` apply path, `themes.css` tokens                                                                                                    |
-| Chat services               | `services/chat/`                                               | Image gen mode, local image src, save image, composer segments, token estimate                                                                                          |
-| IPC                         | `services/ipc/`                                                | Typed invoke + event subscription                                                                                                                                       |
-| Stream batching             | `services/chat/rafBatch.ts`, `composables/chat/wireChatIpc.ts` | RAF coalesce; chat IPC wiring extracted from `main.ts`                                                                                                                  |
-| Settings pages              | `pages/Settings/`                                              | Provider / agent / MCP / skills / **Image** providers                                                                                                                   |
+| Area                        | Path                                                                                | Role                                                                                                                                                                    |
+| --------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Overlay / Workbench layouts | `layouts/Overlay.vue`, `layouts/Main.vue`                                           | Window shells; workbench embeds SettingsPage; nav in `composables/workbench/`                                                                                           |
+| Chat UI                     | `components/chat/*`                                                                 | Message list, timeline, tool cards, plan approval, composer (`ChatInputBar` + `input/*`)                                                                                |
+| Chat composables            | `composables/chat/`                                                                 | `wireChatIpc`, `useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`, `useMessage{Scroll,PreviewRail}`, `useConversationFind`, attachments, ask-user flow |
+| Chat store                  | `stores/chat.ts`, `stores/chatSessions.ts`                                          | Pinia façade; session list/archive/title and history page cursors in `chatSessions`; compose/stream helpers in sibling modules                                          |
+| Workbench composables       | `composables/workbench/`                                                            | `useWorkbenchNavigation`, `useNavigationSidebar`, sessions/workspaces/review lifecycle                                                                                  |
+| Other stores                | `stores/setting.ts`, `chatModel.ts`, `plugins.ts`                                   | Settings, cached model catalog with background discovery, user plugins                                                                                                  |
+| Theme                       | `services/theme/`                                                                   | Catalog (light/dark), `ThemeService` apply path, `themes.css` tokens                                                                                                    |
+| Chat services               | `services/chat/`                                                                    | Image gen mode, local image src, save image, composer segments, token estimate                                                                                          |
+| IPC                         | `services/ipc/`                                                                     | Typed invoke + event subscription                                                                                                                                       |
+| Stream batching             | `services/chat/rafBatch.ts`, `composables/chat/wireChatIpc.ts`                      | RAF coalesce; chat IPC wiring extracted from `main.ts`                                                                                                                  |
+| Settings pages              | `pages/Settings/`                                                                   | Provider / agent / MCP / skills / **Image** providers                                                                                                                   |
+| Profile settings            | `components/settings/ProfileSettings.vue`, `services/settings/`                     | Local profile, avatar, portable settings import/export, and usage insights                                                                                              |
+| Browser selection           | `services/browser_selection.rs`, `bin/anya_browser_bridge.rs`, `browser-extension/` | Optional authenticated local bridge for webpage selections                                                                                                              |
 
 ---
 
@@ -878,6 +882,8 @@ Companion must not grow a second Agent runtime.
 ---
 
 ### 15.1 Native tools and delivery in v0.2.26
+
+The optional Chrome / Edge Selection Bridge sends selected webpage text through a registered native messaging host to an authenticated loopback listener. Cached selections are bound to the foreground browser window and expire after 60 seconds; browser history is not collected. See [extension setup and boundaries](../browser-extension/README.md).
 
 The resolved model determines whether `core/tools/dsh/` is selected, rather than the provider name alone. Main and child tasks select their own tool sets; `present` is also available in the general registry. Imported static contracts live in `prompts/dsh/`; execution and approval use the Anya host. See [native DeepSeek tools](./deepseek-harness.md).
 

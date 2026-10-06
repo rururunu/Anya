@@ -19,20 +19,23 @@
 
 ## 能做什么
 
-| 功能         | 用途                                                                             |
-| ------------ | -------------------------------------------------------------------------------- |
-| **随时提问** | 双击 Alt 唤出悬浮窗，附加文件或图片。                                            |
-| **处理项目** | 管理工作区与会话，读取代码、执行任务、审查变更。                                 |
-| **处理文档** | 生成、读取、转换与渲染 Word / Excel / PPT，通过卡片交付文件。                    |
-| **选择模型** | 配置 DeepSeek、OpenAI 兼容或 Anthropic 兼容服务商。                              |
-| **扩展工具** | 使用技能、MCP 与插件；电脑操控和 OpenCLI 需手动启用。                            |
-| **手机连接** | 通过 [Companion](https://github.com/rururunu/AnyaAndroid) 对话、审批和传输文件。 |
+| 功能           | 用途                                                                             |
+| -------------- | -------------------------------------------------------------------------------- |
+| **随时提问**   | 双击 Alt 唤出悬浮窗，附加文件或图片。                                            |
+| **处理项目**   | 管理工作区与会话，读取代码、执行任务、审查变更。                                 |
+| **个性化设置** | 设置本地资料和头像，查看用量活动，并导入或导出个人资料。                         |
+| **处理文档**   | 生成、读取、转换与渲染 Word / Excel / PPT，通过卡片交付文件。                    |
+| **选择模型**   | 配置 DeepSeek、OpenAI 兼容或 Anthropic 兼容服务商。                              |
+| **扩展工具**   | 使用技能、MCP 与插件；电脑操控和 OpenCLI 需手动启用。                            |
+| **手机连接**   | 通过 [Companion](https://github.com/rururunu/AnyaAndroid) 对话、审批和传输文件。 |
 
 DeepSeek 模型使用原生集成的 dsh 工具与提示词，并记录缓存用量、响应耗时和重试信息。其他模型使用 Anya 通用工具集。详细说明见 [DeepSeek 链路](./docs/deepseek-harness.zh-CN.md)。
 
 ## 开始使用
 
 Alt+Alt 会在弹窗取得焦点前采集选中文字，并以紧凑的行内标签显示引用。Chrome / Edge 可选安装[浏览器选区桥接](./browser-extension/README.zh-CN.md)，增强网页选区和来源 URL 的获取。
+
+**个人资料**设置页会展示本机用量统计，并支持迁移个人资料、设置和 API Key。导出的文件包含敏感信息，请妥善保管。个人资料操作中也提供恢复出厂设置。
 
 1. 从 [Releases](../../releases) 下载并安装 MSI。
 2. 打开 **设置**，添加模型服务商并配置凭据。
@@ -84,6 +87,7 @@ pnpm tauri:build
 - [DeepSeek 链路](./docs/deepseek-harness.zh-CN.md)
 - [Office 工作流](./docs/office.zh-CN.md)
 - [文件交付](./docs/file-delivery.zh-CN.md)
+- [浏览器选区桥接](./browser-extension/README.zh-CN.md)
 - [插件开发](./docs/plugin-system.zh-CN.md)
 - [发布与更新](./docs/release.zh-CN.md)
 

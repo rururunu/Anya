@@ -49,6 +49,7 @@ flowchart LR
   User((用户)) -->|热键 / 托盘 / 输入| Host[Anya 进程]
   Phone[Anya Companion] -->|WS /remote/v1 · HTTP /f /p| Host
   IDE[IDE 插件] -->|上下文推送| Host
+  Browser[Chrome / Edge 扩展] -->|网页选中文字 · 本地回环| Host
   Host -->|Skills + Deno| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[模型服务商]
   Host -->|HTTPS / stdio| Aux[MCP · 搜索 · mem0]
@@ -60,6 +61,7 @@ flowchart LR
 | 用户              | 全局热键、托盘、输入栏、Diff 审查、工作台内嵌设置                      |
 | Anya Companion    | 安卓远程；局域网 `ws` 或 Cloudflare `wss`；文件走 HTTP Range `/f/`     |
 | IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）                         |
+| 浏览器选区桥接    | 可选扩展将网页选中文字传给本机程序；不采集浏览历史                     |
 | Microsoft Office  | 保存文件技能 + 内置 Deno/JavaScript 文档运行时                         |
 | 模型服务商        | 鉴权 HTTPS SSE；支持 Chat Completions、Responses 或 Anthropic Messages |
 | MCP / 搜索 / mem0 | 可选；在设置中显式启用                                                 |
@@ -341,19 +343,21 @@ sequenceDiagram
 
 ### 5.3 前端（`src/`）
 
-| 区域                  | 路径                                                           | 职责                                                                                                                                 |
-| --------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Overlay / Workbench   | `layouts/Overlay.vue`、`layouts/Main.vue`                      | 窗口壳；工作台内嵌 SettingsPage；导航在 `composables/workbench/`                                                                     |
-| 聊天 UI               | `components/chat/*`                                            | 消息列表、时间线、工具卡片、计划批准卡、输入栏（`ChatInputBar` + `input/*`）                                                         |
-| 聊天 composables      | `composables/chat/`                                            | `wireChatIpc`、`useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`、`useMessage{Scroll,PreviewRail}`、Ask User、附件 |
-| Chat store            | `stores/chat.ts`、`stores/chatSessions.ts`                     | Pinia façade；会话列表/归档/标题及历史分页游标在 `chatSessions`；compose/stream helper 在旁路模块                                    |
-| Workbench composables | `composables/workbench/`                                       | `useWorkbenchNavigation`、`useNavigationSidebar`、会话/工作区/审查生命周期                                                           |
-| 其他 stores           | `stores/setting.ts`、`chatModel.ts`、`plugins.ts`              | 设置、带缓存与后台发现的模型目录、用户插件                                                                                           |
-| 主题                  | `services/theme/`                                              | 目录（浅色/深色）、`ThemeService` 应用路径、`themes.css` token                                                                       |
-| 聊天 services         | `services/chat/`                                               | 生图模式、本地图路径、保存图片、composer 分段、token 估算                                                                            |
-| IPC                   | `services/ipc/`                                                | 类型化 invoke 与事件订阅                                                                                                             |
-| 流式批处理            | `services/chat/rafBatch.ts`、`composables/chat/wireChatIpc.ts` | delta RAF 合并；聊天 IPC 从 `main.ts` 抽出                                                                                           |
-| 设置页                | `pages/Settings/`                                              | 服务商 / Agent / MCP / skills / **生图** 提供商                                                                                      |
+| 区域                  | 路径                                                                                | 职责                                                                                                                                 |
+| --------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Overlay / Workbench   | `layouts/Overlay.vue`、`layouts/Main.vue`                                           | 窗口壳；工作台内嵌 SettingsPage；导航在 `composables/workbench/`                                                                     |
+| 聊天 UI               | `components/chat/*`                                                                 | 消息列表、时间线、工具卡片、计划批准卡、输入栏（`ChatInputBar` + `input/*`）                                                         |
+| 聊天 composables      | `composables/chat/`                                                                 | `wireChatIpc`、`useComposer{Draft,Mentions,Layout,Pickers,Resize,Submit,Keyboard}`、`useMessage{Scroll,PreviewRail}`、Ask User、附件 |
+| Chat store            | `stores/chat.ts`、`stores/chatSessions.ts`                                          | Pinia façade；会话列表/归档/标题及历史分页游标在 `chatSessions`；compose/stream helper 在旁路模块                                    |
+| Workbench composables | `composables/workbench/`                                                            | `useWorkbenchNavigation`、`useNavigationSidebar`、会话/工作区/审查生命周期                                                           |
+| 其他 stores           | `stores/setting.ts`、`chatModel.ts`、`plugins.ts`                                   | 设置、带缓存与后台发现的模型目录、用户插件                                                                                           |
+| 主题                  | `services/theme/`                                                                   | 目录（浅色/深色）、`ThemeService` 应用路径、`themes.css` token                                                                       |
+| 聊天 services         | `services/chat/`                                                                    | 生图模式、本地图路径、保存图片、composer 分段、token 估算                                                                            |
+| IPC                   | `services/ipc/`                                                                     | 类型化 invoke 与事件订阅                                                                                                             |
+| 流式批处理            | `services/chat/rafBatch.ts`、`composables/chat/wireChatIpc.ts`                      | delta RAF 合并；聊天 IPC 从 `main.ts` 抽出                                                                                           |
+| 设置页                | `pages/Settings/`                                                                   | 服务商 / Agent / MCP / skills / **生图** 提供商                                                                                      |
+| 个人资料设置          | `components/settings/ProfileSettings.vue`、`services/settings/`                     | 本地资料、头像、设置导入导出和用量统计                                                                                               |
+| 浏览器选区            | `services/browser_selection.rs`、`bin/anya_browser_bridge.rs`、`browser-extension/` | 经过认证的可选本地网页选区桥接                                                                                                       |
 
 ---
 
@@ -844,3 +848,5 @@ Companion 不得再长出第二套 Agent 运行时。
 | Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                                    |
 | 工作区索引                  | `core/tools/workspace_index.rs`                                                           |
 | 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                    |
+
+可选 Chrome / Edge 选区扩展通过已注册的 Native Messaging host，将网页选中文字转发给经过认证的本地回环监听器。缓存选区绑定前台浏览器窗口，并在 60 秒后过期；不会采集浏览历史。安装与边界见[扩展说明](../browser-extension/README.zh-CN.md)。

@@ -24,6 +24,10 @@ Cards use Anya theme variables, rounded corners and responsive layout. `Delivery
 
 Source metadata and license are in `src/assets/material-file-icons/`; `public/licenses/material-icon-theme-MIT.txt` ships with the frontend build. Update SVGs, license and source revision together. No VS Code extension or runtime network request is needed.
 
+## Profile data and factory reset
+
+The Profile settings page can export or import settings, local profile details, avatar and token-usage preferences. The export may include provider credentials and API keys; store and transfer it securely. Local image backgrounds are embedded in the export where readable. Factory reset is a separate profile action and offers a choice to keep or remove settings; it closes Anya and clears app-owned local data.
+
 ## Source and validation
 
 - Rust: `src-tauri/src/core/tools/present.rs`, `core/chat/agent_loop/tools.rs`, `core/chat/db/tool_activity.rs`.
