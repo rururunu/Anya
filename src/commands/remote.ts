@@ -103,6 +103,15 @@ export function remoteRemoveStaged(sessionId: string, index: number): Promise<st
   return invoke("remote_remove_staged", { sessionId, index });
 }
 
+export function remoteReplaceStaged(
+  sessionId: string,
+  index: number,
+  expected: string,
+  message: string,
+): Promise<string[]> {
+  return invoke("remote_replace_staged", { sessionId, index, expected, message });
+}
+
 export function remoteClearStaged(sessionId: string): Promise<void> {
   return invoke("remote_clear_staged", { sessionId });
 }

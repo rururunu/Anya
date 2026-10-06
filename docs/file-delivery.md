@@ -2,7 +2,7 @@
 
 [简体中文](./file-delivery.zh-CN.md)
 
-Applies to Anya v0.2.25. Cards deliver final artifacts; source-code change summaries are separate.
+Applies to Anya v0.2.26. Cards deliver final artifacts; source-code change summaries are separate.
 
 ## Selection and display
 

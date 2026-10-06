@@ -13,7 +13,7 @@ pub struct WorkspaceContext {
 
 /// Windows 上下文 — 由 ContextResolver 填充。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct RequestContext {
     pub selection: Option<String>,
     pub selected_files: Vec<String>,

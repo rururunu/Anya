@@ -9,6 +9,14 @@ use crate::models::settings::AppSettings;
 
 static WEBVIEW_GPU_DISABLED: AtomicBool = AtomicBool::new(false);
 static SETTINGS_WRITE_LOCK: Mutex<()> = Mutex::new(());
+static SETTINGS_UPDATE_LOCK: Mutex<()> = Mutex::new(());
+pub const RESET_MARKER: &str = ".factory-reset";
+
+fn legacy_migration_allowed(path: &Path) -> bool {
+    !path
+        .parent()
+        .is_some_and(|dir| dir.join(RESET_MARKER).exists())
+}
 
 fn read_valid_settings(path: &Path) -> Result<(serde_json::Value, AppSettings), String> {
     let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
@@ -87,7 +95,11 @@ pub fn configure_prestart_webview() {
             "ai.aaai.desktop"
         })
         .join(SETTINGS_FILE);
-    let settings_file = if path.is_file() { path } else { legacy_path };
+    let settings_file = if path.is_file() || !legacy_migration_allowed(&path) {
+        path
+    } else {
+        legacy_path
+    };
     let parsed = read_settings_with_backup(&settings_file)
         .ok()
         .map(|(value, _)| value);
@@ -144,6 +156,9 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 /// One-time copy from the previous app id so existing installs keep settings after the rename.
 fn migrate_legacy_settings_file(new_path: &PathBuf) {
+    if !legacy_migration_allowed(new_path) {
+        return;
+    }
     const LEGACY_IDENTIFIERS: &[&str] = &["ai.aaai.desktop", "ai.aaai.desktop.debug"];
     let Some(app_data) = std::env::var_os("APPDATA").map(PathBuf::from) else {
         return;
@@ -245,45 +260,135 @@ pub fn get_settings(app: &AppHandle) -> Result<AppSettings, String> {
         .map_err(|error| error.to_string())
 }
 
-pub fn set_settings(app: &AppHandle, next: AppSettings) -> Result<AppSettings, String> {
+/// Read, modify and persist under one state lock. Failure never publishes a partial update.
+fn commit_update<R>(
+    state: &SettingsState,
+    change: impl FnOnce(&mut AppSettings) -> Result<R, String>,
+    persist: impl FnOnce(&AppSettings) -> Result<(), String>,
+) -> Result<(AppSettings, AppSettings, R), String> {
+    let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
+    let previous = settings.clone();
+    let mut next = previous.clone();
+    let result = change(&mut next)?;
     let next = normalize_settings(next);
-    let state = app
-        .try_state::<SettingsState>()
-        .ok_or_else(|| "settings state is unavailable".to_string())?;
-
-    {
-        let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
-        persist_settings(app, &next)?;
+    if next != previous {
+        persist(&next)?;
         *settings = next.clone();
     }
+    Ok((previous, next, result))
+}
 
-    apply_runtime_settings(&next);
-    crate::services::workbench_glass::apply_from_settings(app, &next);
-    crate::services::webview_theme::apply_webview_theme(app, &next);
-    register_enabled_mcp_tools(app);
+/// All writers use this transaction, including tools and remote commands.
+/// Serializing effects as well as commits prevents an older update being broadcast last.
+pub fn update_settings<R>(
+    app: &AppHandle,
+    change: impl FnOnce(&mut AppSettings) -> Result<R, String>,
+) -> Result<(AppSettings, R), String> {
+    let _transaction = SETTINGS_UPDATE_LOCK
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let state = app
+        .try_state::<SettingsState>()
+        .ok_or("settings state is unavailable")?;
+    let (previous, next, result) =
+        commit_update(&state, change, |next| persist_settings(app, next))?;
+    if previous != next {
+        apply_changed_runtime_settings(Some(&previous), &next);
+        if previous.chrome_frosted_glass != next.chrome_frosted_glass
+            || previous.opacity != next.opacity
+            || previous.color_scheme != next.color_scheme
+            || previous.custom_themes != next.custom_themes
+        {
+            crate::services::workbench_glass::apply_from_settings(app, &next);
+        }
+        if previous.color_scheme != next.color_scheme
+            || previous.custom_themes != next.custom_themes
+        {
+            crate::services::webview_theme::apply_webview_theme(app, &next);
+        }
+        if previous.mcp_servers != next.mcp_servers
+            || previous.smithery_api_key != next.smithery_api_key
+        {
+            register_enabled_mcp_tools(app);
+        }
+        broadcast_settings(app, &next);
+    }
+    Ok((next, result))
+}
 
-    broadcast_settings(app, &next);
-    Ok(next)
+pub fn patch_settings(
+    app: &AppHandle,
+    patch: crate::models::settings::AppSettingsPatch,
+) -> Result<AppSettings, String> {
+    update_settings(app, |current| {
+        *current = current.merge(patch);
+        Ok(())
+    })
+    .map(|(saved, _)| saved)
 }
 
 pub fn apply_runtime_settings(settings: &AppSettings) {
-    apply_chat_request_settings(settings);
-    crate::services::hotkey::configure_primary_hotkey(&settings.primary_hotkey);
-    crate::services::hotkey::configure_primary_hotkey_enabled(settings.primary_hotkey_enabled);
-    crate::services::hotkey::configure_secondary_hotkey(&settings.secondary_hotkey);
-    crate::services::hotkey::configure_secondary_hotkey_enabled(settings.secondary_hotkey_enabled);
-    crate::core::tools::tool_approval::shared_tool_approval_store()
-        .configure(settings.tool_approval_mode);
-    crate::core::tools::sandbox::configure(
-        settings.allow_outside_workspace_writes,
-        settings.restricted_shell,
-        settings.shell_timeout_secs,
-        settings.shell_stall_timeout_secs,
-    );
-    crate::core::lsp::shared_lsp_manager().configure(settings);
-    crate::core::mcp::shared_mcp_manager().configure(settings);
-    crate::core::tools::skills::configure_enabled_builtin_skills(&settings.enabled_builtin_skills);
-    crate::services::pin_badge::configure_from_settings(settings);
+    apply_changed_runtime_settings(None, settings);
+}
+
+fn apply_changed_runtime_settings(previous: Option<&AppSettings>, settings: &AppSettings) {
+    macro_rules! changed { ($($field:ident),+) => { previous.map_or(true, |old| $(old.$field != settings.$field)||+) }; }
+    if changed!(memory_enabled, mem0_api_key, mem0_user_id, mem0_base_url) {
+        crate::core::tools::memory::shared_memory_store().configure(settings);
+    }
+    if changed!(
+        web_search_enabled,
+        web_search_provider,
+        serper_api_key,
+        tavily_api_key
+    ) {
+        crate::runtime::search::shared_search_runtime().configure(settings);
+    }
+    if changed!(primary_hotkey) {
+        crate::services::hotkey::configure_primary_hotkey(&settings.primary_hotkey);
+    }
+    if changed!(primary_hotkey_enabled) {
+        crate::services::hotkey::configure_primary_hotkey_enabled(settings.primary_hotkey_enabled);
+    }
+    if changed!(secondary_hotkey) {
+        crate::services::hotkey::configure_secondary_hotkey(&settings.secondary_hotkey);
+    }
+    if changed!(secondary_hotkey_enabled) {
+        crate::services::hotkey::configure_secondary_hotkey_enabled(
+            settings.secondary_hotkey_enabled,
+        );
+    }
+    if changed!(tool_approval_mode) {
+        crate::core::tools::tool_approval::shared_tool_approval_store()
+            .configure(settings.tool_approval_mode);
+    }
+    if changed!(
+        allow_outside_workspace_writes,
+        restricted_shell,
+        shell_timeout_secs,
+        shell_stall_timeout_secs
+    ) {
+        crate::core::tools::sandbox::configure(
+            settings.allow_outside_workspace_writes,
+            settings.restricted_shell,
+            settings.shell_timeout_secs,
+            settings.shell_stall_timeout_secs,
+        );
+    }
+    if changed!(lsp_enabled, lsp_servers) {
+        crate::core::lsp::shared_lsp_manager().configure(settings);
+    }
+    if changed!(mcp_servers, smithery_api_key) {
+        crate::core::mcp::shared_mcp_manager().configure(settings);
+    }
+    if changed!(enabled_builtin_skills) {
+        crate::core::tools::skills::configure_enabled_builtin_skills(
+            &settings.enabled_builtin_skills,
+        );
+    }
+    if changed!(pixpin_pin_ai_enabled, snipaste_pin_ai_enabled) {
+        crate::services::pin_badge::configure_from_settings(settings);
+    }
 }
 
 pub fn apply_chat_request_settings(settings: &AppSettings) {
@@ -309,6 +414,66 @@ pub fn broadcast_settings(app: &AppHandle, settings: &AppSettings) {
 #[cfg(test)]
 mod tests {
     use crate::models::settings::AppSettings;
+
+    #[test]
+    fn reset_marker_blocks_legacy_recovery_even_without_settings() {
+        let root = std::env::temp_dir().join(format!("anya-reset-marker-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("settings.json");
+        assert!(super::legacy_migration_allowed(&path));
+        std::fs::write(root.join(super::RESET_MARKER), "reset").unwrap();
+        assert!(!super::legacy_migration_allowed(&path));
+        super::migrate_legacy_settings_file(&path);
+        assert!(!path.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_updates_preserve_both_writers_and_failed_save_preserves_memory() {
+        let state = std::sync::Arc::new(super::SettingsState::new(AppSettings::default()));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let initial = state.settings.lock().unwrap().clone();
+        let handles: Vec<_> = (0..2)
+            .map(|writer| {
+                let state = state.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for _ in 0..100 {
+                        super::commit_update(
+                            &state,
+                            |current| {
+                                if writer == 0 {
+                                    current.zoom += 1;
+                                } else {
+                                    current.shell_timeout_secs += 1;
+                                }
+                                Ok(())
+                            },
+                            |_| Ok(()),
+                        )
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        let saved = state.settings.lock().unwrap().clone();
+        assert_eq!(saved.zoom, initial.zoom + 100);
+        assert_eq!(saved.shell_timeout_secs, initial.shell_timeout_secs + 100);
+        assert!(super::commit_update(
+            &state,
+            |current| {
+                current.deepseek_api_key = "must-not-commit".into();
+                Ok(())
+            },
+            |_| Err("disk unavailable".into())
+        )
+        .is_err());
+        assert_eq!(*state.settings.lock().unwrap(), saved);
+    }
 
     #[test]
     fn corrupted_settings_recover_backup_without_destroying_original() {

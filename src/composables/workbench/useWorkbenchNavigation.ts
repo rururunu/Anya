@@ -3,11 +3,10 @@ import { computed, ref, type ComputedRef, type Ref } from "vue";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import { isSubagentSessionId } from "@/services/chat/subagentSession";
 import { tr } from "@/services/i18n";
-import { useChatStore } from "@/stores/chat";
 import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore } from "@/stores/setting";
 import type { Workspace } from "@/commands/workspace";
-import type { CapturedContext, ChatSessionSummary } from "@/types/chat";
+import type { ChatSessionSummary } from "@/types/chat";
 import type { CategoryId } from "@/types/setting";
 import type { WorkbenchLabels } from "./useWorkbenchLabels";
 
@@ -35,7 +34,6 @@ export interface UseWorkbenchNavigationOptions {
  * Workbench view routing: extension panels, conversation selection, title bar context, and settings entry.
  */
 export function useWorkbenchNavigation(options: UseWorkbenchNavigationOptions) {
-  const chatStore = useChatStore();
   const subagentSessionStore = useSubagentSessionStore();
   const settingStore = useSettingStore();
 
@@ -69,25 +67,6 @@ export function useWorkbenchNavigation(options: UseWorkbenchNavigationOptions) {
 
   function handleBranchMessage(messageId: string) {
     void options.branchConversation(options.activeSessionId.value, messageId);
-  }
-
-  function handleShowContext(context: CapturedContext) {
-    extensionView.value = null;
-    let sessionId = options.activeSessionId.value;
-    if (!sessionId) {
-      options.createConversation(options.activeSessionWorkspaceId.value);
-      sessionId = options.activeSessionId.value;
-    }
-    if (!sessionId) return;
-    chatStore.upsertMessage({
-      id: `local-context-${Date.now()}`,
-      sessionId,
-      role: "assistant",
-      content: "",
-      environmentContext: context,
-      status: "done",
-      timestamp: Date.now(),
-    });
   }
 
   const showConversationHeader = computed(
@@ -124,7 +103,6 @@ export function useWorkbenchNavigation(options: UseWorkbenchNavigationOptions) {
     handleCreateQuickConversation,
     handleCreateWorkspaceConversation,
     handleBranchMessage,
-    handleShowContext,
     showConversationHeader,
     activeTitle,
   };

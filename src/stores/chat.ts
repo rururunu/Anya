@@ -68,6 +68,7 @@ import {
 } from "./chatHistory";
 import {
   appendTimelineText,
+  applyLiveTextDelta,
   appendTimelineInject,
   findLastMessageIndex,
   rollbackStreamAttempt,
@@ -739,6 +740,20 @@ export const useChatStore = defineStore("chat", {
         return remoteRemoveStaged(sessionId, index);
       });
     },
+    async editStagedMessage(sessionId: string, index: number, expected: string, content: string) {
+      const trimmed = content.trim();
+      if (
+        !trimmed ||
+        this.stagedDispatching[sessionId] ||
+        this.stagedMessages[sessionId]?.[index] !== expected
+      )
+        return;
+      await this.syncStagedOperation(sessionId, async () => {
+        const { remoteReplaceStaged } = await import("@/commands/remote");
+        return remoteReplaceStaged(sessionId, index, expected, trimmed);
+      });
+      if (this.stagedSyncFailed[sessionId]) await this.refreshStagedFromRemote(sessionId);
+    },
     clearStagedLocal(sessionId: string) {
       if (!this.stagedMessages[sessionId]) {
         return;
@@ -876,7 +891,7 @@ export const useChatStore = defineStore("chat", {
       });
       this.setSessionMessages(sessionId, messages);
     },
-    stageTurn(sessionId: string, content: string) {
+    stageTurn(sessionId: string, content: string, fromQueue = false) {
       const trimmed = content.trim();
       if (!trimmed) return;
       const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -889,6 +904,7 @@ export const useChatStore = defineStore("chat", {
           sessionId,
           role: "user",
           content: trimmed,
+          fromQueue,
           status: "done",
           timestamp,
         },
@@ -954,13 +970,19 @@ export const useChatStore = defineStore("chat", {
           ),
       );
       if (localUserIndex !== -1) {
-        messages[localUserIndex] = userMessage;
+        messages[localUserIndex] = {
+          ...userMessage,
+          fromQueue: messages[localUserIndex]?.fromQueue,
+        };
       } else {
         const existingUserIndex = messages.findIndex((item) => item.id === userMessage.id);
         if (existingUserIndex === -1) {
           messages.push(userMessage);
         } else {
-          messages[existingUserIndex] = userMessage;
+          messages[existingUserIndex] = {
+            ...userMessage,
+            fromQueue: messages[existingUserIndex]?.fromQueue,
+          };
         }
       }
 
@@ -1241,43 +1263,12 @@ export const useChatStore = defineStore("chat", {
           continue;
         }
 
-        const next = [...messages];
-        let changed = false;
-
         for (const [messageId, delta] of byMessage) {
-          const index = next.findIndex((item) => item.id === messageId);
-          if (index === -1) {
-            continue;
-          }
-
-          const current = next[index];
-          // Reasoning normally precedes the content it informs within one
-          // batched frame, so fold it into the timeline first.
-          let workTimeline = current.workTimeline;
-          if (delta.reasoningDelta.length > 0) {
-            workTimeline = appendTimelineText(workTimeline, delta.reasoningDelta, "reasoning");
-          }
-          if (delta.contentDelta.length > 0) {
-            workTimeline = appendTimelineText(workTimeline, delta.contentDelta, "content");
-          }
-          next[index] = {
-            ...current,
-            content: current.content + delta.contentDelta,
-            reasoning:
-              delta.reasoningDelta.length > 0
-                ? (current.reasoning ?? "") + delta.reasoningDelta
-                : current.reasoning,
-            workTimeline,
-            status:
-              current.status === "pending" || delta.contentDelta || delta.reasoningDelta
-                ? "streaming"
-                : current.status,
-          };
-          changed = true;
-        }
-
-        if (changed) {
-          this.setSessionMessages(resolvedSessionId, next);
+          // The active assistant is normally the tail; avoid a full-array copy
+          // and search from the latest message when several turns are loaded.
+          const index = findLastMessageIndex(messages, (item) => item.id === messageId);
+          if (index < 0) continue;
+          applyLiveTextDelta(messages[index], delta.contentDelta, delta.reasoningDelta);
         }
       }
     },
@@ -1754,6 +1745,7 @@ export const useChatStore = defineStore("chat", {
         staged?: boolean;
         workspaceId?: string;
         quickAsk?: boolean;
+        capturedContext?: import("@/types/chat").CapturedContext;
         /** Internal: this send comes from the staged queue (guide / auto-send
          * after the turn finishes) and must never be re-staged. */
         fromQueue?: boolean;
@@ -1811,7 +1803,7 @@ export const useChatStore = defineStore("chat", {
         if (softInject) {
           this.stageSoftInject(sessionId, trimmed);
         } else {
-          this.stageTurn(sessionId, trimmed);
+          this.stageTurn(sessionId, trimmed, Boolean(options?.fromQueue));
         }
       }
 
@@ -1840,14 +1832,7 @@ export const useChatStore = defineStore("chat", {
             chatModelProvider: first.provider,
           });
           const settingStore = useSettingStore();
-          if (
-            !settingStore.chatModel.trim() ||
-            !isKnownModelSelection(
-              chatModelStore.models,
-              settingStore.chatModel,
-              settingStore.chatModelProvider,
-            )
-          ) {
+          if (!settingStore.chatModel.trim()) {
             void settingStore.update({
               chatModel: first.id,
               chatModelProvider: first.provider,
@@ -1872,6 +1857,7 @@ export const useChatStore = defineStore("chat", {
           workspaceId: quickAsk ? null : (workspaceId ?? null),
         });
         const response = await chat({
+          capturedContext: options?.capturedContext,
           message: trimmed,
           sessionId,
           workspaceId,

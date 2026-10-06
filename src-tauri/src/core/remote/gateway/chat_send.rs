@@ -91,6 +91,7 @@ pub(super) async fn handle_chat_send(
         crate::core::remote::compose::get(&sid)
     };
     let overrides = crate::models::chat::ChatSendOverrides {
+        captured_context: None,
         model_id: if compose.chat_model.is_empty() {
             None
         } else {

@@ -14,6 +14,33 @@ fn window_sessions() -> &'static Mutex<HashMap<String, String>> {
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn overlay_for_session(sessions: &HashMap<String, String>, session_id: &str) -> Option<String> {
+    sessions.iter().find_map(|(label, id)| {
+        (is_overlay_label(label) && id == session_id).then(|| label.clone())
+    })
+}
+
+#[cfg(test)]
+mod conversation_window_tests {
+    use super::overlay_for_session;
+    use std::collections::HashMap;
+
+    #[test]
+    fn targets_only_an_overlay_showing_the_requested_conversation() {
+        let sessions = HashMap::from([
+            ("workbench".into(), "wanted".into()),
+            ("overlay-preview-1".into(), "wanted".into()),
+            ("overlay-1".into(), "other".into()),
+            ("overlay-2".into(), "wanted".into()),
+        ]);
+        assert_eq!(
+            overlay_for_session(&sessions, "wanted"),
+            Some("overlay-2".into())
+        );
+        assert_eq!(overlay_for_session(&sessions, "missing"), None);
+    }
+}
+
 #[derive(Clone)]
 struct TrackedToast {
     title: String,
@@ -257,36 +284,22 @@ pub fn show_interaction_notification(
 
 #[tauri::command]
 pub async fn open_session_in_overlay(app: AppHandle, session_id: String) -> Result<(), String> {
-    tracing::debug!(source = "open_session_in_overlay", "overlay opening start");
-    let captured = crate::core::context::store::capture_now();
-    let context = app
-        .try_state::<crate::app_state::AppState>()
-        .map(|state| state.core.chat().environment_context())
-        .unwrap_or(captured);
-    let all_windows = app.webview_windows();
-    let overlay_windows: Vec<_> = all_windows
-        .iter()
-        .filter(|(label, _)| crate::services::window::is_overlay_label(label))
-        .map(|(_, window)| window)
-        .collect();
-
-    for window in &overlay_windows {
-        let _ = window.emit("context-captured", &context);
-        tracing::debug!(
-            label = %window.label(),
-            source = "open_session_in_overlay",
-            "overlay interactive ready"
-        );
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = window.emit("overlay-shown", ());
+    if session_id.trim().is_empty() {
+        return Err("session id is empty".into());
     }
-
-    // 延迟 150 毫秒，等待 Webview 激活并且前端 listener 完成挂载/苏醒
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-
-    let _ = app.emit("open-session", session_id);
-    Ok(())
+    let existing_label = window_sessions()
+        .lock()
+        .ok()
+        .and_then(|sessions| overlay_for_session(&sessions, &session_id));
+    if let Some(window) = existing_label.and_then(|label| app.get_webview_window(&label)) {
+        if window.is_minimized().unwrap_or(false) {
+            let _ = window.unminimize();
+        }
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    crate::services::window::open_conversation_overlay(&app, &session_id)
 }
 
 #[tauri::command]

@@ -95,10 +95,10 @@
                     : "No matching settings. Try another keyword."
                 }}
               </p>
+              <ProfileSettings v-else-if="activeCategory === 'profile'" />
               <WorkspaceSettings v-else-if="activeCategory === 'workspace'" />
               <ProviderSettings v-else-if="activeCategory === 'provider'" />
               <ImageSettings v-else-if="activeCategory === 'image'" />
-              <RagSettings v-else-if="activeCategory === 'rag'" />
               <HistorySettings
                 v-else-if="activeCategory === 'history'"
                 :expanded-history-groups="expandedHistoryGroups"
@@ -165,7 +165,6 @@ import {
   Archive,
   Bot,
   BrainCircuit,
-  FileSearch,
   FolderOpen,
   Globe2,
   History,
@@ -180,14 +179,15 @@ import {
   Workflow,
   X,
   BarChart3,
+  UserRound,
 } from "@lucide/vue";
 import WorkspaceSettings from "@/components/workspace/WorkspaceSettings.vue";
 import HistorySettings from "@/components/settings/HistorySettings.vue";
 import ArchiveSettings from "@/components/settings/ArchiveSettings.vue";
 import TokenUsageSettings from "@/components/settings/TokenUsageSettings.vue";
+import ProfileSettings from "@/components/settings/ProfileSettings.vue";
 import AboutSettings from "@/components/settings/AboutSettings.vue";
 import ProviderSettings from "@/components/settings/ProviderSettings.vue";
-import RagSettings from "@/components/settings/RagSettings.vue";
 import PetSettings from "@/components/settings/PetSettings.vue";
 import ImageSettings from "@/components/settings/ImageSettings.vue";
 import SettingFieldList from "@/components/settings/SettingFieldList.vue";
@@ -317,6 +317,7 @@ const t = computed(() => {
     sidebarLabel: tr(language, "settings.sidebarLabel"),
     empty: tr(language, "settings.empty"),
     categories: {
+      profile: tr(language, "settings.categories.profile"),
       appearance: tr(language, "settings.categories.appearance"),
       ai: tr(language, "settings.categories.ai"),
       image: tr(language, "settings.categories.image"),
@@ -330,13 +331,13 @@ const t = computed(() => {
       usage: tr(language, "settings.categories.usage"),
       about: tr(language, "settings.categories.about"),
       provider: tr(language, "settings.categories.provider"),
-      rag: tr(language, "settings.categories.rag"),
       pet: tr(language, "settings.categories.pet"),
     },
   };
 });
 
 const categories = computed(() => [
+  { id: "profile" as const, label: t.value.categories.profile, icon: UserRound },
   { id: "ai" as const, label: t.value.categories.ai, icon: Bot },
   { id: "image" as const, label: t.value.categories.image, icon: WandSparkles },
   { id: "provider" as const, label: t.value.categories.provider, icon: Server },
@@ -361,7 +362,6 @@ const categories = computed(() => [
     icon: BrainCircuit,
   },
   { id: "search" as const, label: t.value.categories.search, icon: Globe2 },
-  { id: "rag" as const, label: t.value.categories.rag, icon: FileSearch },
   {
     id: "appearance" as const,
     label: t.value.categories.appearance,
@@ -418,6 +418,7 @@ const categorySections = computed(() => {
   const language = settingStore.language;
   return [
     section("general", tr(language, "settings.sections.general"), [
+      "profile",
       "appearance",
       "pet",
       "workspace",
@@ -430,7 +431,6 @@ const categorySections = computed(() => {
       "agent",
       "memory",
       "search",
-      "rag",
     ]),
     section("data", tr(language, "settings.sections.data"), ["history", "archive", "usage"]),
     section("system", tr(language, "settings.sections.system"), ["about"]),
@@ -967,7 +967,7 @@ watch(
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) .settings-nav-icon {
-  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
+  background: transparent;
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"]:hover) {
@@ -976,7 +976,7 @@ watch(
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) {
-  background: color-mix(in srgb, var(--peek-list-bg) 86%, transparent);
+  background: transparent;
   color: var(--peek-text);
   font-weight: 600;
 }

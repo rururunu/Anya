@@ -1,10 +1,12 @@
 //! Capture selected text/images from the foreground window via clipboard or UI Automation.
 //!
 //! Prefer UI Automation when the target exposes a text pattern; otherwise simulate a
-//! copy into a temporary clipboard snapshot and restore the user's clipboard afterwards.
+//! copy via WM_COPY / Ctrl+Insert and restore the user's clipboard afterwards.
+//! Never synthesize Ctrl+C: embedded terminals cannot be identified reliably.
 
 use std::mem::size_of;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -14,14 +16,16 @@ use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber,
-    IsClipboardFormatAvailable, OpenClipboard, SetClipboardData,
+    CloseClipboard, CountClipboardFormats, EmptyClipboard, GetClipboardData,
+    GetClipboardSequenceNumber, IsClipboardFormatAvailable, OpenClipboard, SetClipboardData,
 };
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
-use windows::Win32::System::Ole::{OleGetClipboard, OleSetClipboard};
+use windows::Win32::System::Ole::{OleFlushClipboard, OleGetClipboard, OleSetClipboard};
 use windows::Win32::System::Threading::AttachThreadInput;
 use windows::Win32::UI::Accessibility::{
-    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern, UIA_TextPatternId,
+    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationLegacyIAccessiblePattern,
+    IUIAutomationTextPattern, TreeScope_Descendants, UIA_ControlTypePropertyId,
+    UIA_DocumentControlTypeId, UIA_LegacyIAccessiblePatternId, UIA_TextPatternId,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
@@ -29,8 +33,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_LMENU, VK_LSHIFT, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId,
-    SendMessageW, SetForegroundWindow, GUITHREADINFO, WM_COPY,
+    GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, SendMessageTimeoutW,
+    GUITHREADINFO, SMTO_ABORTIFHUNG, WM_COPY,
 };
 
 use crate::core::context::image_capture::read_clipboard_image_data_url;
@@ -41,10 +45,11 @@ const CF_UNICODETEXT: u32 = 13;
 const CAPTURE_TIMEOUT: Duration = Duration::from_millis(140);
 const POLL_INTERVAL: Duration = Duration::from_millis(6);
 const FOCUS_SETTLE: Duration = Duration::from_millis(55);
-const KEY_SETTLE: Duration = Duration::from_millis(22);
 const CLIPBOARD_OPEN_RETRIES: usize = 8;
 const UI_AUTOMATION_TIMEOUT: Duration = Duration::from_millis(100);
-const UI_AUTOMATION_PARENT_LIMIT: usize = 6;
+const UI_AUTOMATION_PARENT_LIMIT: usize = 10;
+static UIA_BUSY: AtomicBool = AtomicBool::new(false);
+static CLIPBOARD_CAPTURE: Mutex<()> = Mutex::new(());
 
 pub struct ClipboardProvider;
 
@@ -62,8 +67,14 @@ impl Default for ClipboardProvider {
 
 impl CaptureProvider for ClipboardProvider {
     fn capture(&self, window: &WindowInfo) -> CaptureResult {
+        if unsafe { GetForegroundWindow().0 as isize } != window.hwnd {
+            return CaptureResult::Empty;
+        }
         if should_try_ui_automation(window) {
-            if let Some(text) = capture_selected_text_via_ui_automation() {
+            if let Some(text) = capture_selected_text_via_ui_automation(window.hwnd) {
+                if unsafe { GetForegroundWindow().0 as isize } != window.hwnd {
+                    return CaptureResult::Empty;
+                }
                 return CaptureResult::Success(PartialCapture {
                     selected_text: Some(text),
                     selected_files: Vec::new(),
@@ -119,18 +130,30 @@ impl CapturedClipboardContent {
     }
 }
 
-fn capture_selected_text_via_ui_automation() -> Option<String> {
+fn capture_selected_text_via_ui_automation(hwnd: isize) -> Option<String> {
+    if UIA_BUSY.swap(true, Ordering::AcqRel) {
+        return None;
+    }
     let (tx, rx) = mpsc::sync_channel(1);
     thread::spawn(move || {
-        let _ = tx.send(capture_selected_text_via_ui_automation_inner());
+        let result =
+            std::panic::catch_unwind(|| capture_selected_text_via_ui_automation_inner(hwnd))
+                .ok()
+                .flatten();
+        UIA_BUSY.store(false, Ordering::Release);
+        let _ = tx.send(result);
     });
     rx.recv_timeout(UI_AUTOMATION_TIMEOUT).ok().flatten()
 }
 
-fn capture_selected_text_via_ui_automation_inner() -> Option<String> {
+fn capture_selected_text_via_ui_automation_inner(hwnd: isize) -> Option<String> {
     unsafe {
         let com_initialized = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
-        let result = read_ui_automation_selection();
+        let result = if GetForegroundWindow().0 as isize == hwnd {
+            read_ui_automation_selection(hwnd)
+        } else {
+            None
+        };
         if com_initialized {
             CoUninitialize();
         }
@@ -138,21 +161,48 @@ fn capture_selected_text_via_ui_automation_inner() -> Option<String> {
     }
 }
 
-unsafe fn read_ui_automation_selection() -> Option<String> {
+unsafe fn read_ui_automation_selection(hwnd: isize) -> Option<String> {
     let automation: IUIAutomation =
         CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
     let walker = automation.ControlViewWalker().ok()?;
     let mut element = Some(automation.GetFocusedElement().ok()?);
 
     for _ in 0..UI_AUTOMATION_PARENT_LIMIT {
-        let current = element?;
+        let Some(current) = element else {
+            break;
+        };
         if let Some(text) = read_text_pattern_selection(&current) {
+            return Some(text);
+        }
+        if let Some(text) = read_legacy_selection(&current) {
             return Some(text);
         }
         element = walker.GetParentElement(&current).ok();
     }
 
-    None
+    // Browser Alt menus can hold focus while the document still owns a selection.
+    let root = automation.ElementFromHandle(HWND(hwnd as *mut _)).ok()?;
+    let condition = automation
+        .CreatePropertyCondition(
+            UIA_ControlTypePropertyId,
+            &windows::core::VARIANT::from(UIA_DocumentControlTypeId.0),
+        )
+        .ok()?;
+    let document = root.FindFirst(TreeScope_Descendants, &condition).ok()?;
+    read_text_pattern_selection(&document)
+}
+
+unsafe fn read_legacy_selection(element: &IUIAutomationElement) -> Option<String> {
+    let pattern: IUIAutomationLegacyIAccessiblePattern = element
+        .GetCurrentPatternAs(UIA_LegacyIAccessiblePatternId)
+        .ok()?;
+    let selection = pattern.GetIAccessible().ok()?.accSelection().ok()?;
+    // Numeric child IDs and selected UI objects are not selected text.
+    if selection.as_raw().Anonymous.Anonymous.vt != 8 {
+        return None;
+    }
+    let text = clean_selection_text(&windows::core::BSTR::try_from(&selection).ok()?.to_string());
+    (!text.trim().is_empty()).then_some(text)
 }
 
 unsafe fn read_text_pattern_selection(element: &IUIAutomationElement) -> Option<String> {
@@ -162,7 +212,13 @@ unsafe fn read_text_pattern_selection(element: &IUIAutomationElement) -> Option<
     let mut selected = String::new();
 
     for index in 0..length {
-        let text = ranges.GetElement(index).ok()?.GetText(-1).ok()?.to_string();
+        let text = ranges
+            .GetElement(index)
+            .ok()?
+            .GetText(65536)
+            .ok()?
+            .to_string();
+        let text = clean_selection_text(&text);
         if !text.trim().is_empty() {
             if !selected.is_empty() {
                 selected.push('\n');
@@ -171,7 +227,15 @@ unsafe fn read_text_pattern_selection(element: &IUIAutomationElement) -> Option<
         }
     }
 
-    (!selected.trim().is_empty()).then_some(selected)
+    (!selected.trim().is_empty()).then(|| selected.chars().take(65536).collect())
+}
+
+fn clean_selection_text(text: &str) -> String {
+    // Chromium accessibility ranges may contain inline object placeholders.
+    text.chars()
+        .filter(|character| *character != '\u{fffc}')
+        .take(65536)
+        .collect()
 }
 
 fn capture_selected_content(window: &WindowInfo) -> Result<CapturedClipboardContent, CaptureError> {
@@ -188,9 +252,19 @@ fn capture_selected_content(window: &WindowInfo) -> Result<CapturedClipboardCont
 fn capture_selected_content_inner(
     window: &WindowInfo,
 ) -> Result<CapturedClipboardContent, CaptureError> {
+    let _transaction = CLIPBOARD_CAPTURE
+        .lock()
+        .map_err(|e| CaptureError::Clipboard(e.to_string()))?;
     let backup = read_clipboard_text()?;
     let clipboard_data_object = capture_clipboard_data_object();
+    if clipboard_data_object.is_none() && backup.is_none() && unsafe { CountClipboardFormats() } > 0
+    {
+        return Err(CaptureError::Clipboard(
+            "cannot safely snapshot clipboard formats".into(),
+        ));
+    }
     let start_seq = unsafe { GetClipboardSequenceNumber() };
+    let mut owned_sequence = None;
 
     // Reading the temporary clipboard can fail after the target has already
     // processed WM_COPY, so keep capture and restore as separate steps.
@@ -202,21 +276,42 @@ fn capture_selected_content_inner(
                 copy_via_wm_message(target)?;
             }
             if !clipboard_changed(start_seq) {
+                if unsafe { GetForegroundWindow() } != target {
+                    return Err(CaptureError::Clipboard(
+                        "source focus changed during capture".into(),
+                    ));
+                }
                 let _ = simulate_copy_ctrl_insert();
-                thread::sleep(KEY_SETTLE);
+                wait_for_clipboard_update(start_seq);
             }
             Ok(())
         })?;
 
         wait_for_clipboard_update(start_seq);
-        let captured_image = read_clipboard_image_data_url();
+        let before_read = unsafe { GetClipboardSequenceNumber() };
+        owned_sequence = (before_read != start_seq).then_some(before_read);
+        let captured_image = if owned_sequence.is_some() {
+            read_clipboard_image_data_url()
+        } else {
+            None
+        };
         let captured = read_clipboard_text()?;
         let end_seq = unsafe { GetClipboardSequenceNumber() };
+        if end_seq != before_read {
+            return Err(CaptureError::Clipboard(
+                "clipboard changed during selection read".into(),
+            ));
+        }
         Ok((captured_image, captured, end_seq))
     })();
 
     let backup_for_compare = backup.clone();
-    restore_clipboard(clipboard_data_object, backup)?;
+    if owned_sequence.is_some_and(|seq| unsafe { GetClipboardSequenceNumber() } == seq) {
+        // Restoration failure must not discard a successfully captured selection.
+        if let Err(error) = restore_clipboard(clipboard_data_object, backup) {
+            tracing::warn!(%error, "selection clipboard restore failed");
+        }
+    }
     let (captured_image, captured, end_seq) = capture_result?;
 
     let selected_text = select_captured_text(backup_for_compare, captured, start_seq != end_seq);
@@ -237,29 +332,25 @@ fn restore_clipboard(
 ) -> Result<(), CaptureError> {
     if let Some(data_object) = data_object {
         if unsafe { OleSetClipboard(&data_object) }.is_ok() {
+            // The capture STA exits after restoration; materialize delayed formats
+            // so the clipboard does not depend on that worker remaining alive.
+            unsafe { OleFlushClipboard() }
+                .map_err(|error| CaptureError::Clipboard(error.to_string()))?;
             return Ok(());
         }
     }
 
-    if backup_text.is_some() {
-        return restore_clipboard_text(backup_text);
-    }
-
-    Ok(())
+    restore_clipboard_text(backup_text)
 }
 
 fn select_captured_text(
-    backup: Option<String>,
+    _backup: Option<String>,
     captured: Option<String>,
     sequence_changed: bool,
 ) -> Option<String> {
     let captured = captured.filter(|text| !text.trim().is_empty())?;
 
     if sequence_changed {
-        return Some(captured);
-    }
-
-    if backup.as_ref() != Some(&captured) {
         return Some(captured);
     }
 
@@ -299,6 +390,11 @@ where
     unsafe {
         let target = HWND(window.hwnd as *mut _);
         let foreground = GetForegroundWindow();
+        if foreground != target {
+            return Err(CaptureError::Clipboard(
+                "source window changed before capture".into(),
+            ));
+        }
 
         let mut foreground_thread = 0u32;
         let mut target_thread = 0u32;
@@ -316,8 +412,6 @@ where
             let _ = AttachThreadInput(foreground_thread, target_thread, true);
         }
 
-        let _ = SetForegroundWindow(target);
-        let _ = BringWindowToTop(target);
         force_release_modifiers_for_capture();
         thread::sleep(FOCUS_SETTLE);
 
@@ -350,7 +444,15 @@ unsafe fn focused_control(target: HWND, target_thread: u32) -> HWND {
 
 fn copy_via_wm_message(hwnd: HWND) -> Result<(), CaptureError> {
     unsafe {
-        SendMessageW(hwnd, WM_COPY, WPARAM(0), LPARAM(0));
+        let _ = SendMessageTimeoutW(
+            hwnd,
+            WM_COPY,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG,
+            40,
+            None,
+        );
     }
     Ok(())
 }
@@ -482,16 +584,13 @@ fn open_clipboard_with_retry() -> Result<(), CaptureError> {
 
 unsafe fn read_wide_string(ptr: *const u16) -> String {
     let mut len = 0usize;
-    while *ptr.add(len) != 0 {
+    while len < 65536 && *ptr.add(len) != 0 {
         len += 1;
     }
     String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len))
 }
 
 fn restore_clipboard_text(backup: Option<String>) -> Result<(), CaptureError> {
-    let Some(backup_text) = backup else {
-        return Ok(());
-    };
     unsafe {
         open_clipboard_with_retry()?;
 
@@ -500,7 +599,9 @@ fn restore_clipboard_text(backup: Option<String>) -> Result<(), CaptureError> {
                 CaptureError::Clipboard(format!("EmptyClipboard failed: {error}"))
             })?;
 
-            write_clipboard_text(&backup_text)?;
+            if let Some(backup_text) = backup.as_ref() {
+                write_clipboard_text(backup_text)?;
+            }
 
             Ok(())
         })();
@@ -542,15 +643,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn removes_inline_objects_without_losing_paragraph_boundaries() {
+        assert_eq!(
+            clean_selection_text("Hello\n\u{fffc}\nworld"),
+            "Hello\n\nworld"
+        );
+        assert_eq!(clean_selection_text("\u{fffc}"), "");
+        assert_eq!(
+            clean_selection_text(&"中".repeat(65537)).chars().count(),
+            65536
+        );
+    }
+
+    #[test]
     fn accepts_captured_text_when_sequence_changes() {
         let selected = select_captured_text(None, Some("hello".into()), true);
         assert_eq!(selected, Some("hello".into()));
     }
 
     #[test]
-    fn accepts_captured_text_when_it_differs_from_backup() {
+    fn rejects_text_without_a_confirmed_copy_even_if_backup_differs() {
         let selected = select_captured_text(Some("old".into()), Some("new".into()), false);
-        assert_eq!(selected, Some("new".into()));
+        assert_eq!(selected, None);
     }
 
     #[test]

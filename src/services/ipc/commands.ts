@@ -27,12 +27,7 @@ import type {
   ChatSessionSummary,
 } from "@/types/chat";
 import { IPC_COMMANDS } from "@/types/ipc";
-import type {
-  AppSettings,
-  AppSettingsPatch,
-  SemanticSearchConfig,
-  SemanticSearchState,
-} from "@/types/setting";
+import type { AppSettings, AppSettingsPatch } from "@/types/setting";
 import type {
   TokenUsageReport,
   DeepSeekBalanceReport,
@@ -118,26 +113,6 @@ export function listSystemFonts() {
 
 export function setAppSettings(patch: AppSettingsPatch) {
   return ipcInvoke<AppSettings>(IPC_COMMANDS.setAppSettings, { patch });
-}
-
-export function getSemanticSearchStatus() {
-  return ipcInvoke<SemanticSearchState>("get_semantic_search_status");
-}
-
-export function setSemanticSearch(config: SemanticSearchConfig) {
-  return ipcInvoke<SemanticSearchState>("set_semantic_search", { config });
-}
-
-export function testSemanticSearchApi(baseUrl: string, apiKey: string, model: string) {
-  return ipcInvoke<{ ok: boolean; dim: number }>("test_semantic_search_api", {
-    baseUrl,
-    apiKey,
-    model,
-  });
-}
-
-export function fetchSemanticSearchModels(baseUrl: string, apiKey: string) {
-  return ipcInvoke<string[]>("fetch_semantic_search_models", { baseUrl, apiKey });
 }
 
 export function getAppInfo() {

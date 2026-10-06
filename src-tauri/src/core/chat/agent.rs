@@ -105,7 +105,10 @@ impl AgentRunner {
             };
             let mut context = tool_ctx;
             context.registry = Some(adapted.tools.registry());
-            return adapted.run_loop(request, context, tx, cancelled, soft_queue).instrument(span).await;
+            return adapted
+                .run_loop(request, context, tx, cancelled, soft_queue)
+                .instrument(span)
+                .await;
         }
         self.run_loop(request, tool_ctx, tx, cancelled, soft_queue)
             .instrument(span)
@@ -124,8 +127,30 @@ impl AgentRunner {
             ToolExecutor::new(Arc::clone(&self.tools), self.tool_output_max_chars);
         if self.tools.is_dsh() {
             let text = crate::core::tools::dsh::tool_prompt(&self.tools.schemas());
-            let mut guidance = request.messages.first().cloned().unwrap_or_else(|| ChatMessage { id: String::new(), session_id: request.session_id.clone(), role: Role::System, content: String::new(), reasoning: None, work_timeline: None, tool_activities: None, tool_calls: None, tool_call_id: None, name: None, status: MessageStatus::Done, timestamp: 0, estimated_tokens: None });
-            if request.messages.first().is_none_or(|m| m.role != Role::System) {
+            let mut guidance = request
+                .messages
+                .first()
+                .cloned()
+                .unwrap_or_else(|| ChatMessage {
+                    id: String::new(),
+                    session_id: request.session_id.clone(),
+                    role: Role::System,
+                    content: String::new(),
+                    reasoning: None,
+                    work_timeline: None,
+                    tool_activities: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                    name: None,
+                    status: MessageStatus::Done,
+                    timestamp: 0,
+                    estimated_tokens: None,
+                });
+            if request
+                .messages
+                .first()
+                .is_none_or(|m| m.role != Role::System)
+            {
                 let mut identity = guidance.clone();
                 identity.id = format!("dsh-identity-{}", request.session_id);
                 identity.role = Role::System;
@@ -139,7 +164,13 @@ impl AgentRunner {
             guidance.tool_calls = None;
             guidance.tool_call_id = None;
             request.messages.insert(1, guidance);
-            if self.tools.registry().names().iter().any(|name| name == "skill") {
+            if self
+                .tools
+                .registry()
+                .names()
+                .iter()
+                .any(|name| name == "skill")
+            {
                 let mut catalog = request.messages[1].clone();
                 catalog.id = format!("dsh-skills-{}", request.session_id);
                 catalog.content = crate::core::tools::dsh::skill_catalog();
@@ -225,15 +256,20 @@ impl AgentRunner {
                 persist_mid_turn_compact(&tool_ctx, outcome);
             }
 
-            if !self.tools.is_dsh() { task_state.inject(&mut request); }
-            else {
+            if !self.tools.is_dsh() {
+                task_state.inject(&mut request);
+            } else {
                 let plan_id = format!("dsh-plan-{}", request.session_id);
                 request.messages.retain(|m| m.id != plan_id);
-                if crate::core::tools::plan_mode::shared_plan_mode_store().is_active(tool_ctx.root_session_id()) {
+                if crate::core::tools::plan_mode::shared_plan_mode_store()
+                    .is_active(tool_ctx.root_session_id())
+                {
                     let mut policy = request.messages[0].clone();
                     policy.id = plan_id;
                     policy.content = "Plan mode is active. Inspect and research with read-only tools. Do not modify files or run shell commands. Present the complete markdown plan with exit_plan_mode for user review. Continue execution only after approval. Delegated agents must remain read-only.".into();
-                    request.messages.insert(3.min(request.messages.len()), policy);
+                    request
+                        .messages
+                        .insert(3.min(request.messages.len()), policy);
                 }
                 for notice in crate::core::tools::dsh::completion_notices(&tool_ctx.session_id) {
                     if let Some(mut message) = request.messages.last().cloned() {
@@ -265,7 +301,10 @@ impl AgentRunner {
                     .filter_map(|schema| schema["function"]["name"].as_str().map(str::to_owned)),
             );
             if !self.tools.is_dsh() {
-                crate::core::chat::prompt::ensure_plan_mode_prompt(&mut request.messages, tool_ctx.root_session_id());
+                crate::core::chat::prompt::ensure_plan_mode_prompt(
+                    &mut request.messages,
+                    tool_ctx.root_session_id(),
+                );
             }
             let stream_turn_span = tracing::info_span!(
                 target: "peek.agent",
@@ -335,7 +374,14 @@ impl AgentRunner {
 
             if tool_calls.is_empty() {
                 if self.tools.is_dsh() {
-                    let _ = tx.send(StreamEvent::TurnComplete { content, reasoning: non_empty(reasoning), tool_calls: vec![], finish_reason }).await;
+                    let _ = tx
+                        .send(StreamEvent::TurnComplete {
+                            content,
+                            reasoning: non_empty(reasoning),
+                            tool_calls: vec![],
+                            finish_reason,
+                        })
+                        .await;
                     break;
                 }
                 if task_state.execution_paused() {

@@ -1,10 +1,12 @@
 <template>
   <div
-    class="peek-panel"
+    class="peek-panel solid-overlay"
+    ref="panelRef"
     :class="{
       chat: mode === 'chat',
       'sidebar-open': sidebarOpen,
       'minimize-preview': isMinimizePreview,
+      'is-presented': panelPresented,
     }"
     :style="panelStyle"
     data-tauri-drag-region
@@ -19,18 +21,21 @@
       <span class="minimize-preview-title" data-tauri-drag-region>{{ chatTitle }}</span>
     </div>
 
+    <div ref="pickerHostRef" class="overlay-picker-layer" data-tauri-drag-region="false" />
     <div class="chat-main">
       <section
         v-if="mode === 'chat'"
         key="thread"
         class="thread-panel peek-surface"
         :class="{
-          glass: isGlass,
           'has-messages': hasVisibleMessages,
         }"
         data-tauri-drag-region
       >
         <header class="thread-header" data-tauri-drag-region @mousedown="onWindowDragMouseDown">
+          <span class="thread-title" :title="chatTitle" data-tauri-drag-region>
+            {{ chatTitle }}
+          </span>
           <div class="header-tools" data-tauri-drag-region="false">
             <button
               type="button"
@@ -104,10 +109,15 @@
         <div class="thread-content">
           <AppErrorBoundary compact>
             <MessageList
+              :workspace-root="boundWorkspaceId ?? undefined"
               :messages="messages"
               :session-id="activeSessionId"
               :workspace-name="workspaceDisplayName"
               :checkpoints="checkpoints"
+              inline-conversation
+              @content-height="
+                emit('contentHeight', $event + 34 + (dockRef?.offsetHeight ?? 34) + 12)
+              "
               @rewound="handleRewound"
               @branch="handleBranchMessage"
               @review-changes="openDiffSidebar"
@@ -116,7 +126,11 @@
               @inspect-subagent="openSubagentSidebar"
               @preview-image="handlePreviewImage"
               @edit-from-image="handleEditFromImage"
-            />
+            >
+              <template #composer>
+                <div ref="inputRowRef" class="thread-input-row" data-tauri-drag-region="false" />
+              </template>
+            </MessageList>
           </AppErrorBoundary>
           <Transition name="workspace-sidebar" @after-leave="emitComposerLayout">
             <div
@@ -311,14 +325,23 @@
       <div
         ref="dockRef"
         class="composer-dock peek-surface"
-        :class="{ expanded: mode === 'chat', glass: isGlass && mode !== 'chat' }"
+        :class="{ expanded: mode === 'chat' }"
+        data-tauri-drag-region="false"
       >
-        <p v-if="contextPreview" class="captured-context-preview" data-tauri-drag-region="false">
+        <p
+          v-if="contextPreview && !selectedText"
+          class="captured-context-preview"
+          data-tauri-drag-region="false"
+        >
           {{ contextPreview }}
         </p>
         <ChatInputBar
           ref="inputRef"
           appearance="overlay"
+          inline-composer
+          :floating-picker-target="pickerHostRef"
+          :picker-direction="mode === 'input' ? 'down' : 'up'"
+          :input-target="mode === 'chat' ? inputRowRef : null"
           :sending="sending"
           :session-id="activeSessionId"
           :captured-context="capturedContext"
@@ -332,7 +355,9 @@
           :path-permission="pathPermissionSession"
           :tool-approval="toolApprovalSession"
           :history-sessions="historySessions"
-          :show-workspace-button="mode === 'input'"
+          show-workspace-button
+          :workspace-locked="mode === 'chat'"
+          :bound-workspace-id="boundWorkspaceId"
           :selection-lines="selectionLines"
           @submit="handleSubmit"
           @pause="handlePause"
@@ -343,9 +368,9 @@
           @tool-approval-complete="handleToolApprovalComplete"
           @open-history="handleOpenHistory"
           @history-select="handleHistorySelect"
+          @new-conversation="handleNewConversation"
           @history-close="handleHistoryClose"
           @remove-selection="emit('selectionRemoved')"
-          @show-context="handleShowContext"
           @preview-image="handlePreviewImage"
         />
       </div>
@@ -383,6 +408,7 @@ import SubagentSidebar from "@/components/chat/SubagentSidebar.vue";
 import SubagentIcon from "@/components/chat/SubagentIcon.vue";
 import ImagePreviewSidebar from "@/components/chat/ImagePreviewSidebar.vue";
 import { gsapOverlayDockReveal } from "@/services/motion/gsapPresets";
+import { revealOverlay } from "@/services/overlay/reveal";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
 import { fetchChatSessions } from "@/commands/slash";
 import {
@@ -443,6 +469,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  contentHeight: [height: number];
   layoutChange: [
     payload: {
       showSuggestions: boolean;
@@ -492,6 +519,19 @@ const runtimeDebugEnabled = import.meta.env.DEV;
 
 const inputRef = ref<InstanceType<typeof ChatInputBar> | null>(null);
 const dockRef = ref<HTMLElement | null>(null);
+const inputRowRef = ref<HTMLElement | null>(null);
+const panelRef = ref<HTMLElement | null>(null);
+const panelPresented = ref(false);
+let cancelReveal = () => {};
+function playReveal() {
+  // The native show event and the initial isVisible check can both fire.
+  // Never restart a running/finished reveal from opacity zero.
+  if (panelPresented.value) return;
+  panelPresented.value = true;
+  cancelReveal();
+  cancelReveal = revealOverlay(panelRef.value);
+}
+const pickerHostRef = ref<HTMLElement | null>(null);
 const panelVisible = ref(false);
 const isMinimizePreview = ref(false);
 const isAlwaysOnTop = ref(true);
@@ -550,7 +590,6 @@ const diffSidebarWidth = ref(
 let diffResizeStartX = 0;
 let diffResizeStartWidth = DIFF_SIDEBAR_DEFAULT_WIDTH;
 
-const isGlass = computed(() => settingStore.opacity < 100);
 const activeSessionId = computed(() => overlayDraftSessionId.value || props.sessionId);
 const messages = computed(() => {
   const sessionId = activeSessionId.value;
@@ -601,6 +640,14 @@ const sending = computed(() => {
 });
 const contextNotice = computed(() => overlayContextNotice.value);
 const workspaceDisplayName = computed(() => props.capturedContext?.workspace?.name?.trim() || "");
+const boundWorkspaceId = computed(() => {
+  if (props.mode !== "chat") return null;
+  return (
+    chatSessionsStore.summaries.find((s) => s.sessionId === activeSessionId.value)?.workspaceId ??
+    chatStore.sessionCompose[activeSessionId.value]?.draftWorkspaceId ??
+    null
+  );
+});
 const selectedText = computed(() => props.capturedContext?.selection?.trim() ?? "");
 const selectionLines = computed(() => selectionLineCount(selectedText.value));
 const contextPreview = computed(() => {
@@ -619,6 +666,12 @@ const contextPreview = computed(() => {
   }
 
   // Selected images already appear as thumbs in the composer — skip the text banner.
+  if (
+    !selectedText.value &&
+    /(?:chrome|msedge|brave|vivaldi|firefox|waterfox|opera)\.exe/i.test(context.activeWindow ?? "")
+  ) {
+    return tr(settingStore.language, "selectionNotDetected");
+  }
   return "";
 });
 watch(
@@ -661,7 +714,7 @@ function emitComposerLayout() {
   emit("layoutChange", {
     ...composerLayout.value,
     hasContextPreview: dockMeasured ? false : Boolean(contextPreview.value),
-    pickerHeight: dockMeasured ? 0 : composerLayout.value.pickerHeight,
+    pickerHeight: composerLayout.value.pickerHeight,
     hasImages: dockMeasured ? false : composerLayout.value.hasImages,
     hasFiles: dockMeasured ? false : composerLayout.value.hasFiles,
     mode: props.mode,
@@ -902,10 +955,9 @@ function scheduleDockHeightMeasure() {
         composerLayout.value = {
           ...composerLayout.value,
           dockMeasured: true,
-          pickerHeight: 0,
           hasImages: false,
           hasFiles: false,
-          inputBarHeight: dockHeight,
+          inputBarHeight: dockHeight + 12,
         };
       }
       emitComposerLayout();
@@ -942,6 +994,7 @@ async function handleSubmit(text: string) {
   }
 
   if (sending.value) {
+    if (activeSessionId.value) await chatStore.pushStagedMessage(activeSessionId.value, trimmed);
     return;
   }
 
@@ -949,7 +1002,21 @@ async function handleSubmit(text: string) {
 
   const sessionId = createSessionId();
   const messageWithSelection = attachSelection(trimmed, selectedText.value);
+  const capturedSnapshot = props.capturedContext
+    ? {
+        ...props.capturedContext,
+        selectedFiles: [...(props.capturedContext.selectedFiles ?? [])],
+        selectedImages: [...(props.capturedContext.selectedImages ?? [])],
+      }
+    : undefined;
 
+  try {
+    await inputRef.value?.initializeSessionCompose(sessionId);
+  } catch (error) {
+    console.error("Failed to initialize overlay conversation mode:", error);
+    inputRef.value?.setMessage(trimmed);
+    return;
+  }
   chatStore.setOverlayDraftSession(sessionId);
   chatStore.setComposeDraft(sessionId, "", {
     workspaceId: sendOptions.quickAsk ? null : (sendOptions.workspaceId ?? null),
@@ -960,6 +1027,7 @@ async function handleSubmit(text: string) {
 
   void chatStore.send(messageWithSelection, sessionId, {
     staged: true,
+    capturedContext: capturedSnapshot,
     ...sendOptions,
   });
 }
@@ -980,24 +1048,6 @@ async function scheduleOverlayInputFocus() {
   // Rust focuses the native window before overlay-shown. Focus the editor once;
   // delayed native retries can steal focus back from a picker or another app.
   void inputRef.value?.focusInput();
-}
-
-function handleShowContext(context: CapturedContext) {
-  const sessionId =
-    props.mode === "chat" && activeSessionId.value ? activeSessionId.value : createSessionId();
-  if (props.mode !== "chat") {
-    chatStore.setOverlayDraftSession(sessionId);
-    emit("enterChat", sessionId);
-  }
-  chatStore.upsertMessage({
-    id: `local-context-${Date.now()}`,
-    sessionId,
-    role: "assistant",
-    content: "",
-    environmentContext: context,
-    status: "done",
-    timestamp: Date.now(),
-  });
 }
 
 const activeAssistantMessageId = computed(() => {
@@ -1161,14 +1211,34 @@ async function handleHistorySelect(sessionId: string) {
   historySessions.value = null;
   await setOverlayPopupOpen(label, false);
 
-  await chatStore.loadHistory(sessionId);
+  // A fresh popup has its own stores; load the workspace binding as well as
+  // the transcript before enabling follow-up messages or /new.
+  await Promise.all([chatStore.loadHistory(sessionId), chatSessionsStore.refreshSummaries()]);
   chatStore.setOverlayDraftSession(sessionId);
 
-  if (props.mode !== "chat") {
-    emit("enterChat", sessionId);
-  }
+  emit("enterChat", sessionId);
 
   emitComposerLayout();
+  await nextTick();
+  void inputRef.value?.focusInput();
+}
+
+async function handleNewConversation() {
+  const options = resolveOverlaySendOptions();
+  const workspaceId =
+    props.mode === "chat"
+      ? boundWorkspaceId.value
+      : options.quickAsk
+        ? null
+        : (options.workspaceId ?? null);
+  const sessionId = createSessionId();
+  chatStore.setSessionMessages(sessionId, []);
+  chatStore.ensureCompose(sessionId);
+  chatStore.setComposeDraft(sessionId, "", { workspaceId });
+  chatStore.setOverlayDraftSession(sessionId);
+  historySessions.value = null;
+  emit("enterChat", sessionId);
+  emit("contextConsumed");
   await nextTick();
   void inputRef.value?.focusInput();
 }
@@ -1328,10 +1398,7 @@ watch(
 );
 
 watch(
-  () =>
-    messages.value
-      .map((message) => `${message.id}:${message.status}:${message.toolActivities?.length ?? 0}`)
-      .join("|"),
+  () => messages.value.map((message) => `${message.id}:${message.status}`).join("|"),
   () => {
     void refreshCheckpoints();
   },
@@ -1366,6 +1433,14 @@ onMounted(async () => {
   isAlwaysOnTop.value = await window.isAlwaysOnTop().catch(() => true);
   // Ensure dock is visible even if a prior session left inline styles behind.
   gsapOverlayDockReveal(dockRef.value, true);
+
+  // A newly created native window may already be visible before Vue receives
+  // overlay-shown. Reveal before registering the remaining interaction listeners.
+  if (await window.isVisible()) {
+    playReveal();
+    panelVisible.value = true;
+    void scheduleOverlayInputFocus();
+  }
 
   void listenAskUser(async (payload) => {
     if (payload.sessionId && payload.sessionId !== activeSessionId.value) {
@@ -1443,6 +1518,7 @@ onMounted(async () => {
   });
 
   await window.listen("overlay-shown", () => {
+    playReveal();
     clearMinimizePreview();
     // Do not call refreshOverlayWindowBackground here — clearEffects/setShadow
     // on every summon forces a Win32 non-client refresh that flashes the window.
@@ -1452,6 +1528,8 @@ onMounted(async () => {
   });
 
   await window.listen("overlay-hidden", () => {
+    cancelReveal();
+    panelPresented.value = false;
     ++focusRevision;
     clearMinimizePreview();
     panelVisible.value = false;
@@ -1485,13 +1563,6 @@ onMounted(async () => {
   });
 
   void refreshCheckpoints();
-
-  if (await window.isVisible()) {
-    panelVisible.value = true;
-    // 动态新建窗口时，overlay-shown 在 Vue 挂载前就发出了，
-    // 这里补做相同的初始化：聚焦输入框（背景已由 Rust configure 处理）
-    void scheduleOverlayInputFocus();
-  }
 
   void listen<string>("open-session", async (event) => {
     const targetSessionId = event.payload;
@@ -1533,9 +1604,14 @@ onMounted(async () => {
         break;
     }
   });
+  const initialSessionId = new URLSearchParams(globalThis.location.hash.split("?")[1] ?? "").get(
+    "session",
+  );
+  if (initialSessionId) await handleHistorySelect(initialSessionId);
 });
 
 onUnmounted(() => {
+  cancelReveal();
   clearTimeout(messageListWarmup);
   ++focusRevision;
   cancelAnimationFrame(dockMeasureFrame);
@@ -1546,6 +1622,69 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.overlay-picker-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+.peek-panel:not(.chat) .chat-main {
+  justify-content: flex-start;
+}
+.peek-panel:not(.chat) {
+  overflow: visible;
+}
+.peek-panel.solid-overlay .thread-panel,
+.peek-panel.solid-overlay .composer-dock {
+  background: var(--peek-surface) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.peek-panel.chat {
+  --thread-side-gap: 0px;
+  border: 1px solid var(--peek-panel-outline);
+  border-radius: 12px;
+  box-sizing: border-box;
+  background: var(--peek-list-bg);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--peek-shadow, #000) 16%, transparent);
+}
+.peek-panel.chat .thread-panel {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.peek-panel.chat .composer-dock.expanded {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--peek-list-bg);
+  box-shadow: none;
+}
+.thread-input-row {
+  flex: none;
+  min-height: 40px;
+  margin: 0;
+  padding-bottom: 32px;
+}
+.thread-input-row :deep(.inline-composer-body) {
+  padding-left: 40px;
+}
+.thread-input-row :deep(.input-user-avatar) {
+  left: 0;
+}
+.peek-panel.chat :deep(.user-composer) {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0;
+}
+.peek-panel.chat :deep(.message-item.user) {
+  position: relative;
+}
 .peek-panel {
   box-sizing: border-box;
   width: 100%;
@@ -1567,6 +1706,9 @@ onUnmounted(() => {
   );
   --peek-panel-highlight: color-mix(in srgb, var(--peek-text) 5%, transparent);
   --peek-panel-shadow: transparent;
+}
+.peek-panel:not(.is-presented) {
+  opacity: 0;
 }
 
 .chat-main {
@@ -1633,7 +1775,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-top: 34px;
+  padding-top: 0;
   background: transparent;
   container: workspace-sidebar / inline-size;
 }
@@ -1716,6 +1858,7 @@ onUnmounted(() => {
 }
 
 .header-tools {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1787,7 +1930,7 @@ onUnmounted(() => {
   flex-direction: column;
   border: 1px solid var(--peek-panel-outline);
   border-radius: 8px 8px 0 0;
-  background: color-mix(in srgb, var(--peek-list-bg) 92%, transparent);
+  background: var(--peek-list-bg);
   overflow: hidden;
   position: relative;
   z-index: 1;
@@ -1823,8 +1966,8 @@ onUnmounted(() => {
   --chat-sticky-top: 0;
   position: relative;
   z-index: 2;
-  padding: 42px 16px calc(var(--composer-overlap, 12px) + var(--composer-clearance, 90px));
-  scroll-padding-top: 42px;
+  padding: 12px 16px;
+  scroll-padding-top: 12px;
 }
 .peek-panel.chat :deep(.chat-turn-head) {
   position: static;
@@ -1840,25 +1983,49 @@ onUnmounted(() => {
 }
 
 .thread-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  flex: none;
   z-index: 5;
   height: 34px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   padding: 0 8px;
-  border-bottom: 1px solid transparent;
-  background: transparent;
-  opacity: 0.42;
+  border-bottom: none;
+  background: var(--peek-list-bg);
+  opacity: 1;
   pointer-events: auto;
   transition:
     opacity 160ms ease,
     border-color 160ms ease,
     background 160ms ease;
   cursor: grab;
+}
+.thread-header::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 12px;
+  background: linear-gradient(
+    to bottom,
+    var(--peek-list-bg),
+    color-mix(in srgb, var(--peek-list-bg) 60%, transparent) 45%,
+    transparent
+  );
+  pointer-events: none;
+}
+.thread-title {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--peek-text);
 }
 
 .sidebar-toggle-btn {
@@ -1907,10 +2074,15 @@ onUnmounted(() => {
 
 .peek-panel:not(.chat) .composer-dock {
   gap: 0;
+  min-height: 74px;
   border-radius: var(--peek-radius-composer, 16px);
   box-shadow:
-    0 10px 28px color-mix(in srgb, var(--peek-shadow, #000) 16%, transparent),
+    0 2px 6px color-mix(in srgb, var(--peek-shadow, #000) 16%, transparent),
     inset 0 1px 0 var(--peek-panel-highlight);
+}
+
+.peek-panel:not(.chat) .composer-dock :deep(.inline-composer-body) {
+  min-height: 40px;
 }
 
 .composer-dock :deep(.chat-input-shell) {

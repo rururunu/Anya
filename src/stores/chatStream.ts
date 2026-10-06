@@ -5,6 +5,25 @@
 import { stripSoftInjectMarker } from "@/services/chat/softInject";
 import type { ChatMessage, WorkTimelineItem } from "@/types/chat";
 
+/** Live messages are owned by the reactive store. Keep completed rows and timeline
+ * segments stable while appending only the active tail; immutable helpers below
+ * remain available for history/retry snapshots. */
+export function applyLiveTextDelta(message: ChatMessage, content: string, reasoning: string) {
+  const append = (chunk: string, kind: "reasoning" | "content") => {
+    if (!chunk) return;
+    const timeline = message.workTimeline ?? (message.workTimeline = []);
+    const last = timeline[timeline.length - 1];
+    if (last?.type === kind) last.content += chunk;
+    else
+      timeline.push({ type: kind, id: `${kind}-${Date.now()}-${timeline.length}`, content: chunk });
+  };
+  append(reasoning, "reasoning");
+  append(content, "content");
+  if (content) message.content += content;
+  if (reasoning) message.reasoning = (message.reasoning ?? "") + reasoning;
+  if (content || reasoning) message.status = "streaming";
+}
+
 /** Restore the backend's committed prefix rather than erasing completed work. */
 export function rollbackStreamAttempt(current: ChatMessage, snapshot?: ChatMessage): ChatMessage {
   const valid = snapshot?.id === current.id && snapshot.sessionId === current.sessionId;
@@ -15,7 +34,7 @@ export function rollbackStreamAttempt(current: ChatMessage, snapshot?: ChatMessa
     ...current,
     content: valid ? snapshot.content : "",
     reasoning: valid ? snapshot.reasoning : undefined,
-    workTimeline: valid ? snapshot.workTimeline : undefined,
+    workTimeline: valid ? snapshot.workTimeline?.map((item) => ({ ...item })) : undefined,
     toolActivities: valid
       ? snapshot.toolActivities
       : keptActivities?.length

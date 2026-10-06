@@ -262,7 +262,10 @@ async fn execute_child(
     read_only: bool,
     parent_subagent_id: Option<String>,
 ) -> Result<String, ToolError> {
-    let dsh_parent = child.provider.as_ref().is_some_and(|provider| provider.uses_dsh_tools());
+    let dsh_parent = child
+        .provider
+        .as_ref()
+        .is_some_and(|provider| provider.uses_dsh_tools());
     // Request-level recovery retains completed tools; restarting a writable dsh
     // child would lose that boundary and could apply the same mutation twice.
     let can_restart_child = read_only || !(dsh_parent || provider.uses_dsh_tools());
@@ -294,10 +297,11 @@ async fn execute_child(
     // shared gateway under concurrent parallel-subagent load can still fail
     // every attempt within that short window. Give the whole child one more
     // independent run after backing off, before accepting the failure.
-    if can_restart_child && result
-        .as_ref()
-        .err()
-        .is_some_and(is_transient_provider_error)
+    if can_restart_child
+        && result
+            .as_ref()
+            .err()
+            .is_some_and(is_transient_provider_error)
     {
         tokio::time::sleep(std::time::Duration::from_millis(1_500)).await;
         result = AgentRunner::run_subagent(
@@ -390,7 +394,11 @@ fn build_subagent_prompt(
     prompt: &str,
     in_scope_paths: Option<&[String]>,
 ) -> String {
-    if ctx.provider.as_ref().is_some_and(|provider| provider.uses_dsh_tools()) {
+    if ctx
+        .provider
+        .as_ref()
+        .is_some_and(|provider| provider.uses_dsh_tools())
+    {
         return prompt.to_string();
     }
     let mut parts = vec![SUBAGENT_PROMPT.to_string(), String::new()];

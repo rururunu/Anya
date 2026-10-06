@@ -105,9 +105,6 @@ impl Tool for ManageCustomThemeTool {
             ));
         };
 
-        let mut current_settings = crate::services::settings_store::get_settings(app)
-            .map_err(|e| ToolError::new(format!("failed to load settings: {e}")))?;
-
         fn parse_background_update(
             args: &Value,
             current: Option<&ThemeBackgroundConfig>,
@@ -184,227 +181,223 @@ impl Tool for ManageCustomThemeTool {
             )
         }
 
-        match action {
-            "list" => {
-                let current_id = current_settings.color_scheme.as_str();
-                let result = json!({
-                    "activeTheme": current_id,
-                    "isDarkMode": current_settings.is_dark_mode(),
-                    "customThemes": current_settings.custom_themes,
-                    "customBackground": current_settings.custom_background,
-                    "builtinPresets": [
-                        {"id": "light", "mode": "light", "name": "Light (Default)"},
-                        {"id": "dark", "mode": "dark", "name": "Dark (Default)"}
-                    ]
-                });
-                serde_json::to_string_pretty(&result).map_err(|e| ToolError::new(e.to_string()))
-            }
-            "set_background" => {
-                let id = args["id"].as_str().map(str::trim).filter(|s| !s.is_empty());
-                let target_theme_id =
-                    id.map(ToString::to_string)
-                        .or_else(|| match &current_settings.color_scheme {
-                            ColorScheme::Custom(active_id) => Some(active_id.clone()),
-                            _ => None,
+        crate::services::settings_store::update_settings(app, |current_settings| {
+            (|| -> Result<String, ToolError> {
+                match action {
+                    "list" => {
+                        let current_id = current_settings.color_scheme.as_str();
+                        let result = json!({
+                            "activeTheme": current_id,
+                            "isDarkMode": current_settings.is_dark_mode(),
+                            "customThemes": current_settings.custom_themes,
+                            "customBackground": current_settings.custom_background,
+                            "builtinPresets": [
+                                {"id": "light", "mode": "light", "name": "Light (Default)"},
+                                {"id": "dark", "mode": "dark", "name": "Dark (Default)"}
+                            ]
+                        });
+                        serde_json::to_string_pretty(&result)
+                            .map_err(|e| ToolError::new(e.to_string()))
+                    }
+                    "set_background" => {
+                        let id = args["id"].as_str().map(str::trim).filter(|s| !s.is_empty());
+                        let target_theme_id = id.map(ToString::to_string).or_else(|| {
+                            match &current_settings.color_scheme {
+                                ColorScheme::Custom(active_id) => Some(active_id.clone()),
+                                _ => None,
+                            }
                         });
 
-                if let Some(target_id) = target_theme_id {
-                    if let Some(theme) = current_settings
-                        .custom_themes
-                        .iter_mut()
-                        .find(|t| t.id == target_id)
-                    {
-                        let (changed, next_bg) =
-                            parse_background_update(&args, theme.background.as_ref());
-                        if changed {
-                            theme.background = next_bg;
-                            theme.updated_at = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs();
-                            crate::services::settings_store::set_settings(app, current_settings)
-                                .map_err(|e| {
-                                    ToolError::new(format!("failed to save theme background: {e}"))
-                                })?;
-                            return Ok(format!(
-                                "Background updated successfully for theme '{target_id}'."
-                            ));
-                        } else {
-                            return Err(ToolError::new("no background image or settings provided"));
-                        }
-                    } else {
-                        return Err(ToolError::new(format!(
-                            "custom theme '{target_id}' not found"
-                        )));
-                    }
-                } else {
-                    let (changed, next_bg) =
-                        parse_background_update(&args, current_settings.custom_background.as_ref());
-                    if changed {
-                        current_settings.custom_background = next_bg;
-                        crate::services::settings_store::set_settings(app, current_settings)
-                            .map_err(|e| {
-                                ToolError::new(format!("failed to save custom background: {e}"))
-                            })?;
-                        return Ok("Custom background updated successfully.".to_string());
-                    } else {
-                        return Err(ToolError::new("no background image or settings provided"));
-                    }
-                }
-            }
-            "create" | "update" => {
-                let mode = args["mode"].as_str().unwrap_or("").trim();
-                let mode = if mode == "light" || mode == "dark" {
-                    mode.to_string()
-                } else if action == "update" {
-                    String::new()
-                } else {
-                    return Err(ToolError::new(
-                        "mode ('light' or 'dark') is required when creating a theme",
-                    ));
-                };
-
-                let name = args["name"].as_str().unwrap_or("").trim().to_string();
-                if name.is_empty() && action == "create" {
-                    return Err(ToolError::new("name is required when creating a theme"));
-                }
-
-                let id = args["id"]
-                    .as_str()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| {
-                        let slug: String = name
-                            .chars()
-                            .map(|c| {
-                                if c.is_alphanumeric() {
-                                    c.to_ascii_lowercase()
+                        if let Some(target_id) = target_theme_id {
+                            if let Some(theme) = current_settings
+                                .custom_themes
+                                .iter_mut()
+                                .find(|t| t.id == target_id)
+                            {
+                                let (changed, next_bg) =
+                                    parse_background_update(&args, theme.background.as_ref());
+                                if changed {
+                                    theme.background = next_bg;
+                                    theme.updated_at = SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs();
+                                    return Ok(format!(
+                                        "Background updated successfully for theme '{target_id}'."
+                                    ));
                                 } else {
-                                    '-'
+                                    return Err(ToolError::new(
+                                        "no background image or settings provided",
+                                    ));
                                 }
-                            })
-                            .collect();
-                        let trimmed = slug.trim_matches('-');
-                        if trimmed.is_empty() {
-                            format!("custom-{}", uuid::Uuid::new_v4().simple())
-                        } else if trimmed.starts_with("custom-") {
-                            trimmed.to_string()
-                        } else {
-                            format!("custom-{}", trimmed)
-                        }
-                    });
-
-                let mut tokens: HashMap<String, String> = HashMap::new();
-                if let Some(obj) = args["tokens"].as_object() {
-                    for (k, v) in obj {
-                        if let Some(s) = v.as_str() {
-                            let key = if k.starts_with("--") {
-                                k.to_string()
                             } else {
-                                format!("--{k}")
-                            };
-                            tokens.insert(key, s.to_string());
+                                return Err(ToolError::new(format!(
+                                    "custom theme '{target_id}' not found"
+                                )));
+                            }
+                        } else {
+                            let (changed, next_bg) = parse_background_update(
+                                &args,
+                                current_settings.custom_background.as_ref(),
+                            );
+                            if changed {
+                                current_settings.custom_background = next_bg;
+                                return Ok("Custom background updated successfully.".to_string());
+                            } else {
+                                return Err(ToolError::new(
+                                    "no background image or settings provided",
+                                ));
+                            }
                         }
                     }
-                }
-
-                let desc = args["description"]
-                    .as_str()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-
-                if let Some(pos) = current_settings
-                    .custom_themes
-                    .iter()
-                    .position(|t| t.id == id)
-                {
-                    let existing = &mut current_settings.custom_themes[pos];
-                    if !name.is_empty() {
-                        existing.name = name;
-                    }
-                    if !mode.is_empty() {
-                        existing.mode = mode;
-                    }
-                    if desc.is_some() {
-                        existing.description = desc;
-                    }
-                    for (k, v) in tokens {
-                        existing.tokens.insert(k, v);
-                    }
-                    let (bg_changed, next_bg) =
-                        parse_background_update(&args, existing.background.as_ref());
-                    if bg_changed {
-                        existing.background = next_bg;
-                    }
-                    existing.updated_at = now;
-                } else {
-                    let (_, next_bg) = parse_background_update(&args, None);
-                    current_settings.custom_themes.push(CustomThemeConfig {
-                        id: id.clone(),
-                        name: if name.is_empty() { id.clone() } else { name },
-                        mode: if mode.is_empty() {
-                            "dark".to_string()
+                    "create" | "update" => {
+                        let mode = args["mode"].as_str().unwrap_or("").trim();
+                        let mode = if mode == "light" || mode == "dark" {
+                            mode.to_string()
+                        } else if action == "update" {
+                            String::new()
                         } else {
-                            mode
-                        },
-                        description: desc,
-                        tokens,
-                        background: next_bg,
-                        updated_at: now,
-                    });
-                }
+                            return Err(ToolError::new(
+                                "mode ('light' or 'dark') is required when creating a theme",
+                            ));
+                        };
 
-                current_settings.color_scheme = ColorScheme::Custom(id.clone());
+                        let name = args["name"].as_str().unwrap_or("").trim().to_string();
+                        if name.is_empty() && action == "create" {
+                            return Err(ToolError::new("name is required when creating a theme"));
+                        }
 
-                crate::services::settings_store::set_settings(app, current_settings)
-                    .map_err(|e| ToolError::new(format!("failed to save updated theme: {e}")))?;
+                        let id = args["id"]
+                            .as_str()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or_else(|| {
+                                let slug: String = name
+                                    .chars()
+                                    .map(|c| {
+                                        if c.is_alphanumeric() {
+                                            c.to_ascii_lowercase()
+                                        } else {
+                                            '-'
+                                        }
+                                    })
+                                    .collect();
+                                let trimmed = slug.trim_matches('-');
+                                if trimmed.is_empty() {
+                                    format!("custom-{}", uuid::Uuid::new_v4().simple())
+                                } else if trimmed.starts_with("custom-") {
+                                    trimmed.to_string()
+                                } else {
+                                    format!("custom-{}", trimmed)
+                                }
+                            });
 
-                Ok(format!("Theme '{id}' saved and activated successfully."))
-            }
-            "apply" => {
-                let id = args["id"].as_str().unwrap_or("").trim();
-                if id.is_empty() {
-                    return Err(ToolError::new("id is required to apply a theme"));
-                }
-                let scheme = match id {
-                    "light" => ColorScheme::Light,
-                    "dark" => ColorScheme::Dark,
-                    other => ColorScheme::Custom(other.to_string()),
-                };
-                current_settings.color_scheme = scheme;
-                crate::services::settings_store::set_settings(app, current_settings)
-                    .map_err(|e| ToolError::new(format!("failed to apply theme: {e}")))?;
-                Ok(format!("Theme '{id}' applied successfully."))
-            }
-            "delete" => {
-                let id = args["id"].as_str().unwrap_or("").trim();
-                if id.is_empty() {
-                    return Err(ToolError::new("id is required to delete a theme"));
-                }
-                let before_len = current_settings.custom_themes.len();
-                current_settings.custom_themes.retain(|t| t.id != id);
-                if current_settings.custom_themes.len() == before_len {
-                    return Err(ToolError::new(format!("custom theme '{id}' not found")));
-                }
-                if let ColorScheme::Custom(active_id) = &current_settings.color_scheme {
-                    if active_id == id {
-                        current_settings.color_scheme = ColorScheme::Dark;
+                        let mut tokens: HashMap<String, String> = HashMap::new();
+                        if let Some(obj) = args["tokens"].as_object() {
+                            for (k, v) in obj {
+                                if let Some(s) = v.as_str() {
+                                    let key = if k.starts_with("--") {
+                                        k.to_string()
+                                    } else {
+                                        format!("--{k}")
+                                    };
+                                    tokens.insert(key, s.to_string());
+                                }
+                            }
+                        }
+
+                        let desc = args["description"]
+                            .as_str()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty());
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+
+                        if let Some(pos) = current_settings
+                            .custom_themes
+                            .iter()
+                            .position(|t| t.id == id)
+                        {
+                            let existing = &mut current_settings.custom_themes[pos];
+                            if !name.is_empty() {
+                                existing.name = name;
+                            }
+                            if !mode.is_empty() {
+                                existing.mode = mode;
+                            }
+                            if desc.is_some() {
+                                existing.description = desc;
+                            }
+                            for (k, v) in tokens {
+                                existing.tokens.insert(k, v);
+                            }
+                            let (bg_changed, next_bg) =
+                                parse_background_update(&args, existing.background.as_ref());
+                            if bg_changed {
+                                existing.background = next_bg;
+                            }
+                            existing.updated_at = now;
+                        } else {
+                            let (_, next_bg) = parse_background_update(&args, None);
+                            current_settings.custom_themes.push(CustomThemeConfig {
+                                id: id.clone(),
+                                name: if name.is_empty() { id.clone() } else { name },
+                                mode: if mode.is_empty() {
+                                    "dark".to_string()
+                                } else {
+                                    mode
+                                },
+                                description: desc,
+                                tokens,
+                                background: next_bg,
+                                updated_at: now,
+                            });
+                        }
+
+                        current_settings.color_scheme = ColorScheme::Custom(id.clone());
+
+                        Ok(format!("Theme '{id}' saved and activated successfully."))
                     }
-                }
-                crate::services::settings_store::set_settings(app, current_settings).map_err(
-                    |e| {
-                        ToolError::new(format!("failed to save settings after theme deletion: {e}"))
-                    },
-                )?;
-                Ok(format!("Custom theme '{id}' deleted."))
-            }
-            other => Err(ToolError::new(format!(
+                    "apply" => {
+                        let id = args["id"].as_str().unwrap_or("").trim();
+                        if id.is_empty() {
+                            return Err(ToolError::new("id is required to apply a theme"));
+                        }
+                        let scheme = match id {
+                            "light" => ColorScheme::Light,
+                            "dark" => ColorScheme::Dark,
+                            other => ColorScheme::Custom(other.to_string()),
+                        };
+                        current_settings.color_scheme = scheme;
+                        Ok(format!("Theme '{id}' applied successfully."))
+                    }
+                    "delete" => {
+                        let id = args["id"].as_str().unwrap_or("").trim();
+                        if id.is_empty() {
+                            return Err(ToolError::new("id is required to delete a theme"));
+                        }
+                        let before_len = current_settings.custom_themes.len();
+                        current_settings.custom_themes.retain(|t| t.id != id);
+                        if current_settings.custom_themes.len() == before_len {
+                            return Err(ToolError::new(format!("custom theme '{id}' not found")));
+                        }
+                        if let ColorScheme::Custom(active_id) = &current_settings.color_scheme {
+                            if active_id == id {
+                                current_settings.color_scheme = ColorScheme::Dark;
+                            }
+                        }
+                        Ok(format!("Custom theme '{id}' deleted."))
+                    }
+                    other => Err(ToolError::new(format!(
                 "unknown action '{other}'. Valid actions: create, update, apply, list, delete"
             ))),
-        }
+                }
+            })()
+            .map_err(|error| error.to_string())
+        })
+        .map(|(_, result)| result)
+        .map_err(ToolError::new)
     }
 }

@@ -1,5 +1,4 @@
-import { getEnvironmentContext, listChatSessions, openSettings } from "@/services/ipc";
-import type { CapturedContext } from "@/types/chat";
+import { listChatSessions, openSettings } from "@/services/ipc";
 import type { SlashI18nKey } from "@/services/locales/slash";
 
 export interface SlashCommand {
@@ -10,20 +9,20 @@ export interface SlashCommand {
 
 export type SlashCommandAction =
   | "close"
+  | "newConversation"
   | "openHistory"
   | "openModel"
   | "openThinking"
+  | "openMode"
+  | "openSecurity"
+  | "openPopup"
+  | "openWorkbench"
   | "openWorkspace"
   | "clearInput"
-  | "showContext"
   | null;
 
 export const slashCommands: SlashCommand[] = [
-  {
-    command: "/history",
-    label: "history",
-    descriptionKey: "slash.history.description",
-  },
+  { command: "/new", label: "new", descriptionKey: "slash.new.description" },
   {
     command: "/model",
     label: "model",
@@ -35,9 +34,14 @@ export const slashCommands: SlashCommand[] = [
     descriptionKey: "slash.thinking.description",
   },
   {
-    command: "/settings",
-    label: "settings",
-    descriptionKey: "slash.settings.description",
+    command: "/mode",
+    label: "mode",
+    descriptionKey: "slash.mode.description",
+  },
+  {
+    command: "/security",
+    label: "security",
+    descriptionKey: "slash.security.description",
   },
   {
     command: "/work",
@@ -45,30 +49,47 @@ export const slashCommands: SlashCommand[] = [
     descriptionKey: "slash.work.description",
   },
   {
-    command: "/exit",
-    label: "exit",
-    descriptionKey: "slash.exit.description",
-  },
-  {
-    command: "/context",
-    label: "context",
-    descriptionKey: "slash.context.description",
+    command: "/history",
+    label: "history",
+    descriptionKey: "slash.history.description",
   },
   {
     command: "/clear",
     label: "clear",
     descriptionKey: "slash.clear.description",
   },
+  { command: "/popup", label: "popup", descriptionKey: "slash.popup.description" },
+  { command: "/workbench", label: "workbench", descriptionKey: "slash.workbench.description" },
+  {
+    command: "/settings",
+    label: "settings",
+    descriptionKey: "slash.settings.description",
+  },
+  {
+    command: "/exit",
+    label: "exit",
+    descriptionKey: "slash.exit.description",
+  },
 ];
 
 export async function executeSlashCommand(command: string): Promise<SlashCommandAction> {
   switch (command) {
+    case "/new":
+      return "newConversation";
     case "/history":
       return "openHistory";
     case "/model":
       return "openModel";
     case "/thinking":
       return "openThinking";
+    case "/mode":
+      return "openMode";
+    case "/security":
+      return "openSecurity";
+    case "/popup":
+      return "openPopup";
+    case "/workbench":
+      return "openWorkbench";
     case "/settings":
       try {
         await openSettings();
@@ -82,20 +103,9 @@ export async function executeSlashCommand(command: string): Promise<SlashCommand
       return "close";
     case "/clear":
       return "clearInput";
-    case "/context":
-      return "showContext";
     default:
       return null;
   }
-}
-
-export async function fetchEnvironmentContext(): Promise<CapturedContext> {
-  return Promise.race([
-    getEnvironmentContext(),
-    new Promise<never>((_, reject) => {
-      window.setTimeout(() => reject(new Error("get_environment_context timed out")), 2500);
-    }),
-  ]);
 }
 
 export async function fetchChatSessions() {

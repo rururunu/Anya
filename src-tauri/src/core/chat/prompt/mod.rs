@@ -90,15 +90,31 @@ impl PromptBuilder {
     pub fn build_dsh(input: PromptBuildInput<'_>) -> ChatRequest {
         let mut request = Self::build_inner(input, true);
         let session = request.session_id.clone();
-        request.messages.retain(|m| !["system", "plugin-prompts", "plan-mode", "plan-request-hint"].iter().any(|kind| m.id == format!("{kind}-{session}")));
-        inject_system_block(&mut request.messages, &session, "dsh-identity", Some(crate::core::tools::dsh::IDENTITY));
+        request.messages.retain(|m| {
+            !["system", "plugin-prompts", "plan-mode", "plan-request-hint"]
+                .iter()
+                .any(|kind| m.id == format!("{kind}-{session}"))
+        });
+        inject_system_block(
+            &mut request.messages,
+            &session,
+            "dsh-identity",
+            Some(crate::core::tools::dsh::IDENTITY),
+        );
         for message in &mut request.messages {
             if message.id == format!("context-{session}") {
                 let shell = if cfg!(windows) { "pwsh" } else { "bash" };
-                message.content = message.content.replace("(read_file, find_files, search, shell)", &format!("(read, glob, grep, {shell})"));
+                message.content = message.content.replace(
+                    "(read_file, find_files, search, shell)",
+                    &format!("(read, glob, grep, {shell})"),
+                );
             }
         }
-        if let Some(index) = request.messages.iter().position(|m| m.id == format!("dsh-identity-{session}")) {
+        if let Some(index) = request
+            .messages
+            .iter()
+            .position(|m| m.id == format!("dsh-identity-{session}"))
+        {
             let identity = request.messages.remove(index);
             request.messages.insert(0, identity);
         }
@@ -137,16 +153,18 @@ impl PromptBuilder {
         inject_system_block(&mut messages, session_id, "rules", project_rules);
 
         // [3] Optional policy suffix — toggles only hang here.
-        if !dsh { inject_optional_policy_suffix(
-            &mut messages,
-            session_id,
-            &preferences.collaboration_models,
-            preferences.minimal_coding,
-            preferences.plan_mode,
-            preferences.suggest_plan_request,
-            preferences.companion_origin,
-            preferences.image_mode.as_ref(),
-        ); }
+        if !dsh {
+            inject_optional_policy_suffix(
+                &mut messages,
+                session_id,
+                &preferences.collaboration_models,
+                preferences.minimal_coding,
+                preferences.plan_mode,
+                preferences.suggest_plan_request,
+                preferences.companion_origin,
+                preferences.image_mode.as_ref(),
+            );
+        }
         let plugin_prompts = if cfg!(test) || dsh {
             None
         } else {

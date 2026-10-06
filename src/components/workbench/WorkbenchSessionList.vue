@@ -492,7 +492,10 @@ function sessionStatusLabel(sessionId: string) {
   background: var(--peek-row-hover);
 }
 .session-row.active {
-  background: var(--peek-row-active);
+  background: var(
+    --workbench-navigation-selected,
+    color-mix(in srgb, var(--peek-text) 3.5%, transparent)
+  );
 }
 .session-row.active > strong {
   font-weight: 600;
@@ -602,7 +605,10 @@ function sessionStatusLabel(sessionId: string) {
   background: var(--peek-row-hover);
 }
 .session-row-subagent.active {
-  background: var(--peek-row-active);
+  background: var(
+    --workbench-navigation-selected,
+    color-mix(in srgb, var(--peek-text) 3.5%, transparent)
+  );
 }
 .session-status {
   flex: none;

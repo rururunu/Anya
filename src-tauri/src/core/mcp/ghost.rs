@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::core::tools::registry::ToolRegistry;
 use crate::models::settings::McpServerConfig;
-use crate::services::settings_store::{get_settings, set_settings};
+use crate::services::settings_store::update_settings;
 
 const GHOST_RELEASE_TAG: &str = "v0.23.4";
 const GHOST_ZIP_URL: &str =
@@ -88,17 +88,18 @@ fn ensure_ghost_mcp_windows(
         source: Some("curated".into()),
     };
 
-    let mut settings = get_settings(app)?;
-    if let Some(existing) = settings
-        .mcp_servers
-        .iter_mut()
-        .find(|item| item.id == GHOST_SERVER_ID)
-    {
-        *existing = server.clone();
-    } else {
-        settings.mcp_servers.push(server.clone());
-    }
-    set_settings(app, settings)?;
+    update_settings(app, |settings| {
+        if let Some(existing) = settings
+            .mcp_servers
+            .iter_mut()
+            .find(|item| item.id == GHOST_SERVER_ID)
+        {
+            *existing = server.clone();
+        } else {
+            settings.mcp_servers.push(server.clone());
+        }
+        Ok(())
+    })?;
 
     let tool_count = super::shared_mcp_manager()
         .reconnect_by_id(GHOST_SERVER_ID, registry)

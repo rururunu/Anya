@@ -28,7 +28,6 @@ import {
   nextTick,
   onMounted,
   onUnmounted,
-  onUpdated,
   ref,
   render,
   watch,
@@ -38,17 +37,43 @@ import { copyText } from "@/services/clipboard";
 import { parseChartSpec } from "@/services/chat/chartSpec";
 import { normalizeMarkdownInput } from "@/services/chat/markdownNormalize";
 import { buildMermaidPlaceholder, shouldRenderMermaidBlock } from "@/services/chat/mermaidDiagram";
-import { resolveChatImageSrc } from "@/services/chat/localImageSrc";
+import {
+  isLocalImagePath,
+  resolveChatImageSrc,
+  resolveMarkdownImagePath,
+  markdownWorkspaceRoot,
+} from "@/services/chat/localImageSrc";
+import { inject } from "vue";
+import { loadImageSourceAsDataUrl } from "@/services/chat/imageEditReference";
 import { disposeChartBlocks, hydrateChartBlocks } from "./chartHydration";
 import { disposeMermaidBlocks, hydrateMermaidBlocks } from "./mermaidHydration";
 
 const props = defineProps<{
   content: string;
+  streaming?: boolean;
 }>();
 const emit = defineEmits<{
   previewImage: [source: string];
 }>();
 const rootRef = ref<HTMLElement | null>(null);
+const workspaceRoot = inject(markdownWorkspaceRoot, undefined);
+const renderedContent = ref(props.content);
+let renderTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => [props.content, props.streaming] as const,
+  () => {
+    if (!props.streaming) {
+      if (renderTimer !== null) clearTimeout(renderTimer);
+      renderTimer = null;
+      renderedContent.value = props.content;
+    } else if (renderTimer === null) {
+      renderTimer = setTimeout(() => {
+        renderTimer = null;
+        renderedContent.value = props.content;
+      }, 120);
+    }
+  },
+);
 
 const renderer = new marked.Renderer();
 
@@ -72,8 +97,9 @@ renderer.code = ({ text, lang }) => {
       : requestedLanguage
     : "";
   const source = text ?? "";
-  const highlighted =
-    language && hljs.getLanguage(language)
+  const highlighted = props.streaming
+    ? escapeHtmlAttribute(source)
+    : language && hljs.getLanguage(language)
       ? hljs.highlight(source, { language }).value
       : hljs.highlightAuto(source).value;
   const languageClass = language ? ` language-${language}` : "";
@@ -84,7 +110,7 @@ renderer.code = ({ text, lang }) => {
 };
 
 renderer.image = ({ href, title, text }) => {
-  const original = (href ?? "").trim();
+  const original = resolveMarkdownImagePath(href ?? "", workspaceRoot?.value);
   const src = resolveChatImageSrc(original);
   const titleAttr = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
   return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(text ?? "")}" data-image-source="${escapeHtmlAttribute(original)}"${titleAttr} />`;
@@ -245,9 +271,34 @@ function hydrateAll() {
   setupStickyScrollObserver();
   const root = rootRef.value;
   if (root) {
+    hydrateLocalImages(root);
     hydrateChartBlocks(root);
     hydrateMermaidBlocks(root);
   }
+}
+
+// Match user thumbnails: workspace images can live outside the asset protocol scope.
+const localImages = new Map<string, Promise<string>>();
+function hydrateLocalImages(root: HTMLElement) {
+  root.querySelectorAll<HTMLImageElement>("img").forEach((image) => {
+    const source = image.dataset.imageSource || image.getAttribute("src") || "";
+    if (!isLocalImagePath(source)) return;
+    image.dataset.imageSource = source;
+    let pending = localImages.get(source);
+    if (!pending) {
+      pending = loadImageSourceAsDataUrl(source);
+      localImages.set(source, pending);
+    }
+    void pending
+      .then((resolved) => {
+        if (rootRef.value?.contains(image) && image.dataset.imageSource === source) {
+          if (image.getAttribute("src") !== resolved) image.src = resolved;
+        }
+      })
+      .catch(() => {
+        localImages.delete(source);
+      });
+  });
 }
 
 function unmountPortalHosts(root: HTMLElement) {
@@ -263,24 +314,22 @@ function unmountPortalHosts(root: HTMLElement) {
 }
 
 onMounted(hydrateAll);
-onUpdated(hydrateAll);
 onUnmounted(() => {
+  if (renderTimer !== null) clearTimeout(renderTimer);
+  localImages.clear();
   stickyScrollCleanup?.();
   stickyScrollCleanup = null;
   const root = rootRef.value;
   if (root) unmountPortalHosts(root);
 });
 
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-  renderer,
-});
-
 const html = computed(() => {
   try {
-    const raw = marked.parse(normalizeMarkdownInput(props.content || ""), {
+    const raw = marked.parse(normalizeMarkdownInput(renderedContent.value || ""), {
       async: false,
+      renderer,
+      breaks: true,
+      gfm: true,
     }) as string;
     return DOMPurify.sanitize(raw, {
       ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|file|sms):|[^&#]*?:|data:image\/)/i,

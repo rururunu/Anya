@@ -164,9 +164,13 @@ impl PlanModeStore {
             return Ok(());
         }
         self.mark_awaiting_approval(session_id);
-        Err(ToolError::new(if matches!(tool_name, "write" | "edit" | "pwsh" | "bash" | "job_kill") {
-            "plan mode is active: writer tools and shell are not allowed. Present the complete plan using exit_plan_mode for user review; continue only after approval."
-        } else { PLAN_GATE_BLOCKED }))
+        Err(ToolError::new(
+            if matches!(tool_name, "write" | "edit" | "pwsh" | "bash" | "job_kill") {
+                "plan mode is active: writer tools and shell are not allowed. Present the complete plan using exit_plan_mode for user review; continue only after approval."
+            } else {
+                PLAN_GATE_BLOCKED
+            },
+        ))
     }
 }
 

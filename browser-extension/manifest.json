@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Anya Selection Bridge",
+  "version": "0.1.0",
+  "description": "Share only your selected text with the local Anya desktop app.",
+  "permissions": ["nativeMessaging", "tabs"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "all_frames": true
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2p78jWCAgInpVItF90JC0oe4cB2jPzJK2wrC39tVzDf4iN6pn9wg8zZWiKhDuQ/20yyNNAeN/Hk8jl2yLP7VZIvqZYo0ybAwLoDbMEFk3uR5b0Ogpy/fQuzZ6fY/4FV8J54o1GHKWaPQ8zB9DrrtY5NlIgAJGhn0cNHRqjWnT4FiHEOgVp3Eq2tNV8urbs16AV+c2Z/axlxw3koBiPn0IFaSSLgBJYTmbF1+21a+1s/HRFGxpOo6vl2dHPjEMoGxLer066N7UlSxNyqoBQFz0rZUB8QaTy8Bkr+4GAY5KQi8XkL7bt0co7JMNkkUQgUdaG4KuzoY+Rb/yAoNtyzzYQIDAQAB"
+}

@@ -24,8 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 use app_state::AppState;
 use commands::{
     app, ask, chat, computer_use, deepseek_files, desktop_pet, diff, harness, icons, mcp, opencli,
-    permission, plugins, remote, semantic, settings, skills, token_usage, updater, window,
-    workspace,
+    permission, plugins, remote, settings, skills, token_usage, updater, window, workspace,
 };
 use services::app_lifecycle;
 use services::overlay_native::clear_minimize_pending;
@@ -51,9 +50,54 @@ fn cursor_pos() -> Option<(i32, i32)> {
 }
 
 fn trigger_overlay(app: &AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static CAPTURING: AtomicBool = AtomicBool::new(false);
+    let source = crate::core::context::platform::WindowDetector::detect().ok();
+    if source
+        .as_ref()
+        .is_none_or(|window| window.pid == std::process::id())
+    {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || toggle_overlay(&handle, cursor_pos()));
+        return;
+    }
+    if CAPTURING.swap(true, Ordering::AcqRel) {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || toggle_overlay(&handle, cursor_pos()));
+        return;
+    }
     let handle = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        toggle_overlay(&handle, cursor_pos());
+    let mouse = cursor_pos();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        struct CaptureReset;
+        impl Drop for CaptureReset {
+            fn drop(&mut self) {
+                CAPTURING.store(false, Ordering::Release);
+            }
+        }
+        let _reset = CaptureReset;
+        let window = source.unwrap();
+        let context = crate::core::context::store::capture_for_window(window.clone());
+        let _ = tx.send((context, Some(window)));
+    });
+    std::thread::spawn(move || {
+        // A hung accessibility/clipboard provider cannot freeze shortcut UI.
+        // Timed-out results are discarded; at most one native capture stays alive.
+        let (mut context, window) = rx
+            .recv_timeout(std::time::Duration::from_millis(900))
+            .unwrap_or_else(|_| crate::core::context::store::snapshot_foreground());
+        if let Some(state) = handle.try_state::<AppState>() {
+            context = state.core.chat().overlay_show_context(context);
+        }
+        let target = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            crate::services::window::toggle_overlay_with_context(
+                &target,
+                mouse,
+                Some((context, window)),
+            );
+        });
     });
 }
 
@@ -147,6 +191,10 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run_factory_reset_worker() -> bool {
+    services::factory_reset::run_worker()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -166,6 +214,16 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            if std::env::args().nth(1).as_deref() == Some("--anya-factory-reset-failed") {
+                use tauri_plugin_dialog::DialogExt;
+                app.dialog()
+                    .message(format!(
+                        "未能完整清除所有数据，请关闭占用文件的程序后重试。\n{}",
+                        std::env::args().nth(2).unwrap_or_default()
+                    ))
+                    .title("重置未完成")
+                    .show(|_| {});
+            }
             let config_dir = app
                 .path()
                 .app_config_dir()
@@ -173,6 +231,7 @@ pub fn run() {
             crate::core::chat::telemetry::init_logging(&config_dir);
             boot_timing::flush_pending();
             boot_timing::phase("logging ready");
+            crate::services::browser_selection::start();
             // Stable root for mcp-remote OAuth tokens (package still appends mcp-remote-{ver}/).
             crate::core::mcp::init_mcp_remote_config_dir(config_dir.join("mcp-auth"));
             let settings = load_settings(app.handle());
@@ -186,19 +245,6 @@ pub fn run() {
             boot_timing::phase("local api server started");
             register_enabled_mcp_tools(app.handle());
             boot_timing::phase("mcp registration queued");
-            if settings.semantic_search_enabled {
-                crate::core::ai::embed::SemanticSearchEngine::enable(
-                    crate::core::ai::embed::EmbeddingConfig {
-                        backend: settings.semantic_search_backend,
-                        local_model: settings.semantic_search_model,
-                        api_base_url: settings.semantic_search_api_base_url.clone(),
-                        api_key: settings.semantic_search_api_key.clone(),
-                        api_model: settings.semantic_search_api_model.clone(),
-                    },
-                    crate::commands::semantic::model_cache_dir(app.handle()),
-                );
-                boot_timing::phase("semantic search engine enabled");
-            }
             setup_tray(app)?;
             boot_timing::phase("tray ready");
             if let Some(window) = app.get_webview_window("overlay") {
@@ -327,11 +373,8 @@ pub fn run() {
             opencli::run_opencli_doctor,
             settings::get_app_settings,
             settings::set_app_settings,
+            services::factory_reset::delete_all_user_information,
             settings::list_system_fonts,
-            semantic::get_semantic_search_status,
-            semantic::set_semantic_search,
-            semantic::test_semantic_search_api,
-            semantic::fetch_semantic_search_models,
             skills::list_skills,
             skills::install_skill,
             skills::install_skill_markdown,
@@ -438,6 +481,7 @@ pub fn run() {
             remote::remote_list_staged,
             remote::remote_push_staged,
             remote::remote_remove_staged,
+            remote::remote_replace_staged,
             remote::remote_clear_staged,
             remote::remote_insert_staged,
             remote::remote_pop_staged,

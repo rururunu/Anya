@@ -558,11 +558,12 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 )
                 .await;
             }
-            let mut next = settings;
-            next.image_model = model;
-            next.image_model_provider = provider;
-            match crate::services::settings_store::set_settings(app, next) {
-                Ok(saved) => {
+            match crate::services::settings_store::update_settings(app, |current| {
+                current.image_model = model;
+                current.image_model_provider = provider;
+                Ok(())
+            }) {
+                Ok((saved, _)) => {
                     let payload = super::payloads::image_gen_options_payload(&saved);
                     send_msg(ws, &ServerMessage::rpc_ok(request_id, payload)).await
                 }

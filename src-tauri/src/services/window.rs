@@ -21,7 +21,7 @@ const WINDOW_BLUR_GUARD_MS: u64 = 200;
 const WINDOW_MINIMIZE_BLUR_GUARD_MS: u64 = 800;
 /// Logical height of the idle Alt+Alt overlay (compact bar + dock borders).
 /// Keep in sync with Overlay.vue `INPUT_HEIGHT`.
-const OVERLAY_INPUT_HEIGHT: f64 = 56.0;
+const OVERLAY_INPUT_HEIGHT: f64 = 86.0;
 
 static OVERLAY_IGNORE_BLUR_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
 
@@ -90,14 +90,9 @@ fn is_available_input_window(app: &AppHandle, label: &str) -> bool {
     if is_overlay_in_chat_mode(label) {
         return false;
     }
-    let Some(window) = app.get_webview_window(label) else {
-        return false;
-    };
-    let Ok(size) = window.inner_size() else {
-        return false;
-    };
-    let scale = window.scale_factor().unwrap_or(1.0).max(0.1);
-    size.height as f64 / scale <= 120.0
+    // References, multiline drafts and pickers can make an idle input window tall.
+    // Native chat mode, rather than a height heuristic, determines reuse.
+    app.get_webview_window(label).is_some()
 }
 
 pub fn set_overlay_popup_open(label: &str, open: bool) {
@@ -244,9 +239,26 @@ fn create_new_overlay(
     context: &RequestContext,
     source_window: Option<WindowInfo>,
 ) {
+    let _ = create_overlay_window(app, context, source_window, None);
+}
+
+pub fn open_conversation_overlay(app: &AppHandle, session_id: &str) -> Result<(), String> {
+    create_overlay_window(app, &RequestContext::default(), None, Some(session_id)).map(|_| ())
+}
+
+fn create_overlay_window(
+    app: &AppHandle,
+    context: &RequestContext,
+    source_window: Option<WindowInfo>,
+    session_id: Option<&str>,
+) -> Result<String, String> {
     let label = next_overlay_label(app);
+    let url = match session_id {
+        Some(id) => format!("/#/overlay?session={}", urlencoding::encode(id)),
+        None => "/#/overlay".to_string(),
+    };
     pending_contexts().insert(label.clone(), context.clone());
-    match WebviewWindowBuilder::new(app, &label, WebviewUrl::App("/#/overlay".into()))
+    match WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
         .title(app.package_info().name.clone())
         .inner_size(640.0, OVERLAY_INPUT_HEIGHT)
         .min_inner_size(640.0, OVERLAY_INPUT_HEIGHT)
@@ -269,13 +281,22 @@ fn create_new_overlay(
             let _ = place_overlay_default(&window);
             tracing::debug!(label = %label, source = "toggle_overlay", "overlay interactive ready");
             show_and_focus_overlay(&window);
-            spawn_overlay_context_enrichment(app.clone(), label, context.clone(), source_window);
+            if session_id.is_none() {
+                spawn_overlay_context_enrichment(
+                    app.clone(),
+                    label.clone(),
+                    context.clone(),
+                    source_window,
+                );
+            }
             // 不在这里发 overlay-shown，前端 onMounted 检测 isVisible() 后自行初始化
             mark_blur_guard();
+            Ok(label)
         }
         Err(e) => {
             pending_contexts().remove(&label);
             eprintln!("failed to create overlay window: {e:?}");
+            Err(e.to_string())
         }
     }
 }
@@ -342,6 +363,14 @@ fn has_selected_context(context: &RequestContext) -> bool {
 /// `mouse_pos`：双击 Alt 时的鼠标物理坐标，有值则弹窗定位到鼠标附近，
 /// 否则出现在屏幕水平居中、略高于垂直中心（无选中内容时的兜底行为）。
 pub fn toggle_overlay(app: &AppHandle, mouse_pos: Option<(i32, i32)>) {
+    toggle_overlay_with_context(app, mouse_pos, None);
+}
+
+pub fn toggle_overlay_with_context(
+    app: &AppHandle,
+    mouse_pos: Option<(i32, i32)>,
+    prepared: Option<(RequestContext, Option<WindowInfo>)>,
+) {
     tracing::debug!(source = "toggle_overlay", "overlay opening start");
     let all_windows = app.webview_windows();
 
@@ -363,7 +392,9 @@ pub fn toggle_overlay(app: &AppHandle, mouse_pos: Option<(i32, i32)>) {
                 .is_some_and(|window| window.is_visible().unwrap_or(false))
     });
     if has_visible_chat {
-        let (context, source_window) = overlay_show_context(app);
+        let (context, source_window) = prepared
+            .clone()
+            .unwrap_or_else(|| overlay_show_context(app));
         if let Some((mx, my)) = mouse_pos.filter(|_| has_selected_context(&context)) {
             place_and_show_overlay_at_mouse(app, mx, my, &context, source_window);
         } else {
@@ -382,7 +413,9 @@ pub fn toggle_overlay(app: &AppHandle, mouse_pos: Option<(i32, i32)>) {
             if visible {
                 hide_overlay(app, label);
             } else {
-                let (context, source_window) = overlay_show_context(app);
+                let (context, source_window) = prepared
+                    .clone()
+                    .unwrap_or_else(|| overlay_show_context(app));
                 if let Some((mx, my)) = mouse_pos.filter(|_| has_selected_context(&context)) {
                     const WIN_W: f64 = 640.0;
                     const OFFSET: i32 = 16;
@@ -412,7 +445,7 @@ pub fn toggle_overlay(app: &AppHandle, mouse_pos: Option<(i32, i32)>) {
             }
         }
     } else {
-        let (context, source_window) = overlay_show_context(app);
+        let (context, source_window) = prepared.unwrap_or_else(|| overlay_show_context(app));
         if let Some((mx, my)) = mouse_pos.filter(|_| has_selected_context(&context)) {
             place_and_show_overlay_at_mouse(app, mx, my, &context, source_window);
         } else {

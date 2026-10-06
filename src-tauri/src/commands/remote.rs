@@ -107,6 +107,19 @@ pub fn remote_clear_staged(app: AppHandle, session_id: String) {
 }
 
 #[tauri::command]
+pub fn remote_replace_staged(
+    app: AppHandle,
+    session_id: String,
+    index: usize,
+    expected: String,
+    message: String,
+) -> Result<Vec<String>, String> {
+    let messages = crate::core::remote::replace_staged(&session_id, index, &expected, &message)?;
+    emit_staged(&app, &session_id, &messages);
+    Ok(messages)
+}
+
+#[tauri::command]
 pub fn remote_insert_staged(
     app: AppHandle,
     session_id: String,

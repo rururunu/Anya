@@ -8,13 +8,19 @@ pub(crate) fn serialize_tool_activities(activities: Option<&Vec<ToolActivity>>) 
         .iter()
         .map(|activity| {
             let mut activity = activity.clone();
-            let keep_delivery = activity.tool_name == "present" && activity.success
-                && activity.result.as_deref().is_some_and(crate::core::tools::present::is_delivery_metadata);
+            let keep_delivery = activity.tool_name == "present"
+                && activity.success
+                && activity
+                    .result
+                    .as_deref()
+                    .is_some_and(crate::core::tools::present::is_delivery_metadata);
             if let Some(result) = activity.result.as_mut() {
-                if !keep_delivery { *result = crate::core::chat::limits::truncate_tool_output(
-                    result,
-                    crate::core::chat::limits::STORED_TOOL_RESULT_MAX_CHARS,
-                ); }
+                if !keep_delivery {
+                    *result = crate::core::chat::limits::truncate_tool_output(
+                        result,
+                        crate::core::chat::limits::STORED_TOOL_RESULT_MAX_CHARS,
+                    );
+                }
             }
             if let Some(preview) = activity.preview.as_mut() {
                 if let Some(old) = preview.old_text.as_mut() {

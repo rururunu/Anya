@@ -249,24 +249,7 @@ impl Tool for SearchCodebaseTool {
         let limit = args["limit"].as_u64().unwrap_or(12) as usize;
         let index = crate::core::tools::workspace_index::WorkspaceIndex::open(&ctx.workspace_root)
             .map_err(ToolError::new)?;
-        // Retrieve a larger keyword candidate set, then re-rank semantically
-        // when the embedding model is ready (retrieve-then-rerank).
-        let candidate_limit = limit.max(30).min(80);
-        let mut hits = index
-            .search(query, candidate_limit)
-            .map_err(ToolError::new)?;
-        if hits.len() > 1 && crate::core::ai::embed::SemanticSearchEngine::is_ready() {
-            let passages: Vec<String> = hits.iter().map(|h| h.snippet.clone()).collect();
-            if let Ok(scores) =
-                crate::core::ai::embed::SemanticSearchEngine::rerank(query, &passages)
-            {
-                for (hit, score) in hits.iter_mut().zip(scores.iter()) {
-                    hit.score = (*score * 1000.0) as i32;
-                }
-                hits.sort_by(|a, b| b.score.cmp(&a.score).then(a.path.cmp(&b.path)));
-            }
-        }
-        hits.truncate(limit.max(1));
+        let hits = index.search(query, limit.max(1)).map_err(ToolError::new)?;
         if hits.is_empty() {
             return Ok("No index hits.".into());
         }

@@ -202,16 +202,38 @@ fn present_verifies_all_files_and_returns_replayable_original_references() {
     let ctx = context();
     std::fs::write(ctx.workspace_root.join("报告.pptx"), b"original").unwrap();
     let tools = manager().dsh_contract();
-    assert!(tools.schemas().iter().any(|schema| schema["function"]["name"] == "present"));
+    assert!(tools
+        .schemas()
+        .iter()
+        .any(|schema| schema["function"]["name"] == "present"));
     assert!(tool_prompt(&tools.schemas()).contains("Each presented file adds a card"));
-    let result = tools.dispatch(&ctx, "present", json!({"files":[{"path":"报告.pptx","description":"演示文稿"}]})).unwrap();
+    let result = tools
+        .dispatch(
+            &ctx,
+            "present",
+            json!({"files":[{"path":"报告.pptx","description":"演示文稿"}]}),
+        )
+        .unwrap();
     let value: Value = serde_json::from_str(&result).unwrap();
     assert_eq!(value["files"][0]["name"], "报告.pptx");
     assert_eq!(value["files"][0]["size"], 8);
-    assert!(std::path::Path::new(value["files"][0]["absolutePath"].as_str().unwrap()).is_absolute());
-    assert!(!value["files"][0]["absolutePath"].as_str().unwrap().starts_with(r"\\?\"));
-    assert_eq!(std::fs::read(ctx.workspace_root.join("报告.pptx")).unwrap(), b"original");
-    for args in [json!({"files":[]}), json!({"files":[{"path":"."}]}), json!({"files":[{"path":"报告.pptx"},{"path":"missing.pdf"}]}), json!({"files":[{"path":"报告.pptx","description":123}]})] {
+    assert!(
+        std::path::Path::new(value["files"][0]["absolutePath"].as_str().unwrap()).is_absolute()
+    );
+    assert!(!value["files"][0]["absolutePath"]
+        .as_str()
+        .unwrap()
+        .starts_with(r"\\?\"));
+    assert_eq!(
+        std::fs::read(ctx.workspace_root.join("报告.pptx")).unwrap(),
+        b"original"
+    );
+    for args in [
+        json!({"files":[]}),
+        json!({"files":[{"path":"."}]}),
+        json!({"files":[{"path":"报告.pptx"},{"path":"missing.pdf"}]}),
+        json!({"files":[{"path":"报告.pptx","description":123}]}),
+    ] {
         assert!(tools.dispatch(&ctx, "present", args).is_err());
     }
 }

@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.md">Documentation</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.25 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.26 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
@@ -31,6 +31,8 @@
 DeepSeek models use natively integrated dsh tools and prompts, with cache usage, response timing, and retry diagnostics. Other models use Anya's general tool set. See [DeepSeek integration](./docs/deepseek-harness.md).
 
 ## Get started
+
+Alt+Alt captures selected text before the overlay takes focus and displays a compact inline reference tag. Chrome / Edge users can optionally install the [Selection Bridge](./browser-extension/README.md) for webpage selection and source URLs.
 
 1. Download and install the MSI from [Releases](../../releases).
 2. Open **Settings**, add a model provider, and configure its credentials.

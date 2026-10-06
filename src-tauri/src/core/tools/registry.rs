@@ -139,7 +139,11 @@ impl ToolRegistry {
         name: &str,
         args: &Value,
     ) -> Result<Arc<dyn Tool>, ToolError> {
-        let name = if self.tools.contains_key(name.trim()) { name.trim() } else { normalize_tool_name(name) };
+        let name = if self.tools.contains_key(name.trim()) {
+            name.trim()
+        } else {
+            normalize_tool_name(name)
+        };
         if name.is_empty() {
             return Err(ToolError::new(self.unknown_tool_message("")));
         }
@@ -220,7 +224,11 @@ impl ToolRegistry {
                 if tool.read_only()
                     || matches!(
                         name.as_str(),
-                        "update_tasks" | "ask_user" | "ask_user_question" | "todo_write" | "manage_plugin"
+                        "update_tasks"
+                            | "ask_user"
+                            | "ask_user_question"
+                            | "todo_write"
+                            | "manage_plugin"
                     )
                 {
                     filtered.register(tool);

@@ -33,9 +33,12 @@ pub(super) struct ApiTokenUsage {
 impl ApiTokenUsage {
     pub(super) fn cache_read_tokens(&self) -> usize {
         self.prompt_cache_hit_tokens
-            .unwrap_or(0).max(self.prompt_tokens_details.cached_tokens.unwrap_or(0))
+            .unwrap_or(0)
+            .max(self.prompt_tokens_details.cached_tokens.unwrap_or(0))
     }
-    pub(super) fn cache_reported(&self) -> bool { self.prompt_cache_hit_tokens.is_some() || self.prompt_tokens_details.cached_tokens.is_some() }
+    pub(super) fn cache_reported(&self) -> bool {
+        self.prompt_cache_hit_tokens.is_some() || self.prompt_tokens_details.cached_tokens.is_some()
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

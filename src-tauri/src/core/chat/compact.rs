@@ -248,29 +248,36 @@ pub async fn prepare_history_for_prompt(
 /// First shrink large tool payloads; summarize only if the remeasured history is still full.
 /// This operates on a request copy, preserving durable reasoning and tool-call identifiers.
 pub async fn prepare_dsh_history_for_prompt(
-    history: &[ChatMessage], context: &RequestContext, session_id: &str,
-    context_window: usize, summarizer: Option<&dyn ConversationSummarizer>,
+    history: &[ChatMessage],
+    context: &RequestContext,
+    session_id: &str,
+    context_window: usize,
+    summarizer: Option<&dyn ConversationSummarizer>,
 ) -> CompactResult {
     let mut messages = history.to_vec();
-    if measure_context_usage(&messages, context, None, context_window).usage_ratio >= COMPACT_TRIGGER_RATIO {
+    if measure_context_usage(&messages, context, None, context_window).usage_ratio
+        >= COMPACT_TRIGGER_RATIO
+    {
         trim_dsh_tool_payloads(&mut messages);
     }
     prepare_history_for_prompt(&messages, context, session_id, context_window, summarizer).await
 }
 
 pub(crate) fn trim_dsh_tool_payloads(messages: &mut [ChatMessage]) {
-        for message in messages {
-            if message.role == Role::Tool {
-                message.content = limits::truncate_tool_output(&message.content, 8000);
-                message.estimated_tokens = None;
-            }
-            if let Some(activities) = message.tool_activities.as_mut() {
-                message.estimated_tokens = None;
-                for activity in activities {
-                    if let Some(result) = activity.result.as_mut() { *result = limits::truncate_tool_output(result, 8000); }
+    for message in messages {
+        if message.role == Role::Tool {
+            message.content = limits::truncate_tool_output(&message.content, 8000);
+            message.estimated_tokens = None;
+        }
+        if let Some(activities) = message.tool_activities.as_mut() {
+            message.estimated_tokens = None;
+            for activity in activities {
+                if let Some(result) = activity.result.as_mut() {
+                    *result = limits::truncate_tool_output(result, 8000);
                 }
             }
         }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -745,7 +752,8 @@ fn fold_priority(message: &ChatMessage) -> u8 {
         Role::Tool => {
             let name = message.name.as_deref().unwrap_or("");
             let failed = message.content.to_ascii_lowercase().contains("error")
-                || message.content.contains("exit_code: 1") || message.content.contains("[exit code: 1]");
+                || message.content.contains("exit_code: 1")
+                || message.content.contains("[exit code: 1]");
             let write = matches!(
                 name,
                 "write_file"
@@ -1021,15 +1029,34 @@ mod tests {
         struct UnexpectedSummary;
         #[async_trait]
         impl ConversationSummarizer for UnexpectedSummary {
-            async fn summarize(&self, _: &str) -> Result<String, String> { panic!("tool trimming should avoid the summary call") }
+            async fn summarize(&self, _: &str) -> Result<String, String> {
+                panic!("tool trimming should avoid the summary call")
+            }
         }
         let mut assistant = assistant_msg("a", "");
         assistant.reasoning = Some("verbatim reasoning\n ".into());
-        assistant.tool_calls = Some(vec![crate::core::runtime::ToolCallPayload { id:"c1".into(), name:"read".into(), arguments:r#"{"file_path":"large.txt"}"#.into(), thought_signature: None }]);
+        assistant.tool_calls = Some(vec![crate::core::runtime::ToolCallPayload {
+            id: "c1".into(),
+            name: "read".into(),
+            arguments: r#"{"file_path":"large.txt"}"#.into(),
+            thought_signature: None,
+        }]);
         let mut tool = tool_msg("t", &"x".repeat(240_000));
         tool.name = Some("read".into());
-        let history = vec![user_msg("u", "Inspect large.txt"), assistant, tool, user_msg("last", "Explain the result")];
-        let result = prepare_dsh_history_for_prompt(&history, &RequestContext::default(), "s1", 32_000, Some(&UnexpectedSummary)).await;
+        let history = vec![
+            user_msg("u", "Inspect large.txt"),
+            assistant,
+            tool,
+            user_msg("last", "Explain the result"),
+        ];
+        let result = prepare_dsh_history_for_prompt(
+            &history,
+            &RequestContext::default(),
+            "s1",
+            32_000,
+            Some(&UnexpectedSummary),
+        )
+        .await;
         assert!(result.notice.is_none());
         let kept_assistant = result.messages.iter().find(|m| m.id == "a").unwrap();
         assert_eq!(kept_assistant.reasoning, history[1].reasoning);

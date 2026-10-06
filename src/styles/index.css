@@ -142,7 +142,6 @@ html.chrome-frosted-glass .settings-workbench,
     -webkit-font-smoothing: antialiased;
   }
   html.peek-window .overlay-shell,
-  html.peek-window .peek-panel,
   html.peek-window .chat-input-shell,
   html.peek-window .input-bar {
     border-color: transparent !important;
@@ -163,7 +162,6 @@ html.chrome-frosted-glass .settings-workbench,
 html.peek-window #app,
 html.peek-window #app > *,
 html.peek-window .overlay-shell,
-html.peek-window .peek-panel,
 html.peek-window .chat-input-shell {
   border: none !important;
   outline: none !important;

@@ -56,7 +56,9 @@ pub(super) async fn read_anthropic_sse_stream(
             if payload.is_empty() {
                 continue;
             }
-            outcome.first_sse_ms.get_or_insert(started.elapsed().as_millis());
+            outcome
+                .first_sse_ms
+                .get_or_insert(started.elapsed().as_millis());
             if payload == "[DONE]" {
                 outcome.saw_done = true;
                 break;
@@ -99,7 +101,9 @@ pub(super) async fn read_anthropic_sse_stream(
                 let _ = tx.send(StreamEvent::Reasoning(tick.reasoning_delta)).await;
             }
             if !tick.content_delta.is_empty() {
-                outcome.first_text_ms.get_or_insert(started.elapsed().as_millis());
+                outcome
+                    .first_text_ms
+                    .get_or_insert(started.elapsed().as_millis());
                 let _ = tx.send(StreamEvent::Delta(tick.content_delta)).await;
             }
             if outcome.saw_done {

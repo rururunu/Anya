@@ -29,10 +29,15 @@ impl ToolManager {
     }
 
     pub fn dsh_contract(self: &Arc<Self>) -> Self {
-        Self { registry: Arc::new(crate::core::tools::dsh::registry(Arc::clone(self))), dsh: true }
+        Self {
+            registry: Arc::new(crate::core::tools::dsh::registry(Arc::clone(self))),
+            dsh: true,
+        }
     }
 
-    pub fn is_dsh(&self) -> bool { self.dsh }
+    pub fn is_dsh(&self) -> bool {
+        self.dsh
+    }
 
     pub fn schemas(&self) -> Vec<Value> {
         self.registry.schemas()
@@ -142,11 +147,17 @@ impl ToolManager {
     }
 
     pub fn read_only(&self) -> Self {
-        Self { registry: Arc::new(self.registry.filter_read_only()), dsh: self.dsh }
+        Self {
+            registry: Arc::new(self.registry.filter_read_only()),
+            dsh: self.dsh,
+        }
     }
 
     pub fn ask_mode(&self) -> Self {
-        Self { registry: Arc::new(self.registry.filter_for_ask_mode()), dsh: self.dsh }
+        Self {
+            registry: Arc::new(self.registry.filter_for_ask_mode()),
+            dsh: self.dsh,
+        }
     }
 
     pub fn image_mode(&self) -> Self {

@@ -179,7 +179,9 @@ impl AIProvider for AccountingProvider {
             "first_provider_event_ms":null,"first_content_ms":null,"retry_count":null
         })) };
         if self.uses_dsh_tools() {
-            crate::core::chat::telemetry::record_provider_metrics(&serde_json::json!({"kind":"model_call_start", "call_id":call_id, "request_id":request_id, "session_id":session_id, "model":self.model, "timestamp":chrono::Utc::now().to_rfc3339()}));
+            crate::core::chat::telemetry::record_provider_metrics(
+                &serde_json::json!({"kind":"model_call_start", "call_id":call_id, "request_id":request_id, "session_id":session_id, "model":self.model, "timestamp":chrono::Utc::now().to_rfc3339()}),
+            );
         }
         let mut first_event_ms = None;
         let mut first_content_ms = None;
@@ -191,7 +193,9 @@ impl AIProvider for AccountingProvider {
         let inner = Arc::clone(&self.inner);
         let metrics_context = (call_id.clone(), request_id.clone(), session_id.clone());
         let mut task = ProviderTaskGuard(tauri::async_runtime::spawn(async move {
-            crate::core::chat::telemetry::PROVIDER_METRICS_CONTEXT.scope(metrics_context, inner.stream(request, inner_tx)).await
+            crate::core::chat::telemetry::PROVIDER_METRICS_CONTEXT
+                .scope(metrics_context, inner.stream(request, inner_tx))
+                .await
         }));
         let mut provider_usage: Option<TokenUsage> = None;
         let mut content = String::new();
@@ -200,16 +204,27 @@ impl AIProvider for AccountingProvider {
         let mut saw_finish = false;
 
         while let Some(event) = inner_rx.recv().await {
-            if !matches!(&event, StreamEvent::Start | StreamEvent::Status { .. }) { first_event_ms.get_or_insert(started.elapsed().as_millis()); }
-            if matches!(&event, StreamEvent::Delta(text) if !text.is_empty()) { first_content_ms.get_or_insert(started.elapsed().as_millis()); }
-            if matches!(&event, StreamEvent::Status { kind } if kind.starts_with("stream_retry:")) { retries += 1; }
+            if !matches!(&event, StreamEvent::Start | StreamEvent::Status { .. }) {
+                first_event_ms.get_or_insert(started.elapsed().as_millis());
+            }
+            if matches!(&event, StreamEvent::Delta(text) if !text.is_empty()) {
+                first_content_ms.get_or_insert(started.elapsed().as_millis());
+            }
+            if matches!(&event, StreamEvent::Status { kind } if kind.starts_with("stream_retry:")) {
+                retries += 1;
+            }
             if let Some(value) = metrics_end.identity.as_mut() {
                 value["first_provider_event_ms"] = serde_json::json!(first_event_ms);
                 value["first_content_ms"] = serde_json::json!(first_content_ms);
                 value["retry_count"] = serde_json::json!(retries);
             }
-            if self.uses_dsh_tools() && matches!(&event, StreamEvent::Status { kind } if kind.starts_with("stream_retry:")) {
-                content.clear(); reasoning.clear(); tool_calls.clear(); provider_usage = None;
+            if self.uses_dsh_tools()
+                && matches!(&event, StreamEvent::Status { kind } if kind.starts_with("stream_retry:"))
+            {
+                content.clear();
+                reasoning.clear();
+                tool_calls.clear();
+                provider_usage = None;
             }
             match &event {
                 StreamEvent::Delta(value) => content.push_str(value),

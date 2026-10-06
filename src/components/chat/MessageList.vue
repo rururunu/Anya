@@ -96,228 +96,333 @@
       @wheel.passive="handleWheel"
       @keydown="handleKeydown"
     >
-      <div
-        v-if="hasOlderHistory || loadingOlderHistory || hiddenLoadedTurns > 0"
-        class="load-earlier-row"
-      >
-        <button
-          type="button"
-          class="load-earlier"
-          :disabled="loadingOlderHistory"
-          @click="loadEarlierMessages"
+      <div ref="contentRef" class="message-list-content">
+        <div
+          v-if="hasOlderHistory || loadingOlderHistory || hiddenLoadedTurns > 0"
+          class="load-earlier-row"
         >
-          <span v-if="loadingOlderHistory" class="load-earlier-spinner" aria-hidden="true" />
-          {{
-            tr(
-              settingStore.language,
-              hiddenLoadedTurns > 0 ? "showEarlierMessages" : "loadEarlierMessages",
-            )
-          }}
-        </button>
-      </div>
-      <div v-if="displayItems.length === 0" class="empty-thread">
-        {{ emptyThreadPrompt }}
-      </div>
-      <div
-        v-for="(turn, turnIndex) in renderedTurns.items"
-        :key="turn.key"
-        class="chat-turn"
-        :class="{ 'is-first-turn': renderedTurns.start + turnIndex === 0 }"
-        v-memo="turnMemoDeps(turn, renderedTurns.start + turnIndex)"
-        :ref="(el) => bindTurnHead(turn.key, el)"
-      >
+          <button
+            type="button"
+            class="load-earlier"
+            :disabled="loadingOlderHistory"
+            @click="loadEarlierMessages"
+          >
+            <span v-if="loadingOlderHistory" class="load-earlier-spinner" aria-hidden="true" />
+            {{
+              tr(
+                settingStore.language,
+                hiddenLoadedTurns > 0 ? "showEarlierMessages" : "loadEarlierMessages",
+              )
+            }}
+          </button>
+        </div>
+        <div v-if="displayItems.length === 0 && !inlineConversation" class="empty-thread">
+          {{ emptyThreadPrompt }}
+        </div>
         <div
-          v-if="turn.user || turnBuildHost(turn)"
-          class="chat-turn-sticky-sentinel"
-          aria-hidden="true"
-        />
-        <div
-          v-if="turn.user || turnBuildHost(turn)"
-          class="chat-turn-head"
-          :class="{ 'is-stuck': isTurnHeadStuck(turn.key) }"
+          v-for="(turn, turnIndex) in renderedTurns.items"
+          :key="turn.key"
+          class="chat-turn"
+          :class="{ 'is-first-turn': renderedTurns.start + turnIndex === 0 }"
+          v-memo="turnMemoDeps(turn, renderedTurns.start + turnIndex)"
+          :ref="(el) => bindTurnHead(turn.key, el)"
+        >
+          <div
+            v-if="turn.user || turnBuildHost(turn)"
+            class="chat-turn-sticky-sentinel"
+            aria-hidden="true"
+          />
+          <div
+            v-if="turn.user || turnBuildHost(turn)"
+            class="chat-turn-head"
+            :class="{ 'is-stuck': isTurnHeadStuck(turn.key) }"
+          >
+            <article
+              v-if="turn.user"
+              class="message-item user"
+              :class="{
+                'reply-target':
+                  inlineConversation &&
+                  turn.user.message.fromQueue &&
+                  turn.body.some(
+                    (item) =>
+                      item.kind === 'assistant' &&
+                      (item.message.status === 'pending' || item.message.status === 'streaming'),
+                  ),
+              }"
+              :data-message-id="turn.user.message.id"
+            >
+              <UserAvatar v-if="inlineConversation" class="user-message-avatar" />
+              <UserMessageCard
+                class="user-turn"
+                :message="turn.user.message"
+                :session-id="sessionId ?? ''"
+                :can-resend="Boolean(checkpointFor(turn.user.message))"
+                :busy="rewindBusy"
+                :inline-edit="inlineConversation"
+                @preview="previewImage"
+                @resend="
+                  (text) => {
+                    const user = turn.user;
+                    if (user) void resendUserMessage(user.message, text);
+                  }
+                "
+                @rewind="
+                  () => {
+                    const user = turn.user;
+                    if (user) void confirmRewind(user.message);
+                  }
+                "
+              />
+            </article>
+            <template v-if="inlineConversation">
+              <article
+                v-for="guidance in turn.body.filter((item) => item.kind === 'inject')"
+                :key="guidance.key"
+                class="message-item user guided-user-message"
+                :data-message-id="guidance.message.id"
+              >
+                <UserAvatar class="user-message-avatar" />
+                <div class="guided-user-content">
+                  <span class="queue-state">{{ tr(settingStore.language, "guidedMessage") }}</span>
+                  <UserMessageCard
+                    :message="guidance.message"
+                    :session-id="sessionId ?? ''"
+                    :can-resend="false"
+                    :busy="false"
+                    inline-edit
+                    @preview="previewImage"
+                  />
+                </div>
+              </article>
+            </template>
+            <PlanApprovalCard
+              v-if="turnBuildHost(turn)"
+              class="turn-head-build"
+              variant="build"
+              v-bind="turnBuildCardBind(turn)"
+              @preview-plan="$emit('reviewPlan')"
+            />
+          </div>
+          <template v-for="item in turn.body" :key="item.key">
+            <article
+              v-if="item.kind === 'inject' && !inlineConversation"
+              class="message-item inject"
+              :data-message-id="item.message.id"
+            >
+              <SoftInjectCard :message="item.message" />
+            </article>
+            <article
+              v-else-if="item.kind === 'assistant'"
+              class="message-item assistant"
+              :data-message-id="item.message.id"
+            >
+              <AvatarFrame
+                v-if="inlineConversation"
+                class="reply-model-icon"
+                :title="replyModelId(item.message)"
+                aria-hidden="true"
+              >
+                <component :is="replyModelIcon(item.message)" :size="22" />
+              </AvatarFrame>
+              <div class="assistant-bubble">
+                <button
+                  v-if="inlineConversation && turn.user?.message.fromQueue"
+                  type="button"
+                  class="reply-message-reference"
+                  @click="scrollToMessage(turn.user.message.id)"
+                >
+                  {{
+                    tr(settingStore.language, "replyToMessage", {
+                      message: messagePreview(turn.user.message),
+                    })
+                  }}
+                </button>
+                <AgentWorkDetails
+                  :message="
+                    inlineConversation
+                      ? {
+                          ...item.message,
+                          workTimeline: item.message.workTimeline?.filter(
+                            (entry) => entry.type !== 'inject',
+                          ),
+                        }
+                      : item.message
+                  "
+                  :language="settingStore.language"
+                  :show-reasoning="settingStore.showReasoning"
+                  :display-mode="settingStore.agentWorkDisplay"
+                  :suppress-content="needsProviderSetup(item.message)"
+                  @inspect-subagent="emit('inspectSubagent', $event)"
+                  @preview-image="emit('previewImage', $event)"
+                  @edit-from-image="emit('editFromImage', $event)"
+                />
+                <PlanApprovalCard
+                  v-if="showCreatedPlanCard(item.message)"
+                  variant="proposal"
+                  :title="planCardTitle(item.message)"
+                  :summary="planCardSummary(item.message)"
+                  :busy="planBusy || isSessionSending"
+                  :show-actions="canApprovePlan(item.message)"
+                  @approve="approvePlanMode"
+                  @reject="rejectPlanMode"
+                  @preview-plan="$emit('reviewPlan')"
+                />
+                <ImageAnalysisDetails
+                  v-for="(analysis, idx) in imageAnalysesForAssistant(item.message)"
+                  :key="`${item.message.id}-analysis-${idx}`"
+                  :model="analysis.model"
+                  :text="analysis.text"
+                />
+                <EnvironmentContextCard
+                  v-if="item.message.environmentContext"
+                  :context="item.message.environmentContext"
+                />
+                <div v-else-if="needsProviderSetup(item.message)" class="provider-setup-card">
+                  <p class="provider-setup-text">
+                    {{ providerSetupText(item.message) }}
+                  </p>
+                  <button type="button" class="provider-setup-btn" @click="openProviderSettings">
+                    {{ tr(settingStore.language, "configureProviderAction") }}
+                  </button>
+                </div>
+                <AssistantActivityIndicator
+                  v-if="activityLabel(item.message)"
+                  :label="activityLabel(item.message)!"
+                  :icon="activityIcon(item.message)"
+                />
+                <CodeChangesSummary
+                  v-if="item.message.status === 'done'"
+                  :message="item.message"
+                  :can-undo="Boolean(checkpointForAssistant(item.message))"
+                  :busy="rewindBusy"
+                  @undo="confirmAssistantRewind(item.message)"
+                  @review="$emit('reviewChanges')"
+                  @review-file="$emit('reviewFile', $event)"
+                />
+                <PresentedFiles
+                  v-if="item.message.status === 'done'"
+                  :message="item.message"
+                  @preview-image="emit('previewImage', $event)"
+                />
+                <div
+                  v-if="
+                    item.message.content.trim() ||
+                    processingDuration(item.message) ||
+                    turnTokenCount(item) ||
+                    turnCacheHit(item) != null ||
+                    canBranchMessage(item.message)
+                  "
+                  class="message-actions assistant-message-actions"
+                >
+                  <template v-if="processingDuration(item.message)">
+                    <span
+                      class="turn-mascot"
+                      :title="turnMascotTitle(item.message)"
+                      aria-hidden="true"
+                    >
+                      <MascotFace :state="turnMascotState(item.message)" :follow-pointer="false" />
+                    </span>
+                    <span v-if="turnMascotLabel(item.message)" class="turn-state">
+                      {{ turnMascotLabel(item.message) }}
+                    </span>
+                  </template>
+                  <span v-if="processingDuration(item.message)" class="processing-duration">
+                    {{
+                      tr(settingStore.language, "processedFor", {
+                        duration: processingDuration(item.message)!,
+                      })
+                    }}
+                  </span>
+                  <span
+                    v-if="turnTokenCount(item)"
+                    class="token-usage"
+                    :title="tokenEstimateTitle(turnTokenCount(item))"
+                  >
+                    ≈ {{ formatTokenCount(turnTokenCount(item), settingStore.language) }} tokens
+                  </span>
+                  <span
+                    v-if="turnCacheHit(item) != null"
+                    class="cache-hit"
+                    :title="turnCacheHitTitle(item)"
+                  >
+                    {{
+                      tr(settingStore.language, "tokens.cacheHit", {
+                        percent: turnCacheHit(item) ?? 0,
+                      })
+                    }}
+                  </span>
+                  <button
+                    v-if="item.message.content.trim()"
+                    type="button"
+                    class="message-action-btn"
+                    :class="copyButtonClass(item.message.id)"
+                    :aria-label="copyButtonLabel(item.message.id)"
+                    :title="copyButtonLabel(item.message.id)"
+                    @click.stop="copyMessage(item.message, 'assistant')"
+                  >
+                    <Check
+                      v-if="copyStatus?.id === item.message.id && copyStatus.state === 'copied'"
+                      :size="14"
+                      :stroke-width="2"
+                      aria-hidden="true"
+                    />
+                    <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
+                  </button>
+                  <button
+                    v-if="canBranchMessage(item.message)"
+                    type="button"
+                    class="message-action-btn"
+                    :aria-label="tr(settingStore.language, 'branchConversation')"
+                    :title="tr(settingStore.language, 'branchConversation')"
+                    @click.stop="branchFromMessage(item)"
+                  >
+                    <GitBranch :size="14" :stroke-width="2" aria-hidden="true" />
+                  </button>
+                </div>
+                <time
+                  v-if="inlineConversation && item.message.timestamp > 0"
+                  class="message-timestamp"
+                  :datetime="new Date(item.message.timestamp).toISOString()"
+                >
+                  {{ new Date(item.message.timestamp).toLocaleString(settingStore.language) }}
+                </time>
+              </div>
+            </article>
+          </template>
+        </div>
+        <section
+          v-if="inlineConversation && queuedMessages.length"
+          class="queued-user-messages"
+          :aria-label="tr(settingStore.language, 'queueNav')"
         >
           <article
-            v-if="turn.user"
-            class="message-item user"
-            :data-message-id="turn.user.message.id"
+            v-for="(message, index) in queuedMessages"
+            :key="message.id"
+            class="message-item user queued-user-message"
           >
+            <UserAvatar class="user-message-avatar" />
             <UserMessageCard
               class="user-turn"
-              :message="turn.user.message"
+              :message="message"
               :session-id="sessionId ?? ''"
-              :can-resend="Boolean(checkpointFor(turn.user.message))"
-              :busy="rewindBusy"
+              :can-resend="true"
+              :busy="Boolean(sessionId && chatStore.stagedDispatching[sessionId])"
+              queued
+              inline-edit
               @preview="previewImage"
               @resend="
-                (text) => {
-                  const user = turn.user;
-                  if (user) void resendUserMessage(user.message, text);
-                }
+                (text) =>
+                  sessionId && chatStore.editStagedMessage(sessionId, index, message.content, text)
               "
-              @rewind="
-                () => {
-                  const user = turn.user;
-                  if (user) void confirmRewind(user.message);
-                }
-              "
+              @remove="sessionId && chatStore.removeStagedMessage(sessionId, index)"
+              @guide="sessionId && chatStore.guideStagedMessage(sessionId, index)"
             />
           </article>
-          <PlanApprovalCard
-            v-if="turnBuildHost(turn)"
-            class="turn-head-build"
-            variant="build"
-            v-bind="turnBuildCardBind(turn)"
-            @preview-plan="$emit('reviewPlan')"
-          />
-        </div>
-        <template v-for="item in turn.body" :key="item.key">
-          <article
-            v-if="item.kind === 'inject'"
-            class="message-item inject"
-            :data-message-id="item.message.id"
-          >
-            <SoftInjectCard :message="item.message" />
-          </article>
-          <article v-else class="message-item assistant" :data-message-id="item.message.id">
-            <div class="assistant-bubble">
-              <AgentWorkDetails
-                :message="item.message"
-                :language="settingStore.language"
-                :show-reasoning="settingStore.showReasoning"
-                :display-mode="settingStore.agentWorkDisplay"
-                :suppress-content="needsProviderSetup(item.message)"
-                @inspect-subagent="emit('inspectSubagent', $event)"
-                @preview-image="emit('previewImage', $event)"
-                @edit-from-image="emit('editFromImage', $event)"
-              />
-              <PlanApprovalCard
-                v-if="showCreatedPlanCard(item.message)"
-                variant="proposal"
-                :title="planCardTitle(item.message)"
-                :summary="planCardSummary(item.message)"
-                :busy="planBusy || isSessionSending"
-                :show-actions="canApprovePlan(item.message)"
-                @approve="approvePlanMode"
-                @reject="rejectPlanMode"
-                @preview-plan="$emit('reviewPlan')"
-              />
-              <ImageAnalysisDetails
-                v-for="(analysis, idx) in imageAnalysesForAssistant(item.message)"
-                :key="`${item.message.id}-analysis-${idx}`"
-                :model="analysis.model"
-                :text="analysis.text"
-              />
-              <EnvironmentContextCard
-                v-if="item.message.environmentContext"
-                :context="item.message.environmentContext"
-              />
-              <div v-else-if="needsProviderSetup(item.message)" class="provider-setup-card">
-                <p class="provider-setup-text">
-                  {{ providerSetupText(item.message) }}
-                </p>
-                <button type="button" class="provider-setup-btn" @click="openProviderSettings">
-                  {{ tr(settingStore.language, "configureProviderAction") }}
-                </button>
-              </div>
-              <AssistantActivityIndicator
-                v-if="activityLabel(item.message)"
-                :label="activityLabel(item.message)!"
-                :icon="activityIcon(item.message)"
-              />
-              <CodeChangesSummary
-                v-if="item.message.status === 'done'"
-                :message="item.message"
-                :can-undo="Boolean(checkpointForAssistant(item.message))"
-                :busy="rewindBusy"
-                @undo="confirmAssistantRewind(item.message)"
-                @review="$emit('reviewChanges')"
-                @review-file="$emit('reviewFile', $event)"
-              />
-              <PresentedFiles
-                v-if="item.message.status === 'done'"
-                :message="item.message"
-                @preview-image="emit('previewImage', $event)"
-              />
-              <div
-                v-if="
-                  item.message.content.trim() ||
-                  processingDuration(item.message) ||
-                  turnTokenCount(item) ||
-                  turnCacheHit(item) != null ||
-                  canBranchMessage(item.message)
-                "
-                class="message-actions assistant-message-actions"
-              >
-                <template v-if="processingDuration(item.message)">
-                  <span
-                    class="turn-mascot"
-                    :title="turnMascotTitle(item.message)"
-                    aria-hidden="true"
-                  >
-                    <MascotFace :state="turnMascotState(item.message)" :follow-pointer="false" />
-                  </span>
-                  <span v-if="turnMascotLabel(item.message)" class="turn-state">
-                    {{ turnMascotLabel(item.message) }}
-                  </span>
-                </template>
-                <span v-if="processingDuration(item.message)" class="processing-duration">
-                  {{
-                    tr(settingStore.language, "processedFor", {
-                      duration: processingDuration(item.message)!,
-                    })
-                  }}
-                </span>
-                <span
-                  v-if="turnTokenCount(item)"
-                  class="token-usage"
-                  :title="tokenEstimateTitle(turnTokenCount(item))"
-                >
-                  ≈ {{ formatTokenCount(turnTokenCount(item), settingStore.language) }} tokens
-                </span>
-                <span
-                  v-if="turnCacheHit(item) != null"
-                  class="cache-hit"
-                  :title="turnCacheHitTitle(item)"
-                >
-                  {{
-                    tr(settingStore.language, "tokens.cacheHit", {
-                      percent: turnCacheHit(item) ?? 0,
-                    })
-                  }}
-                </span>
-                <button
-                  v-if="item.message.content.trim()"
-                  type="button"
-                  class="message-action-btn"
-                  :class="copyButtonClass(item.message.id)"
-                  :aria-label="copyButtonLabel(item.message.id)"
-                  :title="copyButtonLabel(item.message.id)"
-                  @click.stop="copyMessage(item.message, 'assistant')"
-                >
-                  <Check
-                    v-if="copyStatus?.id === item.message.id && copyStatus.state === 'copied'"
-                    :size="14"
-                    :stroke-width="2"
-                    aria-hidden="true"
-                  />
-                  <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
-                </button>
-                <button
-                  v-if="canBranchMessage(item.message)"
-                  type="button"
-                  class="message-action-btn"
-                  :aria-label="tr(settingStore.language, 'branchConversation')"
-                  :title="tr(settingStore.language, 'branchConversation')"
-                  @click.stop="branchFromMessage(item)"
-                >
-                  <GitBranch :size="14" :stroke-width="2" aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-          </article>
-        </template>
+        </section>
+        <slot name="composer" />
+        <div class="turn-spacer" aria-hidden="true" />
       </div>
-      <div class="turn-spacer" aria-hidden="true" />
     </div>
 
     <AppConfirmDialog ref="confirmDialogRef" />
@@ -325,9 +430,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  provide,
+  ref,
+  watch,
+  type Component,
+} from "vue";
+import { markdownWorkspaceRoot } from "@/services/chat/localImageSrc";
 import {
   ArrowDown,
+  Bot,
   Check,
   ChevronDown,
   ChevronUp,
@@ -345,6 +461,10 @@ import MascotFace, { type MascotState } from "@/components/icons/MascotFace.vue"
 import ImageAnalysisDetails from "@/components/chat/ImageAnalysisDetails.vue";
 import EnvironmentContextCard from "@/components/chat/EnvironmentContextCard.vue";
 import UserMessageCard from "@/components/chat/UserMessageCard.vue";
+import UserAvatar from "@/components/chat/UserAvatar.vue";
+import AvatarFrame from "@/components/chat/AvatarFrame.vue";
+import { getModelIcon } from "@/lib/providerIcons";
+import { useChatModelStore } from "@/stores/chatModel";
 import SoftInjectCard from "@/components/chat/SoftInjectCard.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -386,12 +506,7 @@ import {
   promptTokenTotal,
 } from "@/services/chat/tokenEstimate";
 import { isConfigureProviderError } from "@/services/chat/ensureDefaultModel";
-import {
-  applyFindHits,
-  clearFindHits,
-  paintCurrentFindHit,
-} from "@/services/chat/conversationFind";
-import { provideConversationFind } from "@/composables/chat/useConversationFind";
+import { useConversationSearch } from "@/composables/chat/useConversationSearch";
 import { useMessagePreviewRail } from "@/composables/chat/useMessagePreviewRail";
 import { useMessageScroll } from "@/composables/chat/useMessageScroll";
 import { useTurnHeadSticky } from "@/composables/chat/useTurnHeadSticky";
@@ -423,15 +538,22 @@ const props = defineProps<{
   messages: ChatMessage[];
   sessionId?: string;
   workspaceName?: string;
+  workspaceRoot?: string;
   checkpoints?: CheckpointInfo[];
+  inlineConversation?: boolean;
 }>();
 const workspaceName = computed(() => props.workspaceName?.trim() || "");
+provide(
+  markdownWorkspaceRoot,
+  computed(() => props.workspaceRoot?.trim() || ""),
+);
 const emptyThreadPrompt = computed(() =>
   workspaceName.value
     ? tr(settingStore.language, "emptyWorkspaceThread", { workspace: workspaceName.value })
     : tr(settingStore.language, "emptyThreadGeneral"),
 );
 const emit = defineEmits<{
+  contentHeight: [height: number];
   rewound: [
     payload: {
       text: string;
@@ -452,6 +574,20 @@ const settingStore = useSettingStore();
 const appStore = useAppStore();
 const chatStore = useChatStore();
 const chatSessionsStore = useChatSessionsStore();
+const replyModels = new Map<string, string>();
+const chatModelStore = useChatModelStore();
+function replyModelId(message: ChatMessage) {
+  const captured = replyModels.get(message.id);
+  if (captured) return captured;
+  const model = chatStore.sessionCompose[message.sessionId]?.chatModel || settingStore.chatModel;
+  if (model) replyModels.set(message.id, model);
+  return model || "";
+}
+function replyModelIcon(message: ChatMessage) {
+  const id = replyModelId(message);
+  const model = chatModelStore.models.find((entry) => entry.id === id);
+  return getModelIcon(model ?? { id }) || Bot;
+}
 const log = createLogger("message-list");
 const { sending } = storeToRefs(chatStore);
 const planBusy = ref(false);
@@ -465,6 +601,7 @@ const rejectedPlanMessageId = ref<string | null>(null);
 watch(
   () => props.sessionId,
   () => {
+    replyModels.clear();
     approvedPlanMessageId.value = null;
     rejectedPlanMessageId.value = null;
     stickToBottom.value = true;
@@ -690,9 +827,11 @@ async function rejectPlanMode() {
 
 const visibleMessages = computed(() =>
   props.messages.filter((message) => {
-    if (isCompactionSummary(message)) return false;
     const role = String(message.role).toLowerCase();
-    return role !== "system" && role !== "tool";
+    if (role === "system" || role === "tool" || message.id.startsWith("compact-")) return false;
+    // Live content changes should invalidate its bubble, not rebuild every turn.
+    if (message.status === "pending" || message.status === "streaming") return true;
+    return !isCompactionSummary(message);
   }),
 );
 
@@ -733,6 +872,10 @@ const displayTurns = computed((): DisplayTurn[] => {
       continue;
     }
     if (item.kind === "inject") {
+      if (props.inlineConversation && current) {
+        current.body.push(item);
+        continue;
+      }
       if (current) {
         let assistantIndex = -1;
         for (let index = current.body.length - 1; index >= 0; index -= 1) {
@@ -763,6 +906,18 @@ const displayTurns = computed((): DisplayTurn[] => {
   }
   if (current) turns.push(current);
   return turns;
+});
+
+const queuedMessages = computed<ChatMessage[]>(() => {
+  const id = props.sessionId ?? "";
+  return (chatStore.stagedMessages[id] ?? []).map((content, index) => ({
+    id: `queued-${index}-${content}`,
+    sessionId: id,
+    role: "user",
+    content,
+    status: "done",
+    timestamp: 0,
+  }));
 });
 
 /** Stable deps for v-memo — completed bubbles skip re-render when only siblings stream. */
@@ -876,151 +1031,29 @@ async function loadEarlierMessages() {
   // the user was reading stay put.
   container.scrollTop = container.scrollHeight - previousHeight + previousTop;
 }
-const findOpen = ref(false);
-const findQuery = ref("");
-const findIndex = ref(0);
-const findHits = ref<HTMLElement[]>([]);
-const findInputRef = ref<HTMLInputElement | null>(null);
 const rewindBusy = ref(false);
 const copyStatus = ref<{ id: string; state: "copied" | "failed" } | null>(null);
 const durationClock = ref(Date.now());
 let copyStatusTimer: number | undefined;
 let durationTimer: number | undefined;
-
-provideConversationFind({
-  active: findOpen,
-  query: findQuery,
+const {
+  findOpen,
+  findQuery,
+  findHits,
+  findInputRef,
+  findCountLabel,
+  nextFind,
+  prevFind,
+  openFind,
+  closeFind,
+  onFindInputKeydown,
+} = useConversationSearch({
+  listRef,
+  stickToBottom,
+  sessionId: computed(() => props.sessionId),
+  messages: computed(() => props.messages),
+  language: computed(() => settingStore.language),
 });
-
-const findCountLabel = computed(() => {
-  const query = findQuery.value.trim();
-  if (!query) return "";
-  if (findHits.value.length === 0) return tr(settingStore.language, "findNoResults");
-  return tr(settingStore.language, "findMatchCount", {
-    current: String(findIndex.value + 1),
-    total: String(findHits.value.length),
-  });
-});
-
-async function refreshFindHits(options: { scroll: boolean; resetIndex?: boolean }) {
-  await nextTick();
-  await nextTick();
-  const hits = applyFindHits(listRef.value, findOpen.value ? findQuery.value : "");
-  findHits.value = hits;
-  if (!hits.length) {
-    findIndex.value = 0;
-    return;
-  }
-  if (options.resetIndex || findIndex.value >= hits.length) findIndex.value = 0;
-  paintCurrentFindHit(hits, findIndex.value);
-  if (options.scroll) scrollFindHit(hits[findIndex.value]);
-}
-
-function scrollFindHit(mark: HTMLElement | undefined) {
-  const container = listRef.value;
-  if (!container || !mark) return;
-  stickToBottom.value = false;
-  const containerRect = container.getBoundingClientRect();
-  const markRect = mark.getBoundingClientRect();
-  const offset = markRect.top - containerRect.top - Math.max(56, container.clientHeight * 0.28);
-  container.scrollTo({ top: Math.max(0, container.scrollTop + offset), behavior: "smooth" });
-}
-
-function nextFind() {
-  if (!findHits.value.length) return;
-  findIndex.value = (findIndex.value + 1) % findHits.value.length;
-  paintCurrentFindHit(findHits.value, findIndex.value);
-  scrollFindHit(findHits.value[findIndex.value]);
-}
-
-function prevFind() {
-  if (!findHits.value.length) return;
-  findIndex.value = (findIndex.value - 1 + findHits.value.length) % findHits.value.length;
-  paintCurrentFindHit(findHits.value, findIndex.value);
-  scrollFindHit(findHits.value[findIndex.value]);
-}
-
-function openFind() {
-  findOpen.value = true;
-  void nextTick(() => {
-    findInputRef.value?.focus();
-    findInputRef.value?.select();
-    refreshFindHits({ scroll: Boolean(findQuery.value.trim()), resetIndex: false });
-  });
-}
-
-function closeFind() {
-  if (!findOpen.value) return;
-  findOpen.value = false;
-  clearFindHits(listRef.value);
-  findHits.value = [];
-  findIndex.value = 0;
-}
-
-function onFindInputKeydown(event: KeyboardEvent) {
-  if (event.isComposing) return;
-  if (event.key === "ArrowDown" || (event.key === "Enter" && !event.shiftKey)) {
-    event.preventDefault();
-    nextFind();
-    return;
-  }
-  if (event.key === "ArrowUp" || (event.key === "Enter" && event.shiftKey)) {
-    event.preventDefault();
-    prevFind();
-    return;
-  }
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeFind();
-  }
-}
-
-function onFindWindowKeydown(event: KeyboardEvent) {
-  const mod = event.ctrlKey || event.metaKey;
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  if (mod && !event.altKey && !event.shiftKey && key === "f") {
-    event.preventDefault();
-    openFind();
-    return;
-  }
-  if (!findOpen.value) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeFind();
-    return;
-  }
-  if (event.key === "F3") {
-    event.preventDefault();
-    if (event.shiftKey) prevFind();
-    else nextFind();
-    return;
-  }
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-    if (event.target === findInputRef.value) return;
-    if (event.target instanceof HTMLElement) {
-      if (event.target.closest(".search-palette, textarea, [contenteditable='true']")) return;
-      if (event.target.tagName === "INPUT") return;
-    }
-    event.preventDefault();
-    if (event.key === "ArrowDown") nextFind();
-    else prevFind();
-  }
-}
-
-watch(findQuery, () => {
-  if (!findOpen.value) return;
-  void nextTick(() =>
-    refreshFindHits({ scroll: Boolean(findQuery.value.trim()), resetIndex: true }),
-  );
-});
-
-watch(
-  () => props.sessionId,
-  () => {
-    closeFind();
-    findQuery.value = "";
-  },
-);
 
 function normalizeRole(role: ChatMessage["role"] | string) {
   return String(role).toLowerCase();
@@ -1056,6 +1089,10 @@ const { handleScroll, handleWheel, handleKeydown, scrollToMessage, scrollToLates
     isSending: isSessionSending,
     updateActiveUserMessage,
   });
+
+watch(queuedMessages, () => {
+  if (props.inlineConversation && stickToBottom.value) void nextTick(scrollToLatest);
+});
 
 function copyButtonLabel(messageId: string) {
   if (copyStatus.value?.id !== messageId) return tr(settingStore.language, "copy");
@@ -1361,34 +1398,52 @@ function activityIcon(message: ChatMessage): Component | undefined {
   return undefined;
 }
 
-watch(
-  () => {
-    const last = props.messages[props.messages.length - 1];
-    return `${props.messages.length}:${last?.id ?? ""}:${last?.content.length ?? 0}:${last?.status ?? ""}`;
-  },
-  () => {
-    if (!findOpen.value || !findQuery.value.trim()) return;
-    void nextTick(() => refreshFindHits({ scroll: false }));
-  },
-);
-
+const contentRef = ref<HTMLElement | null>(null);
+let contentObserver: ResizeObserver | null = null;
 onMounted(() => {
+  if (props.inlineConversation && typeof ResizeObserver !== "undefined") {
+    contentObserver = new ResizeObserver(() => {
+      const content = contentRef.value;
+      const list = listRef.value;
+      if (!content || !list) return;
+      const style = getComputedStyle(list);
+      emit(
+        "contentHeight",
+        Math.ceil(
+          content.offsetHeight + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+        ),
+      );
+    });
+    if (contentRef.value) contentObserver.observe(contentRef.value);
+  }
   durationTimer = window.setInterval(() => {
     if (visibleMessages.value.some(isPending)) durationClock.value = Date.now();
   }, 1000);
-  globalThis.addEventListener("keydown", onFindWindowKeydown);
 });
 onUnmounted(() => {
+  contentObserver?.disconnect();
   if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
   if (durationTimer) window.clearInterval(durationTimer);
-  globalThis.removeEventListener("keydown", onFindWindowKeydown);
-  clearFindHits(listRef.value);
 });
 
 defineExpose({ openFind, closeFind });
 </script>
 
 <style scoped>
+.message-timestamp {
+  display: block;
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--peek-muted) 72%, transparent);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  opacity: 0;
+  pointer-events: none;
+}
+.message-item.assistant:hover .message-timestamp,
+.message-item.assistant:focus-within .message-timestamp {
+  opacity: 1;
+}
 /* "Load earlier" affordance: the loaded window holds only the newest page. */
 .load-earlier-row {
   display: flex;
@@ -1441,6 +1496,13 @@ defineExpose({ openFind, closeFind });
   min-width: 0;
   min-height: 0;
   width: 100%;
+}
+.message-list-content {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: inherit;
+  min-width: 0;
 }
 .message-list-shell.has-find .message-list {
   scroll-padding-top: 52px;
@@ -1676,6 +1738,23 @@ defineExpose({ openFind, closeFind });
   width: 100%;
   contain: layout style;
 }
+.reply-model-icon {
+  margin-right: 12px;
+}
+.user-message-avatar {
+  margin: 7px 12px 0 0;
+}
+.message-item.user:has(.user-message-avatar) .user-turn {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.message-item.assistant:has(.reply-model-icon) .assistant-bubble {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0;
+  width: auto;
+}
 .chat-turn:has(.chat-turn-head) .message-item.assistant {
   content-visibility: visible;
   contain: none;
@@ -1757,6 +1836,44 @@ defineExpose({ openFind, closeFind });
 .user-turn {
   width: 100%;
   max-width: 100%;
+}
+.queued-user-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+.reply-target .user-turn {
+  border-left: 2px solid var(--peek-accent);
+  padding-left: 8px;
+  background: color-mix(in srgb, var(--peek-accent) 5%, transparent);
+  border-radius: 4px;
+}
+.guided-user-content {
+  flex: 1;
+  min-width: 0;
+}
+.queue-state {
+  margin: 4px 0;
+  color: var(--peek-muted);
+  font-size: 11px;
+}
+.reply-message-reference {
+  display: block;
+  max-width: 100%;
+  margin-bottom: 10px;
+  padding: 3px 8px;
+  border: 0;
+  border-left: 2px solid var(--peek-accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--peek-accent) 5%, transparent);
+  color: var(--peek-muted);
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
 }
 .message-actions {
   display: flex;

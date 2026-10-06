@@ -44,7 +44,8 @@ pub fn tool_prompt(schemas: &[Value]) -> String {
                 .unwrap_or("")
                 .strip_prefix("tool:")
                 .unwrap_or("");
-            names.contains(tool) || (tool == "jobs" && names.contains("job_output"))
+            names.contains(tool)
+                || (tool == "jobs" && names.contains("job_output"))
                 || (s["name"] == "ui:deliverable-file-references" && names.contains("present"))
         })
         .filter_map(|s| s["text"].as_str())
@@ -52,7 +53,11 @@ pub fn tool_prompt(schemas: &[Value]) -> String {
         .join("\n\n");
     let mut inventory = names.iter().copied().collect::<Vec<_>>();
     inventory.sort_unstable();
-    let inventory = inventory.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+    let inventory = inventory
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
     let mut notes = vec![format!("## Anya host integration\n\nThe tools actually exposed for this turn are: {inventory}. When listing available tools, include every exposed tool and do not invent additional capabilities. Report the workspace from the current session context. Describe Git changes only when supported by current context or tool results; do not infer them from a previous session.")];
     if names.contains("read_image") {
         notes.push("`read_image` reads image files; include it when describing file and image capabilities.".into());

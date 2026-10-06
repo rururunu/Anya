@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.25                            |
+| **版本**   | v0.2.26                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -29,7 +29,7 @@
 - Agent 回合编排与策略钩子（Ask / Agent / 计划门禁 / Image 模式）
 - 持久化（SQLite、journal、work timeline）
 - 前端流式投影与会话模型
-- 扩展点（Provider、工具、Skills、MCP、RAG 嵌入）
+- 扩展点（Provider、工具、Skills、MCP）
 - Companion / Remote Gateway（配对、局域网 vs 隧道、线路协议、文件 HTTP）
 
 **范围外**
@@ -52,7 +52,6 @@ flowchart LR
   Host -->|Skills + Deno| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[模型服务商]
   Host -->|HTTPS / stdio| Aux[MCP · 搜索 · mem0]
-  Host -.->|可选 /embeddings| Emb[嵌入 API]
   Host --> Disk[(SQLite · 设置 · 索引 · 模型)]
 ```
 
@@ -63,7 +62,6 @@ flowchart LR
 | IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）                         |
 | Microsoft Office  | 保存文件技能 + 内置 Deno/JavaScript 文档运行时                         |
 | 模型服务商        | 鉴权 HTTPS SSE；支持 Chat Completions、Responses 或 Anthropic Messages |
-| 嵌入              | 可选 RAG：OpenAI 兼容 `/embeddings` 或本地 ONNX（`fastembed`）         |
 | MCP / 搜索 / mem0 | 可选；在设置中显式启用                                                 |
 | 本地磁盘          | 聊天库、设置、`.anya/index`、嵌入模型缓存、更新公钥、检查点            |
 
@@ -92,7 +90,7 @@ flowchart TB
   subgraph Domain["L3 Domain core"]
     Chat["core/chat<br/>ChatService · StreamManager · AgentRunner"]
     AgentShell["core/agent<br/>AgentRuntime · run lifecycle"]
-    Ai["core/ai<br/>providers · embed / RAG"]
+    Ai["core/ai<br/>providers"]
     Tools["core/tools<br/>registry · approval · plan gate · sandbox"]
     Ctx["core/context · workspace · rules · token"]
     Persist["conversation_manager · db · journal"]
@@ -320,7 +318,6 @@ sequenceDiagram
 | MCP 客户端         | `core/mcp/`                                 | stdio JSON-RPC（`manager`、`process`、`runtime`、`command`、`remote_auth`）                                                                                           |
 | Images API         | `core/ai/image_gen.rs`                      | `POST /v1/images/generations` / `edits`，走设置 → 生图（`image_providers`）                                                                                           |
 | Image markdown     | `core/ai/image_markdown.rs`                 | 抽取 / 剥离 `![edit-region]`，供聊天、vision、Images 共用                                                                                                             |
-| 嵌入 / RAG         | `core/ai/embed.rs`、`commands/semantic.rs`  | 可选 retrieve-then-rerank；API 或本地 ONNX                                                                                                                            |
 | Tools              | `core/tools/`                               | 注册表、审批、plan/image mode 门禁、文件、shell、skills、子 Agent                                                                                                     |
 | 工作区索引         | `core/tools/workspace_index.rs`             | 分块关键词索引，落在 `.anya/index`（增量 JSONL）；经 `fs_skip` 跳过 `.anya`                                                                                           |
 | Plan mode          | `core/tools/plan_mode.rs`                   | 会话级写操作门禁；Agent 可通过 `request_plan_mode` 征求进入                                                                                                           |
@@ -356,7 +353,7 @@ sequenceDiagram
 | 聊天 services         | `services/chat/`                                               | 生图模式、本地图路径、保存图片、composer 分段、token 估算                                                                            |
 | IPC                   | `services/ipc/`                                                | 类型化 invoke 与事件订阅                                                                                                             |
 | 流式批处理            | `services/chat/rafBatch.ts`、`composables/chat/wireChatIpc.ts` | delta RAF 合并；聊天 IPC 从 `main.ts` 抽出                                                                                           |
-| 设置页                | `pages/Settings/`                                              | 服务商 / Agent / MCP / skills / **RAG 检索** / **生图** 提供商                                                                       |
+| 设置页                | `pages/Settings/`                                              | 服务商 / Agent / MCP / skills / **生图** 提供商                                                                                      |
 
 ---
 
@@ -724,38 +721,11 @@ flowchart LR
 
 自定义服务商可以选择 Chat Completions、Responses 或 Anthropic Messages。识别到格式不兼容时，注册表会尝试剩余线路协议，并按服务商和模型记住成功协议。禁用模型会在网络请求前被拒绝。
 
-### 11.2 工作区索引与 RAG
+### 11.2 工作区索引
 
-`search_codebase` 始终走关键词索引。语义重排**默认关闭**（设置 → RAG 检索）。启用前不下载、不发请求。
+`search_codebase` 刷新工作区关键词索引，按关键词匹配打分并返回指定数量的结果。索引覆盖重叠内容分块、符号、文件路径与决策文档（AGENTS.md / ADR），以 JSONL 保存在 `{workspace}/.anya/index/`，增量更新变更文件。
 
-```mermaid
-flowchart TB
-  Q[search_codebase 查询] --> KW[WorkspaceIndex.refresh + 关键词打分]
-  KW --> Hits[候选命中 ≤ 80]
-  Hits --> Ready{SemanticSearchEngine Ready?}
-  Ready -->|否| Out[返回关键词排序]
-  Ready -->|是| Emb[嵌入 query + snippets]
-  Emb --> Cos[余弦重排]
-  Cos --> Out[截断到 limit]
-```
-
-```mermaid
-flowchart LR
-  UI[RagSettings.vue] --> Cmd[set_semantic_search]
-  Cmd --> Eng[SemanticSearchEngine 单例]
-  Eng -->|backend=api| API["OpenAI 兼容 POST /embeddings"]
-  Eng -->|backend=local| ONNX["fastembed ONNX<br/>app_data/models/"]
-```
-
-| 环节       | 位置                                                                                                |
-| ---------- | --------------------------------------------------------------------------------------------------- |
-| 关键词索引 | `core/tools/workspace_index.rs` — 重叠分块 + 符号 / 路径 / ADR；JSONL 在 `{workspace}/.anya/index/` |
-| 检索工具   | `search_codebase`（`core/tools/builtin/misc.rs`）— 先召回再重排                                     |
-| 引擎       | `core/ai/embed.rs` — API（`reqwest::blocking`）或本地 `fastembed`                                   |
-| IPC / 设置 | `commands/semantic.rs`，设置分类 **RAG 检索**                                                       |
-| 本地模型   | E5-Small（约 120MB，默认）、BGE-Small 中/英、Jina 代码（约 500MB）、BGE-M3（约 2.3GB）              |
-
-API 路径会把 **查询与候选片段** 发到配置的嵌入主机。本地路径首次下载后离线可用。
+实现：`core/tools/workspace_index.rs`；工具入口：`core/tools/builtin/misc.rs`。
 
 ### 11.3 电脑操控
 
@@ -829,14 +799,13 @@ flowchart LR
 | 新 Skill             | `src-tauri/prompts/skills/*.md`（按需加资源）                                 |
 | Agent 插件 playbook  | `contributes.agent.skills` markdown（见 [电脑操控](./computer-use.zh-CN.md)） |
 | Companion RPC / 事件 | `core/remote/protocol.rs` + AnyaAndroid 手机客户端                            |
-| RAG 嵌入后端         | `core/ai/embed.rs` + 设置 RAG 页                                              |
 
 避免在 `AgentRunner` 之外平行再造一套 Agent 循环。
 Companion 不得再长出第二套 Agent 运行时。
 
 ---
 
-### 15.1 v0.2.25 原生工具与交付链路
+### 15.1 v0.2.26 原生工具与交付链路
 
 模型解析结果决定是否使用 `core/tools/dsh/`，而不是仅依据服务商名称。普通模型、DeepSeek 主任务和子任务分别选择自身工具集；`present` 同时存在于通用注册表。导入的静态契约位于 `prompts/dsh/`，执行与审批沿用 Anya 宿主，详见 [DeepSeek 原生链路](./deepseek-harness.zh-CN.md)。
 
@@ -868,10 +837,10 @@ Companion 不得再长出第二套 Agent 运行时。
 | 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                                |
 | 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                             |
 | 生图 UI                     | `src/components/chat/GeneratedImageCard.vue`、`ImagePreviewSidebar.vue`                   |
-| 内嵌设置 / RAG              | `pages/Settings/`、`components/settings/RagSettings.vue`                                  |
+| 内嵌设置                    | `pages/Settings/`                                                                         |
 | 主题应用路径                | `src/services/theme/`、`stores/setting.ts` `applyTheme`                                   |
 | 工作台毛玻璃 / 窗口圆角     | `services/workbench_glass.rs`、`overlay/appearance.ts`                                    |
 | 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                                 |
 | Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                                    |
-| 工作区索引 / RAG            | `core/tools/workspace_index.rs`、`core/ai/embed.rs`                                       |
+| 工作区索引                  | `core/tools/workspace_index.rs`                                                           |
 | 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                    |

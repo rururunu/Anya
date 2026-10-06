@@ -48,6 +48,7 @@ type StreamBatchUpdate = {
 };
 
 export interface ChatIpcDeps {
+  streamUpdateIntervalMs?: number;
   chatStore: ReturnType<typeof useChatStore>;
   settingStore: ReturnType<typeof useSettingStore>;
 }
@@ -57,7 +58,11 @@ export interface ChatIpcDeps {
  * file/url offers, remote compose sync) into the chat store. Extracted from
  * `main.ts` bootstrap so the entry point stays about window bootstrapping.
  */
-export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Promise<void> {
+export async function wireChatIpc({
+  chatStore,
+  settingStore,
+  streamUpdateIntervalMs = 0,
+}: ChatIpcDeps): Promise<void> {
   const log = createLogger("chatIpc");
   const sessionsStore = useChatSessionsStore();
   const overlayDraftSessionId = () => sessionsStore.overlayDraftSessionId;
@@ -76,7 +81,7 @@ export async function wireChatIpc({ chatStore, settingStore }: ChatIpcDeps): Pro
         fallbackSessionId: overlayDraftSessionId(),
       })),
     );
-  });
+  }, streamUpdateIntervalMs);
 
   await listenSettingsChanged((settings) => {
     settingStore.applyPublicSettings(settings);

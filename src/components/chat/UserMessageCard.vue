@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, reactive, ref, watch } from "vue";
-import { Bot, File, Folder, Puzzle, Undo2, Zap } from "@lucide/vue";
+import {
+  Bot,
+  Check,
+  Clock3,
+  CornerDownLeft,
+  File,
+  Folder,
+  Puzzle,
+  Trash2,
+  Undo2,
+  X,
+  Zap,
+} from "@lucide/vue";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import ComposerEditable from "@/components/chat/ComposerEditable.vue";
 import UserMessageFooter from "@/components/chat/UserMessageFooter.vue";
@@ -32,12 +44,16 @@ const props = defineProps<{
   sessionId: string;
   canResend: boolean;
   busy: boolean;
+  inlineEdit?: boolean;
+  queued?: boolean;
 }>();
 
 const emit = defineEmits<{
   preview: [source: string];
   resend: [text: string];
   rewind: [];
+  remove: [];
+  guide: [];
 }>();
 
 const settingStore = useSettingStore();
@@ -150,8 +166,9 @@ function cancelEdit() {
 }
 
 function commitEdit() {
-  if (!editing.value) return;
+  if (!editing.value || !canSend.value || props.busy) return;
   emit("resend", draft.value);
+  if (props.queued) editing.value = false;
 }
 
 function isInsideEditor(target: EventTarget | null) {
@@ -226,13 +243,21 @@ watch(
       'is-editing': editing,
       'is-editable': canEdit && !editing,
       'is-collapsed': collapsed,
+      'inline-edit': inlineEdit,
+      'is-queued': queued,
     }"
-    :title="canEdit && !editing ? tr(settingStore.language, 'editAndResend') : undefined"
+    :title="
+      inlineEdit
+        ? undefined
+        : canEdit && !editing
+          ? tr(settingStore.language, queued ? 'queuedEdit' : 'editAndResend')
+          : undefined
+    "
     @click="startEdit"
     @focusout="scheduleBlurCheck"
   >
     <button
-      v-if="canResend && !editing"
+      v-if="canResend && !editing && !queued"
       type="button"
       class="user-rewind-btn"
       data-tauri-drag-region="false"
@@ -372,7 +397,7 @@ watch(
       </span>
     </div>
     <button
-      v-if="needsFold && !editing"
+      v-if="needsFold && !editing && !queued"
       type="button"
       class="user-bubble-toggle"
       data-tauri-drag-region="false"
@@ -381,17 +406,171 @@ watch(
       {{ tr(settingStore.language, expanded ? "collapse" : "expand") }}
     </button>
     <UserMessageFooter
-      v-if="editing"
+      v-if="editing && !inlineEdit"
       :session-id="sessionId"
       :can-send="canSend"
       :busy="busy"
       @attach="void attachFiles()"
       @send="commitEdit"
     />
+    <div v-if="editing && inlineEdit" class="inline-edit-actions" @mousedown.prevent @click.stop>
+      <button
+        type="button"
+        :disabled="!canSend || busy"
+        :title="tr(settingStore.language, 'editAndResend')"
+        :aria-label="tr(settingStore.language, 'editAndResend')"
+        @click="commitEdit"
+      >
+        <Check :size="14" />
+      </button>
+      <button
+        type="button"
+        :title="tr(settingStore.language, 'rewindCancel')"
+        :aria-label="tr(settingStore.language, 'rewindCancel')"
+        @click="cancelEdit"
+      >
+        <X :size="14" />
+      </button>
+    </div>
+    <div v-if="queued && !editing" class="queued-message-actions" data-tauri-drag-region="false">
+      <span
+        class="queued-state"
+        :title="tr(settingStore.language, 'queuedWaiting')"
+        :aria-label="tr(settingStore.language, 'queuedWaiting')"
+      >
+        <Clock3 :size="13" aria-hidden="true" />
+      </span>
+      <button
+        type="button"
+        :disabled="busy"
+        :title="tr(settingStore.language, 'queuedGuide')"
+        :aria-label="tr(settingStore.language, 'queuedGuide')"
+        @click.stop="emit('guide')"
+      >
+        <CornerDownLeft :size="14" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        :disabled="busy"
+        :title="tr(settingStore.language, 'queuedDelete')"
+        :aria-label="tr(settingStore.language, 'queuedDelete')"
+        @click.stop="emit('remove')"
+      >
+        <Trash2 :size="14" aria-hidden="true" />
+      </button>
+    </div>
+    <time
+      v-if="inlineEdit && !editing && message.timestamp > 0"
+      class="message-timestamp"
+      :datetime="new Date(message.timestamp).toISOString()"
+    >
+      {{ new Date(message.timestamp).toLocaleString(settingStore.language) }}
+    </time>
   </div>
 </template>
 
 <style scoped>
+.user-composer.is-queued:not(.is-editing) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.message-timestamp {
+  display: block;
+  grid-column: 1 / -1;
+  margin-top: -4px;
+  color: color-mix(in srgb, var(--peek-muted) 72%, transparent);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  opacity: 0;
+  pointer-events: none;
+}
+.user-composer:hover .message-timestamp,
+.user-composer:focus-within .message-timestamp {
+  opacity: 1;
+}
+.is-queued:not(.is-editing) .user-composer-body {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.is-queued:not(.is-editing) .user-message-text {
+  white-space: nowrap;
+}
+.queued-message-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+  margin: 0;
+  font-size: 11px;
+  color: var(--peek-muted);
+}
+.queued-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--peek-muted);
+}
+.queued-message-actions button {
+  border: none;
+  background: transparent;
+  color: var(--peek-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.queued-message-actions button:hover:not(:disabled) {
+  background: var(--peek-list-active);
+  color: var(--peek-text);
+}
+.user-composer.inline-edit.is-editing {
+  padding-right: 60px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+.inline-edit :deep(.composer-editable) {
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  line-height: inherit;
+}
+.inline-edit-actions {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  display: flex;
+  gap: 2px;
+}
+.inline-edit-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--peek-muted);
+  cursor: pointer;
+}
+.inline-edit-actions button:hover:not(:disabled) {
+  background: var(--peek-list-active);
+  color: var(--peek-text);
+}
+.inline-edit-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .user-composer {
   position: relative;
   display: flex;

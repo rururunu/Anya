@@ -28,6 +28,13 @@ impl ContextManager {
                 return ContextCaptureOutcome::Empty;
             }
         };
+        self.capture_window(window)
+    }
+
+    pub fn capture_window(
+        &self,
+        window: crate::core::context::models::WindowInfo,
+    ) -> ContextCaptureOutcome {
         tracing::debug!(
             provider = "foreground_window",
             process = %window.process_name,
@@ -36,7 +43,7 @@ impl ContextManager {
             "context foreground detected"
         );
 
-        if window.process_name.eq_ignore_ascii_case("Anya.exe") {
+        if window.pid == std::process::id() {
             tracing::debug!(
                 process = %window.process_name,
                 strategy = "ignored_self",
@@ -45,7 +52,26 @@ impl ContextManager {
             return ContextCaptureOutcome::Empty;
         }
 
+        if !WindowDetector::detect().is_ok_and(|current| {
+            current.hwnd == window.hwnd
+                && current.pid == window.pid
+                && current.title == window.title
+        }) {
+            return ContextCaptureOutcome::Success(ChatContext {
+                window: Some(window),
+                ..ChatContext::empty()
+            });
+        }
         let provider = self.strategy.resolve(&window);
+        if let Some(selection) = crate::services::browser_selection::selection_for(&window) {
+            return ContextCaptureOutcome::Success(ChatContext {
+                selected_text: Some(selection.text),
+                selected_files: Vec::new(),
+                selected_images: Vec::new(),
+                source: Some(crate::core::context::models::CaptureSource::Browser),
+                window: Some(window),
+            });
+        }
         let strategy_name = match &provider {
             ActiveProvider::Explorer(_) => "explorer",
             ActiveProvider::Clipboard(_) => "clipboard",

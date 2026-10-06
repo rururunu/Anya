@@ -1,5 +1,5 @@
 <template>
-  <div class="image-gen-toolbar" data-tauri-drag-region="false">
+  <div class="image-gen-toolbar" :class="{ compact }" data-tauri-drag-region="false">
     <button
       type="button"
       class="image-gen-pill"
@@ -81,6 +81,7 @@ const props = defineProps<{
   modelValue: ImageGenCompose;
   language: AppLanguage;
   openField?: ImageGenFieldId | null;
+  compact?: boolean;
 }>();
 const emit = defineEmits<{
   open: [id: ImageGenFieldId, button: HTMLElement];
@@ -142,6 +143,28 @@ function onOpen(id: ImageGenFieldId, event: MouseEvent) {
   gap: 8px;
   width: 100%;
   min-width: 0;
+}
+.image-gen-toolbar.compact {
+  width: auto;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.compact .image-gen-pill,
+.compact .image-gen-style {
+  height: 24px;
+  border-color: transparent;
+  background: transparent;
+  border-radius: 5px;
+  font-size: 11px;
+  padding: 0 4px;
+}
+.compact .image-gen-seg {
+  font-size: 11px;
+  padding: 0 4px;
+  gap: 4px;
+}
+.compact .image-gen-model {
+  max-width: 112px;
 }
 .image-gen-pill,
 .image-gen-style {

@@ -54,7 +54,9 @@ pub(super) async fn read_responses_sse_stream(
             if payload.is_empty() {
                 continue;
             }
-            outcome.first_sse_ms.get_or_insert(started.elapsed().as_millis());
+            outcome
+                .first_sse_ms
+                .get_or_insert(started.elapsed().as_millis());
             if payload == "[DONE]" {
                 outcome.saw_done = true;
                 break;
@@ -96,7 +98,11 @@ pub(super) async fn read_responses_sse_stream(
                         } else {
                             cache_read.filter(|value| *value > 0)
                         },
-                        if is_deepseek { reasoning_tokens } else { reasoning_tokens.filter(|value| *value > 0) },
+                        if is_deepseek {
+                            reasoning_tokens
+                        } else {
+                            reasoning_tokens.filter(|value| *value > 0)
+                        },
                     )))
                     .await;
             }
@@ -104,7 +110,9 @@ pub(super) async fn read_responses_sse_stream(
                 let _ = tx.send(StreamEvent::Reasoning(tick.reasoning_delta)).await;
             }
             if !tick.content_delta.is_empty() {
-                outcome.first_text_ms.get_or_insert(started.elapsed().as_millis());
+                outcome
+                    .first_text_ms
+                    .get_or_insert(started.elapsed().as_millis());
                 let _ = tx.send(StreamEvent::Delta(tick.content_delta)).await;
             }
 

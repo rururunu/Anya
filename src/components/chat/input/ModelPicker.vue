@@ -88,6 +88,13 @@
           :key="`${entry.model.provider}:${entry.model.id}`"
           class="model-picker-row"
         >
+          <div
+            v-if="flatGrouped && entry.groupLabel"
+            class="model-provider-heading"
+            role="presentation"
+          >
+            {{ entry.groupLabel }}
+          </div>
           <Tooltip>
             <TooltipTrigger as-child>
               <div
@@ -209,6 +216,7 @@ const props = withDefaults(
     backText: string;
     modelCountText: string;
     ariaLabel: string;
+    flatGrouped?: boolean;
     /** Thinking effort / tier choices for the selected model; shown as a slider under it. */
     thinkingOptions?: Array<{ id: string; label: string }>;
     thinkingSelectedId?: string;
@@ -216,6 +224,7 @@ const props = withDefaults(
   }>(),
   {
     refreshing: false,
+    flatGrouped: false,
     thinkingOptions: () => [],
     thinkingSelectedId: "",
     thinkingTitle: "",
@@ -271,7 +280,7 @@ watch(
 
 const grouped = computed(() => groupModelsByProvider(props.models, settingStore.customProviders));
 
-const hierarchical = computed(() => grouped.value.length > 1);
+const hierarchical = computed(() => !props.flatGrouped && grouped.value.length > 1);
 
 const showingGroups = computed(() => hierarchical.value && !props.activeProvider);
 
@@ -291,12 +300,22 @@ const activeGroupLabel = computed(() => {
 });
 
 const modelRows = computed(() => {
+  if (props.flatGrouped) {
+    let index = 0;
+    return grouped.value.flatMap((group) =>
+      group.models.map((model, groupIndex) => ({
+        model,
+        index: index++,
+        groupLabel: groupIndex === 0 ? group.label : "",
+      })),
+    );
+  }
   const source = props.activeProvider
     ? (grouped.value.find((group) => group.provider === props.activeProvider)?.models ?? [])
     : grouped.value.length === 1
       ? grouped.value[0].models
       : props.models;
-  return source.map((model, index) => ({ model, index }));
+  return source.map((model, index) => ({ model, index, groupLabel: "" }));
 });
 
 const refreshIndex = computed(() =>
@@ -305,6 +324,12 @@ const refreshIndex = computed(() =>
 </script>
 
 <style scoped>
+.model-provider-heading {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  color: var(--peek-muted);
+  font-weight: 600;
+}
 .command-list {
   --command-row-height: 32px;
   --command-list-padding: 6px;

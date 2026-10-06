@@ -157,9 +157,16 @@ impl ChatService {
         let mut context = self
             .agent_runtime
             .collect_context(&agent_run_id, || {
-                let mut context = self
-                    .context_resolver
-                    .resolve_environment(workspace.as_ref(), &known_workspaces);
+                let mut context = if let Some(snapshot) = overrides.captured_context.clone() {
+                    self.context_resolver.resolve_request(
+                        snapshot,
+                        workspace.as_ref(),
+                        &known_workspaces,
+                    )
+                } else {
+                    self.context_resolver
+                        .resolve_environment(workspace.as_ref(), &known_workspaces)
+                };
                 crate::core::context::provider::environment_provider::collect(&mut context);
                 context
             })
@@ -318,16 +325,25 @@ impl ChatService {
                 snapshot: None,
             });
         }
-        let compact = if provider.uses_dsh_tools() { compact::prepare_dsh_history_for_prompt(
-            &history, &context, &session_id, context_window, Some(&summarizer),
-        ).await } else { compact::prepare_history_for_prompt(
-            &history,
-            &context,
-            &session_id,
-            context_window,
-            Some(&summarizer),
-        )
-        .await };
+        let compact = if provider.uses_dsh_tools() {
+            compact::prepare_dsh_history_for_prompt(
+                &history,
+                &context,
+                &session_id,
+                context_window,
+                Some(&summarizer),
+            )
+            .await
+        } else {
+            compact::prepare_history_for_prompt(
+                &history,
+                &context,
+                &session_id,
+                context_window,
+                Some(&summarizer),
+            )
+            .await
+        };
         if may_compact {
             let kind = compact
                 .notice
@@ -464,7 +480,11 @@ impl ChatService {
             companion_origin: shared_session_origin_store().is_companion(&session_id),
             image_mode: image_mode_options.as_ref().map(ImageModePolicy::from),
         };
-        let build_prompt = if provider.uses_dsh_tools() { PromptBuilder::build_dsh } else { PromptBuilder::build };
+        let build_prompt = if provider.uses_dsh_tools() {
+            PromptBuilder::build_dsh
+        } else {
+            PromptBuilder::build
+        };
         let mut request = build_prompt(PromptBuildInput {
             request_id: &assistant_message.id,
             session_id: &session_id,

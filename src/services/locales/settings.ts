@@ -31,8 +31,6 @@ export const settingsFieldIds = [
   "webSearchProvider",
   "serperApiKey",
   "tavilyApiKey",
-  "semanticSearchEnabled",
-  "semanticSearchModel",
   "toolApprovalMode",
   "agentWorkDisplay",
   "lspEnabled",
@@ -57,6 +55,7 @@ export const settingsFieldHelpIds = [
 export type SettingHelpFieldId = (typeof settingsFieldHelpIds)[number];
 
 type CategoryKey =
+  | "profile"
   | "appearance"
   | "ai"
   | "image"
@@ -71,8 +70,7 @@ type CategoryKey =
   | "history"
   | "archive"
   | "about"
-  | "provider"
-  | "rag";
+  | "provider";
 type GroupKey =
   | "themeLanguage"
   | "fonts"
@@ -142,39 +140,6 @@ type ImageKey =
   | "templateDelete"
   | "templateEmpty";
 
-type RagKey =
-  | "title"
-  | "description"
-  | "enableLabel"
-  | "enableHint"
-  | "backendLabel"
-  | "backendApi"
-  | "backendLocal"
-  | "apiBaseUrlLabel"
-  | "apiBaseUrlHint"
-  | "apiKeyLabel"
-  | "apiModelLabel"
-  | "apiModelPlaceholder"
-  | "fetchModels"
-  | "fetchingModels"
-  | "testConnection"
-  | "testing"
-  | "testOk"
-  | "testOkDetail"
-  | "modelLabel"
-  | "modelHint"
-  | "save"
-  | "saving"
-  | "idle"
-  | "on"
-  | "downloading"
-  | "ready"
-  | "error"
-  | "unsaved"
-  | "fetchOk"
-  | "fetchFail"
-  | "incomplete";
-
 type ArchiveKey =
   | "title"
   | "description"
@@ -209,6 +174,7 @@ type PetKey =
   | "sizeLarge";
 
 export type SettingsI18nKey =
+  | "settings.profile.searchTerms"
   | "settings.title"
   | "settings.minimize"
   | "settings.close"
@@ -280,7 +246,6 @@ export type SettingsI18nKey =
   | `settings.history.${HistoryKey}`
   | `settings.historyConfirm.${HistoryConfirmKey}`
   | `settings.archive.${ArchiveKey}`
-  | `settings.rag.${RagKey}`
   | `settings.image.${ImageKey}`
   | `settings.pet.${PetKey}`;
 
@@ -355,6 +320,8 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.deleteConfirm": "Are you sure you want to delete this provider?",
 
   "settings.categories.appearance": "Appearance",
+  "settings.categories.profile": "Profile",
+  "settings.profile.searchTerms": "Profile avatar display name handle token activity streak habits",
   "settings.categories.ai": "Model",
   "settings.categories.image": "Image",
   "settings.categories.memory": "Memory",
@@ -378,40 +345,6 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.pet.sizeSmall": "Small",
   "settings.pet.sizeMedium": "Medium",
   "settings.pet.sizeLarge": "Large",
-  "settings.categories.rag": "RAG Search",
-
-  "settings.rag.title": "RAG Search",
-  "settings.rag.description":
-    "Semantic workspace search so the agent can find relevant code across files, via an OpenAI-compatible embeddings API or a local model.",
-  "settings.rag.enableLabel": "Enable semantic search",
-  "settings.rag.enableHint": "Nothing is downloaded or requested while off.",
-  "settings.rag.backendLabel": "Embedding backend",
-  "settings.rag.backendApi": "API (OpenAI-compatible)",
-  "settings.rag.backendLocal": "Local model",
-  "settings.rag.apiBaseUrlLabel": "API base URL",
-  "settings.rag.apiBaseUrlHint": "Requests go to this URL's /embeddings endpoint.",
-  "settings.rag.apiKeyLabel": "API Key",
-  "settings.rag.apiModelLabel": "Model",
-  "settings.rag.apiModelPlaceholder": "Qwen/Qwen3-VL-Embedding-8B or BAAI/bge-m3",
-  "settings.rag.fetchModels": "Fetch models",
-  "settings.rag.fetchingModels": "Fetching…",
-  "settings.rag.testConnection": "Test connection",
-  "settings.rag.testing": "Testing…",
-  "settings.rag.testOk": "Connected",
-  "settings.rag.testOkDetail": "Connected · dim {dim}",
-  "settings.rag.modelLabel": "Local model",
-  "settings.rag.modelHint": "Downloaded on first apply, then works offline.",
-  "settings.rag.save": "Save & apply",
-  "settings.rag.saving": "Saving…",
-  "settings.rag.idle": "Off",
-  "settings.rag.on": "On",
-  "settings.rag.downloading": "Downloading model…",
-  "settings.rag.ready": "Ready",
-  "settings.rag.error": "Error",
-  "settings.rag.unsaved": "Unsaved changes",
-  "settings.rag.fetchOk": "Fetched {count} models",
-  "settings.rag.fetchFail": "Could not fetch models",
-  "settings.rag.incomplete": "Fill in the API URL, key, and model.",
 
   "settings.groups.themeLanguage": "Theme & language",
   "settings.groups.fonts": "Fonts",
@@ -441,8 +374,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.pages.agent.description": "Tool approval, work display, and coding behavior.",
   "settings.pages.memory.description":
     "Long-term preferences and project conventions. Leave the API key empty to use local memory.",
-  "settings.pages.search.description":
-    "Give the model web_search. Use RAG Search for workspace semantics.",
+  "settings.pages.search.description": "Give the model web_search for searching the web.",
   "settings.pages.pinTools.description":
     "Show an AI badge on PixPin / Snipaste pins to attach the image to a message.",
 
@@ -569,12 +501,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.tavilyApiKey.title": "Tavily API Key",
   "settings.fields.tavilyApiKey.description":
     "Used for Tavily search. Stored locally only. Get a key: https://app.tavily.com",
-  "settings.fields.semanticSearchEnabled.title": "Semantic workspace search",
-  "settings.fields.semanticSearchEnabled.description":
-    "Index workspace files with a local embedding model so the agent can find relevant code across files. The model downloads on first enable (offline after).",
-  "settings.fields.semanticSearchModel.title": "Embedding model",
-  "settings.fields.semanticSearchModel.description":
-    "Model used for semantic ranking. Larger models are more accurate but slower to download and run.",
+
   "settings.fields.toolApprovalMode.title": "Tool approval mode",
   "settings.fields.toolApprovalMode.description":
     "Ask prompts for tools. Auto skips prompts inside the workspace. Full approve also allows outside-workspace paths; dangerous shell rules still apply.",
@@ -675,6 +602,8 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.hotkey.toggleListen": "开关全局快捷键监听",
 
     "settings.categories.appearance": "外观",
+    "settings.categories.profile": "个人资料",
+    "settings.profile.searchTerms": "个人资料 头像 昵称 个人标识 Token 活动 连续天数 习惯",
     "settings.categories.ai": "模型",
     "settings.categories.image": "生图",
     "settings.categories.memory": "记忆",
@@ -697,40 +626,6 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.pet.sizeSmall": "小",
     "settings.pet.sizeMedium": "中",
     "settings.pet.sizeLarge": "大",
-    "settings.categories.rag": "RAG 检索",
-
-    "settings.rag.title": "RAG 检索",
-    "settings.rag.description":
-      "语义化工作区检索，让 agent 能跨文件找到相关代码。可用 OpenAI 兼容的 embeddings API 或本地模型。",
-    "settings.rag.enableLabel": "启用语义检索",
-    "settings.rag.enableHint": "关闭时不下载、不发起任何请求。",
-    "settings.rag.backendLabel": "嵌入后端",
-    "settings.rag.backendApi": "API（OpenAI 兼容）",
-    "settings.rag.backendLocal": "本地模型",
-    "settings.rag.apiBaseUrlLabel": "API 地址",
-    "settings.rag.apiBaseUrlHint": "请求会发到该地址的 /embeddings 接口。",
-    "settings.rag.apiKeyLabel": "API Key",
-    "settings.rag.apiModelLabel": "模型",
-    "settings.rag.apiModelPlaceholder": "Qwen/Qwen3-VL-Embedding-8B 或 BAAI/bge-m3",
-    "settings.rag.fetchModels": "拉取模型",
-    "settings.rag.fetchingModels": "拉取中…",
-    "settings.rag.testConnection": "测试连接",
-    "settings.rag.testing": "测试中…",
-    "settings.rag.testOk": "连接成功",
-    "settings.rag.testOkDetail": "连接成功 · 维度 {dim}",
-    "settings.rag.modelLabel": "本地模型",
-    "settings.rag.modelHint": "首次应用时下载，之后离线可用。",
-    "settings.rag.save": "保存并应用",
-    "settings.rag.saving": "保存中…",
-    "settings.rag.idle": "已关闭",
-    "settings.rag.on": "已开启",
-    "settings.rag.downloading": "模型下载中…",
-    "settings.rag.ready": "已就绪",
-    "settings.rag.error": "错误",
-    "settings.rag.unsaved": "有未保存的更改",
-    "settings.rag.fetchOk": "已拉取 {count} 个模型",
-    "settings.rag.fetchFail": "无法拉取模型",
-    "settings.rag.incomplete": "请填写 API 地址、API Key 与模型。",
 
     "settings.provider.deepseek": "DeepSeek 提供商",
     "settings.provider.custom": "自定义提供商",
@@ -811,7 +706,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "独立的生图提供商与模型。generate_image 不会使用聊天提供商。",
     "settings.pages.agent.description": "工具审批、过程展示与编码行为。",
     "settings.pages.memory.description": "长期偏好与项目约定。留空 API Key 时使用本地记忆。",
-    "settings.pages.search.description": "给模型提供 web_search。工作区语义检索请到「RAG 检索」。",
+    "settings.pages.search.description": "给模型提供 web_search，用于搜索网页。",
     "settings.pages.pinTools.description":
       "在 PixPin / Snipaste 贴图右下角显示 AI 角标，点击后把图片附加到消息。",
 
@@ -924,12 +819,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.tavilyApiKey.title": "Tavily API Key",
     "settings.fields.tavilyApiKey.description":
       "用于 Tavily 搜索，密钥仅保存在本机设置中。获取地址：https://app.tavily.com",
-    "settings.fields.semanticSearchEnabled.title": "语义工作区检索",
-    "settings.fields.semanticSearchEnabled.description":
-      "用本地嵌入模型索引工作区文件，让 agent 能跨文件检索相关代码。模型在首次开启时下载（之后离线可用）。",
-    "settings.fields.semanticSearchModel.title": "嵌入模型",
-    "settings.fields.semanticSearchModel.description":
-      "用于语义排序的模型。更大的模型更准确，但下载与推理更慢。",
+
     "settings.fields.toolApprovalMode.title": "工具审批模式",
     "settings.fields.toolApprovalMode.description":
       "「请求」需确认工具；「自动」跳过工作区内审批；「完全批准」同时放行工作区外路径。危险 shell 仍会被规则拦截。",
@@ -1957,8 +1847,6 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     webSearchProvider: "Web Search / Provider",
     serperApiKey: "Web Search / Serper API Key",
     tavilyApiKey: "Web Search / Tavily API Key",
-    semanticSearchEnabled: "Search / Semantic Workspace Search",
-    semanticSearchModel: "Search / Embedding Model",
     toolApprovalMode: "Agent / Tool Approval",
     agentWorkDisplay: "Agent / Work Display",
     lspEnabled: "Agent / Language Server",
@@ -2001,8 +1889,6 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     webSearchProvider: "联网搜索 / Provider",
     serperApiKey: "联网搜索 / Serper API Key",
     tavilyApiKey: "联网搜索 / Tavily API Key",
-    semanticSearchEnabled: "搜索 / 语义工作区检索",
-    semanticSearchModel: "搜索 / 嵌入模型",
     toolApprovalMode: "Agent / 工具审批",
     agentWorkDisplay: "Agent / 工作过程显示",
     lspEnabled: "Agent / 语言服务",
@@ -2076,8 +1962,6 @@ const settingsFieldKeywords: Record<
     webSearchProvider: ["web", "search", "provider", "serper", "tavily"],
     serperApiKey: ["web", "search", "serper", "api", "key"],
     tavilyApiKey: ["web", "search", "tavily", "api", "key"],
-    semanticSearchEnabled: ["semantic", "workspace", "search", "embedding", "rag"],
-    semanticSearchModel: ["semantic", "model", "embedding", "bge", "e5"],
     toolApprovalMode: ["approval", "ask", "auto", "alwaysAllow"],
     agentWorkDisplay: ["display", "detailed", "compact", "timeline", "process", "agent", "work"],
     lspEnabled: ["lsp", "diagnostics", "definition"],
@@ -2120,8 +2004,6 @@ const settingsFieldKeywords: Record<
     webSearchProvider: ["联网", "搜索", "provider", "serper", "tavily"],
     serperApiKey: ["联网", "搜索", "serper", "api", "key", "密钥"],
     tavilyApiKey: ["联网", "搜索", "tavily", "api", "key", "密钥"],
-    semanticSearchEnabled: ["语义", "检索", "工作区", "embedding", "rag", "search"],
-    semanticSearchModel: ["语义", "模型", "嵌入", "embedding", "bge", "e5"],
     toolApprovalMode: [
       "审批",
       "请求",

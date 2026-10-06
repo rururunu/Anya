@@ -1,6 +1,8 @@
 pub mod app_lifecycle;
+pub mod browser_selection;
 pub mod computer_use_hud;
 pub mod desktop_pet;
+pub mod factory_reset;
 pub mod hotkey;
 pub mod overlay_expand;
 pub mod overlay_native;

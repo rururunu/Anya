@@ -179,13 +179,25 @@ impl DeepSeekProvider {
         )
         .map(WireProtocol::from);
         let primary_wire = resolve_wire_protocol(primary_protocol, cached);
-        let configured_policy = std::env::var("ANYA_DEEPSEEK_REASONING_POLICY").ok().as_deref() == Some("configured");
-        let effort = if self.uses_dsh_tools() && !configured_policy { dsh_task_effort(&request, self.effort()) } else { self.effort() };
+        let configured_policy = std::env::var("ANYA_DEEPSEEK_REASONING_POLICY")
+            .ok()
+            .as_deref()
+            == Some("configured");
+        let effort = if self.uses_dsh_tools() && !configured_policy {
+            dsh_task_effort(&request, self.effort())
+        } else {
+            self.effort()
+        };
         if self.uses_dsh_tools() {
-            let task_class = if request.request_id.starts_with("title-") { "title" }
-                else if request.request_id.starts_with("compact-") { "summary" }
-                else if dsh_task_effort(&request, ReasoningEffort::High) == ReasoningEffort::Low { "simple_question" }
-                else { "configured_task" };
+            let task_class = if request.request_id.starts_with("title-") {
+                "title"
+            } else if request.request_id.starts_with("compact-") {
+                "summary"
+            } else if dsh_task_effort(&request, ReasoningEffort::High) == ReasoningEffort::Low {
+                "simple_question"
+            } else {
+                "configured_task"
+            };
             crate::core::chat::telemetry::record_provider_metrics(&serde_json::json!({
                 "kind":"reasoning_policy", "model":primary_model, "task_class":task_class,
                 "configured_effort":self.effort(), "selected_effort":effort,
@@ -304,17 +316,67 @@ impl DeepSeekProvider {
 }
 
 fn dsh_task_effort(request: &ChatRequest, configured: ReasoningEffort) -> ReasoningEffort {
-    let question = request.messages.iter().rev().find(|m| m.role == crate::core::runtime::Role::User)
-        .map(|m| m.content.trim()).unwrap_or("");
+    let question = request
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == crate::core::runtime::Role::User)
+        .map(|m| m.content.trim())
+        .unwrap_or("");
     dsh_task_effort_for(&request.request_id, question, configured)
 }
 
-fn dsh_task_effort_for(request_id: &str, question: &str, configured: ReasoningEffort) -> ReasoningEffort {
-    if request_id.starts_with("title-") || request_id.starts_with("compact-") { return ReasoningEffort::Disabled; }
+fn dsh_task_effort_for(
+    request_id: &str,
+    question: &str,
+    configured: ReasoningEffort,
+) -> ReasoningEffort {
+    if request_id.starts_with("title-") || request_id.starts_with("compact-") {
+        return ReasoningEffort::Disabled;
+    }
     let lower = question.to_ascii_lowercase();
-    let complex = ["project", "code", "function", "debug", "review", "analy", "prove", "test", "why", "how", "this", "that", "项目", "代码", "函数", "报错", "分析", "证明", "推导", "为什么", "如何", "上面", "刚才", "之前", "http", "\\", "```"].iter().any(|term| lower.contains(term));
-    if question.chars().count() <= 120 && !complex && crate::runtime::tool::is_question_only_text(question)
-        && matches!(configured, ReasoningEffort::Medium | ReasoningEffort::High | ReasoningEffort::Xhigh | ReasoningEffort::Max) {
+    let complex = [
+        "project",
+        "code",
+        "function",
+        "debug",
+        "review",
+        "analy",
+        "prove",
+        "test",
+        "why",
+        "how",
+        "this",
+        "that",
+        "项目",
+        "代码",
+        "函数",
+        "报错",
+        "分析",
+        "证明",
+        "推导",
+        "为什么",
+        "如何",
+        "上面",
+        "刚才",
+        "之前",
+        "http",
+        "\\",
+        "```",
+    ]
+    .iter()
+    .any(|term| lower.contains(term));
+    if question.chars().count() <= 120
+        && !complex
+        && crate::runtime::tool::is_question_only_text(question)
+        && matches!(
+            configured,
+            ReasoningEffort::Medium
+                | ReasoningEffort::High
+                | ReasoningEffort::Xhigh
+                | ReasoningEffort::Max
+        )
+    {
         return ReasoningEffort::Low;
     }
     configured
@@ -325,13 +387,38 @@ mod task_effort_tests {
     use super::*;
     #[test]
     fn auxiliary_and_simple_tasks_save_reasoning_without_lowering_complex_work() {
-        assert_eq!(dsh_task_effort_for("title-1", "Title", ReasoningEffort::High), ReasoningEffort::Disabled);
-        assert_eq!(dsh_task_effort_for("compact-1", "Summarize", ReasoningEffort::Max), ReasoningEffort::Disabled);
-        assert_eq!(dsh_task_effort_for("r", "What is Rust?", ReasoningEffort::High), ReasoningEffort::Low);
-        assert_eq!(dsh_task_effort_for("r", "为什么这个项目的测试失败？", ReasoningEffort::High), ReasoningEffort::High);
-        assert_eq!(dsh_task_effort_for("r", "为我修复这个错误", ReasoningEffort::Max), ReasoningEffort::Max);
-        assert_eq!(dsh_task_effort_for("r", "What is Rust?", ReasoningEffort::Disabled), ReasoningEffort::Disabled);
-        assert_eq!(dsh_task_effort_for("r", "What is Rust?\n\nAnalyze this project code", ReasoningEffort::High), ReasoningEffort::High);
+        assert_eq!(
+            dsh_task_effort_for("title-1", "Title", ReasoningEffort::High),
+            ReasoningEffort::Disabled
+        );
+        assert_eq!(
+            dsh_task_effort_for("compact-1", "Summarize", ReasoningEffort::Max),
+            ReasoningEffort::Disabled
+        );
+        assert_eq!(
+            dsh_task_effort_for("r", "What is Rust?", ReasoningEffort::High),
+            ReasoningEffort::Low
+        );
+        assert_eq!(
+            dsh_task_effort_for("r", "为什么这个项目的测试失败？", ReasoningEffort::High),
+            ReasoningEffort::High
+        );
+        assert_eq!(
+            dsh_task_effort_for("r", "为我修复这个错误", ReasoningEffort::Max),
+            ReasoningEffort::Max
+        );
+        assert_eq!(
+            dsh_task_effort_for("r", "What is Rust?", ReasoningEffort::Disabled),
+            ReasoningEffort::Disabled
+        );
+        assert_eq!(
+            dsh_task_effort_for(
+                "r",
+                "What is Rust?\n\nAnalyze this project code",
+                ReasoningEffort::High
+            ),
+            ReasoningEffort::High
+        );
     }
 }
 

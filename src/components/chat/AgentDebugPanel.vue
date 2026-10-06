@@ -311,7 +311,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
-import type { UnlistenFn } from "@tauri-apps/api/event";
+import { createAsyncCleanupScope } from "@/services/asyncCleanupScope";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Bug, Check, ChevronRight, Copy, TerminalSquare, Trash2, X } from "@lucide/vue";
 import SubagentIcon from "@/components/chat/SubagentIcon.vue";
@@ -389,8 +389,7 @@ const tabs = computed<Array<{ id: DebugTab; label: string }>>(() => [
   { id: "context", label: tr(settingStore.language, "runtime.context") },
   { id: "logs", label: tr(settingStore.language, "runtime.logs") },
 ]);
-let unlisten: UnlistenFn | undefined;
-let unlistenFocus: UnlistenFn | undefined;
+const subscriptions = createAsyncCleanupScope();
 let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
 
 const runList = computed(() => Object.values(runs).reverse());
@@ -406,6 +405,7 @@ function ensureRun(runId: string, state: AgentState = "created") {
 }
 
 function receive(payload: AgentDebugEvent) {
+  if (subscriptions.disposed) return;
   try {
     if (payload.type === "runCreated") {
       ensureRun(payload.data.runId, payload.data.state);
@@ -651,18 +651,21 @@ onMounted(async () => {
     frontendLogs.value = getRecentLogs();
   }, 1000);
   try {
-    unlisten = await listenAgentDebugEvent(receive);
+    await subscriptions.add(listenAgentDebugEvent(receive));
+    if (subscriptions.disposed) return;
     await hydrateSnapshot();
-    unlistenFocus = await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (focused) void hydrateSnapshot();
-    });
+    if (subscriptions.disposed) return;
+    await subscriptions.add(
+      getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+        if (focused) void hydrateSnapshot();
+      }),
+    );
   } catch (error) {
     console.warn("Agent debug listener unavailable:", error);
   }
 });
 onUnmounted(() => {
-  unlisten?.();
-  unlistenFocus?.();
+  subscriptions.dispose();
   if (copyResetTimer) globalThis.clearTimeout(copyResetTimer);
   if (logsPollTimer) globalThis.clearInterval(logsPollTimer);
 });

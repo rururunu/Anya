@@ -1,6 +1,6 @@
 [package]
 name = "peek"
-version = "0.2.25"
+version = "0.2.26"
 license = "MIT"
 description = "Hand your work & questions to Anya anytime."
 authors = ["you"]
@@ -14,6 +14,10 @@ path = "src/main.rs"
 [[bin]]
 name = "anya-eval"
 path = "src/bin/anya_eval.rs"
+
+[[bin]]
+name = "anya-browser-bridge"
+path = "src/bin/anya_browser_bridge.rs"
 
 [[bin]]
 name = "anya-plugin-host"
@@ -33,6 +37,7 @@ tauri-build = { version = "2", features = [] }
 serde_json = "1"
 
 [dependencies]
+dirs = "6"
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
@@ -96,7 +101,6 @@ tracing-appender = "0.2"
 tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 tiktoken-rs = "0.12"
 tauri-plugin-process = "2"
-fastembed = "5.17.4"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

@@ -103,7 +103,8 @@ fn should_hide_result_detail(tool_name: &str, result: &str) -> bool {
 
 fn activity_kind(tool_name: &str) -> String {
     match tool_name {
-        "run_shell" | "read_shell_output" | "wait_for_shell" | "stop_shell" | "pwsh" | "bash" | "job_output" | "job_kill" => "shell".into(),
+        "run_shell" | "read_shell_output" | "wait_for_shell" | "stop_shell" | "pwsh" | "bash"
+        | "job_output" | "job_kill" => "shell".into(),
         "write_file" | "write" => "create".into(),
         "edit" => "edit".into(),
         "apply_patch" | "replace_in_file" | "replace_many_in_file" | "edit_notebook_cell" => {
@@ -341,7 +342,10 @@ fn build_title(tool_name: &str, args: &Value) -> String {
         "list_chats" => "List chats".into(),
 
         "load_skill" | "skill" => format!("Load skill {}", args["name"].as_str().unwrap_or("")),
-        "present" => format!("交付 {} 个文件", args["files"].as_array().map_or(0, Vec::len)),
+        "present" => format!(
+            "交付 {} 个文件",
+            args["files"].as_array().map_or(0, Vec::len)
+        ),
         "run_skill" => format!("Run skill {}", args["name"].as_str().unwrap_or("")),
         "list_skills" => "List skills".into(),
 
@@ -444,7 +448,10 @@ fn format_diff(old: &str, new: &str) -> String {
 }
 
 fn path_arg(args: &Value) -> &str {
-    args["file_path"].as_str().or_else(|| args["path"].as_str()).unwrap_or(".")
+    args["file_path"]
+        .as_str()
+        .or_else(|| args["path"].as_str())
+        .unwrap_or(".")
 }
 
 fn job_arg(args: &Value) -> &str {

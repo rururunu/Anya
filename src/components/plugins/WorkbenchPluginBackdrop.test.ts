@@ -1,10 +1,28 @@
 /** @vitest-environment jsdom */
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import WorkbenchPluginBackdrop from "./WorkbenchPluginBackdrop.vue";
 import { registerAsset, unregisterPluginAssets } from "@/composables/plugins/assetRegistry";
 import { pluginAssetUrl } from "@/services/plugins/ipc";
+
+const animation = vi.hoisted(() => ({
+  destroy: vi.fn(),
+  pause: vi.fn(),
+  play: vi.fn(),
+  loop: true,
+}));
+const loader = vi.hoisted(() => {
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { ready, release, load: vi.fn() };
+});
+vi.mock("lottie-web", async () => {
+  await loader.ready;
+  return { default: { loadAnimation: loader.load.mockReturnValue(animation) } };
+});
 
 beforeAll(() => {
   Object.defineProperty(HTMLMediaElement.prototype, "play", {
@@ -28,6 +46,32 @@ describe("pluginAssetUrl", () => {
 
 describe("WorkbenchPluginBackdrop", () => {
   afterEach(() => unregisterPluginAssets("video-bg"));
+
+  it("cancels pending imports on unmount and reuses animation on focus changes", async () => {
+    registerAsset("workbench.backdrop", "video-bg", {
+      kind: "lottie",
+      source: "https://example.com/bg.json",
+    });
+    const pending = mount(WorkbenchPluginBackdrop);
+    await nextTick();
+    pending.unmount();
+    loader.release();
+    await import("lottie-web");
+    await flushPromises();
+    expect(loader.load).not.toHaveBeenCalled();
+    const live = mount(WorkbenchPluginBackdrop, { props: { windowFocused: true } });
+    await flushPromises();
+    expect(loader.load).toHaveBeenCalledOnce();
+    await live.setProps({ windowFocused: false });
+    await flushPromises();
+    expect(animation.pause).toHaveBeenCalled();
+    await live.setProps({ windowFocused: true });
+    await flushPromises();
+    expect(animation.play).toHaveBeenCalled();
+    expect(loader.load).toHaveBeenCalledOnce();
+    live.unmount();
+    expect(animation.destroy).toHaveBeenCalledOnce();
+  });
 
   it("renders nothing until a workbench.backdrop override is registered", () => {
     const wrapper = mount(WorkbenchPluginBackdrop);

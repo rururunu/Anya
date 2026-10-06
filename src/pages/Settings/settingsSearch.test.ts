@@ -9,6 +9,8 @@ describe("standalone settings search", () => {
   });
 
   it("indexes independent settings pages", () => {
+    expect(matchesStandaloneSettingsCategory("profile", "zh-CN", "昵称")).toBe(true);
+    expect(matchesStandaloneSettingsCategory("profile", "en-US", "streak")).toBe(true);
     expect(matchesStandaloneSettingsCategory("workspace", "zh-CN", "文件夹")).toBe(true);
     expect(matchesStandaloneSettingsCategory("usage", "en-US", "Token usage")).toBe(true);
     expect(matchesStandaloneSettingsCategory("archive", "zh-CN", "恢复选中")).toBe(true);

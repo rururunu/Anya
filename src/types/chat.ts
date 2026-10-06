@@ -172,6 +172,8 @@ export interface ChatMessage {
   activityStatus?: string;
   /** Soft-inject into an in-flight assistant turn (not a new unanswered user turn). */
   injected?: boolean;
+  /** UI-only: this user turn was dispatched from the pending message queue. */
+  fromQueue?: boolean;
   /** UI-only structured payload used by the local /context diagnostic message. */
   environmentContext?: CapturedContext;
   status: MessageStatus;
@@ -237,6 +239,8 @@ export type WorkTimelineItem =
   | { type: "inject"; id: string; content: string };
 
 export interface ChatSendRequest {
+  /** Frozen overlay source; avoids reading a later window's global capture. */
+  capturedContext?: CapturedContext;
   message: string;
   sessionId?: string;
   workspaceId?: string;

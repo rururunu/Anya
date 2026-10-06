@@ -125,16 +125,6 @@
             <ArrowUpCircle :size="15" />
             <span class="status-dot update-dot" />
           </button>
-          <button
-            type="button"
-            class="icon-button"
-            :class="{ active: settingsOpen }"
-            :title="labels.settings"
-            :aria-label="labels.settings"
-            @click="toggleSettings"
-          >
-            <Settings :size="15" />
-          </button>
         </nav>
 
         <div class="window-actions">
@@ -443,6 +433,10 @@
                 </NavCollapse>
               </section>
             </nav>
+            <SidebarProfileButton
+              :settings-label="labels.settings"
+              @open="openSettings('profile')"
+            />
           </aside>
           <div
             v-if="navigationOpen"
@@ -575,6 +569,7 @@
               </AppErrorBoundary>
               <AppErrorBoundary v-else compact class="workbench-messages">
                 <MessageList
+                  :workspace-root="activeSessionWorkspaceId ?? undefined"
                   class="workbench-messages"
                   :messages="conversationMessages"
                   :session-id="activeSessionId"
@@ -662,9 +657,9 @@
                   @path-permission-complete="completePathPermission"
                   @tool-approval-complete="completeToolApproval"
                   @preview-image="previewImage"
-                  @show-context="handleShowContext"
                   @open-history="openSearchPalette"
                   @close="handleCreateQuickConversation"
+                  @new-conversation="handleNewConversation"
                 />
               </div>
             </div>
@@ -852,7 +847,6 @@ import {
   Plus,
   Puzzle,
   Search,
-  Settings,
   Smartphone,
   SquarePen,
   Terminal,
@@ -866,6 +860,7 @@ import CodeDiffSidebar from "@/components/chat/CodeDiffSidebar.vue";
 import PlanPreviewSidebar from "@/components/chat/PlanPreviewSidebar.vue";
 import ImageLightbox from "@/components/chat/ImageLightbox.vue";
 import MessageList from "@/components/chat/MessageList.vue";
+import SidebarProfileButton from "@/components/workbench/SidebarProfileButton.vue";
 import SubagentConversationPanel from "@/components/chat/SubagentConversationPanel.vue";
 import WorkbenchSessionList from "@/components/workbench/WorkbenchSessionList.vue";
 import NavCollapse from "@/components/workbench/NavCollapse.vue";
@@ -907,7 +902,6 @@ import { usePluginsStore } from "@/stores/plugins";
 import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
 import { useResolvedBackgroundSrc } from "@/composables/theme/useResolvedBackgroundSrc";
 import type { Workspace } from "@/commands/workspace";
-import type { CapturedContext } from "@/types/chat";
 import PluginSlotOutlet from "@/components/plugins/PluginSlotOutlet.vue";
 import PluginSidebarIcon from "@/components/plugins/PluginSidebarIcon.vue";
 import WorkbenchPluginBackdrop from "@/components/plugins/WorkbenchPluginBackdrop.vue";
@@ -1110,7 +1104,6 @@ const {
   hideWindow,
   openSettings: openSettingsPanel,
   closeSettings,
-  toggleSettings,
 } = useWorkbenchWindow({ appWindow });
 
 function openSettings(category?: Parameters<typeof openSettingsPanel>[0]) {
@@ -1296,23 +1289,11 @@ function handleCreateQuickConversation() {
   return createQuickConversation();
 }
 
-function handleShowContext(context: CapturedContext) {
+function handleNewConversation() {
   extensionView.value = null;
-  let sessionId = activeSessionId.value;
-  if (!sessionId) {
-    createConversation(activeSessionWorkspaceId.value);
-    sessionId = activeSessionId.value;
-  }
-  if (!sessionId) return;
-  chatStore.upsertMessage({
-    id: `local-context-${Date.now()}`,
-    sessionId,
-    role: "assistant",
-    content: "",
-    environmentContext: context,
-    status: "done",
-    timestamp: Date.now(),
-  });
+  pluginsStore.clearMainView();
+  pluginsStore.activeSidebarTabId = null;
+  createConversation(activeSessionWorkspaceId.value);
 }
 
 const {
@@ -1655,6 +1636,7 @@ watch(settingsOpen, (open) => {
   }
 }
 .workbench {
+  --workbench-navigation-selected: color-mix(in srgb, var(--peek-text) 3.5%, transparent);
   --workbench-chrome-bg: color-mix(in srgb, var(--peek-sidebar) 92%, var(--peek-bg));
   --nav-col: 258px;
   --titlebar-h: 32px;
@@ -2499,7 +2481,7 @@ button {
   background: var(--peek-row-hover);
 }
 .workspace-row[aria-expanded="true"] {
-  background: color-mix(in srgb, var(--peek-text) 3.5%, transparent);
+  background: var(--workbench-navigation-selected);
 }
 .workspace-row.session-drop-target,
 .workspace-row.session-drop-target:hover {

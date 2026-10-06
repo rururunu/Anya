@@ -6,6 +6,7 @@
       :captured-context="capturedContext"
       :context-ready="contextReady"
       @layout-change="handleLayoutChange"
+      @content-height="handleContentHeight"
       @enter-chat="enterChatMode"
       @context-consumed="capturedContext = null"
       @selection-removed="removeCapturedSelection"
@@ -49,10 +50,10 @@ function removeCapturedSelection() {
 }
 
 const PANEL_WIDTH = 640;
-// Fallback when dock height is not measured yet: compact single-row bar + dock borders.
-const INPUT_HEIGHT = 56;
+// Inline draft row + fixed bottom toolbar, including the dock borders.
+const INPUT_HEIGHT = 86;
 const OVERLAY_MIN_HEIGHT_INPUT = INPUT_HEIGHT;
-const CHAT_HEIGHT_PREFERRED = 520;
+const CHAT_HEIGHT_PREFERRED = 240;
 const CHAT_SCREEN_MARGIN = 48;
 const OVERLAY_MIN_HEIGHT_CHAT = 240;
 const SUGGESTION_ROW_HEIGHT = 30;
@@ -70,6 +71,28 @@ const subagentSidebarOpen = ref(false);
 const runtimeSidebarOpen = ref(false);
 const imageSidebarOpen = ref(false);
 let layoutResizeQueue = Promise.resolve();
+let chatGrowthTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingContentHeight = 0;
+let grownChatHeight = OVERLAY_MIN_HEIGHT_CHAT;
+let chatGrowthLimit = 520;
+function handleContentHeight(height: number) {
+  if (mode.value !== "chat") return;
+  pendingContentHeight = height;
+  if (chatGrowthTimer !== null) return;
+  chatGrowthTimer = setTimeout(() => {
+    chatGrowthTimer = null;
+    const target = Math.min(chatGrowthLimit, Math.max(grownChatHeight, pendingContentHeight));
+    if (target <= grownChatHeight + 1) return;
+    grownChatHeight = target;
+    const revision = chatEntryRevision;
+    void queueLayoutResize(async () => {
+      if (mode.value !== "chat" || revision !== chatEntryRevision) return;
+      const window = getCurrentWebviewWindow();
+      const size = (await window.outerSize()).toLogical(await window.scaleFactor());
+      await resizeWindow(size.width / ((settingStore.zoom || 100) / 100), target, true, true);
+    });
+  }, 100);
+}
 let windowWidthBeforeSidebar = PANEL_WIDTH;
 let windowWidthWithSidebar = PANEL_WIDTH;
 /** Last applied input-mode design size — skip redundant Win32 setMinSize/setSize. */
@@ -84,6 +107,7 @@ let enteringChat = false;
 const windowLabel = getCurrentWebviewWindow().label;
 
 onUnmounted(() => {
+  if (chatGrowthTimer !== null) clearTimeout(chatGrowthTimer);
   ++chatEntryRevision;
   ++inputResizeRevision;
 });
@@ -187,7 +211,7 @@ async function resizeWindow(
       newX = Math.max(0, newX);
     }
 
-    // 输入模式以底边为锚点，建议列表只向上展开，输入框保持原位。
+    // Keep the top edge stable as the inline draft grows downward.
     let newY = verticalAnchor === "bottom" ? logicalPos.y - delta : logicalPos.y;
 
     if (verticalAnchor === "top") {
@@ -310,7 +334,7 @@ function handleLayoutChange(payload: {
       if (revision !== inputResizeRevision || mode.value !== "input") return;
       await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
       if (revision !== inputResizeRevision || mode.value !== "input") return;
-      await resizeWindow(PANEL_WIDTH, nextHeight, false, false, "bottom");
+      await resizeWindow(PANEL_WIDTH, nextHeight, false);
     });
     return;
   }
@@ -373,8 +397,16 @@ async function monitorHeightLimit() {
   if (!monitor) return null;
   const scaleFactor = await window.scaleFactor();
   const monitorSize = monitor.size.toLogical(scaleFactor);
+  const monitorPosition = monitor.position.toLogical(scaleFactor);
+  const position = (await window.outerPosition()).toLogical(scaleFactor);
   const zoom = (settingStore.zoom || 100) / 100;
-  return Math.max(OVERLAY_MIN_HEIGHT_CHAT, (monitorSize.height - CHAT_SCREEN_MARGIN) / zoom);
+  return Math.max(
+    OVERLAY_MIN_HEIGHT_CHAT,
+    Math.min(
+      (monitorSize.height * 0.5) / zoom,
+      (monitorPosition.y + monitorSize.height - position.y - CHAT_SCREEN_MARGIN) / zoom,
+    ),
+  );
 }
 
 async function preferredChatHeight(extraHeight = 0) {
@@ -406,17 +438,19 @@ async function enterChatMode(nextSessionId: string) {
   await queueLayoutResize(async () => {
     if (entry !== chatEntryRevision) return;
     try {
-      // Keep the input dock painted at the bottom until the final native
-      // rectangle is committed. Never mount the transcript into the 56px bar.
+      // Commit the native rectangle before mounting the transcript.
       await expandOverlayForChat((settingStore.zoom || 100) / 100);
+      grownChatHeight = OVERLAY_MIN_HEIGHT_CHAT;
+      chatGrowthLimit = (await monitorHeightLimit()) ?? 520;
       lastConstraints = "";
       lastResizable = true;
     } catch (error) {
       log.warn("Native chat expansion failed; using fallback resize", error);
       if (entry !== chatEntryRevision) return;
       await setOverlayChatMode(windowLabel, true);
-      await resizeWindow(PANEL_WIDTH, await preferredChatHeight(), true, false, "bottom");
+      await resizeWindow(PANEL_WIDTH, await preferredChatHeight(), true);
       await applySizeConstraints("chat", OVERLAY_MIN_HEIGHT_CHAT);
+      chatGrowthLimit = (await monitorHeightLimit()) ?? 520;
     } finally {
       if (entry === chatEntryRevision) {
         enteringChat = false;
@@ -427,6 +461,9 @@ async function enterChatMode(nextSessionId: string) {
 }
 
 async function resetToInputMode() {
+  if (chatGrowthTimer !== null) clearTimeout(chatGrowthTimer);
+  chatGrowthTimer = null;
+  grownChatHeight = OVERLAY_MIN_HEIGHT_CHAT;
   ++chatEntryRevision;
   enteringChat = false;
   const revision = ++inputResizeRevision;
@@ -447,7 +484,7 @@ async function resetToInputMode() {
   await queueLayoutResize(async () => {
     if (revision !== inputResizeRevision || mode.value !== "input") return;
     await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-    await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false, false, "bottom");
+    await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false);
   });
 }
 
@@ -463,14 +500,14 @@ onMounted(async () => {
   const window = getCurrentWebviewWindow();
   void window.setMaximizable(false);
   // Sync native size with design px + UI zoom before the first paint settles.
-  // tauri.conf / window.rs create 640×56, but zoomed shells still need a
+  // tauri.conf / window.rs create 640×86, but zoomed shells still need a
   // matching LogicalSize or the first Alt+Alt frame looks clipped.
   if (mode.value === "input") {
     queueLayoutResize(async () => {
       lastInputDesignWidth = PANEL_WIDTH;
       lastInputDesignHeight = INPUT_HEIGHT;
       await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-      await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false, false, "bottom");
+      await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false);
     });
   }
   void window.listen<CapturedContext>(IPC_EVENTS.contextCaptured, (event) => {
@@ -517,7 +554,7 @@ watch(
       await resizeWindow(designWidth, logicalSize.height / zoom, true);
     } else {
       await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-      await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false, false, "bottom");
+      await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false);
     }
   },
 );
@@ -526,6 +563,7 @@ watch(
 <style scoped>
 .overlay-shell {
   box-sizing: border-box;
+  padding: 6px;
   width: 100%;
   height: 100%;
   overflow: hidden;

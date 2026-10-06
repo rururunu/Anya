@@ -1,7 +1,7 @@
 use tauri::AppHandle;
 
 use crate::models::settings::{AppSettings, AppSettingsPatch};
-use crate::services::settings_store::{get_settings, set_settings};
+use crate::services::settings_store::{get_settings, patch_settings};
 
 #[cfg(windows)]
 fn installed_font_families() -> Result<Vec<String>, String> {
@@ -101,7 +101,5 @@ pub fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn set_app_settings(app: AppHandle, patch: AppSettingsPatch) -> Result<AppSettings, String> {
-    let current = get_settings(&app)?;
-    let next = current.merge(patch);
-    set_settings(&app, next)
+    patch_settings(&app, patch)
 }

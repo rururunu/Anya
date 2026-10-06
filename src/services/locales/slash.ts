@@ -1,13 +1,17 @@
 import type { AppLanguage } from "@/types/setting";
 
 export const slashEn = {
+  "slash.new.description": "Start a new conversation in the current workspace",
   "slash.history.description": "Open chat history",
   "slash.model.description": "Switch the chat model",
   "slash.thinking.description": "Adjust thinking effort",
   "slash.settings.description": "Open settings",
   "slash.work.description": "Switch workspace",
   "slash.exit.description": "Close the current chat",
-  "slash.context.description": "Show the current environment context",
+  "slash.mode.description": "Switch chat mode",
+  "slash.security.description": "Set tool approval permissions",
+  "slash.popup.description": "Open this conversation in a popup",
+  "slash.workbench.description": "Open this conversation in the workbench",
   "slash.clear.description": "Clear the current input and local draft",
 } as const;
 
@@ -17,13 +21,17 @@ type SlashLocale = Partial<Record<SlashI18nKey, string>>;
 export const slashLocales: Record<AppLanguage, SlashLocale> = {
   "en-US": slashEn,
   "zh-CN": {
+    "slash.new.description": "在当前工作区创建新会话",
     "slash.history.description": "打开历史对话",
     "slash.model.description": "切换对话模型",
     "slash.thinking.description": "调整思考强度",
     "slash.settings.description": "打开设置",
     "slash.work.description": "切换工作区",
     "slash.exit.description": "关闭当前会话",
-    "slash.context.description": "显示当前环境上下文",
+    "slash.mode.description": "切换对话模式",
+    "slash.security.description": "设置安全权限与工具审批",
+    "slash.popup.description": "在弹窗中打开当前对话",
+    "slash.workbench.description": "在工作台中打开当前对话",
     "slash.clear.description": "清空当前输入与本地草稿",
   },
   "ja-JP": {
@@ -33,7 +41,8 @@ export const slashLocales: Record<AppLanguage, SlashLocale> = {
     "slash.settings.description": "設定を開く",
     "slash.work.description": "ワークスペースを切り替える",
     "slash.exit.description": "現在のチャットを閉じる",
-    "slash.context.description": "現在の環境コンテキストを表示する",
+    "slash.mode.description": "チャットモードを切り替える",
+    "slash.security.description": "ツールの承認権限を設定する",
     "slash.clear.description": "現在の入力とローカル下書きを消去する",
   },
   "ru-RU": {
@@ -43,7 +52,8 @@ export const slashLocales: Record<AppLanguage, SlashLocale> = {
     "slash.settings.description": "Открыть настройки",
     "slash.work.description": "Сменить рабочую область",
     "slash.exit.description": "Закрыть текущий чат",
-    "slash.context.description": "Показать текущий контекст среды",
+    "slash.mode.description": "Сменить режим чата",
+    "slash.security.description": "Настроить разрешения на выполнение инструментов",
     "slash.clear.description": "Очистить текущий ввод и локальный черновик",
   },
   "de-DE": {
@@ -53,7 +63,8 @@ export const slashLocales: Record<AppLanguage, SlashLocale> = {
     "slash.settings.description": "Einstellungen öffnen",
     "slash.work.description": "Arbeitsbereich wechseln",
     "slash.exit.description": "Aktuellen Chat schließen",
-    "slash.context.description": "Aktuellen Umgebungskontext anzeigen",
+    "slash.mode.description": "Chatmodus wechseln",
+    "slash.security.description": "Berechtigungen für Werkzeuge festlegen",
     "slash.clear.description": "Aktuelle Eingabe und lokalen Entwurf leeren",
   },
   "fr-FR": {
@@ -63,7 +74,8 @@ export const slashLocales: Record<AppLanguage, SlashLocale> = {
     "slash.settings.description": "Ouvrir les paramètres",
     "slash.work.description": "Changer d'espace de travail",
     "slash.exit.description": "Fermer la discussion actuelle",
-    "slash.context.description": "Afficher le contexte actuel de l'environnement",
+    "slash.mode.description": "Changer de mode de discussion",
+    "slash.security.description": "Définir les autorisations des outils",
     "slash.clear.description": "Effacer la saisie actuelle et le brouillon local",
   },
   "ko-KR": {
@@ -73,7 +85,8 @@ export const slashLocales: Record<AppLanguage, SlashLocale> = {
     "slash.settings.description": "설정 열기",
     "slash.work.description": "작업 영역 전환",
     "slash.exit.description": "현재 채팅 닫기",
-    "slash.context.description": "현재 환경 컨텍스트 표시",
+    "slash.mode.description": "채팅 모드 전환",
+    "slash.security.description": "도구 승인 권한 설정",
     "slash.clear.description": "현재 입력 및 로컬 초안 지우기",
   },
 };

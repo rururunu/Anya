@@ -133,7 +133,7 @@ fn now_millis() -> u64 {
 pub fn snapshot_foreground() -> (RequestContext, Option<WindowInfo>) {
     let window = WindowDetector::detect()
         .ok()
-        .filter(|window| !window.process_name.eq_ignore_ascii_case("Anya.exe"));
+        .filter(|window| window.pid != std::process::id());
     let captured = ChatContext {
         window: window.clone(),
         ..ChatContext::empty()
@@ -161,17 +161,7 @@ pub fn capture_now() -> RequestContext {
     let manager = ContextManager::new();
     let captured = match manager.capture() {
         ContextCaptureOutcome::Success(context) => context,
-        ContextCaptureOutcome::Empty => {
-            if let Ok(guard) = store().lock() {
-                if let Some(previous) = guard.as_ref() {
-                    if previous.context.has_content() {
-                        log_snapshot("capture_now reused stored context", previous);
-                        return map_to_request_context(Some(&previous.context));
-                    }
-                }
-            }
-            ChatContext::empty()
-        }
+        ContextCaptureOutcome::Empty => ChatContext::empty(),
     };
 
     if let Ok(mut guard) = store().lock() {
@@ -185,6 +175,41 @@ pub fn capture_now() -> RequestContext {
     }
 
     map_to_request_context(Some(&captured))
+}
+
+/// Capture a frozen source before the overlay takes focus. Never reuse old selections.
+pub fn capture_for_window(window: WindowInfo) -> RequestContext {
+    let _capture_guard = CaptureGuard::begin();
+    let id = NEXT_CONTEXT_ID.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut guard) = store().lock() {
+        *guard = Some(StoredContext {
+            id,
+            captured_at_ms: now_millis(),
+            context: ChatContext {
+                window: Some(window.clone()),
+                ..ChatContext::empty()
+            },
+        });
+    }
+    let captured = match ContextManager::new().capture_window(window) {
+        ContextCaptureOutcome::Success(context) => context,
+        ContextCaptureOutcome::Empty => ChatContext::empty(),
+    };
+    tracing::debug!(has_selection = captured.has_content(), source = ?captured.source, "frozen-source capture completed");
+    if let Ok(mut guard) = store().lock() {
+        finish_snapshot(&mut guard, id, captured.clone());
+    }
+    map_to_request_context(Some(&captured))
+}
+
+fn finish_snapshot(stored: &mut Option<StoredContext>, id: u64, context: ChatContext) {
+    if stored.as_ref().is_some_and(|latest| latest.id == id) {
+        *stored = Some(StoredContext {
+            id,
+            captured_at_ms: now_millis(),
+            context,
+        });
+    }
 }
 
 pub fn latest_request_context() -> RequestContext {
@@ -253,11 +278,17 @@ fn map_to_request_context(context: Option<&ChatContext>) -> RequestContext {
         selected_images: context.selected_images.clone(),
         active_window: context.window.as_ref().map(|window| {
             let title = window.title.trim();
-            if title.is_empty() {
+            let mut label = if title.is_empty() {
                 format!("{} (pid {})", window.process_name, window.pid)
             } else {
                 format!("{} - {} (pid {})", window.process_name, title, window.pid)
+            };
+            if let Some(selection) = crate::services::browser_selection::selection_for(window) {
+                if context.selected_text.as_deref() == Some(selection.text.as_str()) {
+                    label.push_str(&format!("\nPage URL: {}", selection.url));
+                }
             }
+            label
         }),
         active_file: None,
         workspace: None,
@@ -271,6 +302,41 @@ fn map_to_request_context(context: Option<&ChatContext>) -> RequestContext {
 #[cfg(test)]
 mod capture_timing_tests {
     use super::*;
+    #[test]
+    fn late_capture_cannot_overwrite_a_newer_shortcut_snapshot() {
+        let mut stored = Some(StoredContext {
+            id: 2,
+            captured_at_ms: 0,
+            context: ChatContext {
+                selected_text: Some("newer window".into()),
+                ..ChatContext::empty()
+            },
+        });
+        finish_snapshot(
+            &mut stored,
+            1,
+            ChatContext {
+                selected_text: Some("late old window".into()),
+                ..ChatContext::empty()
+            },
+        );
+        assert_eq!(
+            stored.as_ref().unwrap().context.selected_text.as_deref(),
+            Some("newer window")
+        );
+        finish_snapshot(
+            &mut stored,
+            2,
+            ChatContext {
+                selected_text: Some("current capture".into()),
+                ..ChatContext::empty()
+            },
+        );
+        assert_eq!(
+            stored.as_ref().unwrap().context.selected_text.as_deref(),
+            Some("current capture")
+        );
+    }
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Duration;

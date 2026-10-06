@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+import { currentMonitor } from "@tauri-apps/api/window";
 import Overlay from "./Overlay.vue";
 
 const expand = vi.hoisted(() => vi.fn<() => Promise<void>>(async () => {}));
@@ -22,7 +23,7 @@ const native = vi.hoisted(() => ({
   listen: vi.fn(async () => () => {}),
 }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => native }));
-vi.mock("@tauri-apps/api/window", () => ({ currentMonitor: async () => null }));
+vi.mock("@tauri-apps/api/window", () => ({ currentMonitor: vi.fn(async () => null) }));
 vi.mock("@/services/ipc", () => ({
   expandOverlayForChat: expand,
   closeOverlay: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock("@/components/chat/PeekPanel.vue", () => ({
   default: {
     name: "PeekPanel",
     props: ["mode"],
-    emits: ["layoutChange", "enterChat", "close"],
+    emits: ["layoutChange", "enterChat", "close", "contentHeight"],
     template: "<div />",
   },
 }));
@@ -55,7 +56,7 @@ describe("overlay native layout", () => {
     vi.clearAllMocks();
     expand.mockResolvedValue(undefined);
     native.outerPosition.mockResolvedValue(new PhysicalPosition(200, 600));
-    native.outerSize.mockResolvedValue(new PhysicalSize(640, 56));
+    native.outerSize.mockResolvedValue(new PhysicalSize(640, 86));
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       queueMicrotask(() => callback(0));
       return 1;
@@ -65,8 +66,46 @@ describe("overlay native layout", () => {
     vi.clearAllMocks();
   });
   afterEach(() => {
+    vi.mocked(currentMonitor).mockResolvedValue(null);
+    vi.useRealTimers();
     wrapper.unmount();
     vi.unstubAllGlobals();
+  });
+
+  it("uses half the monitor height as the growth limit", async () => {
+    vi.mocked(currentMonitor).mockResolvedValue({
+      position: new PhysicalPosition(0, 0),
+      size: new PhysicalSize(2560, 1440),
+      scaleFactor: 1,
+      name: "test",
+    });
+    native.outerPosition.mockResolvedValue(new PhysicalPosition(200, 100));
+    const panel = wrapper.findComponent({ name: "PeekPanel" });
+    panel.vm.$emit("enterChat", "half-screen");
+    await flushPromises();
+    vi.useFakeTimers();
+    panel.vm.$emit("contentHeight", 1000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(native.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 720 }));
+  });
+
+  it("grows down with content, coalesces updates and stops at the maximum", async () => {
+    const panel = wrapper.findComponent({ name: "PeekPanel" });
+    panel.vm.$emit("enterChat", "growing-thread");
+    await flushPromises();
+    vi.useFakeTimers();
+    panel.vm.$emit("contentHeight", 280);
+    panel.vm.$emit("contentHeight", 320);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(native.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 320 }));
+    expect(native.setPosition).not.toHaveBeenCalled();
+    panel.vm.$emit("contentHeight", 900);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(native.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 520 }));
+    native.setSize.mockClear();
+    panel.vm.$emit("contentHeight", 1200);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(native.setSize).not.toHaveBeenCalled();
   });
 
   it("coalesces rapid input layout changes into the final native size", async () => {
@@ -75,7 +114,7 @@ describe("overlay native layout", () => {
     await flushPromises();
     expect(native.setSize).toHaveBeenCalledTimes(1);
     expect(native.setSize.mock.calls[0]?.[0]).toMatchObject({ width: 640, height: 176 });
-    expect(native.setPosition.mock.calls[0]?.[0]).toMatchObject({ x: 200, y: 480 });
+    expect(native.setPosition.mock.calls[0]?.[0]).toMatchObject({ x: 200, y: 600 });
     expect(native.setMinSize).not.toHaveBeenCalled();
   });
 

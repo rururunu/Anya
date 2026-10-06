@@ -430,7 +430,9 @@ async fn read_success(response: reqwest::Response) -> Result<String, ProviderErr
 
 fn image_markdown_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"!\[image\]\(((?:[^()\r\n]|\([^()\r\n]*\))*)\)").expect("image markdown regex"))
+    RE.get_or_init(|| {
+        Regex::new(r"!\[image\]\(((?:[^()\r\n]|\([^()\r\n]*\))*)\)").expect("image markdown regex")
+    })
 }
 
 fn cached_file_id(digest: &str) -> Option<String> {

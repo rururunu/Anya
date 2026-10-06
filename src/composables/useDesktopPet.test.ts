@@ -65,6 +65,7 @@ describe("useDesktopPet", () => {
 
   it("plays spritesheet wave gesture on click without CSS bounce action", async () => {
     const [pet, app] = withSetup(() => useDesktopPet());
+    pet.appearance.value = { mode: "spritesheet", kind: "spritesheet", source: "test-pet.png" };
     expect(pet.appearance.value.mode).toBe("spritesheet");
     expect(pet.expression.value).toBe("idle");
     expect(pet.spriteGesture.value).toBeNull();
@@ -80,6 +81,7 @@ describe("useDesktopPet", () => {
 
   it("wakes up sleeping pet and plays wave on click", async () => {
     const [pet, app] = withSetup(() => useDesktopPet());
+    pet.appearance.value = { mode: "spritesheet", kind: "spritesheet", source: "test-pet.png" };
     pet.expression.value = "sleeping";
     expect(pet.expression.value).toBe("sleeping");
 

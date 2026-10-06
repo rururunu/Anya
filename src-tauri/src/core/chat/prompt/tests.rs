@@ -8,22 +8,67 @@ use crate::models::settings::{AppLanguage, ReasoningLanguage};
 
 #[test]
 fn dsh_prompt_omits_legacy_tool_policies_and_keeps_stable_prefix() {
-    let context = RequestContext { workspace: Some(crate::core::runtime::request::WorkspaceContext { name: "project".into(), root: r"C:\project".into() }), ..Default::default() };
-    let preferences = PromptPreferences { minimal_coding: true, plan_mode: true, suggest_plan_request: true, ..Default::default() };
-    let build = |memory| PromptBuilder::build_dsh(PromptBuildInput {
-        request_id: "r", session_id: "s", history: &[], context: &context,
-        project_rules: Some("Project-specific rule"), recalled_memories: Some(memory),
-        preferred_resources: None, provider: Some("deepseek".into()), preferences: &preferences,
-    });
-    let first = build("one"); let second = build("two");
+    let context = RequestContext {
+        workspace: Some(crate::core::runtime::request::WorkspaceContext {
+            name: "project".into(),
+            root: r"C:\project".into(),
+        }),
+        ..Default::default()
+    };
+    let preferences = PromptPreferences {
+        minimal_coding: true,
+        plan_mode: true,
+        suggest_plan_request: true,
+        ..Default::default()
+    };
+    let build = |memory| {
+        PromptBuilder::build_dsh(PromptBuildInput {
+            request_id: "r",
+            session_id: "s",
+            history: &[],
+            context: &context,
+            project_rules: Some("Project-specific rule"),
+            recalled_memories: Some(memory),
+            preferred_resources: None,
+            provider: Some("deepseek".into()),
+            preferences: &preferences,
+        })
+    };
+    let first = build("one");
+    let second = build("two");
     assert!(first.messages[0].id.starts_with("dsh-identity-"));
-    let prefix = first.messages.iter().position(|m| m.id == "memories-s").unwrap();
+    let prefix = first
+        .messages
+        .iter()
+        .position(|m| m.id == "memories-s")
+        .unwrap();
     assert_eq!(first.messages[..prefix], second.messages[..prefix]);
-    assert!(first.messages.iter().any(|m| m.content == "Project-specific rule"));
-    let text = first.messages.iter().map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n");
-    assert!(!text.contains("run_shell")); assert!(!text.contains("request_plan_mode")); assert!(!text.contains("save_plan"));
-    assert!(!text.contains("read_file")); assert!(text.contains("(read, glob, grep,"));
-    let old = PromptBuilder::build(PromptBuildInput { request_id:"r",session_id:"s",history:&[],context:&context,project_rules:None,recalled_memories:None,preferred_resources:None,provider:Some("other".into()),preferences:&preferences });
+    assert!(first
+        .messages
+        .iter()
+        .any(|m| m.content == "Project-specific rule"));
+    let text = first
+        .messages
+        .iter()
+        .map(|m| m.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!text.contains("run_shell"));
+    assert!(!text.contains("request_plan_mode"));
+    assert!(!text.contains("save_plan"));
+    assert!(!text.contains("read_file"));
+    assert!(text.contains("(read, glob, grep,"));
+    let old = PromptBuilder::build(PromptBuildInput {
+        request_id: "r",
+        session_id: "s",
+        history: &[],
+        context: &context,
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: None,
+        provider: Some("other".into()),
+        preferences: &preferences,
+    });
     assert!(old.messages.iter().any(|m| m.id == "system-s"));
     assert!(!old.messages.iter().any(|m| m.id.starts_with("dsh-")));
 }

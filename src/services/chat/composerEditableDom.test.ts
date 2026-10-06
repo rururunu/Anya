@@ -53,6 +53,15 @@ const resolveMeta: ResolveComposerTokenMeta = (part) => {
 };
 
 describe("composerEditableDom", () => {
+  it("keeps Shift+Enter's trailing empty line visible without adding text", () => {
+    const root = document.createElement("div");
+    renderComposerEditable(root, "hello\n", resolveMeta);
+    expect(root.querySelector("br[data-ce-trailing-line]")).not.toBeNull();
+    expect(serializeComposerEditable(root)).toBe("hello\n");
+    renderComposerEditable(root, "hello\nnext", resolveMeta);
+    expect(serializeComposerEditable(root)).toBe("hello\nnext");
+    expect(root.querySelector("br[data-ce-trailing-line]")).toBeNull();
+  });
   it("round-trips plain text and tokens", () => {
     const root = document.createElement("div");
     const text = "see @src/a.ts and #skill:docx please";

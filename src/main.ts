@@ -7,6 +7,7 @@ import { wireChatIpc } from "@/composables/chat/wireChatIpc";
 import { hideBootSplash, waitForNextPaint } from "@/services/bootSplash";
 import { markBootPhase, reportBootPhases } from "@/services/bootTiming";
 import { markPeekWindow } from "@/services/overlay/appearance";
+import { initialOverlayRoute } from "@/services/overlay/initialRoute";
 import { installBrowserGuards } from "@/services/browserGuards";
 import { createLogger, rootLogger } from "@/services/logger";
 import { warmInstalledResourceIcons } from "@/services/warmIcons";
@@ -125,7 +126,9 @@ async function bootstrap() {
   } else if (isOverlay) {
     markPeekWindow();
     hideBootSplash({ fadeMs: 0 });
-    void router.replace("/overlay");
+    // Native conversation windows carry their session in the hash query.
+    // Preserve it when normalizing the route so PeekPanel can load that chat.
+    await router.replace(initialOverlayRoute(location.hash));
     applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     await settingStore.load();
     markBootPhase("settings (ipc)");
@@ -178,7 +181,7 @@ async function bootstrap() {
 
   // Wire chat IPC events into the store: stream deltas, tool activity, plan
   // gate, file/url offers, and remote compose sync.
-  await wireChatIpc({ chatStore, settingStore });
+  await wireChatIpc({ chatStore, settingStore, streamUpdateIntervalMs: 50 });
   markBootPhase("ipc wired");
 
   if (windowLabel.startsWith("overlay-preview-")) {

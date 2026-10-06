@@ -5,9 +5,9 @@ import { workspaceEn } from "@/services/locales/workspace";
 import type { AppLanguage } from "@/types/setting";
 
 const standalonePrefixes: Record<string, readonly string[]> = {
+  profile: ["settings.profile."],
   provider: ["settings.provider."],
   image: ["settings.image."],
-  rag: ["settings.rag."],
   history: ["settings.history."],
   archive: ["settings.archive."],
   pet: ["settings.pet."],

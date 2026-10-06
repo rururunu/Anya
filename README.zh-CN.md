@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.zh-CN.md">使用文档</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.25 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.26 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
@@ -31,6 +31,8 @@
 DeepSeek 模型使用原生集成的 dsh 工具与提示词，并记录缓存用量、响应耗时和重试信息。其他模型使用 Anya 通用工具集。详细说明见 [DeepSeek 链路](./docs/deepseek-harness.zh-CN.md)。
 
 ## 开始使用
+
+Alt+Alt 会在弹窗取得焦点前采集选中文字，并以紧凑的行内标签显示引用。Chrome / Edge 可选安装[浏览器选区桥接](./browser-extension/README.zh-CN.md)，增强网页选区和来源 URL 的获取。
 
 1. 从 [Releases](../../releases) 下载并安装 MSI。
 2. 打开 **设置**，添加模型服务商并配置凭据。

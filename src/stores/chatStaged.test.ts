@@ -8,6 +8,14 @@ vi.mock("@/commands/remote", () => ({
     return [...backend.messages];
   }),
   remoteListStaged: vi.fn(async () => [...backend.messages]),
+  remoteReplaceStaged: vi.fn(
+    async (_id: string, index: number, expected: string, message: string) => {
+      if (backend.messages[index] !== expected)
+        throw new Error("Queued message changed while editing");
+      backend.messages[index] = message;
+      return [...backend.messages];
+    },
+  ),
   remoteInsertStaged: vi.fn(async (_sessionId: string, index: number, message: string) => [
     message,
   ]),
@@ -24,6 +32,72 @@ describe("staged queue mirror", () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     backend.messages = [];
+  });
+
+  it("keeps queue origin when optimistic messages receive backend IDs and start events", async () => {
+    const { useChatStore } = await import("./chat");
+    const { useChatSessionsStore } = await import("./chatSessions");
+    const store = useChatStore();
+    const sessions = useChatSessionsStore();
+    store.stageTurn("origin", "queued request", true);
+    const started = {
+      sessionId: "origin",
+      userMessage: { id: "server-user", role: "user" as const, content: "queued request" },
+      assistantMessage: { id: "server-assistant", role: "assistant" as const, content: "" },
+    };
+    store.applyChatStarted(started);
+    expect(
+      sessions.sessions.origin?.find((message) => message.id === "server-user")?.fromQueue,
+    ).toBe(true);
+    store.applyChatStarted(started);
+    expect(
+      sessions.sessions.origin?.find((message) => message.id === "server-user")?.fromQueue,
+    ).toBe(true);
+    store.stageTurn("ordinary", "ordinary request");
+    expect(sessions.sessions.ordinary?.[0]?.fromQueue).toBe(false);
+  });
+
+  it("queues sends during an active response and dispatches edited messages one turn at a time", async () => {
+    const { useChatStore } = await import("./chat");
+    const store = useChatStore();
+    const sessionId = "queued-turns";
+    store.setSessionMessages(sessionId, [
+      {
+        id: "live",
+        sessionId,
+        role: "assistant",
+        content: "Working",
+        status: "streaming",
+        timestamp: 1,
+      },
+    ]);
+    await store.send("first", sessionId);
+    await store.send("second", sessionId);
+    await store.refreshStagedFromRemote(sessionId);
+    expect(store.stagedMessages[sessionId]).toEqual(["first", "second"]);
+    await store.editStagedMessage(sessionId, 1, "second", "edited second");
+    expect(backend.messages).toEqual(["first", "edited second"]);
+    store.setSessionMessages(sessionId, []);
+    const send = vi.spyOn(store, "send").mockResolvedValue(true);
+    await store.flushStaged(sessionId);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenLastCalledWith("first", sessionId, { fromQueue: true });
+    expect(store.stagedMessages[sessionId]).toEqual(["edited second"]);
+    await store.flushStaged(sessionId);
+    expect(send).toHaveBeenLastCalledWith("edited second", sessionId, { fromQueue: true });
+    expect(backend.messages).toEqual([]);
+    send.mockRestore();
+  });
+
+  it("refreshes a consumed queue item instead of editing the next item or blocking dispatch", async () => {
+    const { useChatStore } = await import("./chat");
+    const store = useChatStore();
+    store.setStagedLocal("stale-edit", ["consumed", "next"]);
+    backend.messages = ["next"];
+    await store.editStagedMessage("stale-edit", 0, "consumed", "updated");
+    expect(backend.messages).toEqual(["next"]);
+    expect(store.stagedMessages["stale-edit"]).toEqual(["next"]);
+    expect(store.stagedSyncFailed["stale-edit"]).toBe(false);
   });
 
   it("does not resurrect a just-flushed message from a stale remote snapshot", async () => {

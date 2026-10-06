@@ -42,6 +42,7 @@ const videoEl = ref<HTMLVideoElement | null>(null);
 const lottieEl = ref<HTMLElement | null>(null);
 const reduceMotion = ref(false);
 let lottieAnim: AnimationItem | null = null;
+let lottieRevision = 0;
 let motionQuery: MediaQueryList | null = null;
 
 const imageStyle = computed<CSSProperties>(() => {
@@ -81,6 +82,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  ++lottieRevision;
   motionQuery?.removeEventListener("change", onMotionChange);
   lottieAnim?.destroy();
   lottieAnim = null;
@@ -88,12 +90,17 @@ onBeforeUnmount(() => {
 
 watch([videoEl, playableSrc, () => props.windowFocused, reduceMotion], syncVideo);
 
-watch([lottieEl, asset, () => props.windowFocused, reduceMotion], async ([el, current]) => {
+watch([lottieEl, asset], async ([el, current], _previous, onCleanup) => {
+  const revision = ++lottieRevision;
+  let cancelled = false;
+  onCleanup(() => {
+    cancelled = true;
+  });
   lottieAnim?.destroy();
   lottieAnim = null;
   if (!el || current?.kind !== "lottie") return;
   const lottie = (await import("lottie-web")).default;
-  if (lottieEl.value !== el || getAssetOverride("workbench.backdrop") !== current) return;
+  if (cancelled || revision !== lottieRevision || lottieEl.value !== el) return;
   lottieAnim = lottie.loadAnimation({
     container: el,
     renderer: "svg",
@@ -102,6 +109,14 @@ watch([lottieEl, asset, () => props.windowFocused, reduceMotion], async ([el, cu
     path: pluginAssetUrl(current.source),
   });
   if (!shouldPlay()) lottieAnim.pause();
+});
+
+// Focus and motion preferences affect playback, not animation ownership.
+watch([() => props.windowFocused, reduceMotion], () => {
+  if (!lottieAnim) return;
+  lottieAnim.loop = !reduceMotion.value;
+  if (shouldPlay()) lottieAnim.play();
+  else lottieAnim.pause();
 });
 </script>
 

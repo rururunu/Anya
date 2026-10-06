@@ -502,7 +502,12 @@ mod message_persistence_tests {
         save_message(&pool, &message).await.unwrap();
         let restored = load_all_messages(&pool).await.unwrap();
         let delivery = restored.iter().find(|m| m.id == "delivery-1").unwrap();
-        assert_eq!(delivery.tool_activities.as_ref().unwrap()[0].result.as_deref(), Some(metadata.as_str()));
+        assert_eq!(
+            delivery.tool_activities.as_ref().unwrap()[0]
+                .result
+                .as_deref(),
+            Some(metadata.as_str())
+        );
     }
 
     #[tokio::test]

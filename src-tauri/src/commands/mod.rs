@@ -12,7 +12,6 @@ pub mod opencli;
 pub mod permission;
 pub mod plugins;
 pub mod remote;
-pub mod semantic;
 pub mod settings;
 pub mod skills;
 pub mod token_usage;

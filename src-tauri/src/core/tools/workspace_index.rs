@@ -5,8 +5,7 @@
 //! under `<workspace>/.anya/index/index.jsonl` with per-file metadata in
 //! `index.meta.json` so [`WorkspaceIndex::refresh`] only re-reads changed files.
 //!
-//! This is the keyword retrieval layer. Semantic re-ranking is a separate,
-//! optional layer — see [`crate::core::ai::embed::Embedder`].
+//! Results are ranked by keyword matches across content, symbols, and paths.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;

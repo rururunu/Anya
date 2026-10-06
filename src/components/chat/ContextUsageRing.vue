@@ -1,8 +1,10 @@
 <template>
-  <PopoverRoot>
+  <PopoverRoot :open="panelOpen" @update:open="updateOpen">
     <PopoverTrigger as-child>
       <button
         type="button"
+        ref="triggerRef"
+        data-picker-trigger
         class="context-usage-ring"
         :class="tone"
         data-tauri-drag-region="false"
@@ -41,9 +43,16 @@
         </svg>
       </button>
     </PopoverTrigger>
-    <PopoverPortal>
-      <PopoverContent
+    <Teleport :to="panelTarget || 'body'">
+      <component
+        :is="panelTarget ? 'div' : PopoverContent"
+        v-if="panelOpen"
         class="context-usage-card"
+        :class="{ 'command-list floating-context-usage': panelTarget }"
+        :style="panelTarget ? panelStyle : undefined"
+        role="dialog"
+        :aria-label="heading"
+        @mousedown="panelTarget && $event.stopPropagation()"
         side="top"
         align="end"
         :side-offset="8"
@@ -70,15 +79,16 @@
             <span class="context-usage-count">~{{ segment.countLabel }}</span>
           </li>
         </ul>
-        <PopoverArrow class="context-usage-arrow" />
-      </PopoverContent>
-    </PopoverPortal>
+        <PopoverArrow v-if="!panelTarget" class="context-usage-arrow" />
+      </component>
+    </Teleport>
   </PopoverRoot>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { PopoverArrow, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
+import { computed, ref, type CSSProperties } from "vue";
+import { useEventListener } from "@vueuse/core";
+import { PopoverArrow, PopoverContent, PopoverRoot, PopoverTrigger } from "reka-ui";
 import { storeToRefs } from "pinia";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
@@ -89,10 +99,33 @@ const props = withDefaults(
   defineProps<{
     usage: ContextUsageSnapshot;
     size?: number;
+    panelTarget?: HTMLElement | null;
+    open?: boolean;
+    panelStyle?: CSSProperties;
   }>(),
   {
     size: 18,
+    open: undefined,
   },
+);
+const emit = defineEmits<{ openChange: [open: boolean, trigger: HTMLElement | null] }>();
+const triggerRef = ref<HTMLElement | null>(null);
+const localOpen = ref(false);
+const panelOpen = computed(() => props.open ?? localOpen.value);
+function updateOpen(open: boolean) {
+  localOpen.value = open;
+  emit("openChange", open, triggerRef.value);
+}
+useEventListener(
+  window,
+  "keydown",
+  (event: KeyboardEvent) => {
+    if (!props.panelTarget || !panelOpen.value || event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    updateOpen(false);
+  },
+  { capture: true },
 );
 
 const settingStore = useSettingStore();
@@ -248,6 +281,18 @@ const tone = computed(() => {
 
 .context-usage-arrow {
   fill: var(--popover);
+}
+.floating-context-usage {
+  position: absolute;
+  top: var(--chip-picker-top, auto);
+  bottom: var(--chip-picker-bottom, auto);
+  left: var(--chip-picker-left, 8px);
+  width: min(var(--chip-picker-width, 300px), calc(100% - 16px));
+  max-height: var(--chip-picker-max-height, 280px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  pointer-events: auto;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
 }
 
 .context-usage-card-header {

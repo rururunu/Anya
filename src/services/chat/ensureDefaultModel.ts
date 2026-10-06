@@ -31,5 +31,7 @@ export function selectDefaultChatModel(
     };
   }
 
-  return { model: models[0]!, needsPersist: true };
+  // Missing entries may simply be absent from an old cache or partial discovery.
+  // A fallback for this operation must not replace an explicitly saved default.
+  return { model: models[0]!, needsPersist: !current };
 }

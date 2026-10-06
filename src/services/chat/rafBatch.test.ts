@@ -3,8 +3,28 @@ import { createRafBatch } from "./rafBatch";
 
 describe("createRafBatch", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("bounds stream redraws while preserving every delta and drains immediately on finish", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", undefined);
+    const flush = vi.fn();
+    const batch = createRafBatch<string>(flush, 50);
+    for (let index = 0; index < 100; index++) batch.push(String(index));
+    await vi.advanceTimersByTimeAsync(49);
+    expect(flush).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(flush.mock.calls[0]?.[0]).toHaveLength(100);
+    batch.push("last delta");
+    batch.drain();
+    expect(flush).toHaveBeenLastCalledWith(["last delta"]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(flush).toHaveBeenCalledTimes(2);
+    expect(batch.size()).toBe(0);
   });
 
   it("batches pushes and flushes on drain without rAF", async () => {

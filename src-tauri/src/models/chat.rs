@@ -23,6 +23,8 @@ pub struct ImageGenSendOptions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSendRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captured_context: Option<crate::core::runtime::RequestContext>,
     pub message: String,
     #[serde(default)]
     pub session_id: Option<String>,
@@ -60,6 +62,7 @@ pub struct ChatSendRequest {
 /// Optional per-send settings that override global settings for one conversation.
 #[derive(Debug, Clone, Default)]
 pub struct ChatSendOverrides {
+    pub captured_context: Option<crate::core::runtime::RequestContext>,
     pub model_id: Option<String>,
     pub model_provider: Option<String>,
     pub chat_mode: Option<ChatMode>,
@@ -73,6 +76,7 @@ pub struct ChatSendOverrides {
 impl ChatSendOverrides {
     pub fn from_request(request: &ChatSendRequest) -> Self {
         Self {
+            captured_context: request.captured_context.clone(),
             model_id: request.model_id.clone(),
             model_provider: request.model_provider.clone(),
             chat_mode: request.chat_mode,
@@ -82,6 +86,26 @@ impl ChatSendOverrides {
             resume_plan: request.resume_plan,
             soft_inject: request.soft_inject,
         }
+    }
+}
+
+#[cfg(test)]
+mod capture_snapshot_tests {
+    use super::*;
+    #[test]
+    fn overlay_capture_is_frozen_per_send_and_old_clients_remain_supported() {
+        let mut request: ChatSendRequest = serde_json::from_value(serde_json::json!({ "message": "Explain", "capturedContext": { "selection": "first window", "activeWindow": "Browser A" } })).unwrap();
+        let overrides = ChatSendOverrides::from_request(&request);
+        request.captured_context.as_mut().unwrap().selection = Some("later window".into());
+        assert_eq!(
+            overrides.captured_context.unwrap().selection.as_deref(),
+            Some("first window")
+        );
+        let legacy: ChatSendRequest =
+            serde_json::from_value(serde_json::json!({ "message": "hello" })).unwrap();
+        assert!(ChatSendOverrides::from_request(&legacy)
+            .captured_context
+            .is_none());
     }
 }
 

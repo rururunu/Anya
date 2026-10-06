@@ -15,6 +15,21 @@ commands.allow = [
   "remote_list_staged",
   "remote_push_staged",
   "remote_remove_staged",
+  "remote_replace_staged",
+  "remote_clear_staged",
+  "remote_insert_staged",
+  "remote_pop_staged",
+  "remote_take_staged"
+]
+
+[[permission]]
+identifier = "allow-staged-commands"
+description = "Shared chat message queue used by overlay and workbench"
+commands.allow = [
+  "remote_list_staged",
+  "remote_push_staged",
+  "remote_remove_staged",
+  "remote_replace_staged",
   "remote_clear_staged",
   "remote_insert_staged",
   "remote_pop_staged",

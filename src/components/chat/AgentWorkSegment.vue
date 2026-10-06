@@ -22,6 +22,7 @@
   <Markdown
     v-else-if="segment.type === 'content'"
     :content="segment.content"
+    :streaming="streaming"
     class="agent-work-content"
     @preview-image="emit('previewImage', $event)"
   />

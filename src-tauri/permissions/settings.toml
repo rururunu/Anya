@@ -4,6 +4,7 @@ description = "Enables settings read/write commands."
 commands.allow = [
   "get_app_settings",
   "set_app_settings",
+  "delete_all_user_information",
   "list_system_fonts",
   "list_vscode_themes",
   "load_vscode_theme",
@@ -23,8 +24,4 @@ commands.allow = [
   "lookup_install_icon",
   "lookup_install_icons",
   "clear_install_icon",
-  "get_semantic_search_status",
-  "set_semantic_search",
-  "test_semantic_search_api",
-  "fetch_semantic_search_models",
 ]

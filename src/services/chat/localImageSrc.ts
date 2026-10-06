@@ -1,4 +1,46 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import type { ComputedRef, InjectionKey } from "vue";
+
+export const markdownWorkspaceRoot: InjectionKey<ComputedRef<string>> =
+  Symbol("markdownWorkspaceRoot");
+
+/** Resolve document-relative images against this conversation, not the WebView URL. */
+export function resolveMarkdownImagePath(source: string, workspaceRoot = ""): string {
+  let value = source.trim();
+  if (value.startsWith("path:")) value = unwrapLocalImagePath(value);
+  if (/^file:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      const path = decodeURIComponent(url.pathname);
+      return url.hostname
+        ? `\\\\${url.hostname}${path.replace(/\//g, "\\")}`
+        : path.replace(/^\/([a-zA-Z]:\/)/, "$1");
+    } catch {
+      return value;
+    }
+  }
+  if (isLocalImagePath(value)) {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  if (
+    !value ||
+    /^[a-z][a-z\d+.-]*:/i.test(value) ||
+    value.startsWith("//") ||
+    !isLocalImagePath(workspaceRoot)
+  )
+    return value;
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    /* Keep literal filenames. */
+  }
+  const root = unwrapLocalImagePath(workspaceRoot).replace(/\\/g, "/").replace(/\/$/, "");
+  return `${root}/${value.replace(/\\/g, "/")}`;
+}
 
 /** True when `value` looks like a local filesystem path (or `path:` wrapper). */
 export function isLocalImagePath(value: string): boolean {
@@ -18,6 +60,7 @@ export function unwrapLocalImagePath(source: string): string {
 }
 
 function mimeFromPath(path: string): string {
+  if (/\.svg$/i.test(path)) return "image/svg+xml";
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
   if (ext === "webp") return "image/webp";

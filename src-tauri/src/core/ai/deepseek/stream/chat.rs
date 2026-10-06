@@ -48,7 +48,9 @@ pub(super) async fn read_sse_stream(
             if payload.is_empty() {
                 continue;
             }
-            outcome.first_sse_ms.get_or_insert(started.elapsed().as_millis());
+            outcome
+                .first_sse_ms
+                .get_or_insert(started.elapsed().as_millis());
             if payload == "[DONE]" {
                 outcome.saw_done = true;
                 break;
@@ -95,7 +97,9 @@ pub(super) async fn read_sse_stream(
                 }
                 if let Some(content_chunk) = choice.delta.content.as_deref() {
                     if !content_chunk.is_empty() {
-                        outcome.first_text_ms.get_or_insert(started.elapsed().as_millis());
+                        outcome
+                            .first_text_ms
+                            .get_or_insert(started.elapsed().as_millis());
                         outcome.emitted = true;
                         content.push_str(content_chunk);
                         let _ = tx.send(StreamEvent::Delta(content_chunk.to_string())).await;

@@ -1,5 +1,4 @@
 pub mod deepseek;
-pub mod embed;
 pub mod image_analysis;
 pub mod image_gen;
 pub mod image_markdown;

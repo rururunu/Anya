@@ -10,28 +10,43 @@
     :aria-valuemax="maxIndex"
     :aria-valuenow="index"
     :aria-valuetext="currentLabel"
+    tabindex="0"
+    @keydown="onKeydown"
     @wheel="onWheel"
   >
     <span v-if="inline" class="thinking-slider-title">{{ title }}</span>
-    <div v-else class="thinking-slider-value">{{ currentLabel }}</div>
+    <div v-else class="thinking-slider-heading">{{ title }}</div>
     <div
       class="thinking-slider-hit"
-      @pointerdown="onPointerDown"
+      @pointerdown.stop.prevent="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
     >
       <div class="thinking-slider-track">
         <div class="thinking-slider-fill" />
-        <span
-          v-for="(_, tickIndex) in options"
-          :key="tickIndex"
-          class="thinking-slider-stop"
-          :class="{ reached: tickIndex <= index }"
-          :style="{ left: tickLeft(tickIndex) }"
-        />
-        <div class="thinking-slider-thumb" :class="{ dragging }" />
+        <div class="thinking-slider-positions">
+          <span
+            v-for="(_, tickIndex) in options"
+            :key="tickIndex"
+            class="thinking-slider-stop"
+            :class="{ reached: tickIndex <= index }"
+            :style="{ left: tickLeft(tickIndex) }"
+          />
+          <div class="thinking-slider-thumb" :class="{ dragging }" />
+        </div>
       </div>
+    </div>
+    <div v-if="!inline" class="thinking-slider-labels">
+      <span
+        v-for="(option, optionIndex) in options"
+        :key="option.id"
+        :class="{ selected: optionIndex === index }"
+        @mousedown.prevent
+        @click="selectIndex(optionIndex)"
+      >
+        {{ option.label }}
+      </span>
     </div>
     <span v-if="inline" class="thinking-slider-value">{{ currentLabel }}</span>
   </div>
@@ -69,6 +84,7 @@ const currentLabel = computed(() => props.options[index.value]?.label ?? "");
 const sliderStyle = computed(() => ({
   "--index": String(index.value),
   "--max": String(Math.max(maxIndex.value, 1)),
+  "--count": String(Math.max(props.options.length, 1)),
 }));
 
 function tickLeft(tickIndex: number) {
@@ -91,7 +107,9 @@ function indexFromClientX(event: PointerEvent) {
   if (!hit || props.options.length <= 1) {
     return 0;
   }
-  const rect = hit.getBoundingClientRect();
+  const rect = (
+    hit.querySelector<HTMLElement>(".thinking-slider-positions") ?? hit
+  ).getBoundingClientRect();
   const ratio = rect.width <= 0 ? 0 : (event.clientX - rect.left) / rect.width;
   return Math.round(Math.min(1, Math.max(0, ratio)) * maxIndex.value);
 }
@@ -101,6 +119,9 @@ function onPointerDown(event: PointerEvent) {
     return;
   }
   dragging.value = true;
+  (event.currentTarget as HTMLElement)
+    .closest<HTMLElement>(".thinking-effort-panel")
+    ?.focus({ preventScroll: true });
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   selectIndex(indexFromClientX(event));
 }
@@ -131,6 +152,23 @@ function onWheel(event: WheelEvent) {
   }
   selectIndex(index.value + (delta < 0 ? 1 : -1));
 }
+
+function onKeydown(event: KeyboardEvent) {
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? maxIndex.value
+        : event.key === "ArrowRight" || event.key === "ArrowUp"
+          ? index.value + 1
+          : event.key === "ArrowLeft" || event.key === "ArrowDown"
+            ? index.value - 1
+            : null;
+  if (next === null) return;
+  event.preventDefault();
+  event.stopPropagation();
+  selectIndex(next);
+}
 </script>
 
 <style scoped>
@@ -144,6 +182,7 @@ function onWheel(event: WheelEvent) {
   padding: 10px 12px 12px;
   border-bottom: 1px solid var(--peek-border);
   background: var(--peek-list-bg);
+  outline: none;
 }
 
 /* Inline: one compact row  [title] [========track========] [value]  matching list rows. */
@@ -206,6 +245,10 @@ function onWheel(event: WheelEvent) {
   border-radius: 99px;
   background: color-mix(in srgb, var(--peek-text) 12%, transparent);
 }
+.thinking-slider-positions {
+  position: absolute;
+  inset: 0;
+}
 
 .thinking-slider-fill {
   position: absolute;
@@ -258,5 +301,83 @@ function onWheel(event: WheelEvent) {
 .thinking-slider-thumb.dragging,
 .thinking-slider-hit:has(.dragging) .thinking-slider-fill {
   transition: none;
+}
+
+.thinking-effort-panel:not(.inline) {
+  max-width: none;
+}
+.thinking-slider-heading {
+  margin-bottom: 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--peek-text);
+}
+.thinking-effort-panel:not(.inline) .thinking-slider-hit {
+  height: 36px;
+  padding: 0 max(0px, calc(100% / var(--count) / 2 - 14px));
+}
+.thinking-effort-panel:not(.inline) .thinking-slider-track {
+  height: 24px;
+  background: color-mix(in srgb, var(--peek-accent) 12%, var(--peek-surface));
+}
+.thinking-effort-panel:not(.inline) .thinking-slider-positions {
+  inset: 0 14px;
+}
+.thinking-effort-panel:not(.inline) .thinking-slider-fill {
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--peek-accent) 28%, var(--peek-surface)),
+    var(--peek-accent)
+  );
+  transform: none;
+  /* Extend the fill beyond the thumb's 9px radius, leaving 4px of color around it. */
+  clip-path: inset(
+    0 max(0px, calc(1px + (1 - var(--index) / var(--max)) * (100% - 28px))) 0 0 round 99px
+  );
+  transition: clip-path 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.thinking-effort-panel:not(.inline) .thinking-slider-stop {
+  width: 6px;
+  height: 6px;
+  background: color-mix(in srgb, var(--peek-accent) 36%, var(--peek-surface));
+}
+.thinking-effort-panel:not(.inline) .thinking-slider-stop.reached {
+  background: var(--peek-surface);
+}
+.thinking-effort-panel:not(.inline) .thinking-slider-thumb {
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 2px solid color-mix(in srgb, var(--peek-accent) 40%, var(--peek-surface));
+  background: #fff;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--peek-accent) 24%, transparent);
+}
+.thinking-effort-panel:not(.inline) .thinking-slider-hit:hover .thinking-slider-thumb,
+.thinking-effort-panel:not(.inline) .thinking-slider-thumb.dragging {
+  transform: translate(-50%, -50%);
+}
+.thinking-effort-panel:focus-visible .thinking-slider-thumb {
+  outline: 2px solid var(--peek-accent);
+  outline-offset: 2px;
+}
+.thinking-slider-labels {
+  display: grid;
+  grid-template-columns: repeat(var(--count), minmax(0, 1fr));
+  width: 100%;
+  height: 16px;
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--peek-muted);
+}
+.thinking-slider-labels span {
+  min-width: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  text-align: center;
+}
+.thinking-slider-labels .selected {
+  color: var(--peek-accent);
+  font-weight: 600;
 }
 </style>

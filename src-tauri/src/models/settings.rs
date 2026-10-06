@@ -299,34 +299,6 @@ pub struct ImageStyleTemplate {
     pub example_image: Option<String>,
 }
 
-/// Local embedding model used for optional semantic workspace search.
-/// The model is downloaded lazily on first enable (never bundled).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum SemanticSearchModel {
-    #[default]
-    #[serde(rename = "multilingual-e5-small")]
-    MultilingualE5Small,
-    #[serde(rename = "bge-small-zh-v1.5")]
-    BGESmallZHV15,
-    #[serde(rename = "bge-small-en-v1.5")]
-    BGESmallENV15,
-    #[serde(rename = "jina-embeddings-v2-base-code")]
-    JinaEmbeddingsV2BaseCode,
-    #[serde(rename = "bge-m3")]
-    BGEM3,
-}
-
-/// Embedding backend for semantic workspace search.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum SemanticSearchBackend {
-    /// OpenAI-compatible `/embeddings` endpoint (SiliconFlow / OpenAI / local).
-    #[default]
-    Api,
-    /// Local ONNX model downloaded lazily via fastembed.
-    Local,
-}
-
 /// A model entry on the built-in DeepSeek provider, combining id, enabled
 /// state, and origin in one record (previously three parallel strings).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -534,20 +506,6 @@ pub struct AppSettings {
     /// Show an AI button on Snipaste pin windows (bottom-right).
     #[serde(default = "default_true")]
     pub snipaste_pin_ai_enabled: bool,
-    /// Semantic workspace search via embeddings. Off by default; enabling loads
-    /// the chosen backend (API or local model).
-    #[serde(default)]
-    pub semantic_search_enabled: bool,
-    #[serde(default)]
-    pub semantic_search_backend: SemanticSearchBackend,
-    #[serde(default)]
-    pub semantic_search_model: SemanticSearchModel,
-    #[serde(default)]
-    pub semantic_search_api_base_url: String,
-    #[serde(default)]
-    pub semantic_search_api_key: String,
-    #[serde(default)]
-    pub semantic_search_api_model: String,
     /// First-run welcome wizard. Missing from older settings files → treat as done.
     #[serde(default = "default_onboarding_completed_existing")]
     pub onboarding_completed: bool,
@@ -671,12 +629,6 @@ pub struct AppSettingsPatch {
     pub custom_providers: Option<Vec<CustomProviderConfig>>,
     pub pixpin_pin_ai_enabled: Option<bool>,
     pub snipaste_pin_ai_enabled: Option<bool>,
-    pub semantic_search_enabled: Option<bool>,
-    pub semantic_search_backend: Option<SemanticSearchBackend>,
-    pub semantic_search_model: Option<SemanticSearchModel>,
-    pub semantic_search_api_base_url: Option<String>,
-    pub semantic_search_api_key: Option<String>,
-    pub semantic_search_api_model: Option<String>,
     pub onboarding_completed: Option<bool>,
     pub custom_themes: Option<Vec<CustomThemeConfig>>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
@@ -747,12 +699,6 @@ impl Default for AppSettings {
             custom_providers: Vec::new(),
             pixpin_pin_ai_enabled: true,
             snipaste_pin_ai_enabled: true,
-            semantic_search_enabled: false,
-            semantic_search_backend: SemanticSearchBackend::default(),
-            semantic_search_model: SemanticSearchModel::default(),
-            semantic_search_api_base_url: String::new(),
-            semantic_search_api_key: String::new(),
-            semantic_search_api_model: String::new(),
             onboarding_completed: false,
             custom_themes: Vec::new(),
             custom_background: None,
@@ -969,24 +915,6 @@ impl AppSettings {
             snipaste_pin_ai_enabled: patch
                 .snipaste_pin_ai_enabled
                 .unwrap_or(self.snipaste_pin_ai_enabled),
-            semantic_search_enabled: patch
-                .semantic_search_enabled
-                .unwrap_or(self.semantic_search_enabled),
-            semantic_search_backend: patch
-                .semantic_search_backend
-                .unwrap_or(self.semantic_search_backend),
-            semantic_search_model: patch
-                .semantic_search_model
-                .unwrap_or(self.semantic_search_model),
-            semantic_search_api_base_url: patch
-                .semantic_search_api_base_url
-                .unwrap_or_else(|| self.semantic_search_api_base_url.clone()),
-            semantic_search_api_key: patch
-                .semantic_search_api_key
-                .unwrap_or_else(|| self.semantic_search_api_key.clone()),
-            semantic_search_api_model: patch
-                .semantic_search_api_model
-                .unwrap_or_else(|| self.semantic_search_api_model.clone()),
             onboarding_completed: patch
                 .onboarding_completed
                 .unwrap_or(self.onboarding_completed),
@@ -1040,6 +968,30 @@ mod tests {
         assert!(settings.image_providers.is_empty());
         assert!(!settings.hardware_acceleration_enabled);
         assert!(settings.onboarding_completed);
+    }
+
+    #[test]
+    fn removed_semantic_settings_are_ignored_and_not_persisted() {
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({
+            "colorScheme": "light",
+            "language": "zh-CN",
+            "webSearchEnabled": true,
+            "semanticSearchEnabled": true,
+            "semanticSearchBackend": "local",
+            "semanticSearchModel": "bge-m3",
+            "semanticSearchApiBaseUrl": "https://example.com",
+            "semanticSearchApiKey": "legacy-key",
+            "semanticSearchApiModel": "legacy-model"
+        }))
+        .expect("old settings with removed fields should still load");
+        assert!(settings.web_search_enabled);
+        let serialized = serde_json::to_value(settings).expect("settings should serialize");
+        assert_eq!(serialized["language"], "zh-CN");
+        assert!(serialized
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|key| !key.starts_with("semanticSearch")));
     }
 
     #[test]

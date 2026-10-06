@@ -1,6 +1,7 @@
-use windows::Win32::Foundation::HWND;
-use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+use windows::Win32::Foundation::{CloseHandle, HWND};
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
 };
@@ -39,18 +40,26 @@ impl WindowDetector {
 }
 
 unsafe fn read_process_name(pid: u32) -> Result<String, CaptureError> {
-    let process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid)
+    let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
         .map_err(|error| CaptureError::WindowDetection(format!("OpenProcess failed: {error}")))?;
 
-    let mut buffer = [0u16; 260];
-    let len = GetModuleBaseNameW(process, None, &mut buffer);
-    if len == 0 {
+    let mut buffer = [0u16; 32768];
+    let mut len = buffer.len() as u32;
+    let result = QueryFullProcessImageNameW(
+        process,
+        PROCESS_NAME_WIN32,
+        windows::core::PWSTR(buffer.as_mut_ptr()),
+        &mut len,
+    );
+    let _ = CloseHandle(process);
+    if result.is_err() || len == 0 {
         return Err(CaptureError::WindowDetection(
-            "GetModuleBaseNameW returned zero".into(),
+            "could not query foreground process image".into(),
         ));
     }
 
-    Ok(String::from_utf16_lossy(&buffer[..len as usize]))
+    let path = String::from_utf16_lossy(&buffer[..len as usize]);
+    Ok(path.rsplit(['\\', '/']).next().unwrap_or(&path).to_string())
 }
 
 unsafe fn read_window_title(hwnd: HWND) -> Result<String, CaptureError> {

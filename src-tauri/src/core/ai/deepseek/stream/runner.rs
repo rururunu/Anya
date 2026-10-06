@@ -89,8 +89,13 @@ async fn run_sse_stream(
         let response = match post_stream_request(client, url, api_key, body, kind).await {
             Ok(response) => response,
             Err((error, wait)) => {
-                if body["model"].as_str().is_some_and(crate::core::ai::registry::looks_like_deepseek_model) {
-                    crate::core::chat::telemetry::record_provider_metrics(&serde_json::json!({"kind":"wire_attempt", "attempt":attempt + 1, "phase":"request", "duration_ms":attempt_started.elapsed().as_millis(), "succeeded":false}));
+                if body["model"]
+                    .as_str()
+                    .is_some_and(crate::core::ai::registry::looks_like_deepseek_model)
+                {
+                    crate::core::chat::telemetry::record_provider_metrics(
+                        &serde_json::json!({"kind":"wire_attempt", "attempt":attempt + 1, "phase":"request", "duration_ms":attempt_started.elapsed().as_millis(), "succeeded":false}),
+                    );
                 }
                 retry_after = wait;
                 last_error = Some(error.clone());
@@ -111,7 +116,10 @@ async fn run_sse_stream(
             }
             SseKind::AnthropicMessages => read_anthropic_sse_stream(response, tx).await,
         };
-        if body["model"].as_str().is_some_and(crate::core::ai::registry::looks_like_deepseek_model) {
+        if body["model"]
+            .as_str()
+            .is_some_and(crate::core::ai::registry::looks_like_deepseek_model)
+        {
             let outcome = read.as_ref().ok();
             crate::core::chat::telemetry::record_provider_metrics(&serde_json::json!({
                 "kind":"wire_attempt", "attempt":attempt + 1, "phase":"stream", "headers_ms":headers_ms,

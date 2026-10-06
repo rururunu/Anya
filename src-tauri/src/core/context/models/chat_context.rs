@@ -8,6 +8,7 @@ pub enum CaptureSource {
     Explorer,
     #[allow(dead_code)]
     UiAutomation,
+    Browser,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

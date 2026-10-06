@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.25                                            |
+| **Version** | v0.2.26                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -31,7 +31,7 @@ to locate code paths and reason about change impact.
 - Agent turn orchestration and policy hooks (Ask / Agent / Plan / Image gates)
 - Persistence (SQLite, journal, work timeline)
 - Frontend stream projection and session model
-- Extension points (providers, tools, skills, MCP, RAG embeddings)
+- Extension points (providers, tools, skills, MCP)
 - Companion / Remote Gateway (pairing, LAN vs tunnel, wire protocol, file HTTP)
 
 **Out of scope**
@@ -55,20 +55,18 @@ flowchart LR
   Host -->|Skills + Deno| Office[Word / Excel / PPT]
   Host -->|HTTPS SSE / REST| LLM[Model providers]
   Host -->|HTTPS / stdio| Aux[MCP · search · mem0]
-  Host -.->|optional /embeddings| Emb[Embeddings API]
-  Host --> Disk[(SQLite · settings · index · models)]
+  Host --> Disk[(SQLite · settings · index)]
 ```
 
-| Actor / system      | Interaction                                                                    |
-| ------------------- | ------------------------------------------------------------------------------ |
-| User                | Global hotkey, tray, composer, review UI, embedded settings                    |
-| Anya Companion      | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`      |
-| IDE plugins         | Best-effort local context push (file, workspace, selection)                    |
-| Microsoft Office    | Saved-file skills + bundled Deno/JavaScript document runtime                   |
-| Model providers     | Authenticated HTTPS SSE; Chat Completions, Responses, or Anthropic Messages    |
-| Embeddings          | Optional RAG: OpenAI-compatible `/embeddings` or local ONNX (`fastembed`)      |
-| MCP / search / mem0 | Optional; enabled explicitly in settings                                       |
-| Local disk          | Chat DB, settings, `.anya/index`, embedding cache, updater pubkey, checkpoints |
+| Actor / system      | Interaction                                                                 |
+| ------------------- | --------------------------------------------------------------------------- |
+| User                | Global hotkey, tray, composer, review UI, embedded settings                 |
+| Anya Companion      | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`   |
+| IDE plugins         | Best-effort local context push (file, workspace, selection)                 |
+| Microsoft Office    | Saved-file skills + bundled Deno/JavaScript document runtime                |
+| Model providers     | Authenticated HTTPS SSE; Chat Completions, Responses, or Anthropic Messages |
+| MCP / search / mem0 | Optional; enabled explicitly in settings                                    |
+| Local disk          | Chat DB, settings, `.anya/index`, updater pubkey, checkpoints               |
 
 ---
 
@@ -96,7 +94,7 @@ flowchart TB
   subgraph Domain["L3 Domain core"]
     Chat["core/chat<br/>ChatService · StreamManager · AgentRunner"]
     AgentShell["core/agent<br/>AgentRuntime · run lifecycle"]
-    Ai["core/ai<br/>providers · embed / RAG"]
+    Ai["core/ai<br/>providers"]
     Tools["core/tools<br/>registry · approval · plan gate · sandbox"]
     Ctx["core/context · workspace · rules · token"]
     Persist["conversation_manager · db · journal"]
@@ -339,7 +337,6 @@ sequenceDiagram
 | MCP client          | `core/mcp/`                                 | stdio JSON-RPC (`manager`, `process`, `runtime`, `command`, `remote_auth`)                                                                                                                                       |
 | Images API          | `core/ai/image_gen.rs`                      | `POST /v1/images/generations` / `edits` via Settings → Image (`image_providers`)                                                                                                                                 |
 | Image markdown      | `core/ai/image_markdown.rs`                 | Extract / strip `![edit-region]` refs shared by chat, vision, and Images                                                                                                                                         |
-| Embeddings / RAG    | `core/ai/embed.rs`, `commands/semantic.rs`  | Optional retrieve-then-rerank; API or local ONNX                                                                                                                                                                 |
 | Tools               | `core/tools/`                               | Registry, approval, plan/image mode gates, files, shell, skills, agent tools                                                                                                                                     |
 | Workspace index     | `core/tools/workspace_index.rs`             | Chunked keyword index under `.anya/index` (incremental JSONL); skips `.anya` via `fs_skip`                                                                                                                       |
 | Plan mode           | `core/tools/plan_mode.rs`                   | Session write gate; Agent may ask via `request_plan_mode`                                                                                                                                                        |
@@ -375,7 +372,7 @@ sequenceDiagram
 | Chat services               | `services/chat/`                                               | Image gen mode, local image src, save image, composer segments, token estimate                                                                                          |
 | IPC                         | `services/ipc/`                                                | Typed invoke + event subscription                                                                                                                                       |
 | Stream batching             | `services/chat/rafBatch.ts`, `composables/chat/wireChatIpc.ts` | RAF coalesce; chat IPC wiring extracted from `main.ts`                                                                                                                  |
-| Settings pages              | `pages/Settings/`                                              | Provider / agent / MCP / skills / **RAG Search** / **Image** providers                                                                                                  |
+| Settings pages              | `pages/Settings/`                                              | Provider / agent / MCP / skills / **Image** providers                                                                                                                   |
 
 ---
 
@@ -773,40 +770,11 @@ When a format rejection is recognizable, the registry tries the remaining wire
 protocols and remembers the successful protocol per provider and model. Disabled
 models are rejected before any network request.
 
-### 11.2 Workspace index & RAG
+### 11.2 Workspace index
 
-`search_codebase` always hits the keyword index. Semantic re-rank is **off by
-default** (Settings → RAG Search). Nothing is downloaded or requested until enabled.
+`search_codebase` refreshes the workspace keyword index, ranks keyword matches, and returns the requested number of results. The index covers overlapping content chunks, symbols, file paths, and decision documents (AGENTS.md / ADR). JSONL records are stored under `{workspace}/.anya/index/`, with incremental updates for changed files.
 
-```mermaid
-flowchart TB
-  Q[search_codebase query] --> KW[WorkspaceIndex.refresh + keyword score]
-  KW --> Hits[candidate hits ≤ 80]
-  Hits --> Ready{SemanticSearchEngine Ready?}
-  Ready -->|no| Out[return keyword ranking]
-  Ready -->|yes| Emb[embed query + snippets]
-  Emb --> Cos[cosine rerank]
-  Cos --> Out[truncate to limit]
-```
-
-```mermaid
-flowchart LR
-  UI[RagSettings.vue] --> Cmd[set_semantic_search]
-  Cmd --> Eng[SemanticSearchEngine singleton]
-  Eng -->|backend=api| API["OpenAI-compatible POST /embeddings"]
-  Eng -->|backend=local| ONNX["fastembed ONNX<br/>app_data/models/"]
-```
-
-| Piece          | Location                                                                                                             |
-| -------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Keyword index  | `core/tools/workspace_index.rs` — overlapping chunks + symbols / paths / ADR; JSONL under `{workspace}/.anya/index/` |
-| Search tool    | `search_codebase` in `core/tools/builtin/misc.rs` — retrieve then rerank                                             |
-| Engine         | `core/ai/embed.rs` — API (`reqwest::blocking`) or local `fastembed`                                                  |
-| IPC / settings | `commands/semantic.rs`, Settings category **RAG Search**                                                             |
-| Local models   | E5-Small (~120MB, default), BGE-Small zh/en, Jina code (~500MB), BGE-M3 (~2.3GB)                                     |
-
-The API path sends **query + candidate snippets** to the configured embeddings
-host. The local path stays on disk after the first download.
+Implementation: `core/tools/workspace_index.rs`; tool entry point: `core/tools/builtin/misc.rs`.
 
 ### 11.3 Computer use
 
@@ -903,14 +871,13 @@ Details: [release.md](./release.md).
 | New skill               | `src-tauri/prompts/skills/*.md` (+ assets if needed)                        |
 | Agent plugin playbook   | `contributes.agent.skills` markdown (see [Computer use](./computer-use.md)) |
 | Companion RPC / event   | `core/remote/protocol.rs` + phone client in AnyaAndroid                     |
-| RAG embedding backend   | `core/ai/embed.rs` + Settings RAG page                                      |
 
 Avoid introducing a parallel agent loop beside `AgentRunner`.
 Companion must not grow a second Agent runtime.
 
 ---
 
-### 15.1 Native tools and delivery in v0.2.25
+### 15.1 Native tools and delivery in v0.2.26
 
 The resolved model determines whether `core/tools/dsh/` is selected, rather than the provider name alone. Main and child tasks select their own tool sets; `present` is also available in the general registry. Imported static contracts live in `prompts/dsh/`; execution and approval use the Anya host. See [native DeepSeek tools](./deepseek-harness.md).
 
@@ -942,7 +909,7 @@ Call diagnostics go to configuration-directory JSONL files; `scripts/deepseek-me
 | DeepSeek stream                  | `core/ai/deepseek/stream/`                                                                |
 | Gateway HTTP split               | `core/remote/http_proxy.rs` (`/remote/v1`, `/f/`, `/p/`)                                  |
 | Companion file transfer          | `core/remote/upload.rs`, `download.rs`                                                    |
-| Workspace index / RAG            | `core/tools/workspace_index.rs`, `core/ai/embed.rs`                                       |
+| Workspace index                  | `core/tools/workspace_index.rs`                                                           |
 | Theme apply path                 | `src/services/theme/`, `stores/setting.ts` `applyTheme`                                   |
 | Workbench glass / window radius  | `services/workbench_glass.rs`, `overlay/appearance.ts`                                    |
 | Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                    |

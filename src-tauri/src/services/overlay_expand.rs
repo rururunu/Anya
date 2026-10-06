@@ -1,4 +1,4 @@
-//! First-message expansion: preserve the draft's bottom edge and commit the
+//! First-message expansion: preserve the draft's top edge and commit the
 //! native rectangle before mounting the chat UI. No per-frame window IPC.
 use tauri::{LogicalSize, PhysicalPosition, PhysicalSize, WebviewWindow};
 
@@ -13,7 +13,7 @@ struct Bounds {
 fn chat_bounds(old: Bounds, scale: f64, zoom: f64, area: Option<Bounds>) -> Bounds {
     let factor = scale * zoom;
     let mut width = (640.0 * factor).round() as u32;
-    let mut height = (520.0 * factor).round() as u32;
+    let mut height = (240.0 * factor).round() as u32;
     if let Some(area) = &area {
         width = width.min(area.width);
         height = height.min(
@@ -23,7 +23,7 @@ fn chat_bounds(old: Bounds, scale: f64, zoom: f64, area: Option<Bounds>) -> Boun
         );
     }
     let mut x = old.x + (old.width as i32 - width as i32) / 2;
-    let mut y = old.y + old.height as i32 - height as i32;
+    let mut y = old.y;
     if let Some(area) = area {
         x = x.clamp(area.x, area.x + area.width as i32 - width as i32);
         y = y.clamp(area.y, area.y + area.height as i32 - height as i32);
@@ -106,7 +106,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn expansion_preserves_the_original_bottom_edge() {
+    fn expansion_preserves_the_original_top_edge() {
         let result = chat_bounds(
             Bounds {
                 x: 200,
@@ -122,9 +122,9 @@ mod tests {
             result,
             Bounds {
                 x: 200,
-                y: 136,
+                y: 600,
                 width: 640,
-                height: 520
+                height: 240
             }
         );
     }
@@ -146,9 +146,9 @@ mod tests {
             result,
             Bounds {
                 x: 200,
-                y: 330,
+                y: 1200,
                 width: 1200,
-                height: 975
+                height: 450
             }
         );
     }
@@ -175,10 +175,32 @@ mod tests {
             result,
             Bounds {
                 x: -800,
-                y: 0,
+                y: 20,
                 width: 800,
-                height: 552
+                height: 480
             }
         );
+    }
+
+    #[test]
+    fn expansion_moves_up_only_when_the_work_area_has_no_room_below() {
+        let result = chat_bounds(
+            Bounds {
+                x: 200,
+                y: 900,
+                width: 640,
+                height: 100,
+            },
+            1.0,
+            1.0,
+            Some(Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1040,
+            }),
+        );
+        assert_eq!(result.y, 800);
+        assert_eq!(result.height, 240);
     }
 }

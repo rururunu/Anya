@@ -23,6 +23,7 @@ export function useComposerPickers(options: {
   const thinkingPickerMode = ref<"slider" | "list">("slider");
   const chatModePickerOpen = ref(false);
   const imageGenPickerOpen = ref<ImageGenFieldId | null>(null);
+  const contextUsageOpen = ref(false);
 
   /** Sync overlay popup-open flag with the native shell. */
   async function syncPopupState(open: boolean) {
@@ -48,6 +49,7 @@ export function useComposerPickers(options: {
     chatModePickerOpen.value = false;
     thinkingTierPickerOpen.value = false;
     imageGenPickerOpen.value = null;
+    contextUsageOpen.value = false;
   }
 
   function anyChipStillOpen() {
@@ -56,6 +58,7 @@ export function useComposerPickers(options: {
       approvalPickerOpen.value ||
       chatModePickerOpen.value ||
       thinkingTierPickerOpen.value ||
+      contextUsageOpen.value ||
       Boolean(imageGenPickerOpen.value)
     );
   }
@@ -170,6 +173,7 @@ export function useComposerPickers(options: {
     thinkingPickerMode,
     chatModePickerOpen,
     imageGenPickerOpen,
+    contextUsageOpen,
     syncPopupState,
     closeChipPickers,
     closeModelPicker,

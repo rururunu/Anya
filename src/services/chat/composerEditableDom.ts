@@ -38,6 +38,7 @@ export function serializeComposerEditable(root: HTMLElement): string {
       return;
     }
     if (!(node instanceof HTMLElement)) return;
+    if (node.hasAttribute("data-ce-trailing-line")) return;
     if (node.dataset.ceToken != null) {
       out += node.dataset.ceToken;
       return;
@@ -120,6 +121,7 @@ function offsetFromRoot(root: HTMLElement, target: Node, targetOffset: number): 
       total += node.dataset.ceToken.length;
       return;
     }
+    if (node instanceof HTMLElement && node.hasAttribute("data-ce-trailing-line")) return;
     if (node instanceof HTMLElement && node.tagName === "BR") {
       total += 1;
       return;
@@ -137,6 +139,7 @@ function offsetFromRoot(root: HTMLElement, target: Node, targetOffset: number): 
 function nodeTextLength(node: Node): number {
   if (node.nodeType === Node.TEXT_NODE) return node.nodeValue?.length ?? 0;
   if (!(node instanceof HTMLElement)) return 0;
+  if (node.hasAttribute("data-ce-trailing-line")) return 0;
   if (node.dataset.ceToken != null) return node.dataset.ceToken.length;
   if (node.tagName === "BR") return 1;
   let n = 0;
@@ -273,6 +276,11 @@ export function renderComposerEditable(
     frag.appendChild(document.createTextNode(""));
   }
   root.replaceChildren(frag);
+  if (text.endsWith("\n")) {
+    const marker = document.createElement("br");
+    marker.setAttribute("data-ce-trailing-line", "");
+    root.appendChild(marker);
+  }
 }
 
 /**

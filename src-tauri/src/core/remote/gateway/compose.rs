@@ -82,12 +82,8 @@ pub(super) fn apply_remote_reasoning_effort(app: &AppHandle, effort: &str) {
     )) else {
         return;
     };
-    let Ok(mut settings) = crate::services::settings_store::get_settings(app) else {
-        return;
-    };
-    if settings.reasoning_effort == parsed {
-        return;
-    }
-    settings.reasoning_effort = parsed;
-    let _ = crate::services::settings_store::set_settings(app, settings);
+    let _ = crate::services::settings_store::update_settings(app, |settings| {
+        settings.reasoning_effort = parsed;
+        Ok(())
+    });
 }

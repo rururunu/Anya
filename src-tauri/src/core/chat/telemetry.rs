@@ -211,16 +211,33 @@ pub(crate) fn record_provider_metrics(value: &serde_json::Value) {
     let mut value = value.clone();
     let _ = PROVIDER_METRICS_CONTEXT.try_with(|(call, request, session)| {
         if let Some(object) = value.as_object_mut() {
-            object.entry("call_id").or_insert_with(|| serde_json::json!(call));
-            object.entry("request_id").or_insert_with(|| serde_json::json!(request));
-            object.entry("session_id").or_insert_with(|| serde_json::json!(session));
+            object
+                .entry("call_id")
+                .or_insert_with(|| serde_json::json!(call));
+            object
+                .entry("request_id")
+                .or_insert_with(|| serde_json::json!(request));
+            object
+                .entry("session_id")
+                .or_insert_with(|| serde_json::json!(session));
         }
     });
     tracing::info!(target: "peek.provider", metrics = %value, "DeepSeek call metrics");
-    let Some(dir) = PROVIDER_METRICS_DIR.get() else { return; };
-    let Ok(_guard) = PROVIDER_METRICS_LOCK.lock() else { return; };
-    let path = dir.join(format!("deepseek-calls-{}.jsonl", Utc::now().format("%Y-%m-%d")));
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    let Some(dir) = PROVIDER_METRICS_DIR.get() else {
+        return;
+    };
+    let Ok(_guard) = PROVIDER_METRICS_LOCK.lock() else {
+        return;
+    };
+    let path = dir.join(format!(
+        "deepseek-calls-{}.jsonl",
+        Utc::now().format("%Y-%m-%d")
+    ));
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(file, "{value}");
     }
 }

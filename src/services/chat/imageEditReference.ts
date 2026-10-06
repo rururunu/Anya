@@ -62,6 +62,7 @@ function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
 }
 
 function mimeFromPath(path: string): string {
+  if (/\.svg$/i.test(path)) return "image/svg+xml";
   const ext = path.split(".").pop()?.toLowerCase() ?? "png";
   if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
   if (ext === "webp") return "image/webp";

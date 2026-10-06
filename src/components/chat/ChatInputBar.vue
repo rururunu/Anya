@@ -7,6 +7,7 @@
       'overlay-pickers': props.overlayPickers,
       'workbench-composer': props.appearance === 'workbench',
       'overlay-composer': props.appearance === 'overlay',
+      'inline-composer': props.inlineComposer,
       'picker-open': interactivePickerOpen && !chipPickerOpen,
       'file-suggestion-open': showFileSuggestions,
       'hash-suggestion-open': showHashSuggestions,
@@ -17,251 +18,268 @@
       'has-image-gen': effectiveChatMode === 'image',
     }"
   >
-    <Transition :css="false" mode="out-in" @enter="gsapPickerEnter" @leave="gsapPickerLeave">
-      <WorkspacePickerPanel
-        v-if="workspacePickerOpen"
-        key="workspace-picker"
-        :title="tr(language, 'chatInput.workspacePanelTitle')"
-        :quick-select-only="workspaceQuickSelectOnly"
-        :workspaces="workspaces"
-        :current-workspace="currentWorkspace"
-        :selected-index="selectedIndex"
-        :saving="workspaceSaving"
-        :error="workspaceError"
-        :new-workspace-label="tr(language, 'chatInput.newWorkspace')"
-        :no-previous-workspaces-label="tr(language, 'chatInput.noPreviousWorkspaces')"
-        @add-new="addWorkspaceFromFolder"
-        @select="chooseWorkspace"
-      />
+    <Teleport :to="pickerTeleportTarget || 'body'" :disabled="!pickerTeleportTarget">
+      <div
+        class="picker-content"
+        :class="{
+          'floating-picker-content': props.floatingPickerTarget && !inlineCompletionOpen,
+          'completion-picker-content': inlineCompletionOpen,
+        }"
+        :style="chipPickerStyle"
+        @mousedown="props.floatingPickerTarget && $event.stopPropagation()"
+      >
+        <Transition :css="false" mode="out-in" @enter="gsapPickerEnter" @leave="gsapPickerLeave">
+          <WorkspacePickerPanel
+            v-if="workspacePickerOpen"
+            key="workspace-picker"
+            :title="tr(language, 'chatInput.workspacePanelTitle')"
+            :quick-select-only="workspaceQuickSelectOnly"
+            :workspaces="workspaces"
+            :current-workspace="currentWorkspace"
+            :selected-index="selectedIndex"
+            :saving="workspaceSaving"
+            :error="workspaceError"
+            :new-workspace-label="tr(language, 'chatInput.newWorkspace')"
+            :no-previous-workspaces-label="tr(language, 'chatInput.noPreviousWorkspaces')"
+            @add-new="addWorkspaceFromFolder"
+            @select="chooseWorkspace"
+          />
 
-      <AttachResourcePanel
-        v-else-if="attachPanelOpen"
-        key="attach-resource-panel"
-        :tab="attachPanelTab"
-        :loading="hashCatalogLoading"
-        :picking-files="attachPickingFiles"
-        :skills="attachSkillItems"
-        :mcp-servers="attachMcpItems"
-        :selected-index="selectedIndex"
-        :workspace-files="workspaceFiles"
-        :files-loading="workspaceFilesLoading"
-        :has-workspace="Boolean(currentWorkspace)"
-        :ariaLabel="tr(language, 'chatInput.attachPanelTitle')"
-        :skills-label="tr(language, 'chatInput.attachSkills')"
-        :mcp-label="tr(language, 'chatInput.attachMcp')"
-        :files-label="tr(language, 'chatInput.attachFiles')"
-        :pick-files-label="tr(language, 'chatInput.attachPickFiles')"
-        :files-loading-text="tr(language, 'chatInput.attachFilesLoading')"
-        :no-workspace-text="tr(language, 'chatInput.attachNoWorkspace')"
-        :empty-files-text="tr(language, 'chatInput.attachEmptyFiles')"
-        :insert-file-title="tr(language, 'chatInput.attachInsertFile')"
-        :insert-folder-title="tr(language, 'chatInput.attachInsertFolder')"
-        :loading-text="tr(language, 'chatInput.attachLoading')"
-        :empty-skills-text="tr(language, 'chatInput.attachEmptySkills')"
-        :empty-mcp-text="tr(language, 'chatInput.attachEmptyMcp')"
-        :expand-more-label="tr(language, 'chatInput.attachExpandMore')"
-        :collapse-label="tr(language, 'chatInput.attachCollapse')"
-        @tab-change="onAttachPanelTabChange"
-        @pick-files="pickAttachFiles"
-        @select-file="selectAttachWorkspaceFile"
-        @hover="onAttachPanelHover"
-        @select="selectAttachResource"
-        @visible-count="onAttachVisibleCount"
-      />
+          <AttachResourcePanel
+            v-else-if="attachPanelOpen"
+            key="attach-resource-panel"
+            :tab="attachPanelTab"
+            :loading="hashCatalogLoading"
+            :picking-files="attachPickingFiles"
+            :skills="attachSkillItems"
+            :mcp-servers="attachMcpItems"
+            :selected-index="selectedIndex"
+            :workspace-files="workspaceFiles"
+            :files-loading="workspaceFilesLoading"
+            :has-workspace="Boolean(currentWorkspace)"
+            :ariaLabel="tr(language, 'chatInput.attachPanelTitle')"
+            :skills-label="tr(language, 'chatInput.attachSkills')"
+            :mcp-label="tr(language, 'chatInput.attachMcp')"
+            :files-label="tr(language, 'chatInput.attachFiles')"
+            :pick-files-label="tr(language, 'chatInput.attachPickFiles')"
+            :files-loading-text="tr(language, 'chatInput.attachFilesLoading')"
+            :no-workspace-text="tr(language, 'chatInput.attachNoWorkspace')"
+            :empty-files-text="tr(language, 'chatInput.attachEmptyFiles')"
+            :insert-file-title="tr(language, 'chatInput.attachInsertFile')"
+            :insert-folder-title="tr(language, 'chatInput.attachInsertFolder')"
+            :loading-text="tr(language, 'chatInput.attachLoading')"
+            :empty-skills-text="tr(language, 'chatInput.attachEmptySkills')"
+            :empty-mcp-text="tr(language, 'chatInput.attachEmptyMcp')"
+            :expand-more-label="tr(language, 'chatInput.attachExpandMore')"
+            :collapse-label="tr(language, 'chatInput.attachCollapse')"
+            @tab-change="onAttachPanelTabChange"
+            @pick-files="pickAttachFiles"
+            @select-file="selectAttachWorkspaceFile"
+            @hover="onAttachPanelHover"
+            @select="selectAttachResource"
+            @visible-count="onAttachVisibleCount"
+          />
 
-      <AskUserPicker
-        v-else-if="showAskUserPicker"
-        key="ask-user-list"
-        :header="activeAskQuestion?.header"
-        :question="activeAskQuestion?.question"
-        :question-index="askQuestionIndex"
-        :question-count="askQuestionCount"
-        :options="activeAskOptions"
-        :multi-select="activeAskQuestion?.multiSelect"
-        :confirm-row-index="askConfirmRowIndex"
-        :confirm-label="tr(language, 'confirmSelection')"
-        :selected-count="askSelectedCount"
-        :selected-count-label="tr(language, 'askSelectedCount', { count: askSelectedCount })"
-        :selected-index="selectedIndex"
-        :ariaLabel="tr(language, 'select')"
-        :plan-switch="askIsPlanSwitch"
-        :is-option-selected="isAskOptionSelected"
-        @hover="selectedIndex = $event"
-        @select="selectAskOption"
-        @confirm="confirmAskSelection"
-      />
+          <AskUserPicker
+            v-else-if="showAskUserPicker"
+            key="ask-user-list"
+            :header="activeAskQuestion?.header"
+            :question="activeAskQuestion?.question"
+            :question-index="askQuestionIndex"
+            :question-count="askQuestionCount"
+            :options="activeAskOptions"
+            :multi-select="activeAskQuestion?.multiSelect"
+            :confirm-row-index="askConfirmRowIndex"
+            :confirm-label="tr(language, 'confirmSelection')"
+            :selected-count="askSelectedCount"
+            :selected-count-label="tr(language, 'askSelectedCount', { count: askSelectedCount })"
+            :selected-index="selectedIndex"
+            :ariaLabel="tr(language, 'select')"
+            :plan-switch="askIsPlanSwitch"
+            :is-option-selected="isAskOptionSelected"
+            @hover="selectedIndex = $event"
+            @select="selectAskOption"
+            @confirm="confirmAskSelection"
+          />
 
-      <PathPermissionPicker
-        v-else-if="showPathPermissionPicker"
-        key="path-permission-list"
-        :header="pathPermissionHeader"
-        :question="pathPermissionQuestion"
-        :path="props.pathPermission?.path"
-        :options="pathPermissionOptions"
-        :selected-index="selectedIndex"
-        :ariaLabel="tr(language, 'permissionRequest')"
-        @hover="selectedIndex = $event"
-        @select="selectPathPermission"
-      />
+          <PathPermissionPicker
+            v-else-if="showPathPermissionPicker"
+            key="path-permission-list"
+            :header="pathPermissionHeader"
+            :question="pathPermissionQuestion"
+            :path="props.pathPermission?.path"
+            :options="pathPermissionOptions"
+            :selected-index="selectedIndex"
+            :ariaLabel="tr(language, 'permissionRequest')"
+            @hover="selectedIndex = $event"
+            @select="selectPathPermission"
+          />
 
-      <ToolApprovalPicker
-        v-else-if="showToolApprovalPicker"
-        key="tool-approval-list"
-        :header="toolApprovalHeader"
-        :options="toolApprovalOptions"
-        :selected-index="selectedIndex"
-        :ariaLabel="tr(language, 'toolApprovalTitle')"
-        @hover="selectedIndex = $event"
-        @select="selectToolApproval"
-      />
+          <ToolApprovalPicker
+            v-else-if="showToolApprovalPicker"
+            key="tool-approval-list"
+            :header="toolApprovalHeader"
+            :options="toolApprovalOptions"
+            :selected-index="selectedIndex"
+            :ariaLabel="tr(language, 'toolApprovalTitle')"
+            @hover="selectedIndex = $event"
+            @select="selectToolApproval"
+          />
 
-      <HistoryPicker
-        v-else-if="showHistoryPicker"
-        key="history-list"
-        :items="historyItems"
-        :selected-index="selectedIndex"
-        :ariaLabel="tr(language, 'chatHistory')"
-        :format-time="formatTime"
-        @hover="selectedIndex = $event"
-        @select="selectHistorySession"
-      />
+          <HistoryPicker
+            v-else-if="showHistoryPicker"
+            key="history-list"
+            :items="historyItems"
+            :selected-index="selectedIndex"
+            :ariaLabel="tr(language, 'chatHistory')"
+            :format-time="formatTime"
+            @hover="selectedIndex = $event"
+            @select="selectHistorySession"
+          />
 
-      <ModelPicker
-        v-else-if="showModelPicker"
-        key="model-list"
-        :models="modelPickerModels"
-        :selected-model-id="chatModel"
-        :selected-provider="chatModelProvider"
-        :selected-index="selectedIndex"
-        :active-provider="modelPickerProvider"
-        :loading="chatModelStore.loading"
-        :refreshing="chatModelStore.refreshing"
-        :error="chatModelStore.error"
-        :loading-text="modelStatusText.loading"
-        :empty-text="modelPickerEmptyText"
-        :refresh-text="tr(language, 'refreshModels')"
-        :back-text="tr(language, 'backToProviders')"
-        :model-count-text="tr(language, 'providerModelCount')"
-        :ariaLabel="
-          modelPickerShowingGroups ? tr(language, 'chooseProvider') : tr(language, 'chooseModel')
-        "
-        :thinking-options="showThinkingTierPicker ? thinkingTierPickerOptions : []"
-        :thinking-selected-id="thinkingTierSelectedId"
-        :thinking-title="tr(language, 'thinkingTierLabel')"
-        @hover="selectedIndex = $event"
-        @select="selectModel"
-        @select-group="enterModelGroup"
-        @back="leaveModelGroup"
-        @refresh="refreshModelList"
-        @select-thinking="applyThinkingTier"
-      />
+          <ModelPicker
+            v-else-if="showModelPicker"
+            key="model-list"
+            :models="modelPickerModels"
+            :flat-grouped="props.inlineComposer"
+            :selected-model-id="chatModel"
+            :selected-provider="chatModelProvider"
+            :selected-index="selectedIndex"
+            :active-provider="modelPickerProvider"
+            :loading="chatModelStore.loading"
+            :refreshing="chatModelStore.refreshing"
+            :error="chatModelStore.error"
+            :loading-text="modelStatusText.loading"
+            :empty-text="modelPickerEmptyText"
+            :refresh-text="tr(language, 'refreshModels')"
+            :back-text="tr(language, 'backToProviders')"
+            :model-count-text="tr(language, 'providerModelCount')"
+            :ariaLabel="
+              modelPickerShowingGroups
+                ? tr(language, 'chooseProvider')
+                : tr(language, 'chooseModel')
+            "
+            :thinking-options="
+              !props.inlineComposer && showThinkingTierPicker ? thinkingTierPickerOptions : []
+            "
+            :thinking-selected-id="thinkingTierSelectedId"
+            :thinking-title="tr(language, 'thinkingTierLabel')"
+            @hover="selectedIndex = $event"
+            @select="selectModel"
+            @select-group="enterModelGroup"
+            @back="leaveModelGroup"
+            @refresh="refreshModelList"
+            @select-thinking="applyThinkingTier"
+          />
 
-      <OptionPicker
-        v-else-if="showChatModePicker"
-        key="chat-mode-list"
-        compact
-        :options="chatModePickerOptions"
-        :selected-id="effectiveChatMode"
-        :selected-index="selectedIndex"
-        :ariaLabel="tr(language, 'chooseChatMode')"
-        @hover="selectedIndex = $event"
-        @select="selectChatMode"
-      />
+          <OptionPicker
+            v-else-if="showChatModePicker"
+            key="chat-mode-list"
+            compact
+            :options="chatModePickerOptions"
+            :selected-id="effectiveChatMode"
+            :selected-index="selectedIndex"
+            :ariaLabel="tr(language, 'chooseChatMode')"
+            @hover="selectedIndex = $event"
+            @select="selectChatMode"
+          />
 
-      <ThinkingEffortSlider
-        v-else-if="showThinkingTierSlider"
-        key="thinking-tier-slider"
-        :options="thinkingTierPickerOptions"
-        :selected-id="thinkingTierSelectedId"
-        :title="tr(language, 'chooseThinkingTier')"
-        @select="applyThinkingTier"
-      />
+          <ThinkingEffortSlider
+            v-else-if="showThinkingTierSlider"
+            key="thinking-tier-slider"
+            :options="thinkingTierPickerOptions"
+            :selected-id="thinkingTierSelectedId"
+            :title="tr(language, 'thinkingTierLabel')"
+            @select="applyThinkingTier"
+          />
 
-      <OptionPicker
-        v-else-if="showThinkingTierList"
-        key="thinking-tier-list"
-        compact
-        :options="thinkingTierPickerOptions"
-        :selected-id="thinkingTierSelectedId"
-        :selected-index="selectedIndex"
-        :ariaLabel="tr(language, 'chooseThinkingTier')"
-        @hover="selectedIndex = $event"
-        @select="selectThinkingTier"
-      />
+          <OptionPicker
+            v-else-if="showThinkingTierList"
+            key="thinking-tier-list"
+            compact
+            :options="thinkingTierPickerOptions"
+            :selected-id="thinkingTierSelectedId"
+            :selected-index="selectedIndex"
+            :ariaLabel="tr(language, 'chooseThinkingTier')"
+            @hover="selectedIndex = $event"
+            @select="selectThinkingTier"
+          />
 
-      <OptionPicker
-        v-else-if="showApprovalPicker"
-        key="approval-mode-list"
-        compact
-        :options="approvalPickerOptions"
-        :selected-id="sessionToolApprovalMode"
-        :selected-index="selectedIndex"
-        :ariaLabel="tr(language, 'toolApprovalMode')"
-        @hover="selectedIndex = $event"
-        @select="selectApprovalMode"
-      />
+          <OptionPicker
+            v-else-if="showApprovalPicker"
+            key="approval-mode-list"
+            compact
+            :options="approvalPickerOptions"
+            :selected-id="sessionToolApprovalMode"
+            :selected-index="selectedIndex"
+            :ariaLabel="tr(language, 'toolApprovalMode')"
+            @hover="selectedIndex = $event"
+            @select="selectApprovalMode"
+          />
 
-      <ImageGenSettingsPanel
-        v-else-if="showImageGenSettingsPanel"
-        key="image-gen-settings"
-        :model-value="imageGenOptions"
-        :language="language"
-        :ariaLabel="imageGenPickerAriaLabel"
-        @update:model-value="setImageGenOptions"
-      />
+          <ImageGenSettingsPanel
+            v-else-if="showImageGenSettingsPanel"
+            key="image-gen-settings"
+            :model-value="imageGenOptions"
+            :language="language"
+            :ariaLabel="imageGenPickerAriaLabel"
+            @update:model-value="setImageGenOptions"
+          />
 
-      <OptionPicker
-        v-else-if="showImageGenListPicker"
-        key="image-gen-list"
-        compact
-        :options="imageGenPickerOptions"
-        :selected-id="imageGenPickerSelectedId"
-        :selected-index="selectedIndex"
-        :ariaLabel="imageGenPickerAriaLabel"
-        @hover="selectedIndex = $event"
-        @select="selectImageGenOption"
-      />
+          <OptionPicker
+            v-else-if="showImageGenListPicker"
+            key="image-gen-list"
+            compact
+            :options="imageGenPickerOptions"
+            :selected-id="imageGenPickerSelectedId"
+            :selected-index="selectedIndex"
+            :ariaLabel="imageGenPickerAriaLabel"
+            @hover="selectedIndex = $event"
+            @select="selectImageGenOption"
+          />
 
-      <FileMentionPicker
-        v-else-if="showFileSuggestions"
-        key="file-suggestions"
-        :loading="workspaceFilesLoading"
-        :suggestions="fileSuggestions"
-        :selected-index="selectedIndex"
-        :loading-text="tr(language, 'loadingFiles')"
-        :empty-text="tr(language, 'noMatchingFiles')"
-        :ariaLabel="tr(language, 'workspace')"
-        @hover="selectedIndex = $event"
-        @select="selectWorkspaceFile"
-      />
+          <FileMentionPicker
+            v-else-if="showFileSuggestions"
+            key="file-suggestions"
+            :loading="workspaceFilesLoading"
+            :suggestions="fileSuggestions"
+            :selected-index="selectedIndex"
+            :loading-text="tr(language, 'loadingFiles')"
+            :empty-text="tr(language, 'noMatchingFiles')"
+            :ariaLabel="tr(language, 'workspace')"
+            @hover="selectedIndex = $event"
+            @select="selectWorkspaceFile"
+          />
 
-      <HashMentionPicker
-        v-else-if="showHashSuggestions"
-        key="hash-suggestions"
-        :loading="hashCatalogLoading"
-        :items="hashSuggestions"
-        :selected-index="selectedIndex"
-        :loading-text="tr(language, 'loadingHashMentions')"
-        :empty-text="tr(language, 'noMatchingHashMentions')"
-        :ariaLabel="tr(language, 'hashMentions')"
-        :skill-label="tr(language, 'hashSkill')"
-        :mcp-label="tr(language, 'hashMcp')"
-        :plugin-label="tr(language, 'hashPlugin')"
-        @hover="selectedIndex = $event"
-        @select="selectHashMention"
-      />
+          <HashMentionPicker
+            v-else-if="showHashSuggestions"
+            key="hash-suggestions"
+            :loading="hashCatalogLoading"
+            :items="hashSuggestions"
+            :selected-index="selectedIndex"
+            :loading-text="tr(language, 'loadingHashMentions')"
+            :empty-text="tr(language, 'noMatchingHashMentions')"
+            :ariaLabel="tr(language, 'hashMentions')"
+            :skill-label="tr(language, 'hashSkill')"
+            :mcp-label="tr(language, 'hashMcp')"
+            :plugin-label="tr(language, 'hashPlugin')"
+            @hover="selectedIndex = $event"
+            @select="selectHashMention"
+          />
 
-      <CommandSuggestions
-        v-else-if="showCommandSuggestions"
-        key="command-list"
-        :commands="filteredCommands"
-        :selected-index="selectedIndex"
-        :appearance="props.appearance"
-        :ariaLabel="tr(language, 'commandSuggestions')"
-        @hover="selectedIndex = $event"
-        @select="executeCommand"
-      />
-    </Transition>
+          <CommandSuggestions
+            v-else-if="showCommandSuggestions"
+            key="command-list"
+            :commands="filteredCommands"
+            :selected-index="selectedIndex"
+            :appearance="props.appearance"
+            :ariaLabel="tr(language, 'commandSuggestions')"
+            @hover="selectedIndex = $event"
+            @select="executeCommand"
+          />
+        </Transition>
+      </div>
+    </Teleport>
 
     <div
       class="input-bar"
@@ -276,116 +294,140 @@
       @dragleave="onFileDragLeave"
       @drop.prevent="onFileDrop"
     >
-      <ImageGenToolbar
-        v-if="effectiveChatMode === 'image'"
-        :model-value="imageGenOptions"
-        :language="language"
-        :open-field="imageGenPickerOpen"
-        @open="toggleImageGenPicker"
-      />
-      <div
-        v-if="attachedImages.length"
-        class="input-images peek-scrollbar"
-        data-tauri-drag-region="false"
-      >
+      <Teleport :to="props.inputTarget || 'body'" :disabled="!props.inputTarget">
         <div
-          v-for="(img, idx) in attachedImages"
-          :key="idx"
-          class="image-thumb-container"
-          data-tauri-drag-region="false"
+          class="composer-body"
+          :class="{ 'inline-composer-body': props.inlineComposer }"
+          @mousedown="onInputBarMouseDown"
+          @input="revealInlineComposer"
+          @dragover.stop.prevent="onFileDragOver"
+          @dragleave.stop="onFileDragLeave"
+          @drop.stop.prevent="onFileDrop"
         >
-          <img
-            :src="img"
-            class="image-thumb"
-            draggable="false"
-            data-no-drag
-            @mousedown.stop
-            @click.stop="previewImage(img)"
+          <UserAvatar v-if="props.inlineComposer" class="input-user-avatar" />
+          <ImageGenToolbar
+            v-if="effectiveChatMode === 'image' && !props.inlineComposer"
+            :model-value="imageGenOptions"
+            :language="language"
+            :open-field="imageGenPickerOpen"
+            @open="toggleImageGenPicker"
           />
-          <button
-            type="button"
-            class="image-remove-btn"
-            title="Remove image"
-            @click="removeAttachedImage(idx)"
-          >
-            <X :size="10" />
-          </button>
-        </div>
-      </div>
-
-      <div
-        v-if="attachedFiles.length"
-        class="input-files peek-scrollbar"
-        data-tauri-drag-region="false"
-      >
-        <div
-          v-for="(file, idx) in attachedFiles"
-          :key="`${file.path}-${idx}`"
-          class="file-chip"
-          :class="{ skipped: Boolean(file.skippedReason) }"
-          data-tauri-drag-region="false"
-          :title="file.skippedReason ? `${file.path} (${file.skippedReason})` : file.path"
-        >
-          <img
-            v-if="fileIconForPath(file.path)"
-            class="file-chip-icon-img"
-            :src="fileIconForPath(file.path) || ''"
-            alt=""
-          />
-          <File v-else :size="12" :stroke-width="1.75" class="file-chip-icon" aria-hidden="true" />
-          <span class="file-chip-name">{{ file.name }}</span>
-          <button
-            type="button"
-            class="file-chip-remove"
-            :aria-label="tr(language, 'close')"
-            @click.stop="removeAttachedFile(idx)"
-          >
-            <X :size="11" :stroke-width="2" />
-          </button>
-        </div>
-      </div>
-
-      <div
-        class="input-content peek-scrollbar"
-        :class="{
-          'has-chips': hasComposerChips,
-          'has-leading': composerSegments.length > 0,
-          'is-multiline': composerInputMultiline,
-        }"
-        data-tauri-drag-region="false"
-      >
-        <template v-for="(seg, segIdx) in composerSegments" :key="`L-${segIdx}-${seg.kind}`">
-          <span
-            v-if="seg.kind === 'selection'"
-            class="selection-tag"
+          <div
+            v-if="attachedImages.length"
+            class="input-images peek-scrollbar"
             data-tauri-drag-region="false"
-            :title="`Selected ${seg.lines} lines`"
           >
-            <span>select-{{ seg.lines }}</span>
-          </span>
-        </template>
+            <div
+              v-for="(img, idx) in attachedImages"
+              :key="idx"
+              class="image-thumb-container"
+              data-tauri-drag-region="false"
+            >
+              <img
+                :src="img"
+                class="image-thumb"
+                draggable="false"
+                data-no-drag
+                @mousedown.stop
+                @click.stop="previewImage(img)"
+              />
+              <button
+                type="button"
+                class="image-remove-btn"
+                title="Remove image"
+                @click="removeAttachedImage(idx)"
+              >
+                <X :size="10" />
+              </button>
+            </div>
+          </div>
 
-        <ComposerEditable
-          ref="composerRef"
-          v-model="message"
-          :placeholder="inputPlaceholder"
-          :multiline="composerInputMultiline"
-          :empty="!message"
-          :readonly="inputLockedForTyping"
-          :aria-expanded="showSuggestions || interactivePickerOpen"
-          :mcp-servers="settingStore.mcpServers ?? []"
-          :skills="composerSkillMeta"
-          :plugins="pluginsStore.plugins"
-          :file-catalog="workspaceFiles"
-          class="peek-scrollbar"
-          @caret-change="onComposerCaretChange"
-          @input="onComposerInput"
-          @keydown="handleKeydown"
-          @paste="handlePaste"
-          @oversized-paste="handleOversizedPaste"
-        />
-      </div>
+          <div
+            v-if="attachedFiles.length"
+            class="input-files peek-scrollbar"
+            data-tauri-drag-region="false"
+          >
+            <div
+              v-for="(file, idx) in attachedFiles"
+              :key="`${file.path}-${idx}`"
+              class="file-chip"
+              :class="{ skipped: Boolean(file.skippedReason) }"
+              data-tauri-drag-region="false"
+              :title="file.skippedReason ? `${file.path} (${file.skippedReason})` : file.path"
+            >
+              <img
+                v-if="fileIconForPath(file.path)"
+                class="file-chip-icon-img"
+                :src="fileIconForPath(file.path) || ''"
+                alt=""
+              />
+              <File
+                v-else
+                :size="12"
+                :stroke-width="1.75"
+                class="file-chip-icon"
+                aria-hidden="true"
+              />
+              <span class="file-chip-name">{{ file.name }}</span>
+              <button
+                type="button"
+                class="file-chip-remove"
+                :aria-label="tr(language, 'close')"
+                @click.stop="removeAttachedFile(idx)"
+              >
+                <X :size="11" :stroke-width="2" />
+              </button>
+            </div>
+          </div>
 
+          <div
+            class="input-content peek-scrollbar"
+            :class="{
+              'has-chips': hasComposerChips,
+              'has-leading': composerSegments.length > 0,
+              'is-multiline': composerInputMultiline,
+            }"
+            data-tauri-drag-region="false"
+          >
+            <template v-for="(seg, segIdx) in composerSegments" :key="`L-${segIdx}-${seg.kind}`">
+              <span
+                v-if="seg.kind === 'selection'"
+                class="selection-tag"
+                data-tauri-drag-region="false"
+                :title="`Selected ${seg.lines} lines`"
+              >
+                <span>select-{{ seg.lines }}</span>
+              </span>
+            </template>
+
+            <ComposerEditable
+              ref="composerRef"
+              v-model="message"
+              :placeholder="inputPlaceholder"
+              :multiline="composerInputMultiline"
+              :empty="!message"
+              :readonly="inputLockedForTyping"
+              :aria-expanded="showSuggestions || interactivePickerOpen"
+              :mcp-servers="settingStore.mcpServers ?? []"
+              :skills="composerSkillMeta"
+              :plugins="pluginsStore.plugins"
+              :file-catalog="workspaceFiles"
+              class="peek-scrollbar"
+              @caret-change="onComposerCaretChange"
+              @input="onComposerInput"
+              @keydown="handleKeydown"
+              @paste="handlePaste"
+              @oversized-paste="handleOversizedPaste"
+            />
+          </div>
+          <div
+            v-show="inlineCompletionOpen"
+            ref="completionHostRef"
+            class="completion-host"
+            data-tauri-drag-region="false"
+          />
+        </div>
+      </Teleport>
       <div class="input-footer">
         <div class="input-footer-primary">
           <button
@@ -407,13 +449,19 @@
           </button>
 
           <div
-            v-if="props.showWorkspaceButton"
+            v-if="
+              props.showWorkspaceButton &&
+              (!props.workspaceLocked || Boolean(props.boundWorkspaceId))
+            "
             class="workspace-control"
             :class="{ active: Boolean(currentWorkspace), open: workspacePickerOpen }"
           >
             <button
+              v-if="!props.workspaceLocked"
               type="button"
               class="workspace-btn"
+              ref="workspaceButtonRef"
+              :disabled="props.workspaceLocked"
               data-picker-trigger
               data-tauri-drag-region="false"
               :title="workspaceTooltip"
@@ -425,8 +473,14 @@
               </span>
               <span v-else class="workspace-name">{{ tr(language, "workspace") }}</span>
             </button>
+            <span v-else class="workspace-btn locked-workspace" :title="workspaceTooltip">
+              <Folder :size="14" />
+              <span class="workspace-name">
+                {{ currentWorkspace?.name || props.boundWorkspaceId }}
+              </span>
+            </span>
             <button
-              v-if="currentWorkspace"
+              v-if="currentWorkspace && !props.workspaceLocked"
               type="button"
               class="workspace-exit-btn"
               data-tauri-drag-region="false"
@@ -438,7 +492,17 @@
             </button>
           </div>
 
-          <div class="model-picker">
+          <ImageGenToolbar
+            v-if="effectiveChatMode === 'image' && props.inlineComposer"
+            class="image-gen-footer-options"
+            compact
+            :model-value="imageGenOptions"
+            :language="language"
+            :open-field="imageGenPickerOpen"
+            @open="toggleImageGenPicker"
+          />
+
+          <div class="model-picker chat-mode-slot">
             <button
               ref="chatModeButtonRef"
               type="button"
@@ -454,12 +518,12 @@
               @click.stop="toggleChatModeMenu"
             >
               <component :is="chatModeIcon" :size="13" class="footer-chip-icon" />
-              <span class="model-name">{{ chatModeLabel }}</span>
-              <ChevronDown :size="11" class="model-chevron" />
+              <span v-if="!props.inlineComposer" class="model-name">{{ chatModeLabel }}</span>
+              <ChevronDown v-if="!props.inlineComposer" :size="11" class="model-chevron" />
             </button>
           </div>
 
-          <div class="model-picker">
+          <div class="model-picker model-slot">
             <TooltipProvider :delay-duration="220">
               <Tooltip :disabled="modelPickerOpen || !currentProviderHover">
                 <TooltipTrigger as-child>
@@ -489,7 +553,9 @@
                       {{ currentModelDisplayName }}
                     </span>
                     <span
-                      v-if="showThinkingTierPicker && currentThinkingTierLabel"
+                      v-if="
+                        !props.inlineComposer && showThinkingTierPicker && currentThinkingTierLabel
+                      "
                       class="model-tier"
                       :title="thinkingTierBadgeTitle"
                     >
@@ -514,6 +580,27 @@
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+          </div>
+
+          <div
+            v-if="props.inlineComposer && showThinkingTierPicker"
+            class="model-picker thinking-slot"
+          >
+            <button
+              ref="thinkingTierButtonRef"
+              type="button"
+              class="model-badge footer-chip"
+              data-picker-trigger
+              :title="thinkingTierBadgeTitle"
+              :aria-label="thinkingTierBadgeTitle"
+              :aria-expanded="thinkingPopupOpen"
+              aria-haspopup="dialog"
+              :class="{ open: thinkingPopupOpen }"
+              @mousedown.stop
+              @click.stop="thinkingPopupOpen ? closeThinkingTierPicker() : openThinkingTierPicker()"
+            >
+              <span class="model-name">{{ currentThinkingTierLabel }}</span>
+            </button>
           </div>
 
           <div
@@ -545,8 +632,8 @@
                 :size="13"
                 class="footer-chip-icon"
               />
-              <span class="model-name">{{ approvalModeLabel }}</span>
-              <ChevronDown :size="11" class="model-chevron" />
+              <span v-if="!props.inlineComposer" class="model-name">{{ approvalModeLabel }}</span>
+              <ChevronDown v-if="!props.inlineComposer" :size="11" class="model-chevron" />
             </button>
           </div>
         </div>
@@ -581,7 +668,14 @@
             </span>
           </span>
 
-          <ContextUsageRing v-if="contextUsage.contextWindowTokens > 0" :usage="contextUsage" />
+          <ContextUsageRing
+            v-if="contextUsage.contextWindowTokens > 0"
+            :usage="contextUsage"
+            :panel-target="props.floatingPickerTarget"
+            :panel-style="chipPickerStyle"
+            :open="props.floatingPickerTarget ? contextUsageOpen : undefined"
+            @open-change="onContextUsageOpenChange"
+          />
 
           <button
             v-if="sending && canSend"
@@ -664,15 +758,21 @@ import CommandSuggestions from "./input/CommandSuggestions.vue";
 import WorkspacePickerPanel from "./input/WorkspacePickerPanel.vue";
 import AttachResourcePanel from "./input/AttachResourcePanel.vue";
 import ImageGenToolbar from "./input/ImageGenToolbar.vue";
+import { useSessionlessChatMode } from "@/composables/chat/useSessionlessChatMode";
 import ImageGenSettingsPanel from "./input/ImageGenSettingsPanel.vue";
 import ContextUsageRing from "./ContextUsageRing.vue";
 import ComposerEditable from "./ComposerEditable.vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { executeSlashCommand, fetchEnvironmentContext, slashCommands } from "@/commands/slash";
+import { executeSlashCommand, slashCommands } from "@/commands/slash";
 import { listSkills } from "@/commands/skills";
 import { peekInstallIcon, warmInstallIcons } from "@/services/iconCache";
-import { getPlanMode, setPlanMode } from "@/services/ipc";
+import {
+  getPlanMode,
+  setPlanMode,
+  openSessionInOverlay,
+  openSessionInWorkbench,
+} from "@/services/ipc";
 import { createLogger } from "@/services/logger";
 import { tr } from "@/services/i18n";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
@@ -766,6 +866,7 @@ import {
 } from "@/commands/workspace";
 import { useAskUserFlow, type AskUserSession } from "@/composables/chat/useAskUserFlow";
 import { useComposerAttachments } from "@/composables/chat/useComposerAttachments";
+import UserAvatar from "@/components/chat/UserAvatar.vue";
 import { useComposerDraft } from "@/composables/chat/useComposerDraft";
 import { useComposerKeyboard } from "@/composables/chat/useComposerKeyboard";
 import { useComposerLayout } from "@/composables/chat/useComposerLayout";
@@ -786,6 +887,14 @@ export interface PathPermissionSession {
 
 const log = createLogger("chat-input");
 
+function revealInlineComposer() {
+  if (props.inputTarget) {
+    void nextTick(() => {
+      requestAnimationFrame(() => props.inputTarget?.scrollIntoView({ block: "nearest" }));
+    });
+  }
+}
+
 const props = withDefaults(
   defineProps<{
     sending?: boolean;
@@ -803,6 +912,12 @@ const props = withDefaults(
     contextReady?: boolean;
     overlayPickers?: boolean;
     appearance?: "overlay" | "workbench";
+    inlineComposer?: boolean;
+    inputTarget?: HTMLElement | null;
+    workspaceLocked?: boolean;
+    boundWorkspaceId?: string | null;
+    floatingPickerTarget?: HTMLElement | null;
+    pickerDirection?: "up" | "down";
   }>(),
   {
     sending: false,
@@ -826,6 +941,7 @@ const emit = defineEmits<{
   submit: [message: string];
   pause: [];
   close: [];
+  newConversation: [];
   askUserComplete: [answer: string];
   pathPermissionComplete: [decision: PathPermissionDecision];
   toolApprovalComplete: [decision: ToolApprovalDecision];
@@ -833,7 +949,6 @@ const emit = defineEmits<{
   historySelect: [sessionId: string];
   historyClose: [];
   removeSelection: [];
-  showContext: [context: CapturedContext];
   previewImage: [source: string];
   layoutChange: [
     payload: {
@@ -916,10 +1031,17 @@ const {
 });
 
 const chatInputShellRef = ref<HTMLElement | null>(null);
+const completionHostRef = ref<HTMLElement | null>(null);
+const inlineCompletionOpen = computed(() => props.inlineComposer && showSuggestions.value);
+const pickerTeleportTarget = computed(() =>
+  inlineCompletionOpen.value ? completionHostRef.value : props.floatingPickerTarget,
+);
 const approvalConfirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
 const attachButtonRef = ref<HTMLButtonElement | null>(null);
+const workspaceButtonRef = ref<HTMLButtonElement | null>(null);
 const chatModeButtonRef = ref<HTMLButtonElement | null>(null);
 const modelButtonRef = ref<HTMLButtonElement | null>(null);
+const thinkingTierButtonRef = ref<HTMLButtonElement | null>(null);
 const approvalButtonRef = ref<HTMLButtonElement | null>(null);
 
 watch(selectedIndex, async () => {
@@ -1028,8 +1150,7 @@ const {
 });
 
 watch(composerSegments, () => {
-  void nextTick(() => scheduleResizeComposerInput(true));
-  emitLayoutChange();
+  void nextTick(() => scheduleResizeComposerInput());
 });
 
 watch(
@@ -1078,6 +1199,8 @@ const {
 
 function syncComposeToModel() {
   if (!props.sessionId) {
+    chatModel.value = settingStore.chatModel;
+    chatModelProvider.value = settingStore.chatModelProvider;
     return;
   }
   const compose = chatStore.ensureCompose(props.sessionId);
@@ -1089,6 +1212,13 @@ function syncComposeToModel() {
   }
 }
 syncComposeToModel();
+
+watch(
+  () => [settingStore.chatModel, settingStore.chatModelProvider],
+  () => {
+    if (!props.sessionId) syncComposeToModel();
+  },
+);
 
 watch(
   () => props.sessionId,
@@ -1151,6 +1281,7 @@ const {
   thinkingPickerMode,
   chatModePickerOpen,
   imageGenPickerOpen,
+  contextUsageOpen,
   syncPopupState,
   closeModelPicker,
   closeApprovalPicker,
@@ -1206,13 +1337,16 @@ const modelPickerGroups = computed(() =>
   groupModelsByProvider(modelPickerModels.value, settingStore.customProviders),
 );
 
-const modelPickerHierarchical = computed(() => modelPickerGroups.value.length > 1);
+const modelPickerHierarchical = computed(
+  () => !props.inlineComposer && modelPickerGroups.value.length > 1,
+);
 
 const modelPickerShowingGroups = computed(
   () => modelPickerHierarchical.value && modelPickerProvider.value === null,
 );
 
 const modelPickerActiveModels = computed(() => {
+  if (props.inlineComposer) return modelPickerGroups.value.flatMap((group) => group.models);
   if (modelPickerShowingGroups.value) {
     return [];
   }
@@ -1356,9 +1490,10 @@ const modelBadgeTitle = computed(() => {
 
 /** Per-conversation mode/approval choices; sessionless overlay falls back to
  * global settings so its pickers keep working without a conversation. */
+const sessionlessChatMode = useSessionlessChatMode(() => settingStore.chatMode);
 const sessionChatMode = computed(() => {
   if (!props.sessionId) {
-    return normalizeChatMode(settingStore.chatMode);
+    return sessionlessChatMode.mode.value;
   }
   // Read-only: never call ensureCompose inside a computed (it mutates the store
   // and can trip "Maximum recursive updates exceeded").
@@ -1459,9 +1594,27 @@ function updateCompose(
     chatStore.setCompose(props.sessionId, patch);
     return;
   }
-  // Plan is session-scoped; never persist it as the app-wide default.
-  const safe = patch.chatMode === "plan" ? { ...patch, chatMode: "agent" as const } : patch;
-  void settingStore.update(safe as never);
+  if (patch.chatMode) sessionlessChatMode.choose(patch.chatMode);
+  // Keep Plan local until a session exists; leave the default mode unchanged.
+  const { chatMode, ...rest } = patch;
+  const safe = chatMode === "plan" ? rest : patch;
+  if (Object.keys(safe).length) void settingStore.update(safe as never);
+}
+
+async function initializeSessionCompose(sessionId: string) {
+  const mode = effectiveChatMode.value;
+  chatStore.setCompose(sessionId, {
+    chatModel: chatModel.value,
+    chatModelProvider: chatModelProvider.value,
+    chatMode: mode,
+    toolApprovalMode: sessionToolApprovalMode.value,
+    imageGen: imageGenOptions.value,
+  });
+  if (mode === "plan") {
+    await setPlanMode(sessionId, true, "manual");
+    chatStore.setSessionPlanMode(sessionId, true);
+    chatStore.setSessionPlanTrigger(sessionId, "manual");
+  }
 }
 
 function getApprovalIcon(mode: ToolApprovalMode) {
@@ -1823,6 +1976,15 @@ function removeTrailingAttachment(): boolean {
 
 function layoutChromeSignature() {
   return [
+    workspacePickerOpen.value,
+    contextUsageOpen.value,
+    showModelPicker.value,
+    modelPickerShowingGroups.value,
+    showChatModePicker.value,
+    showApprovalPicker.value,
+    thinkingPopupOpen.value,
+    imageGenPickerOpen.value,
+    interactionRequestOpen.value,
     activePickerRowCount(),
     showSuggestions.value ? 1 : 0,
     attachPanelOpen.value ? 1 : 0,
@@ -1836,6 +1998,7 @@ function estimateActivePickerHeight(pickerRows: number): number {
     return 0;
   }
   // Match component row metrics (padding + row). Prefer overestimate to avoid clipping.
+  if (contextUsageOpen.value) return 80;
   if (attachPanelOpen.value) {
     // Tabs + preview chips (+ optional expand). Prefer overestimate so overlay grows.
     return 170;
@@ -1847,7 +2010,7 @@ function estimateActivePickerHeight(pickerRows: number): number {
     return 10 + approvalPickerOptions.value.length * 36;
   }
   if (showThinkingTierSlider.value) {
-    return 56;
+    return 120;
   }
   if (showThinkingTierList.value) {
     return 10 + thinkingTierPickerOptions.value.length * 36;
@@ -1865,8 +2028,20 @@ function estimateActivePickerHeight(pickerRows: number): number {
     const back = modelPickerHierarchical.value ? 32 : 0;
     // Inline thinking-effort slider under the current model adds one strip.
     const thinkingStrip =
-      showThinkingTierPicker.value && thinkingTierPickerOptions.value.length > 1 ? 32 : 0;
-    return 6 + back + Math.max(modelPickerActiveModels.value.length, 1) * 32 + 34 + thinkingStrip;
+      !props.inlineComposer &&
+      showThinkingTierPicker.value &&
+      thinkingTierPickerOptions.value.length > 1
+        ? 32
+        : 0;
+    const groupHeaders = props.inlineComposer ? modelPickerGroups.value.length * 28 : 0;
+    return (
+      6 +
+      back +
+      groupHeaders +
+      Math.max(modelPickerActiveModels.value.length, 1) * 32 +
+      34 +
+      thinkingStrip
+    );
   }
   if (showHistoryPicker.value) {
     return 10 + Math.max(historyItems.value.length, 1) * 32;
@@ -1892,6 +2067,7 @@ function estimateActivePickerHeight(pickerRows: number): number {
 }
 
 function activePickerRowCount(): number {
+  if (contextUsageOpen.value) return 1;
   if (workspacePickerOpen.value) return workspacePickerRowCount.value;
   // Attach is not a fixed row list, but it must reserve height so Overlay /
   // layout measure runs (otherwise the panel opens clipped / looks "stuck").
@@ -1918,6 +2094,9 @@ const {
 } = useComposerLayout({
   appearance: computed(() => props.appearance),
   shellRef: chatInputShellRef,
+  floatingPickerTarget: computed(() => pickerTeleportTarget.value ?? null),
+  pickerInFlow: inlineCompletionOpen,
+  pickerDirection: computed(() => props.pickerDirection ?? "up"),
   interactionRequestOpen,
   layoutChromeSignature,
   activePickerRowCount,
@@ -1979,7 +2158,7 @@ async function openModelPicker() {
   modelPickerProvider.value = null;
   selectedIndex.value = modelPickerHierarchical.value
     ? currentModelGroupIndex()
-    : currentModelIndexInList(modelPickerModels.value);
+    : currentModelIndexInList(modelPickerActiveModels.value);
   modelPickerOpen.value = true;
   await positionChipPicker(modelButtonRef.value, 340);
   await syncPopupState(true);
@@ -2002,16 +2181,16 @@ async function openModelPicker() {
 }
 
 async function openApprovalPicker() {
-  if (effectiveChatMode.value === "ask") {
-    return;
-  }
   await prepareChipPicker();
   const idx = approvalPickerOptions.value.findIndex(
     (option) => option.id === sessionToolApprovalMode.value,
   );
   selectedIndex.value = idx >= 0 ? idx : 0;
   approvalPickerOpen.value = true;
-  await positionChipPicker(approvalButtonRef.value, 160);
+  await positionChipPicker(
+    effectiveChatMode.value === "ask" ? chatModeButtonRef.value : approvalButtonRef.value,
+    160,
+  );
   await syncPopupState(true);
   emitLayoutChange();
   void focusInput();
@@ -2030,6 +2209,19 @@ async function openChatModePicker() {
   void focusInput();
 }
 
+async function onContextUsageOpenChange(open: boolean, trigger: HTMLElement | null) {
+  if (!props.floatingPickerTarget) return;
+  if (open) {
+    await prepareChipPicker();
+    contextUsageOpen.value = true;
+    await positionChipPicker(trigger, 300);
+  } else {
+    contextUsageOpen.value = false;
+  }
+  await syncPopupState(open);
+  emitLayoutChange();
+}
+
 async function openThinkingTierPicker(mode: "slider" | "list" = "slider") {
   if (!showThinkingTierPicker.value) {
     return;
@@ -2041,8 +2233,10 @@ async function openThinkingTierPicker(mode: "slider" | "list" = "slider") {
   selectedIndex.value = idx >= 0 ? idx : 0;
   thinkingPickerMode.value = mode;
   thinkingTierPickerOpen.value = true;
-  // The tier is shown inside the model chip ("model · high"), so anchor the popup there.
-  await positionChipPicker(modelButtonRef.value, mode === "slider" ? 220 : 200);
+  await positionChipPicker(
+    thinkingTierButtonRef.value ?? modelButtonRef.value,
+    mode === "slider" ? 280 : 200,
+  );
   await syncPopupState(true);
   emitLayoutChange();
   void focusInput();
@@ -2156,6 +2350,9 @@ function selectModel(entry: ChatModelInfo) {
 
 function applyFallbackModelIfNeeded() {
   if (chatModelStore.models.length === 0) return;
+  // Cached/discovered lists can be incomplete during startup. A configured
+  // sessionless model is a user preference, not a value to repair from that list.
+  if (!props.sessionId && chatModel.value.trim()) return;
   if (
     chatModel.value.trim() &&
     isKnownModelSelection(chatModelStore.models, chatModel.value, chatModelProvider.value)
@@ -2164,14 +2361,7 @@ function applyFallbackModelIfNeeded() {
   }
   const fallback = chatModelStore.models[0]!;
   selectModel(fallback);
-  if (
-    !settingStore.chatModel.trim() ||
-    !isKnownModelSelection(
-      chatModelStore.models,
-      settingStore.chatModel,
-      settingStore.chatModelProvider,
-    )
-  ) {
+  if (!settingStore.chatModel.trim()) {
     void settingStore.update({
       chatModel: fallback.id,
       chatModelProvider: fallback.provider,
@@ -2278,25 +2468,14 @@ function selectThinkingTier(variantId: string) {
 onMounted(async () => {
   log.debug("slash command registration", {
     commands: slashCommands.map((item) => item.command),
-    available: props.enableCommands && props.contextReady,
+    available: props.enableCommands,
   });
   if (props.sessionId) {
     void syncPlanModeFromBackend(props.sessionId);
   }
   void ensureHashCatalog();
   await chatModelStore.fetch();
-  if (chatModelStore.models.length === 0 && chatModel.value.trim() === "deepseek-chat") {
-    chatModel.value = "";
-    chatModelProvider.value = "";
-    const composeFallback = props.sessionId
-      ? chatStore.ensureCompose(props.sessionId).chatModel
-      : settingStore.chatModel;
-    if (composeFallback.trim() === "deepseek-chat") {
-      updateCompose({ chatModel: "", chatModelProvider: "" });
-    }
-  } else {
-    applyFallbackModelIfNeeded();
-  }
+  applyFallbackModelIfNeeded();
   void refreshContextUsage();
   await loadWorkspaceState();
   unlistenWorkspaces = await listen("workspaces-changed", () => {
@@ -2383,7 +2562,6 @@ const isCommandMode = computed(
   () =>
     !interactivePickerOpen.value &&
     props.enableCommands &&
-    props.contextReady &&
     message.value.startsWith("/") &&
     !message.value.includes(" "),
 );
@@ -2394,7 +2572,7 @@ watch(
     log.debug("slash command availability", {
       enabled,
       contextReady: ready,
-      available: enabled && ready,
+      available: enabled,
     });
   },
   { immediate: true },
@@ -2411,6 +2589,10 @@ const filteredCommands = computed(() => {
       (item) =>
         item.command.toLowerCase().startsWith(query) &&
         (item.command !== "/work" || props.showWorkspaceButton) &&
+        (item.command !== "/popup" ||
+          (props.appearance === "workbench" && Boolean(props.sessionId))) &&
+        (item.command !== "/workbench" ||
+          (props.appearance === "overlay" && Boolean(props.sessionId))) &&
         (item.command !== "/thinking" || showThinkingTierPicker.value),
     )
     .map((item) => ({
@@ -2758,7 +2940,7 @@ function onInputBarMouseDown(event: MouseEvent) {
 }
 
 async function executeCommand(command: string) {
-  if (!props.enableCommands || !props.contextReady) {
+  if (!props.enableCommands) {
     log.debug("slash command blocked", { command, contextReady: props.contextReady });
     return;
   }
@@ -2768,6 +2950,10 @@ async function executeCommand(command: string) {
   selectedIndex.value = 0;
   emitLayoutChange();
   const action = await executeSlashCommand(command);
+  if (action === "newConversation") {
+    emit("newConversation");
+    return;
+  }
   if (action === "openHistory") {
     emit("openHistory");
     return;
@@ -2780,6 +2966,22 @@ async function executeCommand(command: string) {
     void openThinkingTierPicker("list");
     return;
   }
+  if (action === "openMode") {
+    void openChatModePicker();
+    return;
+  }
+  if (action === "openSecurity") {
+    void openApprovalPicker();
+    return;
+  }
+  if (action === "openPopup" && props.appearance === "workbench" && props.sessionId) {
+    await openSessionInOverlay(props.sessionId);
+    return;
+  }
+  if (action === "openWorkbench" && props.appearance === "overlay" && props.sessionId) {
+    await openSessionInWorkbench(props.sessionId, getCurrentWebviewWindow().label);
+    return;
+  }
   if (action === "openWorkspace") {
     if (props.appearance === "workbench") {
       return;
@@ -2789,18 +2991,6 @@ async function executeCommand(command: string) {
   }
   if (action === "clearInput") {
     reset();
-    return;
-  }
-  if (action === "showContext") {
-    try {
-      emit("showContext", await fetchEnvironmentContext());
-    } catch (error) {
-      console.error(
-        "Failed to invoke get_environment_context; using resolved overlay snapshot:",
-        error,
-      );
-      emit("showContext", props.capturedContext ?? {});
-    }
     return;
   }
   if (action === "close") {
@@ -2861,7 +3051,12 @@ function resetWorkspaceFilesCache() {
   workspaceFilesFetchedAt = 0;
 }
 
-const { resolveSendWorkspaceOptions, reset, setMessage, deliverMessage } = useComposerSubmit({
+const {
+  resolveSendWorkspaceOptions,
+  reset: resetComposer,
+  setMessage,
+  deliverMessage,
+} = useComposerSubmit({
   message,
   composerRef,
   composerUndo,
@@ -2899,6 +3094,10 @@ const { resolveSendWorkspaceOptions, reset, setMessage, deliverMessage } = useCo
 });
 
 function syncOverlayWorkspaceFromContext() {
+  if (props.workspaceLocked) {
+    currentWorkspace.value = workspaces.value.find((w) => w.id === props.boundWorkspaceId) ?? null;
+    return;
+  }
   if (props.appearance !== "overlay" || overlayWorkspaceOverride.value) {
     return;
   }
@@ -2934,6 +3133,7 @@ async function loadWorkspaceState() {
 }
 
 async function toggleWorkspacePicker() {
+  if (props.workspaceLocked) return;
   if (workspacePickerOpen.value) {
     workspacePickerOpen.value = false;
     await syncPopupState(false);
@@ -2955,12 +3155,13 @@ async function toggleWorkspacePicker() {
     return;
   }
   workspacePickerOpen.value = true;
+  await positionChipPicker(workspaceButtonRef.value, 300);
   await syncPopupState(true);
   emitLayoutChange();
 }
 
 async function toggleAttachPanel() {
-  if (props.appearance === "overlay") return;
+  if (props.appearance === "overlay" && !props.inlineComposer) return;
   if (attachPanelOpen.value) {
     attachPanelOpen.value = false;
     await syncPopupState(false);
@@ -2976,6 +3177,7 @@ async function toggleAttachPanel() {
   selectedIndex.value = 0;
   attachPanelTab.value = "skills";
   attachPanelOpen.value = true;
+  await positionChipPicker(attachButtonRef.value, 360);
   await syncPopupState(true);
   emitLayoutChange();
   // Warm catalog in background; do not force-reload every open (sync list_skills
@@ -3045,6 +3247,7 @@ async function pickAttachFiles() {
 }
 
 async function openWorkspaceQuickPicker() {
+  if (props.workspaceLocked) return;
   workspaceError.value = "";
   workspaceQuickSelectOnly.value = true;
   selectedIndex.value = 0;
@@ -3056,6 +3259,7 @@ async function openWorkspaceQuickPicker() {
   closeImageGenPicker();
   await loadWorkspaceState();
   workspacePickerOpen.value = true;
+  await positionChipPicker(workspaceButtonRef.value, 300);
   await syncPopupState(true);
   emitLayoutChange();
 }
@@ -3246,11 +3450,7 @@ async function submit() {
     return;
   }
 
-  if (
-    props.enableCommands &&
-    props.contextReady &&
-    slashCommands.some((item) => item.command === text)
-  ) {
+  if (props.enableCommands && slashCommands.some((item) => item.command === text)) {
     await executeCommand(text);
     return;
   }
@@ -3295,7 +3495,7 @@ function selectToolApproval(decision: ToolApprovalDecision) {
   emit("toolApprovalComplete", decision);
 }
 
-function handleKeydown(event: KeyboardEvent) {
+function handleComposerKeydown(event: KeyboardEvent) {
   if (event.isComposing || event.keyCode === 229) {
     return;
   }
@@ -3811,11 +4011,17 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-const { handleGlobalKeydown, restorePickerFocus } = useComposerKeyboard({
+const { handleKeydown, handleGlobalKeydown, restorePickerFocus } = useComposerKeyboard({
   interactivePickerOpen,
+  showSuggestions,
   composerRef,
-  handleKeydown,
-  focusInput,
+  handleKeydown: handleComposerKeydown,
+  focusInput: async () => {
+    await focusInput();
+    if (!inputLockedForTyping.value) {
+      composerRef.value?.setSelection(Math.min(composerCaret.value, message.value.length));
+    }
+  },
 });
 
 useEventListener(window, "keydown", handleGlobalKeydown);
@@ -4095,12 +4301,285 @@ defineExpose({
   setMessage,
   insertFileMention,
   resolveSendWorkspaceOptions,
+  initializeSessionCompose,
   attachImageEditReference,
   restoreAttachments,
 });
+
+function reset() {
+  if (contextUsageOpen.value) void onContextUsageOpenChange(false, null);
+  sessionlessChatMode.reset();
+  resetComposer();
+}
+
+// The transcript mounts asynchronously; restore focus after Teleport moves
+// the existing editor into its final row without clearing the draft.
+watch(
+  () => props.inputTarget,
+  async (target) => {
+    if (!target) return;
+    await focusInput();
+    target.scrollIntoView({ block: "nearest" });
+  },
+  { flush: "post" },
+);
+watch(
+  () => [props.workspaceLocked, props.boundWorkspaceId],
+  () => {
+    if (props.inlineComposer) void loadWorkspaceState();
+  },
+);
+watch(
+  () => [showSuggestions.value, showHistoryPicker.value, interactionRequestOpen.value],
+  () => {
+    if (
+      !props.floatingPickerTarget ||
+      chipPickerOpen.value ||
+      workspacePickerOpen.value ||
+      attachPanelOpen.value
+    )
+      return;
+    void positionChipPicker(
+      chatInputShellRef.value?.querySelector<HTMLElement>(".input-footer") ?? null,
+      360,
+    );
+  },
+);
 </script>
 
 <style scoped>
+.completion-host {
+  width: min(420px, 100%);
+  margin-top: 6px;
+}
+.inline-composer-body .completion-host .picker-content.completion-picker-content {
+  display: block;
+  position: relative;
+  width: 100%;
+  top: auto;
+  bottom: auto;
+  left: auto;
+  right: auto;
+}
+.inline-composer-body
+  .completion-host
+  .picker-content.completion-picker-content
+  :deep(.command-list),
+.inline-composer-body
+  .completion-host
+  .picker-content.completion-picker-content
+  :deep(.file-suggestion-list),
+.inline-composer-body
+  .completion-host
+  .picker-content.completion-picker-content
+  :deep(.hash-suggestion-list) {
+  position: relative;
+  top: auto;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  width: 100%;
+  max-height: 180px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--peek-border);
+  border-radius: 10px;
+  background: var(--peek-list-bg);
+  box-shadow: 0 2px 6px color-mix(in srgb, #000 10%, transparent);
+}
+.picker-content {
+  display: contents;
+}
+.floating-picker-content {
+  display: block;
+  position: absolute;
+  z-index: 50;
+  top: var(--chip-picker-top, auto);
+  bottom: var(--chip-picker-bottom, 42px);
+  left: var(--chip-picker-left, 8px);
+  right: auto;
+  width: min(var(--chip-picker-width, 300px), calc(100% - 16px));
+  pointer-events: auto;
+}
+.floating-picker-content :deep(.command-list) {
+  position: relative;
+  top: auto;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  width: 100%;
+  max-height: var(--chip-picker-max-height, 280px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  margin: 0;
+  padding: 5px;
+  border: 1px solid var(--peek-border);
+  border-radius: 8px;
+  background: var(--peek-surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+  pointer-events: auto;
+}
+.floating-picker-content :deep(.command-list.thinking-effort-panel) {
+  padding: 16px 18px 18px;
+  border-radius: 12px;
+}
+.composer-body {
+  display: contents;
+}
+.inline-composer-body {
+  --composer-line-height: 24px;
+  --composer-max-height: 192px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  min-height: 52px;
+  padding: 14px 14px 14px 52px;
+  cursor: text;
+}
+.input-user-avatar {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+}
+.composer-body.inline-composer-body .input-content {
+  flex: none;
+  flex-wrap: nowrap;
+  min-height: 24px;
+  width: 100%;
+  align-items: flex-start;
+  align-content: flex-start;
+}
+.composer-body.inline-composer-body .input-content :deep(.composer-editable) {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  min-height: 24px;
+  max-height: 192px;
+  overflow-y: auto;
+  font-size: 15px;
+  line-height: 24px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  align-self: flex-start;
+}
+.chat-input-shell.overlay-composer.inline-composer .input-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+}
+.chat-input-shell.overlay-composer.inline-composer .input-bar .input-footer {
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 4px 12px;
+  align-items: center;
+  gap: 10px;
+  border-top: none;
+}
+.overlay-composer.inline-composer .input-footer-primary {
+  flex: 1;
+  gap: 4px;
+  overflow: hidden;
+}
+.overlay-composer.inline-composer.has-image-gen .input-footer-primary {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 3px;
+}
+.overlay-composer.inline-composer :deep(.image-gen-footer-options) {
+  order: 1;
+  width: auto;
+  max-width: 100%;
+}
+.chat-input-shell.overlay-composer.inline-composer {
+  --peek-control-icon: 24px;
+}
+.overlay-composer.inline-composer .workspace-control {
+  order: -2;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 150px;
+}
+.overlay-composer.inline-composer .attach-trigger-btn {
+  order: -1;
+  width: 24px;
+  height: 24px;
+}
+.overlay-composer.inline-composer .model-slot {
+  order: 4;
+  min-width: 0;
+}
+.overlay-composer.inline-composer .chat-mode-slot {
+  order: 2;
+  margin-left: auto;
+}
+.overlay-composer.inline-composer .approval-slot {
+  order: 3;
+}
+.overlay-composer.inline-composer .thinking-slot {
+  order: 5;
+}
+.overlay-composer.inline-composer .chat-mode-slot .footer-chip,
+.overlay-composer.inline-composer .approval-slot .footer-chip {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  justify-content: center;
+}
+.overlay-composer.inline-composer .approval-slot.dormant {
+  display: none;
+}
+.overlay-composer.inline-composer .input-footer-actions {
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.overlay-composer.inline-composer .send-btn {
+  width: 26px;
+  height: 26px;
+}
+.overlay-composer.inline-composer .workspace-btn {
+  font-size: 12px;
+  padding: 0 2px;
+  gap: 6px;
+}
+.overlay-composer.inline-composer .footer-chip .model-name,
+.overlay-composer.inline-composer .footer-chip .model-tier,
+.overlay-composer.inline-composer .workspace-name {
+  display: inline;
+}
+.overlay-composer.inline-composer .footer-chip,
+.overlay-composer.inline-composer .model-badge,
+.overlay-composer.inline-composer .workspace-control {
+  width: auto;
+  max-width: 180px;
+  gap: 6px;
+}
+.overlay-composer.inline-composer .footer-chip {
+  max-width: 150px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.overlay-composer.inline-composer .input-footer :deep(svg:not(.usage-ring)) {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.overlay-composer.inline-composer .input-footer :deep(.context-usage-ring svg) {
+  width: 22px;
+  height: 22px;
+}
+.workspace-control .locked-workspace {
+  cursor: default;
+}
+.workspace-control:has(.locked-workspace):hover {
+  background: transparent;
+}
 .chat-input-shell {
   position: relative;
   display: flex;
@@ -4525,7 +5004,7 @@ defineExpose({
 
 /* Attachments need a stacked layout; keep text + actions on one row below. */
 .overlay-composer .input-bar.has-images,
-.overlay-composer .input-bar:has(> .input-files) {
+.overlay-composer .input-bar:has(.input-files) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -4535,17 +5014,17 @@ defineExpose({
   padding: 10px 10px 8px 14px;
 }
 
-.overlay-composer .input-bar.has-images > .input-images,
-.overlay-composer .input-bar:has(> .input-files) > .input-files,
-.overlay-composer .input-bar.has-images > :deep(.image-gen-toolbar),
-.overlay-composer .input-bar:has(> .input-files) > :deep(.image-gen-toolbar) {
+.overlay-composer .input-bar.has-images > .composer-body > .input-images,
+.overlay-composer .input-bar:has(.input-files) > .composer-body > .input-files,
+.overlay-composer .input-bar.has-images > .composer-body > :deep(.image-gen-toolbar),
+.overlay-composer .input-bar:has(.input-files) > .composer-body > :deep(.image-gen-toolbar) {
   grid-column: 1 / -1;
   width: auto;
   max-width: 100%;
 }
 
-.overlay-composer .input-bar.has-images > .input-content,
-.overlay-composer .input-bar:has(> .input-files) > .input-content {
+.overlay-composer .input-bar.has-images > .composer-body > .input-content,
+.overlay-composer .input-bar:has(.input-files) > .composer-body > .input-content {
   grid-column: 1;
   width: auto;
   min-height: 28px;
@@ -4553,7 +5032,7 @@ defineExpose({
 }
 
 .overlay-composer .input-bar.has-images > .input-footer,
-.overlay-composer .input-bar:has(> .input-files) > .input-footer {
+.overlay-composer .input-bar:has(.input-files) > .input-footer {
   grid-column: 2;
   width: auto;
   min-height: 28px;
@@ -5284,8 +5763,7 @@ defineExpose({
 }
 
 .workspace-control.active {
-  background: color-mix(in srgb, var(--peek-accent) 18%, transparent);
-  color: var(--peek-accent);
+  color: var(--peek-muted);
 }
 
 .workspace-btn {
@@ -5366,6 +5844,31 @@ defineExpose({
   user-select: none;
   cursor: pointer;
   appearance: none;
+}
+
+/* Eliminate the inline-button baseline gap inside each footer slot. */
+.input-footer .model-picker {
+  display: flex;
+  align-items: center;
+}
+.input-footer .model-badge {
+  justify-content: center;
+  vertical-align: middle;
+}
+.input-footer .footer-chip-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  line-height: 1;
+}
+.overlay-composer.inline-composer .footer-chip-icon-slot {
+  width: 16px;
+  height: 16px;
+}
+.input-footer .model-name {
+  display: block;
+  line-height: 1;
 }
 
 .model-badge > svg,

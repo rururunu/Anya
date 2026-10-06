@@ -68,6 +68,17 @@ pub fn remove_staged(session_id: &str, index: usize) -> Vec<String> {
     messages
 }
 
+pub fn replace_staged(
+    session_id: &str,
+    index: usize,
+    expected: &str,
+    content: &str,
+) -> Result<Vec<String>, String> {
+    let messages = staged::replace(session_id, index, expected, content)?;
+    broadcast_staged(session_id, &messages);
+    Ok(messages)
+}
+
 pub fn clear_staged(session_id: &str) {
     staged::clear(session_id);
     broadcast_staged(session_id, &[]);

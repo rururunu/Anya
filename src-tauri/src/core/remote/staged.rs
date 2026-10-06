@@ -80,6 +80,29 @@ pub fn remove(session_id: &str, index: usize) -> Vec<String> {
     Vec::new()
 }
 
+/// Edit in place only if this is still the item the user started editing.
+pub fn replace(
+    session_id: &str,
+    index: usize,
+    expected: &str,
+    content: &str,
+) -> Result<Vec<String>, String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Err("Queued message cannot be empty".into());
+    }
+    let mut guard = store().lock().map_err(|e| e.to_string())?;
+    let queue = guard
+        .by_session
+        .get_mut(session_id)
+        .ok_or("Queued message was already dispatched")?;
+    if queue.get(index).map(String::as_str) != Some(expected) {
+        return Err("Queued message changed while editing".into());
+    }
+    queue[index] = trimmed.to_string();
+    Ok(queue.clone())
+}
+
 pub fn clear(session_id: &str) {
     if let Ok(mut guard) = store().lock() {
         guard.by_session.remove(session_id);
@@ -115,4 +138,37 @@ pub fn event_payload(session_id: &str, messages: &[String]) -> serde_json::Map<S
     .as_object()
     .cloned()
     .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn editing_preserves_dispatch_order() {
+        let session = "test-edit-order";
+        clear(session);
+        push(session, "first");
+        push(session, "second");
+        assert_eq!(
+            replace(session, 1, "second", " edited ").unwrap(),
+            vec!["first", "edited"]
+        );
+        assert_eq!(pop_front(session).as_deref(), Some("first"));
+        assert_eq!(pop_front(session).as_deref(), Some("edited"));
+    }
+
+    #[test]
+    fn late_edit_cannot_replace_next_message_or_resurrect_dispatched_message() {
+        let session = "test-edit-after-dispatch";
+        clear(session);
+        push(session, "first");
+        push(session, "next");
+        pop_front(session);
+        assert!(replace(session, 0, "first", "updated").is_err());
+        assert_eq!(list(session), vec!["next"]);
+        pop_front(session);
+        assert!(replace(session, 0, "next", "updated").is_err());
+        assert!(list(session).is_empty());
+    }
 }

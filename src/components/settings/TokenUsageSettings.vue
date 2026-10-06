@@ -176,15 +176,17 @@ import {
 } from "@/services/usage/tokenUsageChart";
 import { useSettingStore } from "@/stores/setting";
 import type { DeepSeekBalanceReport, TokenUsageReport } from "@/types/tokenUsage";
+import { readUsagePreferences, userInformationKeys } from "@/services/settings/userInformation";
 
 type Granularity = "day" | "week" | "month";
 const settingStore = useSettingStore();
 const loading = ref(true);
 const error = ref("");
-const range = ref("30d");
-const granularity = ref<Granularity>("day");
-const customFrom = ref("");
-const customTo = ref("");
+const initialPreferences = readUsagePreferences();
+const range = ref(initialPreferences.range);
+const granularity = ref<Granularity>(initialPreferences.granularity);
+const customFrom = ref(initialPreferences.customFrom);
+const customTo = ref(initialPreferences.customTo);
 
 const emptyUsage = (): TokenUsageReport => ({
   from: 0,
@@ -415,6 +417,19 @@ async function loadBalance() {
 }
 
 async function load() {
+  try {
+    localStorage.setItem(
+      userInformationKeys[5],
+      JSON.stringify({
+        range: range.value,
+        granularity: granularity.value,
+        customFrom: customFrom.value,
+        customTo: customTo.value,
+      }),
+    );
+  } catch {
+    /* Statistics remain usable without local storage. */
+  }
   loading.value = true;
   error.value = "";
   try {
