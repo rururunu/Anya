@@ -20,6 +20,18 @@ afterEach(() => {
 });
 
 describe("picker motion", () => {
+  it.each(["model-picker-list", "option-picker-list", "thinking-effort-panel"])(
+    "shows %s without waiting for the animation ticker",
+    (className) => {
+      const target = document.createElement("div");
+      target.className = className;
+      const done = vi.fn();
+      gsapPickerEnter(target, done);
+      expect(done).toHaveBeenCalledOnce();
+      expect(motion.fromTo).not.toHaveBeenCalled();
+      expect(motion.delayedCall).not.toHaveBeenCalled();
+    },
+  );
   it("animates a single layer regardless of row count and releases interrupted transitions", () => {
     const target = document.createElement("div");
     for (let i = 0; i < 100; i++) {

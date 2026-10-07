@@ -16,9 +16,12 @@ pub fn model_native_context_window(model_id: &str) -> Option<usize> {
         return None;
     }
 
-    // DeepSeek V4 (Pro / Flash): official 1M context. Must run before the
-    // generic `deepseek` 128k cap and before the Gemini `v4-flash` heuristic.
-    if id.contains("deepseek-v4") || id.contains("deepseek_v4") {
+    // DeepSeek Flash (including V4 aliases): official 1M context. Must run
+    // before the generic `deepseek` 128k cap.
+    if (id.contains("deepseek") && id.contains("flash"))
+        || id.contains("deepseek-v4")
+        || id.contains("deepseek_v4")
+    {
         return Some(LARGE_MAX_TURN_TOKENS);
     }
 
@@ -97,6 +100,10 @@ mod tests {
         );
         assert_eq!(
             effective_context_window(true, "deepseek-ai/DeepSeek-V4-Pro"),
+            LARGE_MAX_TURN_TOKENS
+        );
+        assert_eq!(
+            effective_context_window(true, "deepseek-flash"),
             LARGE_MAX_TURN_TOKENS
         );
     }

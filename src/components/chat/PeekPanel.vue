@@ -109,12 +109,14 @@
         <div class="thread-content">
           <AppErrorBoundary compact>
             <MessageList
+              ref="messageListRef"
               :workspace-root="boundWorkspaceId ?? undefined"
               :messages="messages"
               :session-id="activeSessionId"
               :workspace-name="workspaceDisplayName"
               :checkpoints="checkpoints"
               inline-conversation
+              :show-scroll-to-bottom="false"
               @content-height="
                 emit('contentHeight', $event + 34 + (dockRef?.offsetHeight ?? 34) + 12)
               "
@@ -518,6 +520,7 @@ const { sessions, overlayDraftSessionId, overlayContextNotice } = storeToRefs(ch
 const runtimeDebugEnabled = import.meta.env.DEV;
 
 const inputRef = ref<InstanceType<typeof ChatInputBar> | null>(null);
+const messageListRef = ref<InstanceType<typeof MessageList> | null>(null);
 const dockRef = ref<HTMLElement | null>(null);
 const inputRowRef = ref<HTMLElement | null>(null);
 const panelRef = ref<HTMLElement | null>(null);
@@ -714,7 +717,11 @@ function emitComposerLayout() {
   emit("layoutChange", {
     ...composerLayout.value,
     hasContextPreview: dockMeasured ? false : Boolean(contextPreview.value),
+    // Floating chip menus live in overlay-picker-layer, outside the measured dock.
     pickerHeight: composerLayout.value.pickerHeight,
+    showSuggestions: dockMeasured ? false : composerLayout.value.showSuggestions,
+    pickerRowCount: dockMeasured ? 0 : composerLayout.value.pickerRowCount,
+    showModelMenu: dockMeasured ? false : composerLayout.value.showModelMenu,
     hasImages: dockMeasured ? false : composerLayout.value.hasImages,
     hasFiles: dockMeasured ? false : composerLayout.value.hasFiles,
     mode: props.mode,
@@ -920,24 +927,15 @@ function handleLayoutChange(payload: {
     dockMeasured: false,
   };
 
-  const shouldRemeasureDock =
-    payload.layoutReason === "picker" ||
-    payload.layoutReason === "chrome" ||
-    payload.showSuggestions ||
-    (payload.pickerRowCount ?? 0) > 0 ||
-    payload.hasImages ||
-    payload.hasFiles;
-  if (shouldRemeasureDock) {
-    // Single emit after paint — avoid shell-then-dock double resize flash.
-    scheduleDockHeightMeasure();
-    return;
-  }
-  emitComposerLayout();
+  // Measure every editor change after paint, including plain multi-line typing.
+  // A cheap rAF coalesces multiple changes into one native resize request.
+  scheduleDockHeightMeasure();
 }
 
 /** Measure the final layout once; picker animation only changes opacity/transform. */
 let dockMeasureScheduled = false;
 let dockMeasureFrame = 0;
+let dockResizeObserver: ResizeObserver | null = null;
 function scheduleDockHeightMeasure() {
   if (dockMeasureScheduled) return;
   dockMeasureScheduled = true;
@@ -976,6 +974,7 @@ async function handleSubmit(text: string) {
   }
 
   if (props.mode === "chat") {
+    messageListRef.value?.scrollToLatest();
     const summary = activeSessionId.value
       ? chatSessionsStore.summaries.find((s) => s.sessionId === activeSessionId.value)
       : null;
@@ -1433,6 +1432,11 @@ onMounted(async () => {
   isAlwaysOnTop.value = await window.isAlwaysOnTop().catch(() => true);
   // Ensure dock is visible even if a prior session left inline styles behind.
   gsapOverlayDockReveal(dockRef.value, true);
+  if (dockRef.value) {
+    dockResizeObserver = new ResizeObserver(() => scheduleDockHeightMeasure());
+    dockResizeObserver.observe(dockRef.value);
+    scheduleDockHeightMeasure();
+  }
 
   // A newly created native window may already be visible before Vue receives
   // overlay-shown. Reveal before registering the remaining interaction listeners.
@@ -1611,6 +1615,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  dockResizeObserver?.disconnect();
   cancelReveal();
   clearTimeout(messageListWarmup);
   ++focusRevision;

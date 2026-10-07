@@ -20,6 +20,7 @@ export default [
       "scripts/**",
       "public/**",
       ".anya/**",
+      ".delta/**",
       "*.msi",
       "coverage/**",
       "target/**",

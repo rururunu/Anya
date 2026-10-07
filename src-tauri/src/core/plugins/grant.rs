@@ -56,6 +56,11 @@ fn token_state() -> &'static Mutex<TokenState> {
     })
 }
 
+fn grants_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn grants_path() -> PathBuf {
     plugins_dir().join("grants.json")
 }
@@ -85,6 +90,7 @@ fn save_file(file: &GrantFile) -> Result<(), ToolError> {
 }
 
 pub fn get_grant(plugin_id: &str) -> PluginGrant {
+    let _guard = grants_lock().lock().unwrap_or_else(|e| e.into_inner());
     load_file()
         .plugins
         .get(plugin_id)
@@ -93,11 +99,13 @@ pub fn get_grant(plugin_id: &str) -> PluginGrant {
 }
 
 pub fn has_grant(plugin_id: &str) -> bool {
+    let _guard = grants_lock().lock().unwrap_or_else(|e| e.into_inner());
     load_file().plugins.contains_key(plugin_id)
 }
 
 #[allow(dead_code)]
 pub fn list_grants() -> HashMap<String, PluginGrant> {
+    let _guard = grants_lock().lock().unwrap_or_else(|e| e.into_inner());
     load_file().plugins
 }
 
@@ -107,12 +115,14 @@ pub fn save_grant(plugin_id: &str, grant: PluginGrant) -> Result<(), ToolError> 
             return Err(ToolError::new(format!("unknown permission `{perm}`")));
         }
     }
+    let _guard = grants_lock().lock().unwrap_or_else(|e| e.into_inner());
     let mut file = load_file();
     file.plugins.insert(plugin_id.to_string(), grant);
     save_file(&file)
 }
 
 pub fn clear_grant(plugin_id: &str) -> Result<(), ToolError> {
+    let _guard = grants_lock().lock().unwrap_or_else(|e| e.into_inner());
     let mut file = load_file();
     file.plugins.remove(plugin_id);
     save_file(&file)?;

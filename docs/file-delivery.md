@@ -2,7 +2,7 @@
 
 [简体中文](./file-delivery.zh-CN.md)
 
-Applies to Anya v0.2.26. Cards deliver final artifacts; source-code change summaries are separate.
+Applies to Anya v0.2.27. Cards deliver final artifacts; source-code change summaries are separate.
 
 ## Selection and display
 
@@ -26,7 +26,7 @@ Source metadata and license are in `src/assets/material-file-icons/`; `public/li
 
 ## Profile data and factory reset
 
-The Profile settings page can export or import settings, local profile details, avatar and token-usage preferences. The export may include provider credentials and API keys; store and transfer it securely. Local image backgrounds are embedded in the export where readable. Factory reset is a separate profile action and offers a choice to keep or remove settings; it closes Anya and clears app-owned local data.
+The Profile settings page can export or import settings, local profile details, avatar and token-usage preferences. The export may include provider credentials and API keys; store and transfer it securely. Runtime settings keep background image paths; older embedded backgrounds are moved to app-owned theme image files when settings load or change. Local image backgrounds are embedded in the portable export where readable. Factory reset is a separate profile action and offers a choice to keep or remove settings; it closes Anya and clears app-owned local data.
 
 ## Source and validation
 

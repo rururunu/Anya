@@ -24,6 +24,7 @@ import { applyUiFonts } from "@/services/theme/fonts";
 
 const LEGACY_STORAGE_KEY = "peek.settings";
 let settingsUpdateSequence = 0;
+let fastComposerUpdateAt = 0;
 
 const defaultSettings: AppSettings = {
   colorScheme: "light",
@@ -189,7 +190,12 @@ const SPECIAL_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set([
 function applyCommonSettings(target: AppSettings, settings: AppSettings) {
   for (const key of Object.keys(defaultSettings) as (keyof AppSettings)[]) {
     if (SECRET_SETTING_KEYS.has(key) || SPECIAL_SETTING_KEYS.has(key)) continue;
-    (target as Record<keyof AppSettings, unknown>)[key] = settings[key] ?? defaultSettings[key];
+    const value = settings[key] ?? defaultSettings[key];
+    // IPC returns fresh collections even for scalar changes. Preserve equal
+    // collections so provider/catalog watchers do not restart.
+    if (typeof value === "object" && JSON.stringify(target[key]) === JSON.stringify(value))
+      continue;
+    (target as Record<keyof AppSettings, unknown>)[key] = value;
   }
 
   target.colorScheme = normalizeColorScheme(settings.colorScheme);
@@ -207,6 +213,31 @@ function applySecretSettings(target: AppSettings, settings: AppSettings) {
   }
 }
 
+// Cache per store, including broadcasts: scalar composer changes must not repaint
+// the entire webview or reconfigure native window effects.
+const appearanceSignatures = new WeakMap<object, string[]>();
+function applyChangedAppearance(settings: AppSettings) {
+  const next = [
+    JSON.stringify([
+      settings.colorScheme,
+      settings.language,
+      settings.customThemes,
+      settings.chromeFrostedGlass,
+    ]),
+    JSON.stringify([settings.fontLatin, settings.fontCjk, settings.fontMono]),
+    String(settings.zoom),
+    String(settings.opacity),
+    String(settings.chromeFrostedGlass),
+  ];
+  const previous = appearanceSignatures.get(settings);
+  appearanceSignatures.set(settings, next);
+  if (previous?.[0] !== next[0]) applyTheme(settings);
+  if (previous?.[1] !== next[1]) applyUiFonts(settings);
+  if (previous?.[2] !== next[2]) applyZoom(settings.zoom);
+  if (previous?.[3] !== next[3]) void applyOpacity(settings.opacity);
+  if (previous?.[4] !== next[4]) void applyChromeFrostedGlass(settings.chromeFrostedGlass);
+}
+
 export const useSettingStore = defineStore("setting", {
   // Boot cache supplies the saved thinking strength / model so the composer renders
   // them on the first frame instead of the `defaultSettings` placeholders.
@@ -215,21 +246,49 @@ export const useSettingStore = defineStore("setting", {
     applyPublicSettings(settings: AppSettings) {
       applyCommonSettings(this, settings);
       writeCachedComposerSettings(this);
-      applyTheme(settings);
-      applyUiFonts(settings);
-      applyZoom(this.zoom);
-      void applyOpacity(this.opacity);
-      void applyChromeFrostedGlass(this.chromeFrostedGlass);
+      applyChangedAppearance(this);
+    },
+    applySettingsBroadcast(settings: AppSettings) {
+      // Settings broadcasts contain the complete persisted object. Scalar
+      // composer changes are frequent and arrive while the editor is active;
+      // avoid reprocessing every collection when the broadcast only confirms
+      // the local reasoning/approval value.
+      if (settings.reasoningEffort !== this.reasoningEffort) {
+        this.reasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
+        writeCachedComposerSettings(this);
+        return;
+      }
+      // The Rust writer broadcasts the complete snapshot after the scalar
+      // update. When it arrives with the same value, it is only an echo of our
+      // local optimistic update; applying the full snapshot here would still
+      // block the editor a moment later.
+      if (fastComposerUpdateAt && performance.now() - fastComposerUpdateAt < 2000) return;
+      if (settings.toolApprovalMode !== this.toolApprovalMode) {
+        this.toolApprovalMode = settings.toolApprovalMode;
+        writeCachedComposerSettings(this);
+        return;
+      }
+      const sameComposerState =
+        settings.chatModel === this.chatModel &&
+        settings.chatModelProvider === this.chatModelProvider &&
+        settings.chatMode === this.chatMode &&
+        settings.language === this.language &&
+        settings.zoom === this.zoom &&
+        settings.opacity === this.opacity &&
+        settings.colorScheme === this.colorScheme;
+      if (sameComposerState) {
+        writeCachedComposerSettings(this);
+        return;
+      }
+      applyCommonSettings(this, settings);
+      writeCachedComposerSettings(this);
+      applyChangedAppearance(this);
     },
     applySettings(settings: AppSettings) {
       applyCommonSettings(this, settings);
       writeCachedComposerSettings(this);
       applySecretSettings(this, settings);
-      applyTheme(settings);
-      applyUiFonts(settings);
-      applyZoom(this.zoom);
-      void applyOpacity(this.opacity);
-      void applyChromeFrostedGlass(this.chromeFrostedGlass);
+      applyChangedAppearance(this);
     },
     async load() {
       try {
@@ -261,6 +320,35 @@ export const useSettingStore = defineStore("setting", {
     },
     async update(partial: AppSettingsPatch) {
       const sequence = ++settingsUpdateSequence;
+      // Permission chips are changed while the composer is focused. Reapplying
+      // theme, fonts, zoom and native opacity for this scalar patch blocks paint.
+      if (
+        Object.keys(partial).length === 1 &&
+        (partial.toolApprovalMode !== undefined || partial.reasoningEffort !== undefined)
+      ) {
+        fastComposerUpdateAt = performance.now();
+        const previousMode = this.toolApprovalMode;
+        const previousEffort = this.reasoningEffort;
+        if (partial.toolApprovalMode !== undefined)
+          this.toolApprovalMode = partial.toolApprovalMode;
+        if (partial.reasoningEffort !== undefined) this.reasoningEffort = partial.reasoningEffort;
+        try {
+          const settings = await setAppSettings(partial);
+          if (sequence === settingsUpdateSequence) {
+            if (partial.toolApprovalMode !== undefined)
+              this.toolApprovalMode = settings.toolApprovalMode;
+            if (partial.reasoningEffort !== undefined)
+              this.reasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
+          }
+        } catch (error) {
+          if (sequence === settingsUpdateSequence) {
+            if (partial.toolApprovalMode !== undefined) this.toolApprovalMode = previousMode;
+            if (partial.reasoningEffort !== undefined) this.reasoningEffort = previousEffort;
+          }
+          throw error;
+        }
+        return;
+      }
       const previous = { ...this.$state } as AppSettings;
       const optimistic = { ...previous, ...partial } as AppSettings;
       this.applySettings(optimistic);

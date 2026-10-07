@@ -1,5 +1,6 @@
 <template>
   <section class="settings-page about-page">
+    <WorkbenchUpdateDialog ref="updateDialogRef" />
     <header class="about-hero">
       <div class="about-logo" aria-hidden="true">
         <MascotFace interactive />
@@ -42,18 +43,7 @@
           </button>
         </div>
       </div>
-      <div
-        v-if="showProgress"
-        class="about-progress"
-        role="progressbar"
-        :aria-valuemin="0"
-        :aria-valuemax="100"
-        :aria-valuenow="progressPercent"
-      >
-        <div class="about-progress-track">
-          <div class="about-progress-fill" :style="{ width: `${progressPercent}%` }" />
-        </div>
-      </div>
+      <UpdaterProgress />
     </section>
 
     <section class="about-block" aria-labelledby="about-specs-title">
@@ -103,10 +93,13 @@ import { ArrowUpCircle, CheckCircle2, RefreshCw, ShieldCheck } from "@lucide/vue
 import { tr } from "@/services/i18n";
 import { useSettingStore } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
+import WorkbenchUpdateDialog from "@/components/workbench/WorkbenchUpdateDialog.vue";
+import UpdaterProgress from "@/components/workbench/UpdaterProgress.vue";
 import MascotFace from "@/components/icons/MascotFace.vue";
 
 const settingStore = useSettingStore();
 const updaterStore = useUpdaterStore();
+const updateDialogRef = ref<InstanceType<typeof WorkbenchUpdateDialog> | null>(null);
 const props = defineProps<{ name: string; version: string; identifier: string }>();
 const versionForCopy = computed(() => props.version || "-");
 const copied = ref(false);
@@ -168,27 +161,13 @@ const updateTone = computed(() => {
   return "is-ready";
 });
 
-const showProgress = computed(
-  () =>
-    updaterStore.status === "downloading" ||
-    updaterStore.progress.phase === "downloading" ||
-    updaterStore.progress.phase === "installing",
-);
-
-const progressPercent = computed(() => {
-  const { downloadedBytes, totalBytes, phase } = updaterStore.progress;
-  if (phase === "installing") return 100;
-  if (!totalBytes || totalBytes <= 0) return updaterStore.isBusy ? 10 : 0;
-  return Math.max(4, Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)));
-});
-
 async function handleCheckUpdate() {
   updaterStore.resetTransientError();
   await updaterStore.check();
 }
 
 async function handleInstallUpdate() {
-  await updaterStore.install();
+  updateDialogRef.value?.open();
 }
 
 async function copyIdentifier() {
@@ -346,24 +325,6 @@ async function copyIdentifier() {
 
 .about-update.is-error .about-update-copy p {
   color: var(--peek-danger, #ef4444);
-}
-
-.about-progress {
-  margin: 0;
-}
-
-.about-progress-track {
-  height: 3px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--peek-text) 8%, transparent);
-}
-
-.about-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--peek-accent);
-  transition: width 200ms ease;
 }
 
 .about-actions {

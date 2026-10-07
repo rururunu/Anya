@@ -1,9 +1,14 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { COLOR_SCHEME_CACHE_KEY } from "@/services/theme/catalog";
+import { COLOR_SCHEME_CACHE_KEY, CUSTOM_THEMES_CACHE_KEY } from "@/services/theme/catalog";
 
-import { applyThemeAppearance, readThemeState, THEME_CHANGE_EVENT } from "./ThemeService";
+import {
+  applyThemeAppearance,
+  readCachedCustomThemes,
+  readThemeState,
+  THEME_CHANGE_EVENT,
+} from "./ThemeService";
 
 vi.mock("@/services/overlay/appearance", () => ({
   applyChromeFrostedGlass: vi.fn().mockResolvedValue(undefined),
@@ -44,6 +49,28 @@ describe("ThemeService", () => {
 
     expect(localStorage.getItem(COLOR_SCHEME_CACHE_KEY)).toBe("dark");
     expect(document.documentElement.lang).toBe("en-US");
+  });
+
+  it("keeps embedded wallpaper bytes out of the boot cache", () => {
+    const theme = {
+      id: "custom-test",
+      name: "Test",
+      mode: "dark" as const,
+      tokens: {},
+      background: { image: "data:image/png;base64,YQ==", opacity: 0.2 },
+      updatedAt: 1,
+    };
+    applyThemeAppearance({
+      colorScheme: theme.id,
+      language: "zh-CN",
+      customThemes: [theme],
+    });
+    expect(localStorage.getItem(CUSTOM_THEMES_CACHE_KEY)).not.toContain("data:image");
+    expect(readCachedCustomThemes()[0]?.background?.image).toBeUndefined();
+
+    localStorage.setItem(CUSTOM_THEMES_CACHE_KEY, JSON.stringify([theme]));
+    expect(readCachedCustomThemes()).toEqual([]);
+    expect(localStorage.getItem(CUSTOM_THEMES_CACHE_KEY)).toBeNull();
   });
 
   it("dispatches peek-theme-change", () => {

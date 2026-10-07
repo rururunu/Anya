@@ -1,10 +1,5 @@
 import type { AppLanguage } from "@/types/setting";
-import {
-  chatEn,
-  chatLocales,
-  chatSupplements,
-  type ChatI18nKey,
-} from "@/services/locales/chat";
+import { chatEn, chatLocales, chatSupplements, type ChatI18nKey } from "@/services/locales/chat";
 import { mcpEn, mcpLocales, type McpI18nKey } from "@/services/locales/mcp";
 import {
   onboardingEn,
@@ -17,6 +12,7 @@ import { chatInputEn, chatInputLocales, type ChatInputI18nKey } from "@/services
 import { workspaceEn, workspaceLocales, type WorkspaceI18nKey } from "@/services/locales/workspace";
 import { slashEn, slashLocales, type SlashI18nKey } from "@/services/locales/slash";
 import { uiEn, uiLocales, type UiI18nKey } from "@/services/locales/ui";
+import { shellEn, shellLocales, type ShellI18nKey } from "@/services/locales/shell";
 
 type ModuleEn = Record<string, string>;
 type ModuleLocales = Record<AppLanguage, Partial<Record<string, string>>>;
@@ -64,6 +60,10 @@ const modules: Array<{
     en: uiEn as unknown as ModuleEn,
     locales: uiLocales as unknown as ModuleLocales,
   },
+  {
+    en: shellEn as unknown as ModuleEn,
+    locales: shellLocales as unknown as ModuleLocales,
+  },
 ];
 
 function resolve(language: AppLanguage, key: string): string | undefined {
@@ -87,7 +87,8 @@ export type I18nKey =
   | SkillsI18nKey
   | WorkspaceI18nKey
   | SlashI18nKey
-  | UiI18nKey;
+  | UiI18nKey
+  | ShellI18nKey;
 
 export function tr(
   language: AppLanguage | undefined,

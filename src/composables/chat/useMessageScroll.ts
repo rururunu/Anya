@@ -14,6 +14,7 @@ export function useMessageScroll(options: {
   railRef: Ref<HTMLElement | null>;
   sessionId?: ComputedRef<string | undefined> | Ref<string | undefined>;
   isSending?: ComputedRef<boolean> | Ref<boolean>;
+  deferAutoScrollUntilGrowth?: boolean;
   updateActiveUserMessage: (metrics: ActiveUserMessageMetrics) => void;
 }) {
   let cachedLastMessageEl: HTMLElement | null = null;
@@ -25,6 +26,8 @@ export function useMessageScroll(options: {
   let isSmoothScrollingToBottom = false;
   let sessionSwitchPending = true;
   let userScrollUpUntil = 0;
+  let waitingForGrowth = false;
+  let growthSignalTimer: number | null = null;
   const USER_SCROLL_GRACE_MS = 700;
 
   function setScrollTop(element: HTMLElement, top: number) {
@@ -167,6 +170,7 @@ export function useMessageScroll(options: {
   /** Pin the latest user turn on-screen while streaming when stick-to-bottom is active. */
   async function scrollToBottomIfNeeded() {
     await nextTick();
+    if (waitingForGrowth) return;
     refreshMessageDomCache();
     const element = options.listRef.value;
     if (!element) return;
@@ -230,6 +234,38 @@ export function useMessageScroll(options: {
     });
   }
 
+  function markGrowthPending() {
+    if (!options.deferAutoScrollUntilGrowth) return;
+    waitingForGrowth = true;
+    if (growthSignalTimer !== null) {
+      window.clearTimeout(growthSignalTimer);
+      growthSignalTimer = null;
+    }
+  }
+
+  function markPotentialGrowth() {
+    if (!options.deferAutoScrollUntilGrowth) return;
+    waitingForGrowth = true;
+    if (growthSignalTimer !== null) return;
+    // Same-height text updates do not emit ResizeObserver. Release those after
+    // the browser has had time to lay out the new content.
+    growthSignalTimer = window.setTimeout(() => {
+      growthSignalTimer = null;
+      waitingForGrowth = false;
+      scheduleScrollToBottomIfNeeded();
+    }, 80);
+  }
+
+  function onGrowthSettled() {
+    if (!waitingForGrowth) return;
+    if (growthSignalTimer !== null) {
+      window.clearTimeout(growthSignalTimer);
+      growthSignalTimer = null;
+    }
+    waitingForGrowth = false;
+    scheduleScrollToBottomIfNeeded();
+  }
+
   function resetForSessionSwitch() {
     options.stickToBottom.value = true;
     userScrollUpUntil = 0;
@@ -259,6 +295,7 @@ export function useMessageScroll(options: {
   }
 
   watch(options.displayItems, () => {
+    markPotentialGrowth();
     void nextTick(() => {
       refreshMessageDomCache();
       if (options.stickToBottom.value) {
@@ -286,11 +323,17 @@ export function useMessageScroll(options: {
       const asks = last.askUserAnswer?.map((answer) => answer.selected.join(",")).join(";") ?? "";
       return `${options.sessionId?.value ?? ""}|${messages.length}|${last.id}:${last.content.length}:${last.reasoning?.length ?? 0}:${tools}:${asks}:${last.status}:${last.activityStatus ?? ""}`;
     },
-    () => void scheduleScrollToBottomIfNeeded(),
+    () => {
+      markPotentialGrowth();
+      scheduleScrollToBottomIfNeeded();
+    },
     { immediate: true },
   );
 
   onMounted(() => {
+    if (options.deferAutoScrollUntilGrowth) {
+      window.addEventListener("overlay-content-growth-settled", onGrowthSettled);
+    }
     sessionSwitchPending = true;
     const element = options.listRef.value;
     if (!element || typeof ResizeObserver === "undefined") return;
@@ -308,6 +351,8 @@ export function useMessageScroll(options: {
   });
 
   onUnmounted(() => {
+    if (growthSignalTimer !== null) window.clearTimeout(growthSignalTimer);
+    window.removeEventListener("overlay-content-growth-settled", onGrowthSettled);
     resizeObserver?.disconnect();
     resizeObserver = null;
     if (scrollRaf) cancelAnimationFrame(scrollRaf);
@@ -318,6 +363,7 @@ export function useMessageScroll(options: {
   });
 
   return {
+    markGrowthPending,
     handleScroll,
     handleWheel,
     handleKeydown,

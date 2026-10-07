@@ -26,6 +26,10 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () =>
 vi.mock("@tauri-apps/api/window", () => ({ currentMonitor: vi.fn(async () => null) }));
 vi.mock("@/services/ipc", () => ({
   expandOverlayForChat: expand,
+  resizeOverlayInput: async (height: number, zoom: number) => {
+    await native.setSize({ width: 640 * zoom, height: height * zoom });
+    await native.setPosition({ x: 200, y: 600 });
+  },
   closeOverlay: vi.fn(),
   setOverlayChatMode: async () => {},
   takeOverlayContext: async () => null,
@@ -89,7 +93,7 @@ describe("overlay native layout", () => {
     expect(native.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 720 }));
   });
 
-  it("grows down with content, coalesces updates and stops at the maximum", async () => {
+  it("grows upward with content, coalesces updates and stops at the maximum", async () => {
     const panel = wrapper.findComponent({ name: "PeekPanel" });
     panel.vm.$emit("enterChat", "growing-thread");
     await flushPromises();
@@ -98,7 +102,7 @@ describe("overlay native layout", () => {
     panel.vm.$emit("contentHeight", 320);
     await vi.advanceTimersByTimeAsync(100);
     expect(native.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 320 }));
-    expect(native.setPosition).not.toHaveBeenCalled();
+    expect(native.setPosition).toHaveBeenLastCalledWith(expect.objectContaining({ y: 366 }));
     panel.vm.$emit("contentHeight", 900);
     await vi.advanceTimersByTimeAsync(100);
     expect(native.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 520 }));
@@ -116,6 +120,54 @@ describe("overlay native layout", () => {
     expect(native.setSize.mock.calls[0]?.[0]).toMatchObject({ width: 640, height: 176 });
     expect(native.setPosition.mock.calls[0]?.[0]).toMatchObject({ x: 200, y: 600 });
     expect(native.setMinSize).not.toHaveBeenCalled();
+  });
+
+  it("keeps the input popup top fixed when growing near the monitor bottom", async () => {
+    vi.mocked(currentMonitor).mockResolvedValue({
+      position: new PhysicalPosition(0, 0),
+      size: new PhysicalSize(1920, 700),
+      scaleFactor: 1,
+      name: "test",
+    });
+    const panel = wrapper.findComponent({ name: "PeekPanel" });
+    panel.vm.$emit("layoutChange", layout(180));
+    await flushPromises();
+    expect(native.setPosition).toHaveBeenLastCalledWith(expect.objectContaining({ y: 600 }));
+  });
+
+  it("retries the same input height after a native resize fails", async () => {
+    const panel = wrapper.findComponent({ name: "PeekPanel" });
+    native.setSize.mockRejectedValueOnce(new Error("resize failed"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      panel.vm.$emit("layoutChange", layout(140));
+      await flushPromises();
+      panel.vm.$emit("layoutChange", layout(140));
+      await flushPromises();
+      expect(native.setSize).toHaveBeenCalledTimes(2);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("adds height when the rendered dock extends below the WebView viewport", async () => {
+    const panel = wrapper.findComponent({ name: "PeekPanel" });
+    panel.element.classList.add("composer-dock");
+    vi.spyOn(panel.element, "getBoundingClientRect").mockReturnValue({ bottom: 120 } as DOMRect);
+    const querySelector = document.querySelector.bind(document);
+    const query = vi
+      .spyOn(document, "querySelector")
+      .mockImplementation((selector) =>
+        selector === ".composer-dock" ? panel.element : querySelector(selector),
+      );
+    vi.stubGlobal("innerHeight", 100);
+    try {
+      panel.vm.$emit("layoutChange", layout(100));
+      await flushPromises();
+      expect(native.setSize.mock.calls.some(([size]) => size.height > 100)).toBe(true);
+    } finally {
+      query.mockRestore();
+    }
   });
 
   it("does not resize twice when chat mode emits its first layout", async () => {

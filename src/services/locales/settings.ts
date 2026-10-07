@@ -593,6 +593,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.close": "关闭",
     "settings.sidebarLabel": "分类",
     "settings.searchPlaceholder": "搜索设置",
+    "settings.apiKeyPlaceholder": "sk-...",
     "settings.empty": "未找到匹配的设置项",
     "settings.hotkey.record": "录制",
     "settings.hotkey.recording": "请按下快捷键…",

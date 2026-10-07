@@ -329,6 +329,15 @@ export type LocalePartial = Partial<Record<ChatI18nKey, string>>;
 export const chatLocales: Record<AppLanguage, LocalePartial> = {
   "en-US": chatEn,
   "zh-CN": {
+    copy: "复制消息",
+    copied: "已复制",
+    copyFailed: "复制失败",
+    commandSuggestions: "命令建议",
+    resetThemeColor: "恢复默认白色",
+    selectedFiles: "{file} 和另外 {count} 个文件",
+    selectedImage: "已附加选中图片",
+    selectedImages: "已附加 {count} 张选中图片",
+    askSubmitFailed: "提交回答失败：{error}。请重新选择。",
     selectionNotDetected: "未检测到选中文字，可直接输入或粘贴",
     toolBodyCollapse: "收起",
     toolBodyExpand: "展开全文",

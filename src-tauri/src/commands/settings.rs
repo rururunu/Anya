@@ -92,14 +92,25 @@ mod tests {
 }
 
 #[tauri::command]
-pub fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
+pub async fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
     // The first call marks the far end of the startup blind spot: the webview
     // finished its own eval and reached the host.
     crate::boot_timing::phase_once("first settings IPC from webview");
-    get_settings(&app)
+    // The settings mutex may be held by a durable save. Never wait for it on
+    // the webview event thread, including reads arriving during a picker change.
+    tauri::async_runtime::spawn_blocking(move || get_settings(&app))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn set_app_settings(app: AppHandle, patch: AppSettingsPatch) -> Result<AppSettings, String> {
-    patch_settings(&app, patch)
+pub async fn set_app_settings(
+    app: AppHandle,
+    patch: AppSettingsPatch,
+) -> Result<AppSettings, String> {
+    // Backup + atomic replacement includes sync_all / MOVEFILE_WRITE_THROUGH.
+    // Keep durability and transaction ordering without blocking window events.
+    tauri::async_runtime::spawn_blocking(move || patch_settings(&app, patch))
+        .await
+        .map_err(|error| error.to_string())?
 }

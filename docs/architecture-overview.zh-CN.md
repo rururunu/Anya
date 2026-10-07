@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.26                            |
+| **版本**   | v0.2.27                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -819,34 +819,49 @@ Companion 不得再长出第二套 Agent 运行时。
 
 调用诊断写入配置目录的 JSONL，`scripts/deepseek-metrics-report.mjs` 汇总用量、耗时和独立验收结果。reasoning 与工具调用配对、请求副本裁剪及模型阶段重试保留已完成工具边界；这不代表进程崩溃后能自动续跑全部任务。此前提出的 journal 队列可靠性、生命周期治理及进一步虚拟化尚不属于此次版本新增能力。
 
+### 15.2 v0.2.27 输入栏、窗口、设置与更新
+
+`ChatInputBar.vue` 与 `UserMessageFooter.vue` 统一当前输入栏和已发送消息编辑栏的操作布局。模型与思考强度位于右侧；窄窗口会隐藏部分选中项文字，思考强度始终只显示文字。`useComposerPickerFocus.ts` 协调选择器焦点，思考强度滑杆在拖动结束时提交最终值。`stores/setting.ts` 对单独修改思考强度或审批模式的操作先更新输入栏，收到设置广播时避免重复应用整套主题和设置。
+
+`layouts/Overlay.vue` 按内容测量输入悬浮窗高度，并跳过尺寸未变化的原生窗口调整。`useMessageScroll.ts` 在内容增长后处理聊天滚动。Windows 上下文提供者在悬浮窗取得焦点前获取选区位置；`services/window.rs` 在可用时参考该位置，让悬浮窗尽量避开选中文字。
+
+`services/settings_store.rs` 将内嵌主题图片迁移到应用设置目录下的 `theme-backgrounds` 文件夹，以内容哈希命名。运行时设置只保存路径，可读取的图片仍会内嵌到便携资料导出文件中。`commands/settings.rs` 将设置 I/O 移至阻塞工作线程，避免占用窗口事件线程。
+
+`stores/updater.ts` 检测到新版本时显示 `SidebarUpdateButton.vue`。`WorkbenchUpdateDialog.vue` 在安装前展示版本说明，并与关于页共用 `UpdaterProgress.vue`。`DesktopPetSvg.vue` 绘制桌面宠物；`useDesktopPet.ts` 和 `petWindowBounds.ts` 将宠物限制在可用显示器内并提供边缘反馈。
+
 ## 16. 相关源码入口
 
-| 关注点                      | 从此处开始                                                                                |
-| --------------------------- | ----------------------------------------------------------------------------------------- |
-| 应用启动 / 托盘 / 热键      | `src-tauri/src/lib.rs`                                                                    |
-| 聊天 IPC                    | `commands/chat.rs`                                                                        |
-| 发送与上下文组装 / 计划门禁 | `core/chat/service/`、`core/tools/plan_mode.rs`                                           |
-| 流式生命周期 + 时间线文本   | `core/chat/stream/`                                                                       |
-| 时间线持久化                | `core/chat/conversation_manager/`、`core/chat/db/`                                        |
-| Agent 循环                  | `core/chat/agent.rs`、`core/chat/agent_loop/`                                             |
-| Run 壳                      | `core/agent/runtime/`                                                                     |
-| Image 模式 / Images API     | `core/tools/image_mode.rs`、`core/ai/image_gen.rs`、`prompts/image-mode.md`               |
-| 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/composables/chat/wireChatIpc.ts`、`src/stores/chat.ts`          |
-| Chat store 旁路模块         | `src/stores/chatSessions.ts`、`chatCompose.ts`、`chatHistory.ts`、`chatStream.ts`         |
-| 输入栏抽取                  | `src/composables/chat/useComposer*.ts`、`useMessageScroll.ts`、`useMessagePreviewRail.ts` |
-| Remote gateway / 配对       | `core/remote/gateway/`、`pairing.rs`、`tunnel.rs`                                         |
-| Shell jobs / 工作区 / MCP   | `core/tools/shell_jobs/`、`core/workspace/`、`core/mcp/`                                  |
-| 插件 / 电脑操控             | `core/plugins/`、`src-tauri/plugins/computer-use/`、[电脑操控](./computer-use.zh-CN.md)   |
-| DeepSeek stream             | `core/ai/deepseek/stream/`                                                                |
-| 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                                |
-| 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                             |
-| 生图 UI                     | `src/components/chat/GeneratedImageCard.vue`、`ImagePreviewSidebar.vue`                   |
-| 内嵌设置                    | `pages/Settings/`                                                                         |
-| 主题应用路径                | `src/services/theme/`、`stores/setting.ts` `applyTheme`                                   |
-| 工作台毛玻璃 / 窗口圆角     | `services/workbench_glass.rs`、`overlay/appearance.ts`                                    |
-| 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                                 |
-| Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                                    |
-| 工作区索引                  | `core/tools/workspace_index.rs`                                                           |
-| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                    |
+| 关注点                      | 从此处开始                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 应用启动 / 托盘 / 热键      | `src-tauri/src/lib.rs`                                                                                 |
+| 聊天 IPC                    | `commands/chat.rs`                                                                                     |
+| 发送与上下文组装 / 计划门禁 | `core/chat/service/`、`core/tools/plan_mode.rs`                                                        |
+| 流式生命周期 + 时间线文本   | `core/chat/stream/`                                                                                    |
+| 时间线持久化                | `core/chat/conversation_manager/`、`core/chat/db/`                                                     |
+| Agent 循环                  | `core/chat/agent.rs`、`core/chat/agent_loop/`                                                          |
+| Run 壳                      | `core/agent/runtime/`                                                                                  |
+| Image 模式 / Images API     | `core/tools/image_mode.rs`、`core/ai/image_gen.rs`、`prompts/image-mode.md`                            |
+| 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/composables/chat/wireChatIpc.ts`、`src/stores/chat.ts`                       |
+| Chat store 旁路模块         | `src/stores/chatSessions.ts`、`chatCompose.ts`、`chatHistory.ts`、`chatStream.ts`                      |
+| 输入栏抽取                  | `src/composables/chat/useComposer*.ts`、`useMessageScroll.ts`、`useMessagePreviewRail.ts`              |
+| Remote gateway / 配对       | `core/remote/gateway/`、`pairing.rs`、`tunnel.rs`                                                      |
+| Shell jobs / 工作区 / MCP   | `core/tools/shell_jobs/`、`core/workspace/`、`core/mcp/`                                               |
+| 插件 / 电脑操控             | `core/plugins/`、`src-tauri/plugins/computer-use/`、[电脑操控](./computer-use.zh-CN.md)                |
+| DeepSeek stream             | `core/ai/deepseek/stream/`                                                                             |
+| 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                                             |
+| 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                                          |
+| 生图 UI                     | `src/components/chat/GeneratedImageCard.vue`、`ImagePreviewSidebar.vue`                                |
+| 内嵌设置                    | `pages/Settings/`                                                                                      |
+| 主题应用路径                | `src/services/theme/`、`stores/setting.ts` `applyTheme`                                                |
+| 主题图片持久化              | `services/settings_store.rs`、`commands/settings.rs`、`src/stores/setting.ts`                          |
+| 输入栏与历史消息编辑栏      | `src/components/chat/ChatInputBar.vue`、`UserMessageFooter.vue`                                        |
+| 悬浮窗定位与尺寸            | `services/window.rs`、`core/context/provider/clipboard_provider.rs`、`src/layouts/Overlay.vue`         |
+| 应用内更新界面              | `src/components/workbench/SidebarUpdateButton.vue`、`WorkbenchUpdateDialog.vue`、`UpdaterProgress.vue` |
+| 桌面宠物                    | `src/components/pet/DesktopPetSvg.vue`、`src/composables/useDesktopPet.ts`、`petWindowBounds.ts`       |
+| 工作台毛玻璃 / 窗口圆角     | `services/workbench_glass.rs`、`overlay/appearance.ts`                                                 |
+| 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                                              |
+| Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                                                 |
+| 工作区索引                  | `core/tools/workspace_index.rs`                                                                        |
+| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                 |
 
 可选 Chrome / Edge 选区扩展通过已注册的 Native Messaging host，将网页选中文字转发给经过认证的本地回环监听器。缓存选区绑定前台浏览器窗口，并在 60 秒后过期；不会采集浏览历史。安装与边界见[扩展说明](../browser-extension/README.zh-CN.md)。

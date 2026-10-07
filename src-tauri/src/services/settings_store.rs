@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use base64::Engine;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::models::settings::AppSettings;
@@ -50,6 +52,85 @@ fn persist_settings_file(path: &Path, settings: &AppSettings) -> Result<(), Stri
     crate::core::tools::file_io::atomic_write(path, raw).map_err(|e| e.to_string())
 }
 
+/// Keep embedded wallpaper bytes out of settings snapshots and IPC events.
+/// Content-addressed names also let identical images shared by themes use one file.
+fn materialize_background_image(
+    image: &mut Option<String>,
+    directory: &Path,
+) -> Result<bool, String> {
+    let Some(source) = image.as_deref() else {
+        return Ok(false);
+    };
+    if !source.starts_with("data:") {
+        return Ok(false);
+    }
+    let encoded = source
+        .strip_prefix("data:image/")
+        .and_then(|value| value.split_once(";base64,"))
+        .ok_or("unsupported embedded theme background image")?;
+    let extension = match encoded.0.to_ascii_lowercase().as_str() {
+        "png" => "png",
+        "jpeg" | "jpg" => "jpg",
+        "webp" => "webp",
+        "gif" => "gif",
+        "svg+xml" => "svg",
+        _ => return Err("unsupported embedded theme background image format".into()),
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded.1)
+        .map_err(|error| format!("invalid embedded theme background image: {error}"))?;
+    let digest = Sha256::digest(&bytes);
+    let path = directory.join(format!("{digest:x}.{extension}"));
+    if !path.exists() {
+        crate::core::tools::file_io::atomic_write(&path, bytes)
+            .map_err(|error| error.to_string())?;
+    }
+    *image = Some(path.to_string_lossy().into_owned());
+    Ok(true)
+}
+
+fn materialize_background_images(
+    settings: &mut AppSettings,
+    directory: &Path,
+) -> Result<bool, String> {
+    let mut changed = false;
+    if let Some(background) = settings.custom_background.as_mut() {
+        changed |= materialize_background_image(&mut background.image, directory)?;
+    }
+    for theme in &mut settings.custom_themes {
+        if let Some(background) = theme.background.as_mut() {
+            changed |= materialize_background_image(&mut background.image, directory)?;
+        }
+    }
+    Ok(changed)
+}
+
+/// Once the current settings are path-based, replace an old oversized recovery
+/// snapshot with a valid copy of the current settings. The atomic replacement
+/// leaves the legacy backup intact if it fails.
+fn refresh_legacy_background_backup(path: &Path, settings: &AppSettings) -> Result<(), String> {
+    let backup = path.with_extension("json.bak");
+    let old = match fs::read_to_string(&backup) {
+        Ok(old) => old,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !old.contains("data:image/") {
+        return Ok(());
+    }
+    let current = serde_json::to_vec_pretty(settings).map_err(|error| error.to_string())?;
+    if current
+        .windows(b"data:image/".len())
+        .any(|part| part == b"data:image/")
+    {
+        return Ok(());
+    }
+    if read_valid_settings(path).is_err() {
+        return Ok(());
+    }
+    crate::core::tools::file_io::atomic_write(&backup, current).map_err(|error| error.to_string())
+}
+
 const SETTINGS_FILE: &str = "settings.json";
 const RELEASE_APP_IDENTIFIER: &str = "ai.anya.desktop";
 const DEBUG_APP_IDENTIFIER: &str = "ai.anya.desktop.debug";
@@ -64,6 +145,7 @@ fn app_identifier() -> &'static str {
 
 pub struct SettingsState {
     pub settings: Mutex<AppSettings>,
+    commit_lock: Mutex<()>,
 }
 
 pub fn webview_gpu_disabled() -> bool {
@@ -143,6 +225,7 @@ impl SettingsState {
     pub fn new(settings: AppSettings) -> Self {
         Self {
             settings: Mutex::new(settings),
+            commit_lock: Mutex::new(()),
         }
     }
 }
@@ -210,10 +293,24 @@ pub fn load_settings(app: &AppHandle) -> AppSettings {
     }
     let before_pins = settings.mcp_servers.clone();
     let timeout_migrated = migrate_shell_timeout(&mut settings);
-    let settings = normalize_settings(settings);
+    let mut settings = normalize_settings(settings);
+    let mut migrated_backgrounds = false;
+    let mut converted = settings.clone();
+    match materialize_background_images(&mut converted, &path.with_file_name("theme-backgrounds")) {
+        Ok(changed) => {
+            settings = converted;
+            migrated_backgrounds = changed;
+        }
+        Err(error) => tracing::warn!(%error, "embedded theme backgrounds could not be migrated"),
+    }
     // Persist package-pin migrations so disk matches the runtime spawn args.
-    if settings.mcp_servers != before_pins || timeout_migrated {
-        let _ = persist_settings(app, &settings);
+    if settings.mcp_servers != before_pins || timeout_migrated || migrated_backgrounds {
+        if let Err(error) = persist_settings(app, &settings) {
+            tracing::warn!(%error, "migrated settings could not be persisted");
+        }
+    }
+    if let Err(error) = refresh_legacy_background_backup(&path, &settings) {
+        tracing::warn!(%error, "legacy theme background backup could not be refreshed");
     }
     settings
 }
@@ -260,20 +357,28 @@ pub fn get_settings(app: &AppHandle) -> Result<AppSettings, String> {
         .map_err(|error| error.to_string())
 }
 
-/// Read, modify and persist under one state lock. Failure never publishes a partial update.
+/// Serialize writers, but allow readers to use the last committed snapshot during
+/// slow disk I/O. Failure never publishes a partial update.
 fn commit_update<R>(
     state: &SettingsState,
     change: impl FnOnce(&mut AppSettings) -> Result<R, String>,
     persist: impl FnOnce(&AppSettings) -> Result<(), String>,
 ) -> Result<(AppSettings, AppSettings, R), String> {
-    let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
-    let previous = settings.clone();
+    let _commit = state
+        .commit_lock
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let previous = state
+        .settings
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
     let mut next = previous.clone();
     let result = change(&mut next)?;
     let next = normalize_settings(next);
     if next != previous {
         persist(&next)?;
-        *settings = next.clone();
+        *state.settings.lock().map_err(|error| error.to_string())? = next.clone();
     }
     Ok((previous, next, result))
 }
@@ -290,8 +395,16 @@ pub fn update_settings<R>(
     let state = app
         .try_state::<SettingsState>()
         .ok_or("settings state is unavailable")?;
-    let (previous, next, result) =
-        commit_update(&state, change, |next| persist_settings(app, next))?;
+    let asset_directory = settings_path(app)?.with_file_name("theme-backgrounds");
+    let (previous, next, result) = commit_update(
+        &state,
+        |settings| {
+            let result = change(settings)?;
+            materialize_background_images(settings, &asset_directory)?;
+            Ok(result)
+        },
+        |next| persist_settings(app, next),
+    )?;
     if previous != next {
         apply_changed_runtime_settings(Some(&previous), &next);
         if previous.chrome_frosted_glass != next.chrome_frosted_glass
@@ -413,7 +526,88 @@ pub fn broadcast_settings(app: &AppHandle, settings: &AppSettings) {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::settings::AppSettings;
+    use crate::models::settings::{AppSettings, CustomThemeConfig, ThemeBackgroundConfig};
+
+    #[test]
+    fn embedded_theme_backgrounds_become_shared_files_and_paths() {
+        let directory =
+            std::env::temp_dir().join(format!("anya-theme-images-{}", uuid::Uuid::new_v4()));
+        let embedded = "data:image/png;base64,iVBORw0KGgo=";
+        let mut settings = AppSettings::default();
+        settings.custom_background = Some(ThemeBackgroundConfig {
+            image: Some(embedded.into()),
+            ..Default::default()
+        });
+        settings.custom_themes.push(CustomThemeConfig {
+            id: "test-theme".into(),
+            name: "Test".into(),
+            mode: "dark".into(),
+            description: None,
+            tokens: Default::default(),
+            background: Some(ThemeBackgroundConfig {
+                image: Some(embedded.into()),
+                ..Default::default()
+            }),
+            updated_at: 0,
+        });
+        assert!(super::materialize_background_images(&mut settings, &directory).unwrap());
+        let global_path = settings
+            .custom_background
+            .as_ref()
+            .unwrap()
+            .image
+            .as_ref()
+            .unwrap();
+        let theme_path = settings.custom_themes[0]
+            .background
+            .as_ref()
+            .unwrap()
+            .image
+            .as_ref()
+            .unwrap();
+        assert_eq!(global_path, theme_path);
+        assert_eq!(
+            std::fs::read(global_path).unwrap(),
+            [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]
+        );
+        assert!(!serde_json::to_string(&settings)
+            .unwrap()
+            .contains("data:image"));
+        assert!(!super::materialize_background_images(&mut settings, &directory).unwrap());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn invalid_embedded_background_does_not_replace_source() {
+        let mut image = Some("data:image/png;base64,invalid!".to_string());
+        let directory =
+            std::env::temp_dir().join(format!("anya-theme-images-{}", uuid::Uuid::new_v4()));
+        assert!(super::materialize_background_image(&mut image, &directory).is_err());
+        assert_eq!(image.as_deref(), Some("data:image/png;base64,invalid!"));
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn legacy_background_backup_is_refreshed_after_migration() {
+        let directory =
+            std::env::temp_dir().join(format!("anya-theme-backup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("settings.json");
+        let current = AppSettings::default();
+        std::fs::write(&path, serde_json::to_vec(&current).unwrap()).unwrap();
+        let mut legacy = current.clone();
+        legacy.custom_background = Some(ThemeBackgroundConfig {
+            image: Some("data:image/png;base64,iVBORw0KGgo=".into()),
+            ..Default::default()
+        });
+        let backup = path.with_extension("json.bak");
+        std::fs::write(&backup, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        super::refresh_legacy_background_backup(&path, &current).unwrap();
+        let refreshed = std::fs::read_to_string(&backup).unwrap();
+        assert!(!refreshed.contains("data:image"));
+        assert!(serde_json::from_str::<AppSettings>(&refreshed).is_ok());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn reset_marker_blocks_legacy_recovery_even_without_settings() {
@@ -473,6 +667,31 @@ mod tests {
         )
         .is_err());
         assert_eq!(*state.settings.lock().unwrap(), saved);
+    }
+
+    #[test]
+    fn slow_save_does_not_lock_settings_readers() {
+        let state = super::SettingsState::new(AppSettings::default());
+        let original = state.settings.lock().unwrap().clone();
+        super::commit_update(
+            &state,
+            |settings| {
+                settings.zoom += 1;
+                Ok(())
+            },
+            |_| {
+                // Executed while persistence is in progress: window handlers
+                // must still be able to read the previous committed settings.
+                let readable = state
+                    .settings
+                    .try_lock()
+                    .expect("disk I/O must not block readers");
+                assert_eq!(*readable, original);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(state.settings.lock().unwrap().zoom, original.zoom + 1);
     }
 
     #[test]

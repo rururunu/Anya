@@ -12,14 +12,11 @@
 import { computed } from "vue";
 import { useSettingStore } from "@/stores/setting";
 import MascotFace from "@/components/icons/MascotFace.vue";
+import { tr } from "@/services/i18n";
 
 const settingStore = useSettingStore();
 
-const label = computed(() =>
-  settingStore.language === "zh-CN" || navigator.language.toLowerCase().startsWith("zh")
-    ? "请稍等，正在为您准备……"
-    : "Please wait, preparing for you…",
-);
+const label = computed(() => tr(settingStore.language, "shell.loading"));
 </script>
 
 <style scoped>

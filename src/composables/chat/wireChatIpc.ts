@@ -84,7 +84,7 @@ export async function wireChatIpc({
   }, streamUpdateIntervalMs);
 
   await listenSettingsChanged((settings) => {
-    settingStore.applyPublicSettings(settings);
+    settingStore.applySettingsBroadcast(settings);
   });
 
   await listenChatStarted((payload) => {

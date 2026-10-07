@@ -24,10 +24,13 @@
     <div
       class="pet-avatar-wrapper"
       :style="avatarStyle"
-      @mousedown="onMouseDown"
+      @pointerdown="onPetPointerDown"
+      @pointermove="onPetPointerMove"
+      @pointerup="onPetPointerUp"
+      @pointercancel="onPetPointerCancel"
       @dblclick="onPetDoubleClick"
     >
-      <MascotPetView
+      <DesktopPetSvg
         v-if="appearance.mode === 'mascot'"
         :expression="expression"
         :action="currentAction"
@@ -36,6 +39,8 @@
         :tilt-direction="tiltDirection"
         :show-combo-decor="showComboDecor"
         :is-combo="isCombo"
+        :edge-pressure="edgePressure"
+        :language="settingStore.language"
         :interactive="true"
         :follow-pointer="true"
         class="pet-mascot"
@@ -60,13 +65,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import MascotPetView from "@/components/icons/MascotPetView.vue";
+import DesktopPetSvg from "@/components/pet/DesktopPetSvg.vue";
 import DesktopPetInteractionCard from "@/components/pet/DesktopPetInteractionCard.vue";
 import DesktopPetCompanion from "@/components/pet/DesktopPetCompanion.vue";
 import DesktopPetMediaStage from "@/components/pet/DesktopPetMediaStage.vue";
 import DesktopPetSpritesheet from "@/components/pet/DesktopPetSpritesheet.vue";
 import { PET_SIZES, useDesktopPet } from "@/composables/useDesktopPet";
 import type { PetCompanionConfig } from "@/services/pet/appearance";
+import { useSettingStore } from "@/stores/setting";
 
 onMounted(() => {
   if (typeof document !== "undefined") {
@@ -74,6 +80,7 @@ onMounted(() => {
     document.documentElement.style.setProperty("--ui-zoom", "1");
   }
 });
+const settingStore = useSettingStore();
 
 const {
   expression,
@@ -92,7 +99,11 @@ const {
   currentInteractionIndex,
   prevInteraction,
   nextInteraction,
-  onMouseDown,
+  edgePressure,
+  onPetPointerDown,
+  onPetPointerMove,
+  onPetPointerUp,
+  onPetPointerCancel,
   onPetDoubleClick,
   wakeUp,
   submitAskUserAnswer,
@@ -160,6 +171,7 @@ const avatarStyle = computed(() => {
   transition: transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1);
   filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.24)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.12));
   pointer-events: auto;
+  touch-action: none;
 }
 
 .pet-avatar-wrapper:active {

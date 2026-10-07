@@ -278,6 +278,10 @@ export function expandOverlayForChat(zoom: number) {
   return ipcInvoke<void>("expand_overlay_for_chat", { zoom });
 }
 
+export function resizeOverlayInput(height: number, zoom: number) {
+  return ipcInvoke<void>("resize_overlay_input", { height, zoom });
+}
+
 export function setOverlayPopupOpen(label: string, open: boolean) {
   return ipcInvoke<void>(IPC_COMMANDS.setOverlayPopupOpen, { label, open });
 }

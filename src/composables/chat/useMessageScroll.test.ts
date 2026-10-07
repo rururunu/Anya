@@ -192,4 +192,31 @@ describe("useMessageScroll", () => {
 
     app.unmount();
   });
+
+  it("waits for overlay growth before automatically scrolling", async () => {
+    const listEl = makeMockElement({ scrollHeight: 1200, clientHeight: 400 });
+    const messages = ref<ChatMessage[]>([]);
+    const [scrollHook, app] = withSetup(() =>
+      useMessageScroll({
+        listRef: ref(listEl),
+        stickToBottom: ref(true),
+        messages: computed(() => messages.value),
+        displayItems: computed(() => messages.value),
+        activeUserMessageId: ref(""),
+        railRef: ref<HTMLElement | null>(null),
+        deferAutoScrollUntilGrowth: true,
+        updateActiveUserMessage: vi.fn(),
+      }),
+    );
+    messages.value = [{ id: "new", role: "assistant", content: "reply" } as ChatMessage];
+    await nextTick();
+    scrollHook.markGrowthPending();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(listEl.scrollTop).toBe(0);
+
+    window.dispatchEvent(new Event("overlay-content-growth-settled"));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(listEl.scrollTop).toBe(800);
+    app.unmount();
+  });
 });

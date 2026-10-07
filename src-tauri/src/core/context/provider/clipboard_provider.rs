@@ -21,6 +21,9 @@ use windows::Win32::System::DataExchange::{
 };
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::System::Ole::{OleFlushClipboard, OleGetClipboard, OleSetClipboard};
+use windows::Win32::System::Ole::{
+    SafeArrayDestroy, SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound,
+};
 use windows::Win32::System::Threading::AttachThreadInput;
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationLegacyIAccessiblePattern,
@@ -228,6 +231,125 @@ unsafe fn read_text_pattern_selection(element: &IUIAutomationElement) -> Option<
     }
 
     (!selected.trim().is_empty()).then(|| selected.chars().take(65536).collect())
+}
+
+/// Screen bounds of selected text and, when unavailable, the focused editor's left edge.
+pub struct SelectionGeometry {
+    pub text_bounds: Option<(i32, i32, i32, i32)>,
+    pub editor_left: Option<i32>,
+}
+
+pub fn selected_text_geometry(hwnd: isize) -> Option<SelectionGeometry> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let geometry = unsafe {
+            let initialized = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
+            let result = if GetForegroundWindow().0 as isize == hwnd {
+                selection_geometry_inner(hwnd)
+            } else {
+                None
+            };
+            if initialized {
+                CoUninitialize();
+            }
+            result
+        };
+        let _ = sender.send(geometry);
+    });
+    receiver
+        .recv_timeout(Duration::from_millis(250))
+        .ok()
+        .flatten()
+}
+
+unsafe fn selection_geometry_inner(hwnd: isize) -> Option<SelectionGeometry> {
+    let automation: IUIAutomation =
+        CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+    let walker = automation.ControlViewWalker().ok()?;
+    let focused = automation.GetFocusedElement().ok()?;
+    let editor_left = focused
+        .CurrentBoundingRectangle()
+        .ok()
+        .and_then(|rect| (rect.right > rect.left && rect.bottom > rect.top).then_some(rect.left));
+    let mut element = Some(focused);
+    for _ in 0..UI_AUTOMATION_PARENT_LIMIT {
+        let Some(current) = element else {
+            break;
+        };
+        if let Some(bounds) = text_pattern_bounds(&current) {
+            return Some(SelectionGeometry {
+                text_bounds: Some(bounds),
+                editor_left,
+            });
+        }
+        element = walker.GetParentElement(&current).ok();
+    }
+    let text_bounds = (|| {
+        let root = automation.ElementFromHandle(HWND(hwnd as *mut _)).ok()?;
+        let condition = automation
+            .CreatePropertyCondition(
+                UIA_ControlTypePropertyId,
+                &windows::core::VARIANT::from(UIA_DocumentControlTypeId.0),
+            )
+            .ok()?;
+        let document = root.FindFirst(TreeScope_Descendants, &condition).ok()?;
+        text_pattern_bounds(&document)
+    })();
+    Some(SelectionGeometry {
+        text_bounds,
+        editor_left,
+    })
+}
+
+unsafe fn text_pattern_bounds(element: &IUIAutomationElement) -> Option<(i32, i32, i32, i32)> {
+    let pattern: IUIAutomationTextPattern = element.GetCurrentPatternAs(UIA_TextPatternId).ok()?;
+    let ranges = pattern.GetSelection().ok()?;
+    let mut bounds: Option<(f64, f64, f64, f64)> = None;
+    for index in 0..ranges.Length().ok()? {
+        let range = ranges.GetElement(index).ok()?;
+        if range.GetText(1).ok()?.is_empty() {
+            continue;
+        }
+        let array = range.GetBoundingRectangles().ok()?;
+        let values = (|| {
+            let lower = SafeArrayGetLBound(array, 1).ok()?;
+            let upper = SafeArrayGetUBound(array, 1).ok()?;
+            if upper - lower < 3 {
+                return None;
+            }
+            let mut values = Vec::new();
+            for position in lower..=upper {
+                let mut value = 0f64;
+                SafeArrayGetElement(array, &position, (&mut value as *mut f64).cast()).ok()?;
+                values.push(value);
+            }
+            Some(values)
+        })();
+        let _ = SafeArrayDestroy(array);
+        for rect in values?.chunks_exact(4) {
+            let (x, y, right, bottom) = (rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]);
+            if rect[2] <= 0.0 || rect[3] <= 0.0 {
+                continue;
+            }
+            bounds = Some(match bounds {
+                Some((left, top, old_right, old_bottom)) => (
+                    left.min(x),
+                    top.min(y),
+                    old_right.max(right),
+                    old_bottom.max(bottom),
+                ),
+                None => (x, y, right, bottom),
+            });
+        }
+    }
+    bounds.map(|(x, y, right, bottom)| {
+        (
+            x.floor() as i32,
+            y.floor() as i32,
+            right.ceil() as i32,
+            bottom.ceil() as i32,
+        )
+    })
 }
 
 fn clean_selection_text(text: &str) -> String {

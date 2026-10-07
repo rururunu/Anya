@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, ref } from "vue";
 import { useDesktopPet } from "./useDesktopPet";
 
+const mockSetPosition = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const mockStartDragging = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
 function withSetup<T>(composable: () => T): [T, ReturnType<typeof createApp>] {
   let result: T;
   const app = createApp(
@@ -21,14 +24,19 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => ({
     label: "desktop-pet",
     setSize: vi.fn().mockResolvedValue(undefined),
-    setPosition: vi.fn().mockResolvedValue(undefined),
+    setPosition: mockSetPosition,
     outerPosition: vi.fn().mockResolvedValue({ x: 100, y: 100 }),
-    startDragging: vi.fn().mockResolvedValue(undefined),
+    outerSize: vi.fn().mockResolvedValue({ width: 215, height: 215 }),
+    startDragging: mockStartDragging,
   }),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
+  availableMonitors: vi
+    .fn()
+    .mockResolvedValue([{ position: { x: 0, y: 0 }, size: { width: 1920, height: 1080 } }]),
   currentMonitor: vi.fn().mockResolvedValue({
+    position: { x: 0, y: 0 },
     size: { width: 1920, height: 1080 },
     scaleFactor: 1,
   }),
@@ -57,6 +65,8 @@ vi.mock("./useDesktopPetInteractions", () => ({
 describe("useDesktopPet", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    mockSetPosition.mockClear();
+    mockStartDragging.mockClear();
   });
 
   afterEach(() => {
@@ -111,6 +121,29 @@ describe("useDesktopPet", () => {
 
     pet.activeInteraction.value = null;
     expect(pet.expression.value).toBe("idle");
+    app.unmount();
+  });
+
+  it("clamps each drag move and shows edge pressure before pointer release", async () => {
+    const [pet, app] = withSetup(() => useDesktopPet());
+    const target = document.createElement("div");
+    target.setPointerCapture = vi.fn();
+    const pointer = (screenX: number, screenY: number) =>
+      ({
+        button: 0,
+        pointerId: 1,
+        screenX,
+        screenY,
+        currentTarget: target,
+      }) as unknown as PointerEvent;
+    await pet.onPetPointerDown(pointer(100, 100));
+    pet.onPetPointerMove(pointer(-100, 100));
+    expect(pet.edgePressure.value.x).toBe(-1);
+    await Promise.resolve();
+    expect(mockSetPosition).toHaveBeenCalledWith(expect.objectContaining({ x: 0, y: 100 }));
+    expect(mockStartDragging).not.toHaveBeenCalled();
+    pet.onPetPointerUp(pointer(-100, 100));
+    await Promise.resolve();
     app.unmount();
   });
 });

@@ -5,7 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::app_state::AppState;
 use crate::core::context::models::WindowInfo;
-use crate::core::context::provider::{CaptureProvider, CaptureResult, ExplorerProvider};
+use crate::core::context::provider::{
+    selected_text_geometry, CaptureProvider, CaptureResult, ExplorerProvider, SelectionGeometry,
+};
 use crate::core::context::store::snapshot_foreground;
 use crate::core::runtime::RequestContext;
 use crate::services::overlay_native::{
@@ -419,13 +421,18 @@ pub fn toggle_overlay_with_context(
                 if let Some((mx, my)) = mouse_pos.filter(|_| has_selected_context(&context)) {
                     const WIN_W: f64 = 640.0;
                     const OFFSET: i32 = 16;
-                    let (x, y) = calc_position_near_mouse(
+                    let geometry = source_window
+                        .as_ref()
+                        .and_then(|source| selected_text_geometry(source.hwnd));
+                    let (x, y) = calc_position_near_selection(
                         &window,
                         mx,
                         my,
                         WIN_W,
                         OVERLAY_INPUT_HEIGHT,
                         OFFSET,
+                        geometry,
+                        context.selection.as_deref(),
                     );
                     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
                 } else {
@@ -511,6 +518,76 @@ fn calc_position_near_mouse(
     (x, y)
 }
 
+fn calc_position_near_selection(
+    window: &tauri::WebviewWindow,
+    mouse_x: i32,
+    mouse_y: i32,
+    width: f64,
+    height: f64,
+    offset: i32,
+    geometry: Option<SelectionGeometry>,
+    selection: Option<&str>,
+) -> (i32, i32) {
+    let (mouse_x_position, fallback_y) =
+        calc_position_near_mouse(window, mouse_x, mouse_y, width, height, offset);
+    let monitor = window.available_monitors().ok().and_then(|monitors| {
+        monitors.into_iter().find(|monitor| {
+            let position = monitor.position();
+            let size = monitor.size();
+            mouse_x >= position.x
+                && mouse_x < position.x + size.width as i32
+                && mouse_y >= position.y
+                && mouse_y < position.y + size.height as i32
+        })
+    });
+    let Some(monitor) = monitor else {
+        return (mouse_x_position, fallback_y);
+    };
+    let screen_top = monitor.position().y;
+    let screen_bottom = screen_top + monitor.size().height as i32;
+    let screen_left = monitor.position().x;
+    let screen_right = screen_left + monitor.size().width as i32;
+    let window_height = (height * monitor.scale_factor()) as i32;
+    let window_width = (width * monitor.scale_factor()) as i32;
+    let bounds = geometry.as_ref().and_then(|geometry| geometry.text_bounds);
+    let anchor_x = bounds
+        .map(|(left, _, _, _)| left)
+        .or_else(|| geometry.as_ref().and_then(|geometry| geometry.editor_left))
+        .unwrap_or(mouse_x_position);
+    let x = anchor_x.clamp(screen_left, (screen_right - window_width).max(screen_left));
+    let gap = (24.0 * monitor.scale_factor()) as i32;
+    let line_count = selection.map_or(0, |text| text.lines().count());
+    // UI Automation can report only the active line in some editors. Treat the
+    // selected text as a minimum vertical exclusion zone around the cursor.
+    let estimated_span =
+        (line_count.saturating_sub(1).min(80) as f64 * 22.0 * monitor.scale_factor()) as i32;
+    let top = bounds.map_or(mouse_y - estimated_span, |(_, top, _, _)| {
+        top.min(mouse_y - estimated_span)
+    });
+    let bottom = bounds.map_or(mouse_y + estimated_span, |(_, _, _, bottom)| {
+        bottom.max(mouse_y + estimated_span)
+    });
+    if bottom + gap + window_height <= screen_bottom {
+        (x, bottom + gap)
+    } else if top - gap - window_height >= screen_top {
+        (x, top - gap - window_height)
+    } else if line_count > 1 {
+        // A tall selection may leave no room above or below. Keep the compact
+        // overlay at the opposite horizontal edge instead of covering its lines.
+        let edge_x = if mouse_x - screen_left < screen_right - mouse_x {
+            screen_right - window_width - offset
+        } else {
+            screen_left + offset
+        };
+        (
+            edge_x.clamp(screen_left, (screen_right - window_width).max(screen_left)),
+            fallback_y,
+        )
+    } else {
+        (x, fallback_y)
+    }
+}
+
 /// Horizontal center, a little above geometric vertical center.
 fn default_overlay_origin(
     screen_x: i32,
@@ -567,6 +644,11 @@ fn place_and_show_overlay_at_mouse(
     const WIN_H: f64 = OVERLAY_INPUT_HEIGHT;
     const OFFSET: i32 = 16;
 
+    // Read the source selection before creating an overlay window can change focus.
+    let geometry = source_window
+        .as_ref()
+        .and_then(|source| selected_text_geometry(source.hwnd));
+
     let all_windows = app.webview_windows();
     let mut overlay_labels: Vec<String> = all_windows
         .keys()
@@ -581,7 +663,16 @@ fn place_and_show_overlay_at_mouse(
 
     if let Some(label) = input_label {
         if let Some(window) = app.get_webview_window(label) {
-            let (x, y) = calc_position_near_mouse(&window, mouse_x, mouse_y, WIN_W, WIN_H, OFFSET);
+            let (x, y) = calc_position_near_selection(
+                &window,
+                mouse_x,
+                mouse_y,
+                WIN_W,
+                WIN_H,
+                OFFSET,
+                geometry,
+                context.selection.as_deref(),
+            );
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
             let label_str = label.clone();
             let _ = window.emit_to(&label_str, "context-captured", context);
@@ -619,8 +710,16 @@ fn place_and_show_overlay_at_mouse(
                 if let Ok(settings) = crate::services::settings_store::get_settings(app) {
                     crate::services::webview_theme::apply_webview_theme(app, &settings);
                 }
-                let (x, y) =
-                    calc_position_near_mouse(&window, mouse_x, mouse_y, WIN_W, WIN_H, OFFSET);
+                let (x, y) = calc_position_near_selection(
+                    &window,
+                    mouse_x,
+                    mouse_y,
+                    WIN_W,
+                    WIN_H,
+                    OFFSET,
+                    geometry,
+                    context.selection.as_deref(),
+                );
                 let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
                 tracing::debug!(label = %label, source = "toggle_overlay", "overlay interactive ready");
                 show_and_focus_overlay(&window);

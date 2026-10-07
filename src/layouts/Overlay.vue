@@ -24,6 +24,7 @@ import PeekPanel from "@/components/chat/PeekPanel.vue";
 import {
   closeOverlay,
   expandOverlayForChat,
+  resizeOverlayInput,
   setOverlayChatMode,
   takeOverlayContext,
 } from "@/services/ipc";
@@ -52,9 +53,7 @@ function removeCapturedSelection() {
 const PANEL_WIDTH = 640;
 // Inline draft row + fixed bottom toolbar, including the dock borders.
 const INPUT_HEIGHT = 86;
-const OVERLAY_MIN_HEIGHT_INPUT = INPUT_HEIGHT;
 const CHAT_HEIGHT_PREFERRED = 240;
-const CHAT_SCREEN_MARGIN = 48;
 const OVERLAY_MIN_HEIGHT_CHAT = 240;
 const SUGGESTION_ROW_HEIGHT = 30;
 const SUGGESTION_PADDING = 9;
@@ -71,33 +70,53 @@ const subagentSidebarOpen = ref(false);
 const runtimeSidebarOpen = ref(false);
 const imageSidebarOpen = ref(false);
 let layoutResizeQueue = Promise.resolve();
-let chatGrowthTimer: ReturnType<typeof setTimeout> | null = null;
+let chatGrowthFrame = 0;
+let chatGrowthInFlight = 0;
 let pendingContentHeight = 0;
 let grownChatHeight = OVERLAY_MIN_HEIGHT_CHAT;
 let chatGrowthLimit = 520;
 function handleContentHeight(height: number) {
   if (mode.value !== "chat") return;
   pendingContentHeight = height;
-  if (chatGrowthTimer !== null) return;
-  chatGrowthTimer = setTimeout(() => {
-    chatGrowthTimer = null;
+  if (chatGrowthFrame) return;
+  chatGrowthFrame = requestAnimationFrame(() => {
+    chatGrowthFrame = 0;
     const target = Math.min(chatGrowthLimit, Math.max(grownChatHeight, pendingContentHeight));
-    if (target <= grownChatHeight + 1) return;
+    if (target <= grownChatHeight + 1) {
+      if (chatGrowthInFlight === 0) {
+        window.dispatchEvent(new Event("overlay-content-growth-settled"));
+      }
+      return;
+    }
     grownChatHeight = target;
+    chatGrowthInFlight++;
     const revision = chatEntryRevision;
     void queueLayoutResize(async () => {
-      if (mode.value !== "chat" || revision !== chatEntryRevision) return;
-      const window = getCurrentWebviewWindow();
-      const size = (await window.outerSize()).toLogical(await window.scaleFactor());
-      await resizeWindow(size.width / ((settingStore.zoom || 100) / 100), target, true, true);
+      try {
+        if (mode.value !== "chat" || revision !== chatEntryRevision) return;
+        const overlayWindow = getCurrentWebviewWindow();
+        const size = (await overlayWindow.outerSize()).toLogical(await overlayWindow.scaleFactor());
+        await resizeWindow(
+          size.width / ((settingStore.zoom || 100) / 100),
+          target,
+          true,
+          false,
+          "bottom",
+        );
+      } finally {
+        chatGrowthInFlight = Math.max(0, chatGrowthInFlight - 1);
+        if (chatGrowthInFlight === 0) {
+          window.dispatchEvent(new Event("overlay-content-growth-settled"));
+        }
+      }
     });
-  }, 100);
+  });
 }
 let windowWidthBeforeSidebar = PANEL_WIDTH;
 let windowWidthWithSidebar = PANEL_WIDTH;
 /** Last applied input-mode design size — skip redundant Win32 setMinSize/setSize. */
-let lastInputDesignWidth = 0;
 let lastInputDesignHeight = 0;
+let pendingInputDesignHeight: number | null = null;
 let inputResizeRevision = 0;
 let lastConstraints = "";
 let lastResizable: boolean | undefined;
@@ -107,7 +126,7 @@ let enteringChat = false;
 const windowLabel = getCurrentWebviewWindow().label;
 
 onUnmounted(() => {
-  if (chatGrowthTimer !== null) clearTimeout(chatGrowthTimer);
+  if (chatGrowthFrame) cancelAnimationFrame(chatGrowthFrame);
   ++chatEntryRevision;
   ++inputResizeRevision;
 });
@@ -214,14 +233,14 @@ async function resizeWindow(
     // Keep the top edge stable as the inline draft grows downward.
     let newY = verticalAnchor === "bottom" ? logicalPos.y - delta : logicalPos.y;
 
-    if (verticalAnchor === "top") {
-      if (monitor) {
-        const monitorPosition = monitor.position.toLogical(scaleFactor);
-        const monitorSize = monitor.size.toLogical(scaleFactor);
-        const monitorBottom = monitorPosition.y + monitorSize.height;
-        if (newY + scaledHeight > monitorBottom) {
-          newY = Math.max(monitorPosition.y, monitorBottom - scaledHeight);
-        }
+    if (monitor) {
+      const monitorPosition = monitor.position.toLogical(scaleFactor);
+      const monitorSize = monitor.size.toLogical(scaleFactor);
+      const monitorBottom = monitorPosition.y + monitorSize.height;
+      if (resizable && verticalAnchor === "top" && newY + scaledHeight > monitorBottom) {
+        newY = Math.max(monitorPosition.y, monitorBottom - scaledHeight);
+      } else if (verticalAnchor === "bottom") {
+        newY = Math.max(monitorPosition.y, newY);
       }
     }
 
@@ -234,6 +253,53 @@ function queueLayoutResize(operation: () => Promise<void>) {
     .then(operation)
     .catch((error) => console.error("Failed to resize overlay:", error));
   return layoutResizeQueue;
+}
+
+function requestInputResize(height: number, fitAttempt = 0) {
+  if (pendingInputDesignHeight !== null && Math.abs(height - pendingInputDesignHeight) < 1) {
+    return layoutResizeQueue;
+  }
+  if (pendingInputDesignHeight === null && Math.abs(height - lastInputDesignHeight) < 1) {
+    return layoutResizeQueue;
+  }
+  const revision = ++inputResizeRevision;
+  pendingInputDesignHeight = height;
+  return queueLayoutResize(async () => {
+    if (revision !== inputResizeRevision || mode.value !== "input") return;
+    try {
+      try {
+        await resizeOverlayInput(height, (settingStore.zoom || 100) / 100);
+      } catch (error) {
+        // During dev hot reload, the frontend may update before the Rust
+        // process registers the new command. Keep the input usable until restart.
+        log.warn("Native input resize unavailable; using window resize", error);
+        await applySizeConstraints("input", INPUT_HEIGHT);
+        await resizeWindow(PANEL_WIDTH, height, false);
+      }
+      lastConstraints = "";
+      lastResizable = false;
+      if (revision === inputResizeRevision) {
+        lastInputDesignHeight = height;
+        // Tauri's reported inner size can still differ from the WebView's
+        // actual viewport. Check the rendered dock against the visible edge.
+        if (fitAttempt < 2) {
+          requestAnimationFrame(() => {
+            if (revision !== inputResizeRevision || mode.value !== "input") return;
+            const dock = document.querySelector<HTMLElement>(".composer-dock");
+            if (!dock) return;
+            const zoom = (settingStore.zoom || 100) / 100;
+            const missingPixels =
+              dock.getBoundingClientRect().bottom + 6 * zoom - window.innerHeight;
+            if (missingPixels > 1) {
+              void requestInputResize(height + Math.ceil(missingPixels / zoom) + 2, fitAttempt + 1);
+            }
+          });
+        }
+      }
+    } finally {
+      if (revision === inputResizeRevision) pendingInputDesignHeight = null;
+    }
+  });
 }
 
 function handleLayoutChange(payload: {
@@ -320,22 +386,7 @@ function handleLayoutChange(payload: {
     chatWindowInitialized.value = false;
     lastComposerExtraHeight.value = 0;
     const nextHeight = inputBarHeight + extraHeight;
-    if (
-      Math.abs(nextHeight - lastInputDesignHeight) < 1 &&
-      Math.abs(PANEL_WIDTH - lastInputDesignWidth) < 1
-    ) {
-      return;
-    }
-    lastInputDesignWidth = PANEL_WIDTH;
-    lastInputDesignHeight = nextHeight;
-    const revision = ++inputResizeRevision;
-    queueLayoutResize(async () => {
-      // Rapid typing/picker changes only need the newest pending input size.
-      if (revision !== inputResizeRevision || mode.value !== "input") return;
-      await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-      if (revision !== inputResizeRevision || mode.value !== "input") return;
-      await resizeWindow(PANEL_WIDTH, nextHeight, false);
-    });
+    void requestInputResize(nextHeight);
     return;
   }
 
@@ -397,16 +448,8 @@ async function monitorHeightLimit() {
   if (!monitor) return null;
   const scaleFactor = await window.scaleFactor();
   const monitorSize = monitor.size.toLogical(scaleFactor);
-  const monitorPosition = monitor.position.toLogical(scaleFactor);
-  const position = (await window.outerPosition()).toLogical(scaleFactor);
   const zoom = (settingStore.zoom || 100) / 100;
-  return Math.max(
-    OVERLAY_MIN_HEIGHT_CHAT,
-    Math.min(
-      (monitorSize.height * 0.5) / zoom,
-      (monitorPosition.y + monitorSize.height - position.y - CHAT_SCREEN_MARGIN) / zoom,
-    ),
-  );
+  return Math.max(OVERLAY_MIN_HEIGHT_CHAT, (monitorSize.height * 0.5) / zoom);
 }
 
 async function preferredChatHeight(extraHeight = 0) {
@@ -461,12 +504,15 @@ async function enterChatMode(nextSessionId: string) {
 }
 
 async function resetToInputMode() {
-  if (chatGrowthTimer !== null) clearTimeout(chatGrowthTimer);
-  chatGrowthTimer = null;
+  if (chatGrowthFrame) cancelAnimationFrame(chatGrowthFrame);
+  chatGrowthFrame = 0;
+  chatGrowthInFlight = 0;
   grownChatHeight = OVERLAY_MIN_HEIGHT_CHAT;
   ++chatEntryRevision;
   enteringChat = false;
-  const revision = ++inputResizeRevision;
+  ++inputResizeRevision;
+  pendingInputDesignHeight = null;
+  lastInputDesignHeight = 0;
   mode.value = "input";
   sessionId.value = "";
   chatWindowInitialized.value = false;
@@ -479,13 +525,9 @@ async function resetToInputMode() {
   windowWidthWithSidebar = PANEL_WIDTH;
   chatStore.setOverlayDraftSession("");
   await setOverlayChatMode(windowLabel, false);
-  lastInputDesignWidth = PANEL_WIDTH;
-  lastInputDesignHeight = INPUT_HEIGHT;
-  await queueLayoutResize(async () => {
-    if (revision !== inputResizeRevision || mode.value !== "input") return;
-    await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-    await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false);
-  });
+  if (pendingInputDesignHeight === null && lastInputDesignHeight === 0) {
+    await requestInputResize(INPUT_HEIGHT);
+  }
 }
 
 async function close() {
@@ -503,12 +545,7 @@ onMounted(async () => {
   // tauri.conf / window.rs create 640×86, but zoomed shells still need a
   // matching LogicalSize or the first Alt+Alt frame looks clipped.
   if (mode.value === "input") {
-    queueLayoutResize(async () => {
-      lastInputDesignWidth = PANEL_WIDTH;
-      lastInputDesignHeight = INPUT_HEIGHT;
-      await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-      await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false);
-    });
+    void requestInputResize(INPUT_HEIGHT);
   }
   void window.listen<CapturedContext>(IPC_EVENTS.contextCaptured, (event) => {
     if (mode.value === "chat") {
@@ -553,8 +590,9 @@ watch(
       const zoom = (settingStore.zoom || 100) / 100;
       await resizeWindow(designWidth, logicalSize.height / zoom, true);
     } else {
-      await applySizeConstraints("input", OVERLAY_MIN_HEIGHT_INPUT);
-      await resizeWindow(PANEL_WIDTH, INPUT_HEIGHT, false);
+      lastInputDesignHeight = 0;
+      pendingInputDesignHeight = null;
+      void requestInputResize(INPUT_HEIGHT);
     }
   },
 );

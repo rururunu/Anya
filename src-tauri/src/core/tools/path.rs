@@ -225,6 +225,8 @@ mod tests {
         use crate::core::chat::conversation_manager::ConversationManager;
         use crate::core::event::{BusEvent, EventBus};
         use crate::core::tools::context::{AskStore, PathPermissionStore, ToolContext};
+        use crate::core::tools::tool_approval::shared_tool_approval_store;
+        use crate::models::settings::ToolApprovalMode;
         use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
         struct NullBus;
@@ -233,13 +235,15 @@ mod tests {
         }
 
         crate::core::tools::sandbox::configure(false, false, 120, 120);
+        let session_id = format!("s-denied-write-{}", uuid::Uuid::new_v4());
+        shared_tool_approval_store().set_session_mode(&session_id, Some(ToolApprovalMode::Ask));
         let db = std::env::temp_dir().join(format!("peek-path-{}.db", uuid::Uuid::new_v4()));
         let ws = std::env::temp_dir().join(format!("peek-ws-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&ws);
         let ctx = ToolContext {
             workspace_root: ws,
             request_context: Default::default(),
-            session_id: "s".into(),
+            session_id: session_id.clone(),
             assistant_message_id: "a".into(),
             conversation: Arc::new(ConversationManager::new(db)),
             event_bus: Arc::new(NullBus),
@@ -264,6 +268,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.message.contains("write outside workspace denied"));
+        shared_tool_approval_store().set_session_mode(&session_id, None);
     }
 
     #[test]

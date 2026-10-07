@@ -29,7 +29,7 @@ describe("capsule thinking slider", () => {
     wrapper.unmount();
   });
 
-  it("snaps dragging to available levels using the rail rather than padded hit area", async () => {
+  it("snaps dragging to the rail and commits the final level on release", async () => {
     const wrapper = mount(ThinkingEffortSlider, {
       props: { options, selectedId: "low", title: "思考强度" },
     });
@@ -42,12 +42,13 @@ describe("capsule thinking slider", () => {
     await wrapper
       .get(".thinking-slider-hit")
       .trigger("pointerdown", { button: 0, pointerId: 1, clientX: 120 });
-    await wrapper.setProps({ selectedId: "medium" });
+    expect(wrapper.emitted("select")).toBeUndefined();
     await wrapper
       .get(".thinking-slider-hit")
       .trigger("pointermove", { pointerId: 1, clientX: 240 });
+    expect(wrapper.emitted("select")).toBeUndefined();
     await wrapper.get(".thinking-slider-hit").trigger("pointerup", { pointerId: 1 });
-    expect(wrapper.emitted("select")).toEqual([["medium"], ["high"]]);
+    expect(wrapper.emitted("select")).toEqual([["high"]]);
     expect(hit.releasePointerCapture).toHaveBeenCalledWith(1);
     wrapper.unmount();
   });

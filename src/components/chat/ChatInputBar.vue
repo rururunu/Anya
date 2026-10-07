@@ -18,7 +18,11 @@
       'has-image-gen': effectiveChatMode === 'image',
     }"
   >
-    <Teleport :to="pickerTeleportTarget || 'body'" :disabled="!pickerTeleportTarget">
+    <Teleport
+      :key="inlineCompletionOpen ? 'completion-host' : 'floating-host'"
+      :to="pickerTeleportTarget || 'body'"
+      :disabled="!pickerTeleportTarget"
+    >
       <div
         class="picker-content"
         :class="{
@@ -28,256 +32,275 @@
         :style="chipPickerStyle"
         @mousedown="props.floatingPickerTarget && $event.stopPropagation()"
       >
-        <Transition :css="false" mode="out-in" @enter="gsapPickerEnter" @leave="gsapPickerLeave">
-          <WorkspacePickerPanel
-            v-if="workspacePickerOpen"
-            key="workspace-picker"
-            :title="tr(language, 'chatInput.workspacePanelTitle')"
-            :quick-select-only="workspaceQuickSelectOnly"
-            :workspaces="workspaces"
-            :current-workspace="currentWorkspace"
-            :selected-index="selectedIndex"
-            :saving="workspaceSaving"
-            :error="workspaceError"
-            :new-workspace-label="tr(language, 'chatInput.newWorkspace')"
-            :no-previous-workspaces-label="tr(language, 'chatInput.noPreviousWorkspaces')"
-            @add-new="addWorkspaceFromFolder"
-            @select="chooseWorkspace"
-          />
+        <WorkspacePickerPanel
+          v-if="workspacePickerOpen"
+          key="workspace-picker"
+          :title="tr(language, 'chatInput.workspacePanelTitle')"
+          :quick-select-only="workspaceQuickSelectOnly"
+          :workspaces="workspaces"
+          :current-workspace="currentWorkspace"
+          :selected-index="selectedIndex"
+          :saving="workspaceSaving"
+          :error="workspaceError"
+          :new-workspace-label="tr(language, 'chatInput.newWorkspace')"
+          :no-previous-workspaces-label="tr(language, 'chatInput.noPreviousWorkspaces')"
+          @add-new="addWorkspaceFromFolder"
+          @select="chooseWorkspace"
+        />
 
-          <AttachResourcePanel
-            v-else-if="attachPanelOpen"
-            key="attach-resource-panel"
-            :tab="attachPanelTab"
-            :loading="hashCatalogLoading"
-            :picking-files="attachPickingFiles"
-            :skills="attachSkillItems"
-            :mcp-servers="attachMcpItems"
-            :selected-index="selectedIndex"
-            :workspace-files="workspaceFiles"
-            :files-loading="workspaceFilesLoading"
-            :has-workspace="Boolean(currentWorkspace)"
-            :ariaLabel="tr(language, 'chatInput.attachPanelTitle')"
-            :skills-label="tr(language, 'chatInput.attachSkills')"
-            :mcp-label="tr(language, 'chatInput.attachMcp')"
-            :files-label="tr(language, 'chatInput.attachFiles')"
-            :pick-files-label="tr(language, 'chatInput.attachPickFiles')"
-            :files-loading-text="tr(language, 'chatInput.attachFilesLoading')"
-            :no-workspace-text="tr(language, 'chatInput.attachNoWorkspace')"
-            :empty-files-text="tr(language, 'chatInput.attachEmptyFiles')"
-            :insert-file-title="tr(language, 'chatInput.attachInsertFile')"
-            :insert-folder-title="tr(language, 'chatInput.attachInsertFolder')"
-            :loading-text="tr(language, 'chatInput.attachLoading')"
-            :empty-skills-text="tr(language, 'chatInput.attachEmptySkills')"
-            :empty-mcp-text="tr(language, 'chatInput.attachEmptyMcp')"
-            :expand-more-label="tr(language, 'chatInput.attachExpandMore')"
-            :collapse-label="tr(language, 'chatInput.attachCollapse')"
-            @tab-change="onAttachPanelTabChange"
-            @pick-files="pickAttachFiles"
-            @select-file="selectAttachWorkspaceFile"
-            @hover="onAttachPanelHover"
-            @select="selectAttachResource"
-            @visible-count="onAttachVisibleCount"
-          />
+        <AttachResourcePanel
+          v-else-if="attachPanelOpen"
+          key="attach-resource-panel"
+          :tab="attachPanelTab"
+          :loading="hashCatalogLoading"
+          :picking-files="attachPickingFiles"
+          :skills="attachSkillItems"
+          :mcp-servers="attachMcpItems"
+          :selected-index="selectedIndex"
+          :workspace-files="workspaceFiles"
+          :files-loading="workspaceFilesLoading"
+          :has-workspace="Boolean(currentWorkspace)"
+          :ariaLabel="tr(language, 'chatInput.attachPanelTitle')"
+          :skills-label="tr(language, 'chatInput.attachSkills')"
+          :mcp-label="tr(language, 'chatInput.attachMcp')"
+          :files-label="tr(language, 'chatInput.attachFiles')"
+          :pick-files-label="tr(language, 'chatInput.attachPickFiles')"
+          :files-loading-text="tr(language, 'chatInput.attachFilesLoading')"
+          :no-workspace-text="tr(language, 'chatInput.attachNoWorkspace')"
+          :empty-files-text="tr(language, 'chatInput.attachEmptyFiles')"
+          :insert-file-title="tr(language, 'chatInput.attachInsertFile')"
+          :insert-folder-title="tr(language, 'chatInput.attachInsertFolder')"
+          :loading-text="tr(language, 'chatInput.attachLoading')"
+          :empty-skills-text="tr(language, 'chatInput.attachEmptySkills')"
+          :empty-mcp-text="tr(language, 'chatInput.attachEmptyMcp')"
+          :expand-more-label="tr(language, 'chatInput.attachExpandMore')"
+          :collapse-label="tr(language, 'chatInput.attachCollapse')"
+          @tab-change="onAttachPanelTabChange"
+          @pick-files="pickAttachFiles"
+          @select-file="selectAttachWorkspaceFile"
+          @hover="onAttachPanelHover"
+          @select="selectAttachResource"
+          @visible-count="onAttachVisibleCount"
+        />
 
-          <AskUserPicker
-            v-else-if="showAskUserPicker"
-            key="ask-user-list"
-            :header="activeAskQuestion?.header"
-            :question="activeAskQuestion?.question"
-            :question-index="askQuestionIndex"
-            :question-count="askQuestionCount"
-            :options="activeAskOptions"
-            :multi-select="activeAskQuestion?.multiSelect"
-            :confirm-row-index="askConfirmRowIndex"
-            :confirm-label="tr(language, 'confirmSelection')"
-            :selected-count="askSelectedCount"
-            :selected-count-label="tr(language, 'askSelectedCount', { count: askSelectedCount })"
-            :selected-index="selectedIndex"
-            :ariaLabel="tr(language, 'select')"
-            :plan-switch="askIsPlanSwitch"
-            :is-option-selected="isAskOptionSelected"
-            @hover="selectedIndex = $event"
-            @select="selectAskOption"
-            @confirm="confirmAskSelection"
-          />
+        <AskUserPicker
+          v-else-if="showAskUserPicker"
+          key="ask-user-list"
+          :header="activeAskQuestion?.header"
+          :question="activeAskQuestion?.question"
+          :question-index="askQuestionIndex"
+          :question-count="askQuestionCount"
+          :options="activeAskOptions"
+          :multi-select="activeAskQuestion?.multiSelect"
+          :confirm-row-index="askConfirmRowIndex"
+          :confirm-label="tr(language, 'confirmSelection')"
+          :selected-count="askSelectedCount"
+          :selected-count-label="tr(language, 'askSelectedCount', { count: askSelectedCount })"
+          :selected-index="selectedIndex"
+          :ariaLabel="tr(language, 'select')"
+          :plan-switch="askIsPlanSwitch"
+          :is-option-selected="isAskOptionSelected"
+          @hover="selectedIndex = $event"
+          @select="selectAskOption"
+          @confirm="confirmAskSelection"
+        />
 
-          <PathPermissionPicker
-            v-else-if="showPathPermissionPicker"
-            key="path-permission-list"
-            :header="pathPermissionHeader"
-            :question="pathPermissionQuestion"
-            :path="props.pathPermission?.path"
-            :options="pathPermissionOptions"
-            :selected-index="selectedIndex"
-            :ariaLabel="tr(language, 'permissionRequest')"
-            @hover="selectedIndex = $event"
-            @select="selectPathPermission"
-          />
+        <PathPermissionPicker
+          v-else-if="showPathPermissionPicker"
+          key="path-permission-list"
+          :header="pathPermissionHeader"
+          :question="pathPermissionQuestion"
+          :path="props.pathPermission?.path"
+          :options="pathPermissionOptions"
+          :selected-index="selectedIndex"
+          :ariaLabel="tr(language, 'permissionRequest')"
+          @hover="selectedIndex = $event"
+          @select="selectPathPermission"
+        />
 
-          <ToolApprovalPicker
-            v-else-if="showToolApprovalPicker"
-            key="tool-approval-list"
-            :header="toolApprovalHeader"
-            :options="toolApprovalOptions"
-            :selected-index="selectedIndex"
-            :ariaLabel="tr(language, 'toolApprovalTitle')"
-            @hover="selectedIndex = $event"
-            @select="selectToolApproval"
-          />
+        <ToolApprovalPicker
+          v-else-if="showToolApprovalPicker"
+          key="tool-approval-list"
+          :header="toolApprovalHeader"
+          :options="toolApprovalOptions"
+          :selected-index="selectedIndex"
+          :ariaLabel="tr(language, 'toolApprovalTitle')"
+          @hover="selectedIndex = $event"
+          @select="selectToolApproval"
+        />
 
-          <HistoryPicker
-            v-else-if="showHistoryPicker"
-            key="history-list"
-            :items="historyItems"
-            :selected-index="selectedIndex"
-            :ariaLabel="tr(language, 'chatHistory')"
-            :format-time="formatTime"
-            @hover="selectedIndex = $event"
-            @select="selectHistorySession"
-          />
+        <HistoryPicker
+          v-else-if="showHistoryPicker"
+          key="history-list"
+          :items="historyItems"
+          :selected-index="selectedIndex"
+          :ariaLabel="tr(language, 'chatHistory')"
+          :format-time="formatTime"
+          @hover="selectedIndex = $event"
+          @select="selectHistorySession"
+        />
 
-          <ModelPicker
-            v-else-if="showModelPicker"
-            key="model-list"
-            :models="modelPickerModels"
-            :flat-grouped="props.inlineComposer"
-            :selected-model-id="chatModel"
-            :selected-provider="chatModelProvider"
-            :selected-index="selectedIndex"
-            :active-provider="modelPickerProvider"
-            :loading="chatModelStore.loading"
-            :refreshing="chatModelStore.refreshing"
-            :error="chatModelStore.error"
-            :loading-text="modelStatusText.loading"
-            :empty-text="modelPickerEmptyText"
-            :refresh-text="tr(language, 'refreshModels')"
-            :back-text="tr(language, 'backToProviders')"
-            :model-count-text="tr(language, 'providerModelCount')"
-            :ariaLabel="
-              modelPickerShowingGroups
-                ? tr(language, 'chooseProvider')
-                : tr(language, 'chooseModel')
-            "
-            :thinking-options="
-              !props.inlineComposer && showThinkingTierPicker ? thinkingTierPickerOptions : []
-            "
-            :thinking-selected-id="thinkingTierSelectedId"
-            :thinking-title="tr(language, 'thinkingTierLabel')"
-            @hover="selectedIndex = $event"
-            @select="selectModel"
-            @select-group="enterModelGroup"
-            @back="leaveModelGroup"
-            @refresh="refreshModelList"
-            @select-thinking="applyThinkingTier"
-          />
+        <ModelPicker
+          v-else-if="showModelPicker"
+          key="model-list"
+          :models="modelPickerModels"
+          flat-grouped
+          searchable
+          v-model:query="modelSearchQuery"
+          :search-placeholder="language === 'zh-CN' ? '搜索模型…' : 'Search models…'"
+          @close="closeModelPicker"
+          :selected-model-id="chatModel"
+          :selected-provider="chatModelProvider"
+          :selected-index="selectedIndex"
+          :active-provider="modelPickerProvider"
+          :loading="chatModelStore.loading"
+          :refreshing="chatModelStore.refreshing"
+          :error="chatModelStore.error"
+          :loading-text="modelStatusText.loading"
+          :empty-text="modelPickerEmptyText"
+          :refresh-text="tr(language, 'refreshModels')"
+          :back-text="tr(language, 'backToProviders')"
+          :model-count-text="tr(language, 'providerModelCount')"
+          :ariaLabel="
+            modelPickerShowingGroups ? tr(language, 'chooseProvider') : tr(language, 'chooseModel')
+          "
+          :thinking-options="[]"
+          :thinking-selected-id="thinkingTierSelectedId"
+          :thinking-title="tr(language, 'thinkingTierLabel')"
+          @hover="selectedIndex = $event"
+          @select="selectModel"
+          @select-group="enterModelGroup"
+          @back="leaveModelGroup"
+          @refresh="refreshModelList"
+          @select-thinking="applyThinkingTier"
+        />
 
-          <OptionPicker
-            v-else-if="showChatModePicker"
-            key="chat-mode-list"
-            compact
-            :options="chatModePickerOptions"
-            :selected-id="effectiveChatMode"
-            :selected-index="selectedIndex"
-            :ariaLabel="tr(language, 'chooseChatMode')"
-            @hover="selectedIndex = $event"
-            @select="selectChatMode"
-          />
+        <OptionPicker
+          v-else-if="showChatModePicker"
+          key="chat-mode-list"
+          compact
+          :options="chatModePickerOptions"
+          :selected-id="effectiveChatMode"
+          :selected-index="selectedIndex"
+          :ariaLabel="tr(language, 'chooseChatMode')"
+          @hover="selectedIndex = $event"
+          @select="selectChatMode"
+        />
 
-          <ThinkingEffortSlider
-            v-else-if="showThinkingTierSlider"
-            key="thinking-tier-slider"
-            :options="thinkingTierPickerOptions"
-            :selected-id="thinkingTierSelectedId"
-            :title="tr(language, 'thinkingTierLabel')"
-            @select="applyThinkingTier"
-          />
+        <ThinkingEffortSlider
+          v-else-if="showThinkingTierSlider"
+          key="thinking-tier-slider"
+          :options="thinkingTierPickerOptions"
+          :selected-id="thinkingTierSelectedId"
+          :title="tr(language, 'thinkingTierLabel')"
+          @select="selectThinkingTier"
+        />
 
-          <OptionPicker
-            v-else-if="showThinkingTierList"
-            key="thinking-tier-list"
-            compact
-            :options="thinkingTierPickerOptions"
-            :selected-id="thinkingTierSelectedId"
-            :selected-index="selectedIndex"
-            :ariaLabel="tr(language, 'chooseThinkingTier')"
-            @hover="selectedIndex = $event"
-            @select="selectThinkingTier"
-          />
+        <OptionPicker
+          v-else-if="showThinkingTierList"
+          key="thinking-tier-list"
+          compact
+          :options="thinkingTierPickerOptions"
+          :selected-id="thinkingTierSelectedId"
+          :selected-index="selectedIndex"
+          :ariaLabel="tr(language, 'chooseThinkingTier')"
+          @hover="selectedIndex = $event"
+          @select="selectThinkingTier"
+        />
 
-          <OptionPicker
-            v-else-if="showApprovalPicker"
-            key="approval-mode-list"
-            compact
-            :options="approvalPickerOptions"
-            :selected-id="sessionToolApprovalMode"
-            :selected-index="selectedIndex"
-            :ariaLabel="tr(language, 'toolApprovalMode')"
-            @hover="selectedIndex = $event"
-            @select="selectApprovalMode"
-          />
+        <OptionPicker
+          v-else-if="showApprovalPicker"
+          key="approval-mode-list"
+          compact
+          :options="approvalPickerOptions"
+          :selected-id="sessionToolApprovalMode"
+          :selected-index="selectedIndex"
+          :ariaLabel="tr(language, 'toolApprovalMode')"
+          @hover="selectedIndex = $event"
+          @select="selectApprovalMode"
+        />
 
-          <ImageGenSettingsPanel
-            v-else-if="showImageGenSettingsPanel"
-            key="image-gen-settings"
-            :model-value="imageGenOptions"
-            :language="language"
-            :ariaLabel="imageGenPickerAriaLabel"
-            @update:model-value="setImageGenOptions"
-          />
+        <ImageGenSettingsPanel
+          v-else-if="showImageGenSettingsPanel"
+          key="image-gen-settings"
+          :model-value="imageGenOptions"
+          :language="language"
+          :ariaLabel="imageGenPickerAriaLabel"
+          @update:model-value="setImageGenOptions"
+        />
 
-          <OptionPicker
-            v-else-if="showImageGenListPicker"
-            key="image-gen-list"
-            compact
-            :options="imageGenPickerOptions"
-            :selected-id="imageGenPickerSelectedId"
-            :selected-index="selectedIndex"
-            :ariaLabel="imageGenPickerAriaLabel"
-            @hover="selectedIndex = $event"
-            @select="selectImageGenOption"
-          />
+        <OptionPicker
+          v-else-if="showImageGenListPicker"
+          key="image-gen-list"
+          compact
+          :options="imageGenPickerOptions"
+          :selected-id="imageGenPickerSelectedId"
+          :selected-index="selectedIndex"
+          :ariaLabel="imageGenPickerAriaLabel"
+          @hover="selectedIndex = $event"
+          @select="selectImageGenOption"
+        />
 
-          <FileMentionPicker
-            v-else-if="showFileSuggestions"
-            key="file-suggestions"
-            :loading="workspaceFilesLoading"
-            :suggestions="fileSuggestions"
-            :selected-index="selectedIndex"
-            :loading-text="tr(language, 'loadingFiles')"
-            :empty-text="tr(language, 'noMatchingFiles')"
-            :ariaLabel="tr(language, 'workspace')"
-            @hover="selectedIndex = $event"
-            @select="selectWorkspaceFile"
-          />
+        <FileMentionPicker
+          v-else-if="showFileSuggestions"
+          key="file-suggestions"
+          :loading="workspaceFilesLoading"
+          :suggestions="fileSuggestions"
+          :selected-index="selectedIndex"
+          :loading-text="tr(language, 'loadingFiles')"
+          :empty-text="tr(language, 'noMatchingFiles')"
+          :ariaLabel="tr(language, 'workspace')"
+          @hover="selectedIndex = $event"
+          @select="selectWorkspaceFile"
+        />
 
-          <HashMentionPicker
-            v-else-if="showHashSuggestions"
-            key="hash-suggestions"
-            :loading="hashCatalogLoading"
-            :items="hashSuggestions"
-            :selected-index="selectedIndex"
-            :loading-text="tr(language, 'loadingHashMentions')"
-            :empty-text="tr(language, 'noMatchingHashMentions')"
-            :ariaLabel="tr(language, 'hashMentions')"
-            :skill-label="tr(language, 'hashSkill')"
-            :mcp-label="tr(language, 'hashMcp')"
-            :plugin-label="tr(language, 'hashPlugin')"
-            @hover="selectedIndex = $event"
-            @select="selectHashMention"
-          />
+        <HashMentionPicker
+          v-else-if="showHashSuggestions"
+          key="hash-suggestions"
+          :loading="hashCatalogLoading"
+          :items="hashSuggestions"
+          :selected-index="selectedIndex"
+          :loading-text="tr(language, 'loadingHashMentions')"
+          :empty-text="tr(language, 'noMatchingHashMentions')"
+          :ariaLabel="tr(language, 'hashMentions')"
+          :skill-label="tr(language, 'hashSkill')"
+          :mcp-label="tr(language, 'hashMcp')"
+          :plugin-label="tr(language, 'hashPlugin')"
+          @hover="selectedIndex = $event"
+          @select="selectHashMention"
+        />
 
-          <CommandSuggestions
-            v-else-if="showCommandSuggestions"
-            key="command-list"
-            :commands="filteredCommands"
-            :selected-index="selectedIndex"
-            :appearance="props.appearance"
-            :ariaLabel="tr(language, 'commandSuggestions')"
-            @hover="selectedIndex = $event"
-            @select="executeCommand"
-          />
-        </Transition>
+        <CommandSuggestions
+          v-else-if="showCommandSuggestions"
+          key="command-list"
+          :commands="filteredCommands"
+          :selected-index="selectedIndex"
+          :appearance="props.appearance"
+          :ariaLabel="tr(language, 'commandSuggestions')"
+          @hover="selectedIndex = $event"
+          @select="executeCommand"
+        />
+        <div
+          v-if="fullApprovalConfirmOpen"
+          class="command-list full-approval-bubble"
+          role="alertdialog"
+          :aria-label="fullApprovalBubbleCopy.title"
+          aria-describedby="full-approval-description"
+          @mousedown.stop
+        >
+          <strong class="full-approval-title">{{ fullApprovalBubbleCopy.title }}</strong>
+          <p id="full-approval-description" class="full-approval-description">
+            {{ fullApprovalBubbleCopy.description }}
+          </p>
+          <div class="full-approval-actions">
+            <button type="button" class="full-approval-cancel" @click="settleFullApproval(false)">
+              {{ fullApprovalBubbleCopy.cancelLabel }}
+            </button>
+            <button type="button" class="full-approval-confirm" @click="settleFullApproval(true)">
+              {{ fullApprovalBubbleCopy.confirmLabel }}
+            </button>
+          </div>
+        </div>
       </div>
     </Teleport>
 
@@ -445,7 +468,7 @@
             @mousedown.stop
             @click.stop="toggleAttachPanel"
           >
-            <span aria-hidden="true">+</span>
+            <Plus :size="18" :stroke-width="2" aria-hidden="true" />
           </button>
 
           <div
@@ -523,86 +546,6 @@
             </button>
           </div>
 
-          <div class="model-picker model-slot">
-            <TooltipProvider :delay-duration="220">
-              <Tooltip :disabled="modelPickerOpen || !currentProviderHover">
-                <TooltipTrigger as-child>
-                  <button
-                    ref="modelButtonRef"
-                    type="button"
-                    class="model-badge footer-chip"
-                    data-picker-trigger
-                    data-tauri-drag-region="false"
-                    :class="{ open: modelPickerOpen, confirm: modelChipConfirm }"
-                    :aria-label="modelBadgeTitle"
-                    :title="modelBadgeTitle"
-                    aria-haspopup="listbox"
-                    :aria-expanded="modelPickerOpen"
-                    @mousedown.stop
-                    @click.stop="toggleModelMenu"
-                  >
-                    <span class="footer-chip-icon-slot" aria-hidden="true">
-                      <component
-                        :is="currentModelProviderIcon"
-                        v-if="currentModelProviderIcon"
-                        :size="13"
-                        class="footer-chip-icon"
-                      />
-                    </span>
-                    <span class="model-name" :key="currentModelDisplayName">
-                      {{ currentModelDisplayName }}
-                    </span>
-                    <span
-                      v-if="
-                        !props.inlineComposer && showThinkingTierPicker && currentThinkingTierLabel
-                      "
-                      class="model-tier"
-                      :title="thinkingTierBadgeTitle"
-                    >
-                      <span class="model-tier-sep" aria-hidden="true">·</span>
-                      {{ currentThinkingTierLabel }}
-                    </span>
-                    <ChevronDown :size="11" class="model-chevron" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent
-                  v-if="currentProviderHover"
-                  side="top"
-                  :side-offset="8"
-                  class="model-provider-tooltip"
-                >
-                  <ModelProviderTip
-                    :name="currentProviderHover.name"
-                    :detail="currentProviderHover.detail"
-                    :brand-icon="currentProviderHover.brandIcon"
-                    :favicon="currentProviderHover.favicon"
-                  />
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-
-          <div
-            v-if="props.inlineComposer && showThinkingTierPicker"
-            class="model-picker thinking-slot"
-          >
-            <button
-              ref="thinkingTierButtonRef"
-              type="button"
-              class="model-badge footer-chip"
-              data-picker-trigger
-              :title="thinkingTierBadgeTitle"
-              :aria-label="thinkingTierBadgeTitle"
-              :aria-expanded="thinkingPopupOpen"
-              aria-haspopup="dialog"
-              :class="{ open: thinkingPopupOpen }"
-              @mousedown.stop
-              @click.stop="thinkingPopupOpen ? closeThinkingTierPicker() : openThinkingTierPicker()"
-            >
-              <span class="model-name">{{ currentThinkingTierLabel }}</span>
-            </button>
-          </div>
-
           <div
             class="model-picker approval-slot"
             :class="{ dormant: effectiveChatMode === 'ask' }"
@@ -640,6 +583,77 @@
 
         <div class="input-footer-actions">
           <slot name="actions" />
+
+          <div class="composer-model-controls">
+            <div class="model-picker model-slot">
+              <TooltipProvider :delay-duration="220">
+                <Tooltip :disabled="modelPickerOpen || !currentProviderHover">
+                  <TooltipTrigger as-child>
+                    <button
+                      ref="modelButtonRef"
+                      type="button"
+                      class="model-badge footer-chip"
+                      data-picker-trigger
+                      data-tauri-drag-region="false"
+                      :class="{ open: modelPickerOpen, confirm: modelChipConfirm }"
+                      :aria-label="modelBadgeTitle"
+                      :title="modelBadgeTitle"
+                      aria-haspopup="listbox"
+                      :aria-expanded="modelPickerOpen"
+                      @mousedown.stop.prevent
+                      @click.stop="toggleModelMenu"
+                    >
+                      <span class="footer-chip-icon-slot" aria-hidden="true">
+                        <component
+                          :is="currentModelProviderIcon || Bot"
+                          :size="13"
+                          class="footer-chip-icon"
+                        />
+                      </span>
+                      <span class="model-name" :key="currentModelDisplayName">
+                        {{ currentModelDisplayName }}
+                      </span>
+                      <ChevronDown :size="11" class="model-chevron" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    v-if="currentProviderHover"
+                    side="top"
+                    :side-offset="8"
+                    class="model-provider-tooltip"
+                  >
+                    <ModelProviderTip
+                      :name="currentProviderHover.name"
+                      :detail="currentProviderHover.detail"
+                      :brand-icon="currentProviderHover.brandIcon"
+                      :favicon="currentProviderHover.favicon"
+                    />
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+
+            <div v-if="showThinkingTierPicker" class="model-picker thinking-slot">
+              <button
+                ref="thinkingTierButtonRef"
+                type="button"
+                class="model-badge footer-chip"
+                data-picker-trigger
+                data-tauri-drag-region="false"
+                :title="thinkingTierBadgeTitle"
+                :aria-label="thinkingTierBadgeTitle"
+                :aria-expanded="thinkingPopupOpen"
+                aria-haspopup="dialog"
+                :class="{ open: thinkingPopupOpen }"
+                @mousedown.stop
+                @click.stop="
+                  thinkingPopupOpen ? closeThinkingTierPicker() : openThinkingTierPicker()
+                "
+              >
+                <span class="model-name">{{ currentThinkingTierLabel }}</span>
+              </button>
+            </div>
+          </div>
 
           <span
             v-if="conversationTokenCount || cacheHitPercent != null"
@@ -726,9 +740,10 @@ import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import { fullApprovalConfirmOptions } from "@/services/chat/fullApprovalConfirm";
 import { useEventListener } from "@vueuse/core";
 import { storeToRefs } from "pinia";
-import { gsapPickerEnter, gsapPickerLeave } from "@/services/motion/gsapPresets";
 import {
+  Bot,
   ChevronDown,
+  Plus,
   File,
   Folder,
   X,
@@ -869,6 +884,7 @@ import { useComposerAttachments } from "@/composables/chat/useComposerAttachment
 import UserAvatar from "@/components/chat/UserAvatar.vue";
 import { useComposerDraft } from "@/composables/chat/useComposerDraft";
 import { useComposerKeyboard } from "@/composables/chat/useComposerKeyboard";
+import { useComposerPickerFocus } from "@/composables/chat/useComposerPickerFocus";
 import { useComposerLayout } from "@/composables/chat/useComposerLayout";
 import { useComposerMentions } from "@/composables/chat/useComposerMentions";
 import { useComposerPickers } from "@/composables/chat/useComposerPickers";
@@ -1032,11 +1048,15 @@ const {
 
 const chatInputShellRef = ref<HTMLElement | null>(null);
 const completionHostRef = ref<HTMLElement | null>(null);
-const inlineCompletionOpen = computed(() => props.inlineComposer && showSuggestions.value);
+const inlineCompletionOpen = computed(
+  () => props.inlineComposer && showSuggestions.value && !interactivePickerOpen.value,
+);
 const pickerTeleportTarget = computed(() =>
   inlineCompletionOpen.value ? completionHostRef.value : props.floatingPickerTarget,
 );
 const approvalConfirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null);
+const fullApprovalConfirmOpen = ref(false);
+const fullApprovalBubbleCopy = computed(() => fullApprovalConfirmOptions(language.value));
 const attachButtonRef = ref<HTMLButtonElement | null>(null);
 const workspaceButtonRef = ref<HTMLButtonElement | null>(null);
 const chatModeButtonRef = ref<HTMLButtonElement | null>(null);
@@ -1254,23 +1274,14 @@ const availableModels = computed(() => {
   return models;
 });
 
-/** Draft stashed while the model list uses the input as a filter query. */
-const modelPickerDraft = ref<string | null>(null);
+const modelSearchQuery = ref("");
 
 function beginModelFilterSession() {
-  if (modelPickerDraft.value !== null) {
-    return;
-  }
-  modelPickerDraft.value = message.value;
-  message.value = "";
+  modelSearchQuery.value = "";
 }
 
 function endModelFilterSession() {
-  if (modelPickerDraft.value === null) {
-    return;
-  }
-  message.value = modelPickerDraft.value;
-  modelPickerDraft.value = null;
+  modelSearchQuery.value = "";
 }
 
 const {
@@ -1330,39 +1341,25 @@ const modelPickerModels = computed(() => {
   if (!modelPickerOpen.value) {
     return models;
   }
-  return models.filter((model) => modelMatchesFilter(model, message.value));
+  return models.filter((model) => modelMatchesFilter(model, modelSearchQuery.value));
 });
 
 const modelPickerGroups = computed(() =>
   groupModelsByProvider(modelPickerModels.value, settingStore.customProviders),
 );
 
-const modelPickerHierarchical = computed(
-  () => !props.inlineComposer && modelPickerGroups.value.length > 1,
-);
+const modelPickerHierarchical = computed(() => false);
 
 const modelPickerShowingGroups = computed(
   () => modelPickerHierarchical.value && modelPickerProvider.value === null,
 );
 
-const modelPickerActiveModels = computed(() => {
-  if (props.inlineComposer) return modelPickerGroups.value.flatMap((group) => group.models);
-  if (modelPickerShowingGroups.value) {
-    return [];
-  }
-  if (modelPickerProvider.value) {
-    return (
-      modelPickerGroups.value.find((group) => group.provider === modelPickerProvider.value)
-        ?.models ?? []
-    );
-  }
-  return modelPickerGroups.value.length === 1
-    ? modelPickerGroups.value[0].models
-    : modelPickerModels.value;
-});
+const modelPickerActiveModels = computed(() =>
+  modelPickerGroups.value.flatMap((group) => group.models),
+);
 
 const modelPickerEmptyText = computed(() => {
-  if (modelPickerOpen.value && message.value.trim()) {
+  if (modelPickerOpen.value && modelSearchQuery.value.trim()) {
     return modelPickerShowingGroups.value
       ? tr(language.value, "noMatchingProviders")
       : tr(language.value, "noMatchingModels");
@@ -1749,9 +1746,16 @@ const chipPickerOpen = computed(
     showModelPicker.value ||
     showChatModePicker.value ||
     showApprovalPicker.value ||
+    fullApprovalConfirmOpen.value ||
     thinkingPopupOpen.value ||
     showImageGenPicker.value,
 );
+
+useComposerPickerFocus({
+  open: chipPickerOpen,
+  editor: () => composerRef.value?.el,
+  focusEditor: focusInput,
+});
 
 const modelPickerRowCount = computed(() => {
   if (!showModelPicker.value) {
@@ -1861,6 +1865,7 @@ const interactivePickerOpen = computed(
     showModelPicker.value ||
     showChatModePicker.value ||
     showApprovalPicker.value ||
+    fullApprovalConfirmOpen.value ||
     thinkingPopupOpen.value ||
     showImageGenPicker.value ||
     workspacePickerOpen.value ||
@@ -1873,16 +1878,14 @@ const interactionRequestOpen = computed(
 );
 isInteractionRequestOpenImpl = () => interactionRequestOpen.value;
 
-/** Pickers that must keep the input read-only (model picker allows typing to filter). */
+/** Only modal requests block drafting; footer menus never disable the editor. */
 const inputLockedForTyping = computed(
   () =>
     showAskUserPicker.value ||
     showPathPermissionPicker.value ||
     showToolApprovalPicker.value ||
     showHistoryPicker.value ||
-    showChatModePicker.value ||
-    showApprovalPicker.value ||
-    thinkingPopupOpen.value ||
+    fullApprovalConfirmOpen.value ||
     showImageGenListPicker.value ||
     workspacePickerOpen.value ||
     attachPanelOpen.value,
@@ -1982,6 +1985,7 @@ function layoutChromeSignature() {
     modelPickerShowingGroups.value,
     showChatModePicker.value,
     showApprovalPicker.value,
+    fullApprovalConfirmOpen.value,
     thinkingPopupOpen.value,
     imageGenPickerOpen.value,
     interactionRequestOpen.value,
@@ -2009,6 +2013,7 @@ function estimateActivePickerHeight(pickerRows: number): number {
   if (showApprovalPicker.value) {
     return 10 + approvalPickerOptions.value.length * 36;
   }
+  if (fullApprovalConfirmOpen.value) return 220;
   if (showThinkingTierSlider.value) {
     return 120;
   }
@@ -2026,22 +2031,8 @@ function estimateActivePickerHeight(pickerRows: number): number {
       return 6 + Math.max(modelPickerGroups.value.length, 1) * 32 + 34;
     }
     const back = modelPickerHierarchical.value ? 32 : 0;
-    // Inline thinking-effort slider under the current model adds one strip.
-    const thinkingStrip =
-      !props.inlineComposer &&
-      showThinkingTierPicker.value &&
-      thinkingTierPickerOptions.value.length > 1
-        ? 32
-        : 0;
-    const groupHeaders = props.inlineComposer ? modelPickerGroups.value.length * 28 : 0;
-    return (
-      6 +
-      back +
-      groupHeaders +
-      Math.max(modelPickerActiveModels.value.length, 1) * 32 +
-      34 +
-      thinkingStrip
-    );
+    const groupHeaders = 42 + modelPickerGroups.value.length * 28;
+    return 6 + back + groupHeaders + Math.max(modelPickerActiveModels.value.length, 1) * 32 + 34;
   }
   if (showHistoryPicker.value) {
     return 10 + Math.max(historyItems.value.length, 1) * 32;
@@ -2079,6 +2070,7 @@ function activePickerRowCount(): number {
   if (showModelPicker.value) return modelPickerRowCount.value;
   if (showChatModePicker.value) return chatModePickerRowCount.value;
   if (showApprovalPicker.value) return approvalPickerRowCount.value;
+  if (fullApprovalConfirmOpen.value) return 1;
   if (thinkingPopupOpen.value) return thinkingTierPickerRowCount.value;
   if (showImageGenPicker.value) return imageGenPickerRowCount.value;
   if (showSuggestions.value) return suggestionCount.value;
@@ -2153,8 +2145,8 @@ function leaveModelGroup() {
 }
 
 async function openModelPicker() {
-  await prepareChipPicker();
   beginModelFilterSession();
+  prepareChipPicker();
   modelPickerProvider.value = null;
   selectedIndex.value = modelPickerHierarchical.value
     ? currentModelGroupIndex()
@@ -2163,8 +2155,6 @@ async function openModelPicker() {
   await positionChipPicker(modelButtonRef.value, 340);
   await syncPopupState(true);
   emitLayoutChange();
-  void focusInput();
-
   if (chatModelStore.models.length === 0) {
     void chatModelStore.fetch().then(() => {
       if (modelPickerOpen.value) {
@@ -2172,16 +2162,12 @@ async function openModelPicker() {
       }
     });
   } else {
-    void chatModelStore.softRefresh().then(() => {
-      if (modelPickerOpen.value) {
-        emitLayoutChange();
-      }
-    });
+    chatModelStore.queueBackgroundRefresh();
   }
 }
 
 async function openApprovalPicker() {
-  await prepareChipPicker();
+  prepareChipPicker();
   const idx = approvalPickerOptions.value.findIndex(
     (option) => option.id === sessionToolApprovalMode.value,
   );
@@ -2193,11 +2179,10 @@ async function openApprovalPicker() {
   );
   await syncPopupState(true);
   emitLayoutChange();
-  void focusInput();
 }
 
 async function openChatModePicker() {
-  await prepareChipPicker();
+  prepareChipPicker();
   const idx = chatModePickerOptions.value.findIndex(
     (option) => option.id === effectiveChatMode.value,
   );
@@ -2206,13 +2191,12 @@ async function openChatModePicker() {
   await positionChipPicker(chatModeButtonRef.value, 132);
   await syncPopupState(true);
   emitLayoutChange();
-  void focusInput();
 }
 
 async function onContextUsageOpenChange(open: boolean, trigger: HTMLElement | null) {
   if (!props.floatingPickerTarget) return;
   if (open) {
-    await prepareChipPicker();
+    prepareChipPicker();
     contextUsageOpen.value = true;
     await positionChipPicker(trigger, 300);
   } else {
@@ -2226,7 +2210,7 @@ async function openThinkingTierPicker(mode: "slider" | "list" = "slider") {
   if (!showThinkingTierPicker.value) {
     return;
   }
-  await prepareChipPicker();
+  prepareChipPicker();
   const idx = thinkingTierPickerOptions.value.findIndex(
     (option) => option.id === thinkingTierSelectedId.value,
   );
@@ -2239,7 +2223,6 @@ async function openThinkingTierPicker(mode: "slider" | "list" = "slider") {
   );
   await syncPopupState(true);
   emitLayoutChange();
-  void focusInput();
 }
 
 function toggleModelMenu() {
@@ -2277,7 +2260,7 @@ async function toggleImageGenPicker(id: ImageGenFieldId, button: HTMLElement) {
   const stayingOnSettings =
     isImageGenSettingsField(id) && isImageGenSettingsField(imageGenPickerOpen.value);
   if (!stayingOnSettings) {
-    await prepareChipPicker();
+    prepareChipPicker();
   }
   imageGenPickerOpen.value = id;
   if (isImageGenListField(id)) {
@@ -2377,21 +2360,66 @@ async function refreshModelList() {
 }
 
 async function selectApprovalMode(mode: string) {
-  closeApprovalPicker();
   const next = mode as ToolApprovalMode;
   if (next === sessionToolApprovalMode.value) {
+    closeApprovalPicker();
     return;
   }
   if (next === "alwaysAllow") {
+    if (props.appearance === "overlay") {
+      closeApprovalPicker(true);
+      fullApprovalConfirmOpen.value = true;
+      await positionChipPicker(approvalButtonRef.value ?? chatModeButtonRef.value, 360);
+      await syncPopupState(true);
+      emitLayoutChange();
+      return;
+    }
+    closeApprovalPicker();
     const confirmed = await approvalConfirmDialogRef.value?.ask(
       fullApprovalConfirmOptions(language.value),
     );
     if (!confirmed) {
       return;
     }
+  } else {
+    closeApprovalPicker();
   }
   updateCompose({ toolApprovalMode: next });
 }
+
+function settleFullApproval(confirmed: boolean) {
+  fullApprovalConfirmOpen.value = false;
+  if (confirmed) updateCompose({ toolApprovalMode: "alwaysAllow" });
+  void syncPopupState(false);
+  emitLayoutChange();
+  void focusInput();
+}
+
+useEventListener(document, "pointerdown", (event) => {
+  if (!fullApprovalConfirmOpen.value || event.button !== 0) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest(".full-approval-bubble")) return;
+  settleFullApproval(false);
+});
+
+useEventListener(
+  window,
+  "keydown",
+  (event) => {
+    if (!fullApprovalConfirmOpen.value) return;
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      settleFullApproval(false);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      settleFullApproval(true);
+    }
+  },
+  { capture: true },
+);
 
 function selectChatMode(mode: string) {
   closeChatModePicker();
@@ -2463,6 +2491,10 @@ function applyThinkingTier(variantId: string) {
 function selectThinkingTier(variantId: string) {
   closeThinkingTierPicker();
   applyThinkingTier(variantId);
+  // Selection is a terminal menu action. Restore the editor in the same tick
+  // instead of relying only on the generic picker watcher, which can race the
+  // teleported panel unmount and leave the overlay temporarily unfocused.
+  void focusInput();
 }
 
 onMounted(async () => {
@@ -2558,13 +2590,18 @@ watch(
   { immediate: true },
 );
 
-const isCommandMode = computed(
-  () =>
-    !interactivePickerOpen.value &&
-    props.enableCommands &&
-    message.value.startsWith("/") &&
-    !message.value.includes(" "),
-);
+const activeCommand = computed(() => {
+  if (interactivePickerOpen.value || !props.enableCommands) return null;
+  const beforeCaret = message.value.slice(0, composerCaret.value);
+  const match = /(^|\s)(\/[\w-]*)$/.exec(beforeCaret);
+  if (!match) return null;
+  const start = beforeCaret.length - match[2].length;
+  if (message.value[composerCaret.value] && !/\s/.test(message.value[composerCaret.value]))
+    return null;
+  return { start, end: composerCaret.value, query: match[2] };
+});
+const isCommandMode = computed(() => activeCommand.value !== null);
+const dismissedCommand = ref<string | null>(null);
 
 watch(
   () => [props.enableCommands, props.contextReady] as const,
@@ -2583,7 +2620,7 @@ const filteredCommands = computed(() => {
     return [];
   }
 
-  const query = message.value.toLowerCase();
+  const query = activeCommand.value!.query.toLowerCase();
   return slashCommands
     .filter(
       (item) =>
@@ -2602,7 +2639,10 @@ const filteredCommands = computed(() => {
 });
 
 const showCommandSuggestions = computed(
-  () => isCommandMode.value && filteredCommands.value.length > 0,
+  () =>
+    isCommandMode.value &&
+    filteredCommands.value.length > 0 &&
+    dismissedCommand.value !== `${activeCommand.value?.start}:${activeCommand.value?.query}`,
 );
 
 const workspaceFiles = ref<string[]>([]);
@@ -2944,9 +2984,15 @@ async function executeCommand(command: string) {
     log.debug("slash command blocked", { command, contextReady: props.contextReady });
     return;
   }
-  message.value = "";
+  const token = activeCommand.value;
+  if (token) {
+    message.value = message.value.slice(0, token.start) + message.value.slice(token.end);
+    composerCaret.value = token.start;
+  } else if (message.value.trim() === command) {
+    message.value = "";
+    composerCaret.value = 0;
+  }
   persistDraft();
-  clearComposerSegments();
   selectedIndex.value = 0;
   emitLayoutChange();
   const action = await executeSlashCommand(command);
@@ -3496,9 +3542,27 @@ function selectToolApproval(decision: ToolApprovalDecision) {
 }
 
 function handleComposerKeydown(event: KeyboardEvent) {
+  if (
+    chipPickerOpen.value &&
+    !fullApprovalConfirmOpen.value &&
+    event.target === composerRef.value?.el &&
+    (event.isComposing ||
+      event.keyCode === 229 ||
+      (!event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        (event.key.length === 1 || event.key === "Backspace" || event.key === "Delete")))
+  ) {
+    closeChipPickers();
+    void syncPopupState(false);
+    emitLayoutChange();
+    return;
+  }
   if (event.isComposing || event.keyCode === 229) {
     return;
   }
+
+  if (fullApprovalConfirmOpen.value) return;
 
   // Ctrl/Cmd+Z: programmatic composer edits (chip removal, mention truncation,
   // setMessage) bypass the textarea's native undo stack, so replay them from the
@@ -3991,10 +4055,8 @@ function handleComposerKeydown(event: KeyboardEvent) {
 
     if (event.key === "Escape") {
       event.preventDefault();
-      composerUndo.push(captureComposerSnapshot());
-      message.value = "";
+      dismissedCommand.value = `${activeCommand.value?.start}:${activeCommand.value?.query}`;
       selectedIndex.value = 0;
-      emitLayoutChange();
       return;
     }
   }
@@ -4017,6 +4079,13 @@ const { handleKeydown, handleGlobalKeydown, restorePickerFocus } = useComposerKe
   composerRef,
   handleKeydown: handleComposerKeydown,
   focusInput: async () => {
+    if (modelPickerOpen.value) {
+      await nextTick();
+      (pickerTeleportTarget.value ?? chatInputShellRef.value)
+        ?.querySelector<HTMLInputElement>(".model-search-input")
+        ?.focus({ preventScroll: true });
+      return;
+    }
     await focusInput();
     if (!inputLockedForTyping.value) {
       composerRef.value?.setSelection(Math.min(composerCaret.value, message.value.length));
@@ -4129,7 +4198,7 @@ watch([() => chatModelStore.loading, () => chatModelStore.error, modelPickerMode
 });
 
 watch(
-  () => message.value,
+  () => modelSearchQuery.value,
   () => {
     if (!modelPickerOpen.value) {
       return;
@@ -4390,6 +4459,51 @@ watch(
 .picker-content {
   display: contents;
 }
+.full-approval-bubble {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 280px;
+  padding: 14px;
+  border: 1px solid var(--peek-border);
+  border-radius: 10px;
+  background: var(--peek-surface);
+  color: var(--peek-text);
+  box-shadow: var(--peek-elev-md);
+  overflow-y: auto;
+}
+.full-approval-title {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.full-approval-description {
+  margin: 8px 0 0;
+  color: var(--peek-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.full-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.full-approval-actions button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--peek-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--peek-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.full-approval-actions .full-approval-confirm {
+  border-color: var(--peek-danger);
+  background: var(--peek-danger);
+  color: #fff;
+}
 .floating-picker-content {
   display: block;
   position: absolute;
@@ -4418,6 +4532,10 @@ watch(
   background: var(--peek-surface);
   box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
   pointer-events: auto;
+}
+.floating-picker-content :deep(.command-list.full-approval-bubble) {
+  padding: 14px;
+  border-radius: 10px;
 }
 .floating-picker-content :deep(.command-list.thinking-effort-panel) {
   padding: 16px 18px 18px;
@@ -4877,6 +4995,14 @@ watch(
   align-items: center;
 }
 
+.composer-model-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
 .conversation-token-meta {
   display: inline-flex;
   align-items: baseline;
@@ -5139,7 +5265,7 @@ watch(
 .workbench-composer .input-footer {
   flex: none;
   min-height: 30px;
-  align-items: flex-end;
+  align-items: center;
   padding-top: 0;
   margin-top: auto;
 }
@@ -5154,6 +5280,20 @@ watch(
 .workbench-composer .input-footer-actions {
   flex: none;
   gap: 8px;
+}
+
+@container composer (min-width: 601px) {
+  .workbench-composer .composer-model-controls {
+    gap: 0;
+  }
+
+  .workbench-composer .model-slot .footer-chip {
+    padding-right: 4px;
+  }
+
+  .workbench-composer .thinking-slot .footer-chip {
+    padding-inline: 4px;
+  }
 }
 
 .workbench-composer .footer-chip {
@@ -5305,13 +5445,13 @@ watch(
   right: auto;
   bottom: var(--chip-picker-bottom, 42px);
   left: var(--chip-picker-left, 8px);
-  width: min(var(--chip-picker-width, 220px), calc(100% - 16px));
-  max-width: 240px;
+  width: min(var(--chip-picker-width, 280px), calc(100% - 16px));
+  max-width: none;
   max-height: none;
-  padding: 10px 12px 12px;
+  padding: 16px 18px 18px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--peek-text) 12%, transparent);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--peek-surface);
   box-shadow: 0 12px 30px color-mix(in srgb, #000 20%, transparent);
 }
@@ -5402,9 +5542,6 @@ watch(
 }
 
 @media (max-width: 760px) {
-  .workbench-composer .input-footer {
-    align-items: flex-end;
-  }
   .workbench-composer .model-name {
     max-width: 88px;
   }
@@ -5487,7 +5624,7 @@ watch(
 .footer-chip {
   height: var(--peek-control-icon, 28px);
   border: 0;
-  border-radius: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--peek-muted);
   box-shadow: none;
@@ -5559,23 +5696,22 @@ watch(
 }
 
 @container composer (max-width: 600px) {
-  .footer-chip .model-name,
-  .footer-chip .model-tier,
-  .footer-chip .model-chevron {
+  .workbench-composer .model-picker:not(.thinking-slot) .model-name,
+  .workbench-composer .model-picker:not(.thinking-slot) .model-tier,
+  .workbench-composer .model-picker:not(.thinking-slot) .model-chevron {
     display: none;
   }
-  .footer-chip {
+  .workbench-composer .model-picker:not(.thinking-slot) .footer-chip {
     width: var(--peek-control-icon, 28px);
     max-width: none;
     padding: 0;
     justify-content: center;
     gap: 0;
   }
-  .workbench-composer .footer-chip,
-  .workbench-composer .model-badge {
-    width: var(--peek-control-icon, 28px);
+  .workbench-composer .thinking-slot .footer-chip {
+    width: auto;
     max-width: none;
-    padding: 0;
+    padding-inline: 4px;
   }
 }
 
@@ -5868,7 +6004,8 @@ watch(
 }
 .input-footer .model-name {
   display: block;
-  line-height: 1;
+  line-height: 1.5;
+  padding-block: 1px;
 }
 
 .model-badge > svg,
@@ -5922,10 +6059,20 @@ watch(
 .model-badge.open,
 .model-badge:focus-visible {
   color: var(--peek-text);
-  background: transparent;
+  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
   border: 0;
   box-shadow: none;
   outline: none;
+}
+
+.input-footer .footer-chip.open {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--peek-accent) 10%, var(--peek-surface));
+}
+
+.input-footer .footer-chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--peek-accent) 45%, transparent);
+  outline-offset: 2px;
 }
 
 .context-label {
@@ -5978,10 +6125,6 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--peek-font-sans);
-  font-size: 21px;
-  font-weight: 400;
-  line-height: 1;
   transition: color var(--motion-fast, 110ms) ease;
 }
 
@@ -6032,6 +6175,8 @@ watch(
 .workbench-composer .attach-trigger-btn {
   width: var(--peek-control-icon, 28px);
   height: var(--peek-control-icon, 28px);
+  margin-left: -6px;
+  margin-right: 6px;
 }
 
 .send-btn:disabled:not(.pause) {

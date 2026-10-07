@@ -375,6 +375,70 @@ pub fn expand_overlay_for_chat(window: WebviewWindow, zoom: f64) -> Result<(), S
 }
 
 #[tauri::command]
+pub fn resize_overlay_input(window: WebviewWindow, height: f64, zoom: f64) -> Result<(), String> {
+    if !is_overlay_label(window.label())
+        || !height.is_finite()
+        || !(86.0..=2000.0).contains(&height)
+        || !zoom.is_finite()
+        || !(0.25..=4.0).contains(&zoom)
+    {
+        return Err("Invalid input overlay size".into());
+    }
+    if window.is_maximized().map_err(|e| e.to_string())? {
+        return Ok(());
+    }
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let position = window.outer_position().map_err(|e| e.to_string())?;
+    let desired_inner = tauri::PhysicalSize::new(
+        (640.0 * scale * zoom).round() as u32,
+        (height * scale * zoom).round() as u32,
+    );
+    let old_inner = window.inner_size().map_err(|e| e.to_string())?;
+    let was_resizable = window.is_resizable().map_err(|e| e.to_string())?;
+    if old_inner == desired_inner && !was_resizable {
+        return Ok(());
+    }
+    // Keep the captured top-left while changing both bounds in one Win32 call.
+    // Only transition window style when leaving chat mode. Reapplying it on
+    // every menu toggle triggers unnecessary native frame/layout work.
+    if was_resizable {
+        window
+            .set_min_size(None::<tauri::LogicalSize<f64>>)
+            .map_err(|e| e.to_string())?;
+        window.set_resizable(false).map_err(|e| e.to_string())?;
+    }
+    // SetWindowPos takes the outer rectangle. WebView content can be smaller
+    // because Windows keeps an invisible frame around a borderless window.
+    let old_outer = window.outer_size().map_err(|e| e.to_string())?;
+    let size = tauri::PhysicalSize::new(
+        desired_inner.width + old_outer.width.saturating_sub(old_inner.width),
+        desired_inner.height + old_outer.height.saturating_sub(old_inner.height),
+    );
+    crate::services::overlay_native::set_overlay_bounds(&window, position, size)?;
+    let actual_inner = window.inner_size().map_err(|e| e.to_string())?;
+    if actual_inner.width < desired_inner.width || actual_inner.height < desired_inner.height {
+        let actual_outer = window.outer_size().map_err(|e| e.to_string())?;
+        crate::services::overlay_native::set_overlay_bounds(
+            &window,
+            position,
+            tauri::PhysicalSize::new(
+                actual_outer.width + desired_inner.width.saturating_sub(actual_inner.width),
+                actual_outer.height + desired_inner.height.saturating_sub(actual_inner.height),
+            ),
+        )?;
+    }
+    window
+        .set_min_size(Some(tauri::PhysicalSize::new(
+            desired_inner.width,
+            desired_inner
+                .height
+                .min((86.0 * scale * zoom).round() as u32),
+        )))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_overlay_popup_open_command(label: String, open: bool) {
     set_overlay_popup_open(&label, open);
 }

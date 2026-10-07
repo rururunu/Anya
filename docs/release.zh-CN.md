@@ -4,6 +4,8 @@ Anya 使用 [Tauri Updater](https://v2.tauri.app/plugin/updater/) 从 GitHub Rel
 
 `https://github.com/rururunu/Anya/releases/latest/download/latest.json`
 
+检测到新版本后，工作台侧栏会显示更新入口。安装确认弹窗先展示版本说明；弹窗和 **设置 → 关于** 共用下载与安装进度。
+
 ## `latest.json` 在哪？
 
 | 位置               | 说明                                                                              |
@@ -48,6 +50,7 @@ GitHub Actions 需在仓库 Secrets 中配置：
 同步修改：
 
 - `src-tauri/tauri.conf.json` → `version`
+- `src-tauri/Cargo.toml` 与 `src-tauri/Cargo.lock` → `version`
 - `package.json` → `version`
 
 ### 2. 本地构建并签名
@@ -62,7 +65,7 @@ pnpm tauri:build
 ### 3. 生成本地 `latest.json`
 
 ```powershell
-pnpm release:json -- --tag v0.2.14 --notes "改进工作台归档体验、DeepSeek 多模态内置 Key、中文输入法占位符；浅色/深色改为 CSS token（WebView2 保持 only light），工作台窗口圆角 16px。升级自 v0.2.13，设置、OAuth token、工作区和聊天数据会保留。"
+pnpm release:json -- --tag v0.2.27 --notes "改进聊天输入与悬浮窗交互，优化主题背景存储、更新提示和桌面宠物。"
 ```
 
 生成文件：**`release/latest.json`**（GitHub 附件必须用这个文件名），以及一份带版本说明的副本 **`release/Anya_<version>_latest_<说明摘要>.json`**。
@@ -71,13 +74,13 @@ pnpm release:json -- --tag v0.2.14 --notes "改进工作台归档体验、DeepSe
 
 ```json
 {
-  "version": "0.2.14",
+  "version": "0.2.27",
   "notes": "更新说明",
   "pub_date": "2026-08-29T09:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://github.com/rururunu/Anya/releases/download/v0.2.14/Anya_0.2.14_x64.msi",
-      "signature": "<Anya_0.2.14_x64.msi.sig 文件的全部内容>"
+      "url": "https://github.com/rururunu/Anya/releases/download/v0.2.27/Anya_0.2.27_x64.msi",
+      "signature": "<Anya_0.2.27_x64.msi.sig 文件的全部内容>"
     }
   }
 }
@@ -86,18 +89,18 @@ pnpm release:json -- --tag v0.2.14 --notes "改进工作台归档体验、DeepSe
 ### 4. 在 GitHub 创建 Release
 
 1. 打开 [Releases](https://github.com/rururunu/Anya/releases) → **Draft a new release**
-2. Tag：`v0.2.14`（与 `--tag` 一致）
+2. Tag：`v0.2.27`（与 `--tag` 一致）
 3. 填写 Release 说明（与 `notes` 可相同，给用户看）
 4. 上传 **3 个文件**：
-   - `Anya_0.2.14_x64.msi`
-   - `Anya_0.2.14_x64.msi.sig`
+   - `Anya_0.2.27_x64.msi`
+   - `Anya_0.2.27_x64.msi.sig`
    - `latest.json`（来自 `release/latest.json`，**文件名保持 `latest.json`**）
 5. 发布（不要勾 Pre-release，否则 `latest` 不会指向它）
 
 ### 5. 验证
 
 1. 浏览器打开：`https://github.com/rururunu/Anya/releases/latest/download/latest.json`，确认 `version` 与 `url`、`signature` 正确
-2. 打开 Anya → **设置 → 关于** → **检测更新**，或等待工作台右上角更新按钮
+2. 打开 Anya → **设置 → 关于** → **检测更新**；发现新版本后也可从工作台侧栏打开更新说明
 
 ---
 
@@ -106,8 +109,8 @@ pnpm release:json -- --tag v0.2.14 --notes "改进工作台归档体验、DeepSe
 仓库已包含 `.github/workflows/release.yml`：推送 `v*` 标签时自动构建、签名并上传 Release。
 
 ```powershell
-git tag v0.2.14
-git push origin v0.2.14
+git tag v0.2.27
+git push origin v0.2.27
 ```
 
 配置好上述 Secrets 后，无需再手动写 Release 正文或上传 MSI；`latest.json` 由 `tauri-action` 生成并上传。
@@ -138,7 +141,7 @@ MSI 可能已构建成功，但 **updater 签名**（`.msi.sig` / `latest.json`�
 
 ```powershell
 $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$env:USERPROFILE\.tauri\anya.key" -Raw
-pnpm tauri signer sign -f "src-tauri\target\release\bundle\msi\Anya_0.2.14_x64.msi"
+pnpm tauri signer sign -f "src-tauri\target\release\bundle\msi\Anya_0.2.27_x64.msi"
 ```
 
 若本地也报同样错误，说明 Secret 内容不对，需重新生成并更新 Secret / `pubkey`（更新公钥后旧客户端需重装一次才能再收自动更新）。

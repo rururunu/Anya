@@ -78,7 +78,7 @@
 
     <Transition name="scroll-to-bottom">
       <button
-        v-if="!stickToBottom && displayItems.length"
+        v-if="showScrollToBottom !== false && !stickToBottom && displayItems.length"
         type="button"
         class="scroll-to-bottom"
         :aria-label="tr(settingStore.language, 'scrollToBottom')"
@@ -541,6 +541,7 @@ const props = defineProps<{
   workspaceRoot?: string;
   checkpoints?: CheckpointInfo[];
   inlineConversation?: boolean;
+  showScrollToBottom?: boolean;
 }>();
 const workspaceName = computed(() => props.workspaceName?.trim() || "");
 provide(
@@ -1077,18 +1078,25 @@ const { railRef, activeUserMessageId, messagePreview, onRailKeydown, updateActiv
     userContent,
   });
 
-const { handleScroll, handleWheel, handleKeydown, scrollToMessage, scrollToLatest } =
-  useMessageScroll({
-    listRef,
-    stickToBottom,
-    messages: computed(() => props.messages),
-    displayItems,
-    activeUserMessageId,
-    railRef,
-    sessionId: computed(() => props.sessionId),
-    isSending: isSessionSending,
-    updateActiveUserMessage,
-  });
+const {
+  handleScroll,
+  handleWheel,
+  handleKeydown,
+  scrollToMessage,
+  scrollToLatest,
+  markGrowthPending,
+} = useMessageScroll({
+  listRef,
+  stickToBottom,
+  messages: computed(() => props.messages),
+  displayItems,
+  activeUserMessageId,
+  railRef,
+  sessionId: computed(() => props.sessionId),
+  isSending: isSessionSending,
+  deferAutoScrollUntilGrowth: props.inlineConversation,
+  updateActiveUserMessage,
+});
 
 watch(queuedMessages, () => {
   if (props.inlineConversation && stickToBottom.value) void nextTick(scrollToLatest);
@@ -1406,6 +1414,7 @@ onMounted(() => {
       const content = contentRef.value;
       const list = listRef.value;
       if (!content || !list) return;
+      markGrowthPending();
       const style = getComputedStyle(list);
       emit(
         "contentHeight",
@@ -1426,7 +1435,7 @@ onUnmounted(() => {
   if (durationTimer) window.clearInterval(durationTimer);
 });
 
-defineExpose({ openFind, closeFind });
+defineExpose({ openFind, closeFind, scrollToLatest });
 </script>
 
 <style scoped>

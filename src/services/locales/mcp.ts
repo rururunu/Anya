@@ -171,7 +171,8 @@ export const mcpLocales: Record<AppLanguage, McpLocalePartial> = {
   },
   "ja-JP": {
     "mcp.title": "MCP サーバー",
-    "mcp.description": "stdio MCP サーバーを接続します。",
+    "mcp.description":
+      "stdio MCP サーバーを接続します。ツールは mcp__{id}__{name} としてモデルに登録されます。",
     "mcp.add": "手動追加",
     "mcp.empty": "MCP サーバーがありません",
     "mcp.id": "サーバー ID",
@@ -233,7 +234,8 @@ export const mcpLocales: Record<AppLanguage, McpLocalePartial> = {
   },
   "ru-RU": {
     "mcp.title": "MCP-серверы",
-    "mcp.description": "Подключение stdio MCP.",
+    "mcp.description":
+      "Подключите MCP-серверы через stdio. Инструменты регистрируются для модели как mcp__{id}__{name}.",
     "mcp.add": "Добавить вручную",
     "mcp.empty": "Серверов MCP пока нет",
     "mcp.id": "ID сервера",
@@ -295,7 +297,8 @@ export const mcpLocales: Record<AppLanguage, McpLocalePartial> = {
   },
   "de-DE": {
     "mcp.title": "MCP-Server",
-    "mcp.description": "stdio-MCP-Server verbinden.",
+    "mcp.description":
+      "stdio-MCP-Server verbinden. Werkzeuge werden für das Modell als mcp__{id}__{name} registriert.",
     "mcp.add": "Manuell hinzufügen",
     "mcp.empty": "Noch keine MCP-Server",
     "mcp.id": "Server-ID",
@@ -357,7 +360,8 @@ export const mcpLocales: Record<AppLanguage, McpLocalePartial> = {
   },
   "fr-FR": {
     "mcp.title": "Serveurs MCP",
-    "mcp.description": "Connectez des serveurs MCP stdio.",
+    "mcp.description":
+      "Connectez des serveurs MCP via stdio. Les outils sont enregistrés pour le modèle sous mcp__{id}__{name}.",
     "mcp.add": "Ajouter manuellement",
     "mcp.empty": "Aucun serveur MCP",
     "mcp.id": "ID du serveur",
@@ -419,7 +423,8 @@ export const mcpLocales: Record<AppLanguage, McpLocalePartial> = {
   },
   "ko-KR": {
     "mcp.title": "MCP 서버",
-    "mcp.description": "stdio MCP 서버를 연결합니다.",
+    "mcp.description":
+      "stdio MCP 서버를 연결합니다. 도구는 모델에 mcp__{id}__{name} 형식으로 등록됩니다.",
     "mcp.add": "수동 추가",
     "mcp.empty": "MCP 서버가 없습니다",
     "mcp.id": "서버 ID",

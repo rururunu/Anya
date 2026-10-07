@@ -109,6 +109,8 @@ defineEmits<{
 }
 
 .command-item {
+  border-radius: 8px;
+  margin-inline: 3px;
   display: flex;
   align-items: center;
   gap: 8px;

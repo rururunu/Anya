@@ -4,14 +4,13 @@ import { Settings } from "@lucide/vue";
 import UserAvatar from "@/components/chat/UserAvatar.vue";
 import { useLocalProfile } from "@/services/settings/localProfile";
 import { useSettingStore } from "@/stores/setting";
+import { tr } from "@/services/i18n";
 const emit = defineEmits<{ open: [] }>();
 const props = defineProps<{ settingsLabel: string }>();
 const profile = useLocalProfile();
 const settingStore = useSettingStore();
 const nickname = computed(
-  () =>
-    profile.value.displayName.trim() ||
-    (settingStore.language === "zh-CN" ? "本地用户" : "Local user"),
+  () => profile.value.displayName.trim() || tr(settingStore.language, "shell.profile.localUser"),
 );
 </script>
 

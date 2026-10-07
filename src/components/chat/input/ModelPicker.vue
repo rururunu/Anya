@@ -5,6 +5,18 @@
     role="listbox"
     :aria-label="ariaLabel"
   >
+    <li v-if="searchable" class="model-search-row" role="presentation">
+      <input
+        ref="searchInput"
+        class="model-search-input"
+        :value="query"
+        :placeholder="searchPlaceholder"
+        :aria-label="searchPlaceholder"
+        @input="$emit('update:query', ($event.target as HTMLInputElement).value)"
+        @keydown.stop="onSearchKeydown"
+        @mousedown.stop
+      />
+    </li>
     <template v-if="loading && models.length === 0">
       <li class="picker-status">{{ loadingText }}</li>
     </template>
@@ -178,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, watch, ref, onMounted } from "vue";
 import { Check, ChevronLeft, ChevronRight, RefreshCw } from "@lucide/vue";
 import type { ChatModelInfo } from "@/types/chat";
 import {
@@ -217,6 +229,9 @@ const props = withDefaults(
     modelCountText: string;
     ariaLabel: string;
     flatGrouped?: boolean;
+    searchable?: boolean;
+    query?: string;
+    searchPlaceholder?: string;
     /** Thinking effort / tier choices for the selected model; shown as a slider under it. */
     thinkingOptions?: Array<{ id: string; label: string }>;
     thinkingSelectedId?: string;
@@ -225,13 +240,18 @@ const props = withDefaults(
   {
     refreshing: false,
     flatGrouped: false,
+    searchable: false,
+    query: "",
+    searchPlaceholder: "Search models",
     thinkingOptions: () => [],
     thinkingSelectedId: "",
     thinkingTitle: "",
   },
 );
 
-defineEmits<{
+const emit = defineEmits<{
+  "update:query": [query: string];
+  close: [];
   hover: [index: number];
   select: [model: ChatModelInfo];
   selectGroup: [provider: string];
@@ -241,6 +261,27 @@ defineEmits<{
 }>();
 
 const settingStore = useSettingStore();
+const searchInput = ref<HTMLInputElement | null>(null);
+onMounted(() => searchInput.value?.focus({ preventScroll: true }));
+function onSearchKeydown(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229) return;
+  const count = refreshIndex.value + 1;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    emit("close");
+  } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    emit("hover", (props.selectedIndex + (event.key === "ArrowDown" ? 1 : -1) + count) % count);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    if (props.selectedIndex === refreshIndex.value) {
+      if (!props.refreshing) emit("refresh");
+    } else {
+      const entry = modelRows.value[props.selectedIndex];
+      if (entry) emit("select", entry.model);
+    }
+  }
+}
 
 type Group = ModelProviderGroup & {
   index: number;
@@ -324,6 +365,30 @@ const refreshIndex = computed(() =>
 </script>
 
 <style scoped>
+.model-search-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 6px;
+  background: var(--peek-surface);
+}
+.model-search-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--peek-text) 14%, transparent);
+  border-radius: 10px;
+  outline: none;
+  background: var(--peek-input-bg);
+  color: var(--peek-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+}
+.model-search-input:focus {
+  border-color: color-mix(in srgb, var(--peek-accent) 45%, var(--peek-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--peek-accent) 8%, transparent);
+}
 .model-provider-heading {
   padding: 8px 10px 4px;
   font-size: 11px;
@@ -391,6 +456,8 @@ const refreshIndex = computed(() =>
 }
 
 .command-item {
+  border-radius: 8px;
+  margin-inline: 3px;
   display: flex;
   align-items: center;
   gap: 8px;

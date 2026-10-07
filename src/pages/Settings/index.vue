@@ -45,12 +45,12 @@
               v-model="settingsQuery"
               class="settings-search-input"
               type="search"
-              :placeholder="settingStore.language === 'zh-CN' ? '搜索设置…' : 'Search settings…'"
-              :aria-label="settingStore.language === 'zh-CN' ? '搜索设置' : 'Search settings'"
+              :placeholder="tr(settingStore.language, 'settings.searchPlaceholder')"
+              :aria-label="tr(settingStore.language, 'settings.searchPlaceholder')"
               @keydown.esc="settingsQuery = ''"
             />
             <p v-if="!filteredSections.length" class="settings-search-empty" role="status">
-              {{ settingStore.language === "zh-CN" ? "没有匹配的设置" : "No matching settings" }}
+              {{ tr(settingStore.language, "settings.empty") }}
             </p>
             <SidebarGroup
               v-for="section in filteredSections"
@@ -89,11 +89,7 @@
                 class="settings-search-empty"
                 role="status"
               >
-                {{
-                  settingStore.language === "zh-CN"
-                    ? "没有匹配的设置，请换一个关键词。"
-                    : "No matching settings. Try another keyword."
-                }}
+                {{ tr(settingStore.language, "shell.search.noMatchHint") }}
               </p>
               <ProfileSettings v-else-if="activeCategory === 'profile'" />
               <WorkspaceSettings v-else-if="activeCategory === 'workspace'" />

@@ -27,14 +27,13 @@ export function useComposerPickers(options: {
 
   /** Sync overlay popup-open flag with the native shell. */
   async function syncPopupState(open: boolean) {
-    const windowLabel = getCurrentWebviewWindow().label;
     try {
-      await Promise.race([
-        setOverlayPopupOpen(windowLabel, open),
-        new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 800);
-        }),
-      ]);
+      const windowLabel = getCurrentWebviewWindow().label;
+      // Native blur protection is advisory; menu layout/focus must not wait for
+      // the window event queue (which may itself be processing a resize).
+      void setOverlayPopupOpen(windowLabel, open).catch((error) => {
+        console.error("set_overlay_popup_open failed:", error);
+      });
     } catch (error) {
       console.error("set_overlay_popup_open failed:", error);
     }
@@ -74,10 +73,10 @@ export function useComposerPickers(options: {
     options.emitLayoutChange();
   }
 
-  function closeApprovalPicker() {
+  function closeApprovalPicker(keepPopupOpen = false) {
     if (!approvalPickerOpen.value) return;
     approvalPickerOpen.value = false;
-    if (!anyChipStillOpen()) {
+    if (!keepPopupOpen && !anyChipStillOpen()) {
       void syncPopupState(false);
     }
     options.emitLayoutChange();
@@ -157,7 +156,7 @@ export function useComposerPickers(options: {
   }
 
   /** Close competing pickers before opening a footer chip menu. */
-  async function prepareChipPicker() {
+  function prepareChipPicker() {
     options.onHistoryClose();
     options.workspacePickerOpen.value = false;
     options.workspaceQuickSelectOnly.value = false;

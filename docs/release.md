@@ -4,6 +4,8 @@ Anya uses the [Tauri Updater](https://v2.tauri.app/plugin/updater/) plugin. The 
 
 `https://github.com/rururunu/Anya/releases/latest/download/latest.json`
 
+When an update is available, the workbench sidebar shows an entry. The confirmation dialog displays the release notes before installation; it and **Settings → About** share download and installation progress.
+
 ## Where is `latest.json`?
 
 | Location           | Notes                                                                                       |
@@ -39,7 +41,7 @@ If CI fails with **`Missing comment in secret key`**, the private-key secret is 
 
 ## Manual release
 
-1. Bump `version` in `src-tauri/tauri.conf.json` and `package.json`.
+1. Bump `version` in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `package.json`.
 2. Build with signing:
 
 ```powershell
@@ -50,12 +52,12 @@ pnpm tauri:build
 3. Generate **`release/latest.json`**:
 
 ```powershell
-pnpm release:json -- --tag v0.2.14 --notes "Optimistic workspace/session archive, DeepSeek multimodal with the built-in key, IME placeholder fix, CSS-token light/dark theme (WebView2 stays only-light), and 16px workbench window corners."
+pnpm release:json -- --tag v0.2.27 --notes "Improved chat composer and overlay behavior, theme image storage, update prompts, and desktop pet."
 ```
 
-4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.14` and upload:
-   - `Anya_0.2.14_x64.msi`
-   - `Anya_0.2.14_x64.msi.sig`
+4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.27` and upload:
+   - `Anya_0.2.27_x64.msi`
+   - `Anya_0.2.27_x64.msi.sig`
    - `latest.json` (from `release/latest.json`)
 
 5. Verify `https://github.com/rururunu/Anya/releases/latest/download/latest.json` and check for updates in the app.

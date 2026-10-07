@@ -52,27 +52,19 @@ import McpSettings from "@/components/settings/McpSettings.vue";
 import UserPluginsPanel from "@/components/plugins/UserPluginsPanel.vue";
 import PluginDiagnostics from "@/components/plugins/PluginDiagnostics.vue";
 import { useSettingStore } from "@/stores/setting";
+import { tr } from "@/services/i18n";
 
 type PluginsTab = "installed" | "skills" | "mcp";
 
 const tab = ref<PluginsTab>("installed");
 const settingStore = useSettingStore();
 
-const copy = computed(() =>
-  settingStore.language === "zh-CN"
-    ? {
-        installed: "已安装",
-        skills: "技能",
-        mcp: "MCP",
-        tabsLabel: "插件分类",
-      }
-    : {
-        installed: "Installed",
-        skills: "Skills",
-        mcp: "MCP",
-        tabsLabel: "Plugin sections",
-      },
-);
+const copy = computed(() => ({
+  installed: tr(settingStore.language, "shell.plugins.installed"),
+  skills: tr(settingStore.language, "shell.plugins.skills"),
+  mcp: "MCP",
+  tabsLabel: tr(settingStore.language, "shell.plugins.sections"),
+}));
 </script>
 
 <style scoped>

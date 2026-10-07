@@ -44,7 +44,13 @@ function cacheColorScheme(colorScheme: ColorScheme) {
 function cacheCustomThemes(themes?: CustomThemeConfig[]) {
   if (!themes) return;
   try {
-    localStorage.setItem(CUSTOM_THEMES_CACHE_KEY, JSON.stringify(themes));
+    // The boot cache only needs theme metadata. A pending data URI must never
+    // duplicate wallpaper bytes in another JSON store before Rust saves it.
+    const cached = themes.map((theme) => {
+      if (!theme.background?.image?.startsWith("data:")) return theme;
+      return { ...theme, background: { ...theme.background, image: undefined } };
+    });
+    localStorage.setItem(CUSTOM_THEMES_CACHE_KEY, JSON.stringify(cached));
   } catch {
     // ignore quota / private mode
   }
@@ -54,6 +60,10 @@ export function readCachedCustomThemes(): CustomThemeConfig[] {
   try {
     const raw = localStorage.getItem(CUSTOM_THEMES_CACHE_KEY);
     if (raw) {
+      if (raw.includes("data:image/")) {
+        localStorage.removeItem(CUSTOM_THEMES_CACHE_KEY);
+        return [];
+      }
       return JSON.parse(raw);
     }
   } catch {

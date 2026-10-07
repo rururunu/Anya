@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.26                                            |
+| **Version** | v0.2.27                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -893,29 +893,44 @@ The resolved model determines whether `core/tools/dsh/` is selected, rather than
 
 Call diagnostics go to configuration-directory JSONL files; `scripts/deepseek-metrics-report.mjs` aggregates usage, latency and independently judged outcomes. Reasoning/tool pairing, request-copy trimming and model-phase retries preserve completed tool boundaries; this does not imply automatic task resumption after every process crash. Proposed journal queue reliability, lifecycle cleanup and further virtualization are not new capabilities of this release.
 
+### 15.2 Composer, windows, settings, and updates in v0.2.27
+
+`ChatInputBar.vue` and `UserMessageFooter.vue` keep the current composer and sent-message editor controls aligned. Model and thinking controls sit on the right; the narrow layout hides selected labels, while thinking effort remains text-only. `useComposerPickerFocus.ts` coordinates picker focus, and the thinking slider commits the final drag value. In `stores/setting.ts`, reasoning-effort and approval-only patches update the composer optimistically without reapplying the full theme and settings snapshot on the following broadcast.
+
+`layouts/Overlay.vue` measures content before resizing the input window and skips unchanged native sizes. Chat scrolling waits for content growth in `useMessageScroll.ts`. The Windows context provider reads selection geometry before the overlay takes focus; `services/window.rs` uses available geometry to position the overlay near, rather than over, the selection.
+
+`services/settings_store.rs` moves embedded theme images into content-addressed files under the app settings directory's `theme-backgrounds` folder. Runtime settings retain file paths, while readable images remain embedded in portable profile exports. `commands/settings.rs` performs settings I/O on a blocking worker instead of the window event thread.
+
+`SidebarUpdateButton.vue` appears when `stores/updater.ts` reports an available version. `WorkbenchUpdateDialog.vue` shows release notes before install and shares `UpdaterProgress.vue` with About settings. `DesktopPetSvg.vue` renders the pet; `useDesktopPet.ts` and `petWindowBounds.ts` clamp its position to available monitors and provide edge feedback.
+
 ## 16. Related source entry points
 
-| Concern                          | Start here                                                                                |
-| -------------------------------- | ----------------------------------------------------------------------------------------- |
-| App bootstrap / tray / hotkey    | `src-tauri/src/lib.rs`                                                                    |
-| Chat IPC                         | `commands/chat.rs`                                                                        |
-| Send + context / plan gate       | `core/chat/service/`, `core/tools/plan_mode.rs`                                           |
-| Stream lifecycle + timeline text | `core/chat/stream/`                                                                       |
-| Work timeline persistence        | `core/chat/conversation_manager/`, `core/chat/db/`                                        |
-| Agent loop                       | `core/chat/agent.rs`, `core/chat/agent_loop/`                                             |
-| Run shell                        | `core/agent/runtime/`                                                                     |
-| Image mode / Images API          | `core/tools/image_mode.rs`, `core/ai/image_gen.rs`, `prompts/image-mode.md`               |
-| Frontend IPC + stream batch      | `src/services/ipc/`, `src/composables/chat/wireChatIpc.ts`, `src/stores/chat.ts`          |
-| Chat store helpers               | `src/stores/chatSessions.ts`, `chatCompose.ts`, `chatHistory.ts`, `chatStream.ts`         |
-| Composer extraction              | `src/composables/chat/useComposer*.ts`, `useMessageScroll.ts`, `useMessagePreviewRail.ts` |
-| Rust chat modules                | `core/chat/{db,service,stream}/` (facade `mod.rs` keeps command imports stable)           |
-| Remote gateway / pairing         | `core/remote/gateway/`, `pairing.rs`, `tunnel.rs`                                         |
-| Shell jobs / workspace / MCP     | `core/tools/shell_jobs/`, `core/workspace/`, `core/mcp/`                                  |
-| Plugins / computer use           | `core/plugins/`, `src-tauri/plugins/computer-use/`, [Computer use](./computer-use.md)     |
-| DeepSeek stream                  | `core/ai/deepseek/stream/`                                                                |
-| Gateway HTTP split               | `core/remote/http_proxy.rs` (`/remote/v1`, `/f/`, `/p/`)                                  |
-| Companion file transfer          | `core/remote/upload.rs`, `download.rs`                                                    |
-| Workspace index                  | `core/tools/workspace_index.rs`                                                           |
-| Theme apply path                 | `src/services/theme/`, `stores/setting.ts` `applyTheme`                                   |
-| Workbench glass / window radius  | `services/workbench_glass.rs`, `overlay/appearance.ts`                                    |
-| Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                    |
+| Concern                          | Start here                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| App bootstrap / tray / hotkey    | `src-tauri/src/lib.rs`                                                                                 |
+| Chat IPC                         | `commands/chat.rs`                                                                                     |
+| Send + context / plan gate       | `core/chat/service/`, `core/tools/plan_mode.rs`                                                        |
+| Stream lifecycle + timeline text | `core/chat/stream/`                                                                                    |
+| Work timeline persistence        | `core/chat/conversation_manager/`, `core/chat/db/`                                                     |
+| Agent loop                       | `core/chat/agent.rs`, `core/chat/agent_loop/`                                                          |
+| Run shell                        | `core/agent/runtime/`                                                                                  |
+| Image mode / Images API          | `core/tools/image_mode.rs`, `core/ai/image_gen.rs`, `prompts/image-mode.md`                            |
+| Frontend IPC + stream batch      | `src/services/ipc/`, `src/composables/chat/wireChatIpc.ts`, `src/stores/chat.ts`                       |
+| Chat store helpers               | `src/stores/chatSessions.ts`, `chatCompose.ts`, `chatHistory.ts`, `chatStream.ts`                      |
+| Composer extraction              | `src/composables/chat/useComposer*.ts`, `useMessageScroll.ts`, `useMessagePreviewRail.ts`              |
+| Rust chat modules                | `core/chat/{db,service,stream}/` (facade `mod.rs` keeps command imports stable)                        |
+| Remote gateway / pairing         | `core/remote/gateway/`, `pairing.rs`, `tunnel.rs`                                                      |
+| Shell jobs / workspace / MCP     | `core/tools/shell_jobs/`, `core/workspace/`, `core/mcp/`                                               |
+| Plugins / computer use           | `core/plugins/`, `src-tauri/plugins/computer-use/`, [Computer use](./computer-use.md)                  |
+| DeepSeek stream                  | `core/ai/deepseek/stream/`                                                                             |
+| Gateway HTTP split               | `core/remote/http_proxy.rs` (`/remote/v1`, `/f/`, `/p/`)                                               |
+| Companion file transfer          | `core/remote/upload.rs`, `download.rs`                                                                 |
+| Workspace index                  | `core/tools/workspace_index.rs`                                                                        |
+| Theme apply path                 | `src/services/theme/`, `stores/setting.ts` `applyTheme`                                                |
+| Theme image persistence          | `services/settings_store.rs`, `commands/settings.rs`, `src/stores/setting.ts`                          |
+| Composer and sent-message editor | `src/components/chat/ChatInputBar.vue`, `UserMessageFooter.vue`                                        |
+| Overlay positioning and sizing   | `services/window.rs`, `core/context/provider/clipboard_provider.rs`, `src/layouts/Overlay.vue`         |
+| In-app updater UI                | `src/components/workbench/SidebarUpdateButton.vue`, `WorkbenchUpdateDialog.vue`, `UpdaterProgress.vue` |
+| Desktop pet                      | `src/components/pet/DesktopPetSvg.vue`, `src/composables/useDesktopPet.ts`, `petWindowBounds.ts`       |
+| Workbench glass / window radius  | `services/workbench_glass.rs`, `overlay/appearance.ts`                                                 |
+| Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                 |

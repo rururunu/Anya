@@ -82,10 +82,11 @@ fn trigger_overlay(app: &AppHandle) {
         let _ = tx.send((context, Some(window)));
     });
     std::thread::spawn(move || {
-        // A hung accessibility/clipboard provider cannot freeze shortcut UI.
-        // Timed-out results are discarded; at most one native capture stays alive.
+        // A slow accessibility/clipboard provider must not delay showing the
+        // overlay. The visible window has priority; a capture that misses this
+        // handoff is discarded because the source focus may already have changed.
         let (mut context, window) = rx
-            .recv_timeout(std::time::Duration::from_millis(900))
+            .recv_timeout(std::time::Duration::from_millis(120))
             .unwrap_or_else(|_| crate::core::context::store::snapshot_foreground());
         if let Some(state) = handle.try_state::<AppState>() {
             context = state.core.chat().overlay_show_context(context);
@@ -354,6 +355,7 @@ pub fn run() {
             window::exit_app,
             window::set_overlay_chat_mode_command,
             window::expand_overlay_for_chat,
+            window::resize_overlay_input,
             window::set_overlay_popup_open_command,
             window::take_overlay_context,
             window::open_image_preview,

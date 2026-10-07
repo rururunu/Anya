@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { currentMonitor } from "@tauri-apps/api/window";
+import { availableMonitors, currentMonitor } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { MascotExpression } from "@/components/icons/MascotPetView.vue";
@@ -23,6 +23,7 @@ import {
   type PetAppearance,
 } from "@/services/pet/appearance";
 import type { PetSpriteAnimationId } from "@/services/pet/spritesheet";
+import { clampPetPosition, getPetEdgePressure, type PetMonitorBounds } from "./petWindowBounds";
 
 export type PetSize = "small" | "medium" | "large";
 
@@ -262,7 +263,12 @@ export function useDesktopPet() {
       if (savedPos) {
         const { x, y } = JSON.parse(savedPos);
         if (typeof x === "number" && typeof y === "number") {
-          await appWindow.setPosition(new PhysicalPosition(x, y));
+          const clamped = clampPetPosition(
+            { x, y },
+            await appWindow.outerSize(),
+            await availableMonitors(),
+          );
+          await appWindow.setPosition(new PhysicalPosition(clamped.x, clamped.y));
           return;
         }
       }
@@ -278,8 +284,8 @@ export function useDesktopPet() {
         const winH = conf.windowHeight * scale;
 
         // 放置在右下角，距离边框各留一些间隙
-        const posX = Math.round(screenW - winW - 30 * scale);
-        const posY = Math.round(screenH - winH - 60 * scale);
+        const posX = Math.round(monitor.position.x + screenW - winW - 30 * scale);
+        const posY = Math.round(monitor.position.y + screenH - winH - 60 * scale);
         await appWindow.setPosition(new PhysicalPosition(posX, posY));
       }
     } catch (e) {
@@ -291,62 +297,130 @@ export function useDesktopPet() {
   async function persistPosition() {
     try {
       const pos = await appWindow.outerPosition();
-      localStorage.setItem(STORAGE_KEY_POS, JSON.stringify({ x: pos.x, y: pos.y }));
+      const clamped = clampPetPosition(pos, await appWindow.outerSize(), await availableMonitors());
+      if (clamped.x !== pos.x || clamped.y !== pos.y) {
+        await appWindow.setPosition(new PhysicalPosition(clamped.x, clamped.y));
+      }
+      localStorage.setItem(STORAGE_KEY_POS, JSON.stringify(clamped));
     } catch (e) {
       console.warn("Failed to persist pet position:", e);
     }
   }
 
-  /** 处理鼠标按下与拖拽判定。 */
-  let dragStartX = 0;
-  let dragStartY = 0;
-  let dragStartTime = 0;
-  let hasDragged = false;
+  /** 指针捕获配合受约束坐标移动，避免系统自由拖动把窗口带出屏幕。 */
+  const edgePressure = ref({ x: 0, y: 0 });
+  let drag: {
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startTime: number;
+    origin: { x: number; y: number };
+    size: { width: number; height: number };
+    monitors: PetMonitorBounds[];
+    scale: number;
+    moved: boolean;
+  } | null = null;
+  let pendingPointer: PointerEvent | null = null;
+  let activePointerId: number | null = null;
+  let desiredPosition: { x: number; y: number } | null = null;
+  let positionTask: Promise<void> | null = null;
 
-  function onMouseDown(e: MouseEvent) {
+  function queuePosition(position: { x: number; y: number }) {
+    desiredPosition = position;
+    if (positionTask) return;
+    positionTask = (async () => {
+      while (desiredPosition) {
+        const next = desiredPosition;
+        desiredPosition = null;
+        await appWindow.setPosition(new PhysicalPosition(next.x, next.y));
+      }
+    })()
+      .catch((error) => console.warn("Failed to move pet:", error))
+      .finally(() => {
+        positionTask = null;
+        if (desiredPosition) queuePosition(desiredPosition);
+      });
+  }
+
+  async function onPetPointerDown(e: PointerEvent) {
     if (e.button !== 0) return;
     wakeUp();
-    dragStartX = e.screenX;
-    dragStartY = e.screenY;
-    dragStartTime = Date.now();
-    hasDragged = false;
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp, { once: true });
-  }
-
-  async function onMouseMove(e: MouseEvent) {
-    if (hasDragged || locked.value) return;
-    const dx = Math.abs(e.screenX - dragStartX);
-    const dy = Math.abs(e.screenY - dragStartY);
-    if (dx > 4 || dy > 4) {
-      hasDragged = true;
-      window.removeEventListener("mousemove", onMouseMove);
-      if (appearance.value.mode === "spritesheet") {
-        const dir = e.screenX >= dragStartX ? "runRight" : "runLeft";
-        playSpriteGesture(dir, 1200);
-      }
-      try {
-        await appWindow.startDragging();
-        // 拖拽完成后记录新位置
-        await persistPosition();
-        if (appearance.value.mode === "spritesheet") {
-          clearSpriteGesture();
-        }
-      } catch (err) {
-        console.warn("startDragging failed:", err);
-      }
+    const target = e.currentTarget;
+    if (target instanceof HTMLElement) target.setPointerCapture(e.pointerId);
+    const pointerId = e.pointerId;
+    activePointerId = pointerId;
+    const startTime = Date.now();
+    const startX = e.screenX;
+    const startY = e.screenY;
+    pendingPointer = null;
+    try {
+      const [origin, size, monitors, monitor] = await Promise.all([
+        appWindow.outerPosition(),
+        appWindow.outerSize(),
+        availableMonitors(),
+        currentMonitor(),
+      ]);
+      if (activePointerId !== pointerId) return;
+      drag = {
+        pointerId,
+        startX,
+        startY,
+        startTime,
+        origin,
+        size,
+        monitors,
+        scale: monitor?.scaleFactor || 1,
+        moved: false,
+      };
+      if (pendingPointer) onPetPointerMove(pendingPointer);
+    } catch (error) {
+      console.warn("Failed to start pet drag:", error);
     }
   }
 
-  function onMouseUp(e: MouseEvent) {
-    window.removeEventListener("mousemove", onMouseMove);
-    if (!hasDragged && e.button === 0) {
-      const elapsed = Date.now() - dragStartTime;
-      if (elapsed < 350) {
-        onPetClick(e);
-      }
+  function onPetPointerMove(e: PointerEvent) {
+    if (!drag) {
+      if (activePointerId === e.pointerId) pendingPointer = e;
+      return;
     }
+    if (e.pointerId !== drag.pointerId || locked.value) return;
+    const dx = e.screenX - drag.startX;
+    const dy = e.screenY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) <= 4) return;
+    if (!drag.moved && appearance.value.mode === "spritesheet") {
+      playSpriteGesture(dx >= 0 ? "runRight" : "runLeft", 1200);
+    }
+    drag.moved = true;
+    const requested = { x: drag.origin.x + dx * drag.scale, y: drag.origin.y + dy * drag.scale };
+    const bounded = clampPetPosition(requested, drag.size, drag.monitors);
+    edgePressure.value = getPetEdgePressure(requested, bounded);
+    queuePosition(bounded);
+  }
+
+  async function finishPetPointer(e: PointerEvent, cancelled = false) {
+    if (activePointerId === e.pointerId) activePointerId = null;
+    if (!drag || e.pointerId !== drag.pointerId) {
+      pendingPointer = null;
+      return;
+    }
+    const finished = drag;
+    drag = null;
+    pendingPointer = null;
+    edgePressure.value = { x: 0, y: 0 };
+    if (finished.moved) {
+      if (positionTask) await positionTask;
+      await persistPosition();
+      if (appearance.value.mode === "spritesheet") clearSpriteGesture();
+    } else if (!cancelled && Date.now() - finished.startTime < 350) {
+      onPetClick(e as unknown as MouseEvent);
+    }
+  }
+
+  function onPetPointerUp(e: PointerEvent) {
+    void finishPetPointer(e);
+  }
+  function onPetPointerCancel(e: PointerEvent) {
+    void finishPetPointer(e, true);
   }
 
   /** 监听宠物窗口配置与系统级事件。 */
@@ -448,7 +522,11 @@ export function useDesktopPet() {
     currentInteractionIndex,
     prevInteraction,
     nextInteraction,
-    onMouseDown,
+    edgePressure,
+    onPetPointerDown,
+    onPetPointerMove,
+    onPetPointerUp,
+    onPetPointerCancel,
     onPetDoubleClick,
     onPetClick,
     triggerBounce,

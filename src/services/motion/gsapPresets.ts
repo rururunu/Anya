@@ -68,6 +68,15 @@ export function gsapPickerEnter(el: Element, done: () => void) {
   const target = el as HTMLElement;
   const finish = onceDone(done);
 
+  if (target.matches(".model-picker-list, .option-picker-list, .thinking-effort-panel")) {
+    // Footer controls are immediate UI, independent of the GSAP ticker or
+    // native WebView resize. Never leave their visibility waiting on a tween.
+    gsap.killTweensOf(target);
+    clearGsapProps(target, "opacity,transform,visibility");
+    finish();
+    return;
+  }
+
   safeGsap(
     "pickerEnter",
     () => {

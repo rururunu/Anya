@@ -22,6 +22,7 @@
     <AppConfirmDialog ref="confirmDialogRef" />
     <EditWorkspaceDialog ref="editWorkspaceDialogRef" />
     <RenameSessionDialog ref="renameSessionDialogRef" />
+    <WorkbenchUpdateDialog ref="updateDialogRef" />
     <Teleport to="body">
       <div
         v-if="sessionDragGhost"
@@ -111,22 +112,6 @@
       </template>
 
       <div class="titlebar-trailing" data-tauri-drag-region="false">
-        <nav class="view-actions" :aria-label="labels.views">
-          <button
-            v-if="updaterStore.updateAvailable"
-            type="button"
-            class="icon-button update-button"
-            :class="{ busy: updaterStore.isBusy }"
-            :title="updaterCopy.titlebarAction"
-            :aria-label="updaterCopy.titlebarAction"
-            :disabled="updaterStore.isBusy"
-            @click="promptInstallUpdate"
-          >
-            <ArrowUpCircle :size="15" />
-            <span class="status-dot update-dot" />
-          </button>
-        </nav>
-
         <div class="window-actions">
           <button
             type="button"
@@ -433,6 +418,7 @@
                 </NavCollapse>
               </section>
             </nav>
+            <SidebarUpdateButton @open="updateDialogRef?.open()" />
             <SidebarProfileButton
               :settings-label="labels.settings"
               @open="openSettings('profile')"
@@ -828,7 +814,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   ArrowLeft,
-  ArrowUpCircle,
   Archive,
   CircleAlert,
   ChevronRight,
@@ -861,6 +846,8 @@ import PlanPreviewSidebar from "@/components/chat/PlanPreviewSidebar.vue";
 import ImageLightbox from "@/components/chat/ImageLightbox.vue";
 import MessageList from "@/components/chat/MessageList.vue";
 import SidebarProfileButton from "@/components/workbench/SidebarProfileButton.vue";
+import SidebarUpdateButton from "@/components/workbench/SidebarUpdateButton.vue";
+import WorkbenchUpdateDialog from "@/components/workbench/WorkbenchUpdateDialog.vue";
 import SubagentConversationPanel from "@/components/chat/SubagentConversationPanel.vue";
 import WorkbenchSessionList from "@/components/workbench/WorkbenchSessionList.vue";
 import NavCollapse from "@/components/workbench/NavCollapse.vue";
@@ -897,7 +884,6 @@ import { useChatSessionsStore } from "@/stores/chatSessions";
 import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore, applyZoom, applyTheme } from "@/stores/setting";
 import { normalizeChatMode, type ChatMode } from "@/types/setting";
-import { useUpdaterStore } from "@/stores/updater";
 import { usePluginsStore } from "@/stores/plugins";
 import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
 import { useResolvedBackgroundSrc } from "@/composables/theme/useResolvedBackgroundSrc";
@@ -947,7 +933,7 @@ const pluginHeaderTabs = computed(() =>
 const pluginViewTabs = computed(() =>
   pluginSidebarTabs.value.filter((tab) => tabShowsOn(tab.surfaces, "views")),
 );
-const updaterStore = useUpdaterStore();
+const updateDialogRef = ref<InstanceType<typeof WorkbenchUpdateDialog> | null>(null);
 const appDisplayName = "Anya";
 const isDevBuild = import.meta.env.DEV;
 const appWindow = getCurrentWebviewWindow();
@@ -1125,34 +1111,6 @@ const {
   workspaces,
   activeSessionWorkspaceId,
 });
-
-const updaterCopy = computed(() => {
-  const language = settingStore.language;
-  return {
-    titlebarAction: tr(language, "updater.titlebarAction"),
-    confirmTitle: tr(language, "updater.confirmTitle", {
-      version: updaterStore.latestVersion || "?",
-    }),
-    confirmDescription: tr(language, "updater.confirmDescription"),
-    confirmAction: tr(language, "updater.confirmAction"),
-    cancelAction: tr(language, "updater.cancelAction"),
-  };
-});
-
-async function promptInstallUpdate() {
-  if (!updaterStore.updateAvailable || updaterStore.isBusy) return;
-
-  const confirmed = await confirmDialogRef.value?.ask({
-    title: updaterCopy.value.confirmTitle,
-    description: updaterCopy.value.confirmDescription,
-    confirmLabel: updaterCopy.value.confirmAction,
-    cancelLabel: updaterCopy.value.cancelAction,
-    tone: "default",
-  });
-
-  if (!confirmed) return;
-  await updaterStore.install();
-}
 
 const {
   pendingInteractions,
@@ -1985,14 +1943,10 @@ button {
   justify-self: end;
   min-width: 0;
 }
-.view-actions,
 .window-actions {
   display: flex;
   align-items: center;
   gap: 2px;
-}
-.view-actions {
-  padding-right: 6px;
 }
 .icon-button,
 .small-icon-button,
@@ -2044,15 +1998,6 @@ button {
 }
 .icon-button.active {
   color: var(--peek-accent);
-}
-.update-button {
-  color: var(--peek-accent);
-}
-.update-button.busy {
-  opacity: 0.7;
-}
-.update-dot {
-  background: var(--peek-accent);
 }
 .window-button.close:hover {
   color: var(--peek-primary-foreground, #fff);
@@ -3321,7 +3266,7 @@ button {
   .composer-wrap :deep(.workbench-composer .input-footer) {
     flex-wrap: wrap;
     row-gap: 6px;
-    align-items: flex-end;
+    align-items: center;
   }
   .composer-wrap :deep(.workbench-composer .input-footer-primary) {
     flex: 1 1 auto;

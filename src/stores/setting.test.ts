@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { applyZoom, useSettingStore } from "./setting";
+import { setAppSettings } from "@/services/ipc";
 import type { AppSettings } from "@/types/setting";
 
 let mockWindowLabel = "desktop-pet";
@@ -194,5 +195,35 @@ describe("applySettings", () => {
     expect(store.deepseekModels).toEqual(FULL_SETTINGS.deepseekModels);
     expect(store.memoryEnabled).toBe(FULL_SETTINGS.memoryEnabled);
     expect(store.chatMode).toBe(FULL_SETTINGS.chatMode);
+  });
+
+  it("updates only the approval mode without reapplying visual settings", async () => {
+    const store = useSettingStore();
+    const applySettings = vi.spyOn(store, "applySettings");
+    vi.mocked(setAppSettings).mockResolvedValue({
+      ...FULL_SETTINGS,
+      toolApprovalMode: "alwaysAllow",
+    });
+
+    await store.update({ toolApprovalMode: "alwaysAllow" });
+
+    expect(store.toolApprovalMode).toBe("alwaysAllow");
+    expect(applySettings).not.toHaveBeenCalled();
+    expect(setAppSettings).toHaveBeenCalledWith({ toolApprovalMode: "alwaysAllow" });
+  });
+
+  it("updates reasoning effort without reapplying the full settings object", async () => {
+    const store = useSettingStore();
+    const applySettings = vi.spyOn(store, "applySettings");
+    vi.mocked(setAppSettings).mockResolvedValue({
+      ...FULL_SETTINGS,
+      reasoningEffort: "high",
+    });
+
+    await store.update({ reasoningEffort: "high" });
+
+    expect(store.reasoningEffort).toBe("high");
+    expect(applySettings).not.toHaveBeenCalled();
+    expect(setAppSettings).toHaveBeenCalledWith({ reasoningEffort: "high" });
   });
 });

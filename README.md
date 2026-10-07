@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.md">Documentation</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.26 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.27 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
@@ -37,6 +37,8 @@ Alt+Alt captures selected text before the overlay takes focus and displays a com
 
 The **Profile** settings page shows local usage insights and lets you transfer your profile, settings, and API keys. Treat exported files as sensitive. A factory reset is available from the profile actions.
 
+The chat composer keeps model and thinking controls on the right; on narrow windows, controls collapse to icons. Editing a sent message uses the same controls. When an update is available, open it from the workbench sidebar or **Settings → About** to review the release notes before installing.
+
 1. Download and install the MSI from [Releases](../../releases).
 2. Open **Settings**, add a model provider, and configure its credentials.
 3. Start a chat in the workbench, or double-tap **Alt** to open the overlay.
@@ -55,6 +57,8 @@ Office layout, conversion, and formula results need checks for each artifact. So
 ## Data and privacy
 
 Settings, credentials, and chat history stay on your machine by default. Sending a message sends its text and attached context to your configured model provider. Search, remote MCP, cloud sync, and phone connections also send relevant data to their services or devices when enabled.
+
+Custom background images are stored as local files; runtime settings keep their paths. Readable images are included when you export a portable profile.
 
 ## Development
 

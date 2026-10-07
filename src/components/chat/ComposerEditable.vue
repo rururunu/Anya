@@ -152,6 +152,7 @@ function emitTextFromDom() {
   // Serialize only — do not re-parse typed `@query` into marks (picker inserts marks).
   const text = serializeComposerEditable(root);
   lastEmittedText = text;
+  domHasContent.value = text.trim().length > 0;
   if (text !== props.modelValue) {
     emit("update:modelValue", text);
   }
@@ -168,14 +169,15 @@ function onCompositionStart() {
 function onCompositionEnd() {
   isComposing.value = false;
   void nextTick(() => {
-    refreshDomHasContent();
     emitTextFromDom();
   });
 }
 
 function onInput() {
-  refreshDomHasContent();
-  if (isComposing.value) return;
+  if (isComposing.value) {
+    domHasContent.value = true;
+    return;
+  }
   emitTextFromDom();
 }
 

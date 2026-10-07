@@ -353,9 +353,14 @@ function formatSessionTime(timestamp: number) {
 }
 
 function formatTurnCount(count: number) {
-  return props.language === "zh-CN"
-    ? `${count} \u8f6e\u5bf9\u8bdd`
-    : `${count} ${count === 1 ? "turn" : "turns"}`;
+  const category = new Intl.PluralRules(props.language).select(count);
+  const key =
+    category === "one"
+      ? "shell.session.turnOne"
+      : category === "few"
+        ? "shell.session.turnFew"
+        : "shell.session.turnMany";
+  return tr(props.language, key, { count });
 }
 
 function sessionHoverText(session: ChatSessionSummary) {
@@ -372,19 +377,19 @@ function sessionStatusLabel(sessionId: string) {
     return props.archivedLabel;
   }
   if (props.attentionSessionIds.includes(sessionId)) {
-    return props.language === "zh-CN" ? "需要处理请求" : "Action required";
+    return tr(props.language, "shell.session.actionRequired");
   }
   if (props.runningSessionIds.includes(sessionId)) {
-    return props.language === "zh-CN" ? "运行中" : "Running";
+    return tr(props.language, "shell.session.running");
   }
   if (isTitleGenerating(sessionId)) {
     return props.generatingTitleLabel;
   }
   if (props.unreadSessionIds.includes(sessionId)) {
-    return props.language === "zh-CN" ? "任务已完成" : "Task completed";
+    return tr(props.language, "shell.session.completed");
   }
   if (hasDraft(sessionId)) {
-    return props.language === "zh-CN" ? "有未发送内容" : "Unsent draft";
+    return tr(props.language, "shell.session.unsentDraft");
   }
   return "";
 }

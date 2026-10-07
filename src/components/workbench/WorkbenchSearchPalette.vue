@@ -81,12 +81,14 @@ import { SquarePen } from "@lucide/vue";
 import type { Workspace } from "@/commands/workspace";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import type { ChatSessionSummary } from "@/types/chat";
+import type { AppLanguage } from "@/types/setting";
+import { tr } from "@/services/i18n";
 
 const props = defineProps<{
   open: boolean;
   sessions: ChatSessionSummary[];
   workspaces: Workspace[];
-  language: string;
+  language: AppLanguage;
 }>();
 
 const emit = defineEmits<{
@@ -99,31 +101,18 @@ const inputRef = ref<HTMLInputElement | null>(null);
 const query = ref("");
 const selectedIndex = ref(0);
 
-const isChinese = computed(() => props.language === "zh-CN");
 const shortcutPrefix = computed(() =>
   navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl+",
 );
-const copy = computed(() =>
-  isChinese.value
-    ? {
-        title: "搜索",
-        searchChatsPlaceholder: "搜索聊天",
-        chats: "聊天",
-        recommended: "推荐",
-        untitled: "新对话",
-        newChat: "新聊天",
-        quickAsk: "随问",
-      }
-    : {
-        title: "Search",
-        searchChatsPlaceholder: "Search chats",
-        chats: "Chats",
-        recommended: "Recommended",
-        untitled: "New conversation",
-        newChat: "New chat",
-        quickAsk: "Quick Ask",
-      },
-);
+const copy = computed(() => ({
+  title: tr(props.language, "shell.search.title"),
+  searchChatsPlaceholder: tr(props.language, "shell.search.chatsPlaceholder"),
+  chats: tr(props.language, "shell.search.chats"),
+  recommended: tr(props.language, "shell.search.recommended"),
+  untitled: tr(props.language, "shell.search.untitled"),
+  newChat: tr(props.language, "shell.search.newChat"),
+  quickAsk: tr(props.language, "shell.search.quickAsk"),
+}));
 
 const filteredSessions = computed(() => {
   const needle = query.value.trim().toLowerCase();

@@ -17,15 +17,13 @@
 import { computed, onMounted, ref } from "vue";
 import { useSettingStore } from "@/stores/setting";
 import { dismissComputerUseHud } from "@/services/ipc/commands";
+import { tr } from "@/services/i18n";
 
 const settingStore = useSettingStore();
 const stopping = ref(false);
 
-const label = computed(() =>
-  settingStore.language === "zh-CN" ? "Anya 正在操控电脑" : "Anya is controlling your computer",
-);
-
-const stopLabel = computed(() => (settingStore.language === "zh-CN" ? "结束" : "Stop"));
+const label = computed(() => tr(settingStore.language, "shell.computerUse.active"));
+const stopLabel = computed(() => tr(settingStore.language, "shell.computerUse.stop"));
 
 onMounted(() => {
   if (typeof document !== "undefined") {

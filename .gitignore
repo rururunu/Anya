@@ -44,6 +44,7 @@ release/
 
 # Git worktrees
 .worktrees/
+/.delta/
 
 # Eval harness outputs
 eval/results/
@@ -95,3 +96,8 @@ src-tauri/resources/office/
 
 # Generated legacy harness dependency snapshot
 /src-tauri/harness/vendor/
+
+# Local UI preview harnesses
+/*-preview.html
+/src/dev/*Preview.vue
+/src/dev/*-preview.ts

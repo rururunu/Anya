@@ -111,6 +111,10 @@ export const skillsLocales: Record<AppLanguage, SkillsLocalePartial> = {
     "skills.added": "済み",
     "skills.verified": "認証済み",
     "skills.loadMore": "さらに読み込む",
+    "skills.expand": "もっと見る",
+    "skills.collapse": "閉じる",
+    "skills.enabled": "有効",
+    "skills.disabled": "無効",
   },
   "ru-RU": {
     "skills.title": "Скиллы",
@@ -142,6 +146,10 @@ export const skillsLocales: Record<AppLanguage, SkillsLocalePartial> = {
     "skills.added": "Установлен",
     "skills.verified": "Проверен",
     "skills.loadMore": "Ещё",
+    "skills.expand": "Подробнее",
+    "skills.collapse": "Свернуть",
+    "skills.enabled": "Включено",
+    "skills.disabled": "Отключено",
   },
   "de-DE": {
     "skills.title": "Skills",
@@ -173,6 +181,10 @@ export const skillsLocales: Record<AppLanguage, SkillsLocalePartial> = {
     "skills.added": "Installiert",
     "skills.verified": "Verifiziert",
     "skills.loadMore": "Mehr laden",
+    "skills.expand": "Mehr",
+    "skills.collapse": "Weniger",
+    "skills.enabled": "Aktiviert",
+    "skills.disabled": "Deaktiviert",
   },
   "fr-FR": {
     "skills.title": "Skills",
@@ -204,6 +216,10 @@ export const skillsLocales: Record<AppLanguage, SkillsLocalePartial> = {
     "skills.added": "Installé",
     "skills.verified": "Vérifié",
     "skills.loadMore": "Charger plus",
+    "skills.expand": "Plus",
+    "skills.collapse": "Moins",
+    "skills.enabled": "Activé",
+    "skills.disabled": "Désactivé",
   },
   "ko-KR": {
     "skills.title": "스킬",
@@ -236,5 +252,9 @@ export const skillsLocales: Record<AppLanguage, SkillsLocalePartial> = {
     "skills.added": "설치됨",
     "skills.verified": "인증됨",
     "skills.loadMore": "더 보기",
+    "skills.expand": "더 보기",
+    "skills.collapse": "접기",
+    "skills.enabled": "사용",
+    "skills.disabled": "사용 안 함",
   },
 };

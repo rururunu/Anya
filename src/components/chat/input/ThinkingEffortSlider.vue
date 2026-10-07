@@ -71,8 +71,10 @@ const emit = defineEmits<{
 }>();
 
 const dragging = ref(false);
+const dragIndex = ref(0);
 
 const index = computed(() => {
+  if (dragging.value) return dragIndex.value;
   const found = props.options.findIndex((option) => option.id === props.selectedId);
   return found >= 0 ? found : 0;
 });
@@ -118,23 +120,26 @@ function onPointerDown(event: PointerEvent) {
   if (event.button !== 0) {
     return;
   }
+  dragIndex.value = indexFromClientX(event);
   dragging.value = true;
   (event.currentTarget as HTMLElement)
     .closest<HTMLElement>(".thinking-effort-panel")
     ?.focus({ preventScroll: true });
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-  selectIndex(indexFromClientX(event));
 }
 
 function onPointerMove(event: PointerEvent) {
   if (!dragging.value) {
     return;
   }
-  selectIndex(indexFromClientX(event));
+  dragIndex.value = indexFromClientX(event);
 }
 
 function onPointerUp(event: PointerEvent) {
+  if (!dragging.value) return;
+  const selected = dragIndex.value;
   dragging.value = false;
+  if (event.type !== "pointercancel") selectIndex(selected);
   const hit = event.currentTarget as HTMLElement | null;
   if (hit?.hasPointerCapture(event.pointerId)) {
     hit.releasePointerCapture(event.pointerId);
@@ -364,7 +369,7 @@ function onKeydown(event: KeyboardEvent) {
   display: grid;
   grid-template-columns: repeat(var(--count), minmax(0, 1fr));
   width: 100%;
-  height: 16px;
+  min-height: 22px;
   margin: 6px 0 0;
   font-size: 11px;
   line-height: 16px;
@@ -372,11 +377,14 @@ function onKeydown(event: KeyboardEvent) {
 }
 .thinking-slider-labels span {
   min-width: 0;
+  padding-block: 3px;
+  border-radius: 6px;
   white-space: nowrap;
   cursor: pointer;
   text-align: center;
 }
 .thinking-slider-labels .selected {
+  background: color-mix(in srgb, var(--peek-accent) 10%, transparent);
   color: var(--peek-accent);
   font-weight: 600;
 }
