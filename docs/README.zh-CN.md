@@ -22,6 +22,7 @@
 | [OpenCLI](./opencli.zh-CN.md)                                | 贡献者 / Agent 作者 | 官方 `opencli`：站点适配器 + 已登录 Chrome Browser Bridge（与 Computer Use 互补）                                      |
 | [发布与远程更新](./release.zh-CN.md)                         | 发版负责人          | 签名、`latest.json`、GitHub Releases、应用内更新流程与 CI                                                              |
 | [Companion（安卓）](https://github.com/rururunu/AnyaAndroid) | 用户 / 手机         | 手机远程：配对、对话、审批、文件。[架构](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.zh-CN.md) |
+| [权限与代码预览](./permissions-and-preview.zh-CN.md)         | 用户 / 贡献者       | 权限范围、双窗口审批恢复、代码卡片与读取范围预览                                                                       |
 
 ```mermaid
 flowchart LR

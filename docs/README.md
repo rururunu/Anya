@@ -22,6 +22,7 @@ These pages are the maintainer map — start at the root README for the product 
 | [OpenCLI](./opencli.md)                                        | Contributors / agent authors  | Official `opencli` plugin: site adapters + logged-in Chrome Browser Bridge (complements Computer Use)                                      |
 | [Releases & remote updates](./release.md)                      | Release managers              | Signing, `latest.json`, GitHub Releases, in-app update flow, CI                                                                            |
 | [Companion (Android)](https://github.com/rururunu/AnyaAndroid) | Users / mobile                | Phone remote: pair, chat, approvals, files. [Architecture](https://github.com/rururunu/AnyaAndroid/blob/main/docs/ARCHITECTURE.md)         |
+| [Permissions and code preview](./permissions-and-preview.md)   | Users / contributors          | Permission scopes, approval recovery across windows, code cards and read-range previews                                                    |
 
 ```mermaid
 flowchart LR

@@ -30,6 +30,12 @@ Host guidance lists the tools exposed for the current turn and requires capabili
 
 This ports core tool contracts rather than running the complete official plugin ecosystem. Anya supplies search, interaction UI, skill storage, image upload, child execution and permissions. Child delegation uses the upstream foreground configuration and exposes no background parameter. Optional MCP, LSP, PTY, computer-use, teams and continuable-agent plugins, and Anya-specific tools, are not mapped into this core profile. This implementation must not be described as a byte-for-byte copy of all official plugins and protocols.
 
+## Permissions and read previews
+
+The native dsh tools use Anya’s shared permission policy, one-shot approval UI and audit log. Read-only cannot be elevated through a tool approval. Workspace-write prompts for unsandboxed shell calls and external paths; Full-access bypasses interactive gates. This does not reproduce the official harness OS process sandbox.
+
+Successful `read` output uses the same code cards and highlighted sidebar as native `read_file`. The sidebar uses the recorded read activity, with snapshot fallback for changed or unavailable files. See [permissions and code preview](./permissions-and-preview.md).
+
 ## Requests and diagnostics
 
 Identity, tool guidance, skill catalog, workspace and project rules form a stable prefix; volatile context and retrieval follow history. Tool definitions are fixed throughout an agent turn and bypass Anya plugin argument/result hooks. The dsh path omits legacy completion challenges and implicit shell verification; the model verifies its work using tool guidance.
