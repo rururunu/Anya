@@ -252,7 +252,10 @@ impl ToolExecutor {
         tool_ctx: &ToolContext,
         max_chars: usize,
     ) -> ToolOutcome {
-        let user_denied = execution.as_ref().err().is_some_and(ToolError::is_terminal);
+        let user_denied = execution
+            .as_ref()
+            .err()
+            .is_some_and(ToolError::is_user_denied);
         let (raw_result, success) = match execution {
             Ok(value) => {
                 let success = !matches!(started.tool_name.as_str(), "pwsh" | "bash" | "job_output")

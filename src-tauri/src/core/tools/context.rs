@@ -75,6 +75,7 @@ pub struct AskQuestion {
 }
 
 pub struct PendingAsk {
+    sequence: u64,
     pub sender: mpsc::Sender<String>,
     pub session_id: String,
     pub questions: Vec<AskQuestion>,
@@ -85,6 +86,11 @@ pub struct AskStore {
 }
 
 impl AskStore {
+    pub fn dismiss(&self, request_id: &str) {
+        if let Ok(mut pending) = self.inner.lock() {
+            pending.remove(request_id);
+        }
+    }
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(std::collections::HashMap::new()),
@@ -102,6 +108,7 @@ impl AskStore {
             guard.insert(
                 request_id,
                 PendingAsk {
+                    sequence: next_interaction_sequence(),
                     sender,
                     session_id,
                     questions,
@@ -132,6 +139,7 @@ impl AskStore {
             .map(|map| {
                 map.iter()
                     .map(|(request_id, pending)| PendingAskSnapshot {
+                        sequence: pending.sequence,
                         request_id: request_id.clone(),
                         session_id: pending.session_id.clone(),
                         questions: pending.questions.clone(),
@@ -139,6 +147,35 @@ impl AskStore {
                     .collect()
             })
             .unwrap_or_default()
+    }
+}
+
+/// Retire questions on every exit, including cancellation and timeout.
+pub(crate) struct PendingAskGuard {
+    store: Arc<AskStore>,
+    bus: Arc<dyn EventBus>,
+    session: String,
+    request: String,
+}
+impl PendingAskGuard {
+    pub(crate) fn new(ctx: &ToolContext, request: &str) -> Self {
+        Self {
+            store: ctx.ask_store.clone(),
+            bus: ctx.event_bus.clone(),
+            session: ctx.root_session_id().into(),
+            request: request.into(),
+        }
+    }
+}
+impl Drop for PendingAskGuard {
+    fn drop(&mut self) {
+        self.store.dismiss(&self.request);
+        self.bus
+            .emit(crate::core::event::BusEvent::InteractionResolved {
+                session_id: self.session.clone(),
+                request_id: self.request.clone(),
+                kind: "ask_user".into(),
+            });
     }
 }
 
@@ -151,9 +188,15 @@ impl Default for AskStore {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingAskSnapshot {
+    pub sequence: u64,
     pub request_id: String,
     pub session_id: String,
     pub questions: Vec<AskQuestion>,
+}
+
+pub(crate) fn next_interaction_sequence() -> u64 {
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    SEQUENCE.fetch_add(1, Ordering::Relaxed)
 }
 
 #[derive(Clone)]

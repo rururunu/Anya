@@ -58,20 +58,26 @@ pub fn resolve_tool_path(
     access: PathAccess,
     tool_name: &str,
 ) -> Result<PathBuf, ToolError> {
+    ctx.ensure_not_cancelled()?;
     let normalized = resolve_path_candidate(&ctx.workspace_root, raw)?;
     let workspace = normalize_path(&ctx.workspace_root);
+    let approval_mode =
+        super::tool_approval::shared_tool_approval_store().mode_for_session(ctx.root_session_id());
+    if access == PathAccess::Write && approval_mode == ToolApprovalMode::Ask {
+        return Err(ToolError::policy_denied(
+            "read-only mode denies filesystem writes",
+        ));
+    }
 
     // Workspace-local paths do not need a path-permission prompt.
     // Mutating tools are already gated by tool_approval (ask / auto / alwaysAllow).
     // Asking again here produced a second, redundant "询问" UI for writes.
-    if normalized.starts_with(&workspace) {
+    if canonical_effect_path(&normalized).starts_with(canonical_effect_path(&workspace)) {
         return Ok(normalized);
     }
 
     deny_user_plugin_hunt(&normalized)?;
 
-    let approval_mode =
-        super::tool_approval::shared_tool_approval_store().mode_for_session(ctx.root_session_id());
     let pass_all = approval_mode == ToolApprovalMode::AlwaysAllow;
 
     // Outside-workspace writes: denied unless settings opt-in, or AlwaysAllow (最高级放行).
@@ -83,28 +89,43 @@ pub fn resolve_tool_path(
         )));
     }
 
-    if ctx
-        .path_permission_store
-        .is_granted(ctx.root_session_id(), &normalized, access)
-    {
-        return Ok(normalized);
-    }
-
     // AlwaysAllow: auto-pass path prompts (including outside workspace).
     // Auto: workspace tools are already approved; outside paths still ask.
     if pass_all {
-        ctx.path_permission_store
-            .grant_always(ctx.root_session_id(), &normalized, access);
         return Ok(normalized);
     }
 
-    ctx.path_permission_store.request_and_grant(
+    ctx.path_permission_store.request_and_grant_with_cancel(
         ctx.root_session_id(),
         &ctx.event_bus,
         normalized,
         access,
         tool_name,
+        Some(&ctx.cancelled),
+        Some(ctx),
     )
+}
+
+/// Resolve existing ancestors so junctions cannot turn an outside path into
+/// an apparent workspace-local write, including files that do not exist yet.
+fn canonical_effect_path(path: &Path) -> PathBuf {
+    let mut ancestor = path.to_path_buf();
+    let mut suffix = Vec::new();
+    loop {
+        if let Ok(mut canonical) = std::fs::canonicalize(&ancestor) {
+            for part in suffix.iter().rev() {
+                canonical.push(part);
+            }
+            return canonical;
+        }
+        let Some(name) = ancestor.file_name().map(|name| name.to_os_string()) else {
+            return path.to_path_buf();
+        };
+        suffix.push(name);
+        if !ancestor.pop() {
+            return path.to_path_buf();
+        }
+    }
 }
 
 const PLUGIN_HUNT_HINT: &str = "User plugins live outside the workspace. Do not read_file/list_folder/find_files/Grep AppData, LocalAppData, $HOME, or guessed plugin.json paths — that waits up to 10 minutes on a path-permission prompt (looks stuck, not slow I/O). Call manage_plugin action=list, then list_files/get_file. Those read actions are available in plan mode. Never guess %APPDATA% plugin paths.";
@@ -267,7 +288,15 @@ mod tests {
             "write_file",
         )
         .unwrap_err();
-        assert!(err.message.contains("write outside workspace denied"));
+        assert!(err
+            .message
+            .contains("read-only mode denies filesystem writes"));
+        let inside =
+            resolve_tool_path(&ctx, "inside-new.txt", PathAccess::Write, "write_file").unwrap_err();
+        assert!(inside
+            .message
+            .contains("read-only mode denies filesystem writes"));
+        assert!(!ctx.workspace_root.join("inside-new.txt").exists());
         shared_tool_approval_store().set_session_mode(&session_id, None);
     }
 

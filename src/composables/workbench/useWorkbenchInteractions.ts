@@ -1,4 +1,5 @@
-import { computed, ref, type Ref } from "vue";
+import { computed, ref, watch, type Ref } from "vue";
+import { usePendingInteractions } from "@/composables/chat/usePendingInteractions";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import type { AskUserSession, PathPermissionSession } from "@/components/chat/ChatInputBar.vue";
@@ -41,7 +42,15 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
   const chatStore = useChatStore();
   const settingStore = useSettingStore();
 
-  const pendingInteractions = ref<Record<string, PendingInteraction>>({});
+  const interactionQueue = usePendingInteractions();
+  const pendingInteractions = interactionQueue.pendingInteractions;
+  watch(
+    activeSessionId,
+    (session) => {
+      void interactionQueue.sync(session).catch(console.warn);
+    },
+    { immediate: true },
+  );
   const unreadSessionIds = ref(new Set<string>());
 
   const attentionSessionIds = computed(() => Object.keys(pendingInteractions.value));
@@ -65,16 +74,11 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
 
   function setPendingInteraction(sessionId: string, interaction: PendingInteraction) {
     if (!sessionId) return;
-    pendingInteractions.value = { ...pendingInteractions.value, [sessionId]: interaction };
+    interactionQueue.enqueue(sessionId, interaction);
   }
 
   function removePendingInteraction(sessionId: string, requestId?: string) {
-    const current = pendingInteractions.value[sessionId];
-    if (!current || (requestId && current.value.requestId !== requestId)) return false;
-    const next = { ...pendingInteractions.value };
-    delete next[sessionId];
-    pendingInteractions.value = next;
-    return true;
+    return interactionQueue.remove(sessionId, requestId);
   }
 
   function markSessionUnread(sessionId: string) {
@@ -169,7 +173,7 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
       await respondAskUser({ requestId: session.requestId, answer });
       chatStore.completeAskUserToolActivities(sessionId, answer);
     } catch (error) {
-      if (!isAlreadyResolvedError(error) && !pendingInteractions.value[sessionId]) {
+      if (!isAlreadyResolvedError(error)) {
         setPendingInteraction(sessionId, { kind: "ask_user", value: session });
       }
       console.error("respond_ask_user failed:", error);
@@ -185,7 +189,7 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     try {
       await respondPathPermission({ requestId: session.requestId, decision });
     } catch (error) {
-      if (!isAlreadyResolvedError(error) && !pendingInteractions.value[sessionId]) {
+      if (!isAlreadyResolvedError(error)) {
         setPendingInteraction(sessionId, { kind: "path_permission", value: session });
       }
       console.error("respond_path_permission failed:", error);
@@ -201,7 +205,7 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     try {
       await respondToolApproval({ requestId: session.requestId, decision });
     } catch (error) {
-      if (!isAlreadyResolvedError(error) && !pendingInteractions.value[sessionId]) {
+      if (!isAlreadyResolvedError(error)) {
         setPendingInteraction(sessionId, { kind: "tool_approval", value: session });
       }
       console.error("respond_tool_approval failed:", error);
@@ -209,6 +213,8 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
   }
 
   return {
+    syncPendingInteractions: interactionQueue.sync,
+    resolvePendingInteraction: interactionQueue.resolve,
     pendingInteractions,
     unreadSessionIds,
     attentionSessionIds,

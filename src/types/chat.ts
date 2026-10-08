@@ -518,6 +518,7 @@ export type AskDisplayOption = {
 };
 
 export interface AskUserEvent {
+  sequence?: number;
   sessionId: string;
   requestId: string;
   questions: AskUserQuestion[];
@@ -529,6 +530,7 @@ export interface RespondAskUserRequest {
 }
 
 export interface PathPermissionEvent {
+  sequence?: number;
   sessionId: string;
   requestId: string;
   path: string;
@@ -541,9 +543,9 @@ export interface RespondPathPermissionRequest {
   decision: PathPermissionDecision;
 }
 
-export type PathPermissionDecision = "allow_once" | "allow_always" | "deny";
+export type PathPermissionDecision = "allow_once" | "deny";
 
-export type ToolApprovalDecision = "allow_once" | "allow_session" | "deny";
+export type ToolApprovalDecision = "allow_once" | "deny";
 
 export interface ToolPreviewPayload {
   path: string;
@@ -555,6 +557,7 @@ export interface ToolPreviewPayload {
 }
 
 export interface ToolApprovalEvent {
+  sequence?: number;
   sessionId: string;
   requestId: string;
   toolName: string;
@@ -567,6 +570,7 @@ export interface ToolApprovalSession {
   requestId: string;
   toolName: string;
   title: string;
+  arguments?: Record<string, unknown>;
   preview?: ToolPreviewPayload | null;
 }
 
@@ -576,8 +580,15 @@ export interface RespondToolApprovalRequest {
 }
 
 export interface InteractionResolvedEvent {
+  sessionId?: string;
   requestId: string;
   kind: "ask_user" | "path_permission" | "tool_approval";
+}
+
+export interface PendingInteractionsSnapshot {
+  askUser: AskUserEvent[];
+  pathPermission: PathPermissionEvent[];
+  toolApproval: ToolApprovalEvent[];
 }
 
 export interface PlanModeChangedEvent {

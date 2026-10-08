@@ -1,5 +1,7 @@
+import { FileCode2, Bug, FileDiff, FileText } from "@lucide/vue";
+import { useCodeReadPreviewStore } from "@/stores/codeReadPreview";
+import { useSharedReviewState } from "@/composables/chat/useSharedReviewState";
 import { computed, onMounted, ref, watch, type ComputedRef, type Ref } from "vue";
-import { Bug, FileDiff, FileText } from "@lucide/vue";
 import { tr } from "@/services/i18n";
 
 import {
@@ -179,7 +181,11 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     () => subagentActivities.value.filter((activity) => activity.status === "running").length,
   );
 
+  const codeReadPreview = useCodeReadPreviewStore();
   const reviewViews = computed(() => [
+    ...(codeReadPreview.selection
+      ? [{ id: "code", label: tr(settingStore.language, "readCodeOpen"), icon: FileCode2 }]
+      : []),
     { id: "diff" as const, label: labels.value.diff, icon: FileDiff },
     { id: "plan" as const, label: tr(settingStore.language, "planProposalTitle"), icon: FileText },
     ...(import.meta.env.DEV
@@ -232,6 +238,10 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
       visible: true,
     });
 
+    if (!sharedSubagentIds.value.includes(entryId))
+      sharedSubagentIds.value = [...sharedSubagentIds.value, entryId];
+    sharedSelectedSubagent.value = entryId;
+    sharedView.value = "subagents";
     void selectConversation(sessionId);
   }
 
@@ -265,9 +275,6 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     activeSessionId,
     (sessionId) => {
       clearSessionUnread(sessionId);
-      openedImageSources.value = [];
-      selectedImageSource.value = "";
-      imageLightboxOpen.value = false;
       const memory = readSessionReviewMemory(sessionId);
       reviewView.value = memory.view;
       reviewOpen.value = memory.open;
@@ -300,6 +307,79 @@ export function useWorkbenchReview(options: UseWorkbenchReviewOptions) {
     updateNavigationWidth();
   });
 
+  const sharedSubagentIds = ref<string[]>([]);
+  const sharedSelectedSubagent = ref("");
+  const sharedView = ref("");
+  const sharedReview = useSharedReviewState(
+    () => activeSessionId.value,
+    {
+      images: openedImageSources,
+      selectedImage: selectedImageSource,
+      imageOpen: imageLightboxOpen,
+      subagents: sharedSubagentIds,
+      selectedSubagent: sharedSelectedSubagent,
+      view: sharedView,
+    },
+    (state) => {
+      if (state.subagents) {
+        for (const record of subagentSessionStore.visibleForParent(
+          rootSessionId(activeSessionId.value),
+        )) {
+          if (!state.subagents.includes(record.entryId))
+            subagentSessionStore.hide(record.sessionId);
+        }
+      }
+      for (const entryId of state.subagents ?? []) {
+        const parentId = rootSessionId(activeSessionId.value);
+        const entry = findSubagentEntry(allToolActivities.value, entryId, settingStore.language);
+        if (!entry) continue;
+        const sessionId = resolvePanelSessionId(parentId, allToolActivities.value, entry.entryId);
+        subagentSessionStore.upsert({
+          sessionId,
+          parentSessionId: parentId,
+          entryId: entry.entryId,
+          preview: entry.title,
+          workspaceId:
+            sessions.value.find((session) => session.sessionId === parentId)?.workspaceId ?? null,
+          visible: true,
+        });
+      }
+      if (
+        state.view === "subagents" &&
+        state.selectedSubagent &&
+        activeSessionId.value === rootSessionId(activeSessionId.value)
+      )
+        openAgentReview(state.selectedSubagent);
+      else if (state.view && ["diff", "plan", "runtime"].includes(state.view))
+        reviewView.value = state.view;
+    },
+  );
+  watch(
+    () => allToolActivities.value.map((item) => item.id).join("|"),
+    () => sharedReview.load(),
+  );
+  watch([reviewView, reviewOpen], () => {
+    if (reviewOpen.value)
+      sharedView.value =
+        activeSessionId.value !== rootSessionId(activeSessionId.value)
+          ? "subagents"
+          : reviewView.value;
+  });
+  watch(imageLightboxOpen, (open) => {
+    if (open) sharedView.value = "image";
+  });
+  watch(
+    () =>
+      subagentSessionStore
+        .visibleForParent(rootSessionId(activeSessionId.value))
+        .map((record) => record.entryId),
+    (ids) => {
+      if (JSON.stringify(ids) !== JSON.stringify(sharedSubagentIds.value))
+        sharedSubagentIds.value = ids;
+      if (!ids.includes(sharedSelectedSubagent.value))
+        sharedSelectedSubagent.value = ids[ids.length - 1] ?? "";
+    },
+  );
   return {
     reviewOpen,
     reviewView,

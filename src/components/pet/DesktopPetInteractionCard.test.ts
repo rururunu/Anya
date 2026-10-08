@@ -114,19 +114,14 @@ describe("DesktopPetInteractionCard", () => {
     expect(wrapper.text()).toContain("C:/Projects/secret.key");
 
     const optionItems = wrapper.findAll(".permission-option");
-    expect(optionItems.length).toBe(3);
+    expect(optionItems.length).toBe(2);
 
     // 允许一次 (allow_once)
     await optionItems[0].trigger("mousedown");
     expect(wrapper.emitted("submit-path")?.[0]).toEqual(["allow_once"]);
 
-    // 总是允许 (allow_always)
     await optionItems[1].trigger("mousedown");
-    expect(wrapper.emitted("submit-path")?.[1]).toEqual(["allow_always"]);
-
-    // 拒绝 (deny)
-    await optionItems[2].trigger("mousedown");
-    expect(wrapper.emitted("submit-path")?.[2]).toEqual(["deny"]);
+    expect(wrapper.emitted("submit-path")?.[1]).toEqual(["deny"]);
   });
 
   it("renders tool_approval mode and emits corresponding decisions", async () => {
@@ -148,19 +143,11 @@ describe("DesktopPetInteractionCard", () => {
     expect(wrapper.text()).toContain("package.json");
 
     const optionItems = wrapper.findAll(".permission-option");
-    expect(optionItems.length).toBe(3);
-
-    // 允许一次 (allow_once)
+    expect(optionItems.length).toBe(2);
     await optionItems[0].trigger("mousedown");
     expect(wrapper.emitted("submit-tool")?.[0]).toEqual(["allow_once"]);
-
-    // 会话允许 (allow_session)
     await optionItems[1].trigger("mousedown");
-    expect(wrapper.emitted("submit-tool")?.[1]).toEqual(["allow_session"]);
-
-    // 拒绝 (deny)
-    await optionItems[2].trigger("mousedown");
-    expect(wrapper.emitted("submit-tool")?.[2]).toEqual(["deny"]);
+    expect(wrapper.emitted("submit-tool")?.[1]).toEqual(["deny"]);
   });
 
   it("renders queue navigation when totalCount > 1 and emits prev/next", async () => {
@@ -219,7 +206,7 @@ describe("DesktopPetInteractionCard", () => {
     expect(wrapper.find(".queue-nav-btn").attributes("title")).toBe("Previous request");
     expect(wrapper.find(".dismiss-btn").attributes("title")).toBe("Close panel");
     expect(wrapper.text()).toContain("Allow once");
-    expect(wrapper.text()).toContain("Always allow");
+    expect(wrapper.text()).not.toContain("Always allow");
     expect(wrapper.text()).toContain("Deny");
   });
 });

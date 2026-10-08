@@ -6,7 +6,7 @@ import {
   Paintbrush,
   Shield,
   ShieldOff,
-  ShieldQuestion,
+  ShieldCheck,
   Sparkle,
 } from "@lucide/vue";
 import {
@@ -68,7 +68,7 @@ function chatModeIcon(mode: ChatMode): Component {
 function approvalIcon(mode: ToolApprovalMode): Component {
   switch (mode) {
     case "ask":
-      return ShieldQuestion;
+      return ShieldCheck;
     case "alwaysAllow":
       return ShieldOff;
     default:

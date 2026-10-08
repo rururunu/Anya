@@ -139,6 +139,7 @@ impl ToolRegistry {
         name: &str,
         args: &Value,
     ) -> Result<Arc<dyn Tool>, ToolError> {
+        ctx.ensure_not_cancelled()?;
         let name = if self.tools.contains_key(name.trim()) {
             name.trim()
         } else {
@@ -163,6 +164,7 @@ impl ToolRegistry {
             args,
             preview.clone(),
         )?;
+        ctx.ensure_not_cancelled()?;
         let current_preview = tool.preview(ctx, args)?;
         if current_preview != preview {
             return Err(ToolError::new(

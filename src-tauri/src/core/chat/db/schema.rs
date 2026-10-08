@@ -8,6 +8,17 @@ pub(crate) async fn init_all(pool: &SqlitePool) -> Result<(), String> {
     crate::core::chat::journal::init_journal_schema(pool).await?;
     crate::core::chat::journal::compact_recovery_journal(pool).await?;
     init_token_usage_schema(pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS chat_permission_events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+        message_id TEXT NOT NULL, request_id TEXT NOT NULL, kind TEXT NOT NULL,
+        payload TEXT NOT NULL, timestamp INTEGER NOT NULL)",
+    )
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_permission_session_seq ON chat_permission_events(session_id,seq)")
+        .execute(pool).await.map_err(|error| error.to_string())?;
     Ok(())
 }
 

@@ -58,6 +58,8 @@ export interface UseWorkbenchLifecycleOptions {
   pendingInteractions: Ref<Record<string, PendingInteraction>>;
   setPendingInteraction: (sessionId: string, interaction: PendingInteraction) => void;
   removePendingInteraction: (sessionId: string, requestId?: string) => boolean;
+  syncPendingInteractions: (sessionId: string) => Promise<void>;
+  resolvePendingInteraction: (requestId: string, sessionId?: string) => void;
   sessionDisplayName: (sessionId: string) => string;
   updateReviewWidth: () => void;
   updateNavigationWidth: () => void;
@@ -97,6 +99,8 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     pendingInteractions,
     setPendingInteraction,
     removePendingInteraction,
+    syncPendingInteractions,
+    resolvePendingInteraction,
     sessionDisplayName,
     updateReviewWidth,
     updateNavigationWidth,
@@ -132,7 +136,10 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
         if (options.windowFocused) {
           options.windowFocused.value = focused;
         }
-        if (focused && !settingsOpen.value) clearSessionUnread(activeSessionId.value);
+        if (focused && !settingsOpen.value) {
+          clearSessionUnread(activeSessionId.value);
+          void syncPendingInteractions("").catch(console.warn);
+        }
       }),
     );
     unlisteners.push(
@@ -261,9 +268,12 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     );
     unlisteners.push(
       await listenInteractionResolved((payload) => {
-        const matchedSessionId = Object.entries(pendingInteractions.value).find(
-          ([, interaction]) => interaction.value.requestId === payload.requestId,
-        )?.[0];
+        const matchedSessionId =
+          payload.sessionId ??
+          Object.entries(pendingInteractions.value).find(
+            ([, interaction]) => interaction.value.requestId === payload.requestId,
+          )?.[0];
+        resolvePendingInteraction(payload.requestId, payload.sessionId);
         void dismissNotificationForInteraction(payload.requestId, matchedSessionId);
         if (!matchedSessionId) return;
         removePendingInteraction(matchedSessionId, payload.requestId);
@@ -274,10 +284,12 @@ export function useWorkbenchLifecycle(options: UseWorkbenchLifecycleOptions) {
     unlisteners.push(
       await appWindow.listen("workbench-opened", () => {
         void refreshSessions();
+        void syncPendingInteractions("").catch(console.warn);
         void inputRef.value?.focusInput();
       }),
     );
 
+    await syncPendingInteractions("").catch(console.warn);
     globalThis.addEventListener("resize", handleLayoutResize);
     globalThis.addEventListener("keydown", handleWorkbenchHotkey);
     globalThis.addEventListener("pointermove", moveWorkspacePointerDrag);

@@ -20,6 +20,11 @@ pub enum PlanModeSource {
 /// EventBus 事件 — Vue 只订阅这些，不感知 Provider。
 #[derive(Debug, Clone)]
 pub enum BusEvent {
+    InteractionResolved {
+        session_id: String,
+        request_id: String,
+        kind: String,
+    },
     AgentEvent {
         event: crate::core::agent::AgentEventRecord,
     },

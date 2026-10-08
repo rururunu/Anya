@@ -418,6 +418,10 @@ impl ConversationManager {
                     .bind(&sid)
                     .execute(&mut *transaction)
                     .await?;
+                sqlx::query("DELETE FROM chat_permission_events WHERE session_id = ?")
+                    .bind(&sid)
+                    .execute(&mut *transaction)
+                    .await?;
                 sqlx::query("DELETE FROM chat_messages WHERE session_id = ?;")
                     .bind(&sid)
                     .execute(&mut *transaction)
@@ -467,6 +471,9 @@ impl ConversationManager {
             let result = async {
                 let mut transaction = pool.begin().await?;
                 sqlx::query("DELETE FROM chat_journal_events")
+                    .execute(&mut *transaction)
+                    .await?;
+                sqlx::query("DELETE FROM chat_permission_events")
                     .execute(&mut *transaction)
                     .await?;
                 sqlx::query("DELETE FROM chat_messages")

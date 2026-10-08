@@ -22,6 +22,27 @@ impl EventBus for TauriEventBus {
     fn emit(&self, event: BusEvent) {
         crate::core::remote::on_bus_event(&event);
         match event {
+            BusEvent::InteractionResolved {
+                session_id,
+                request_id,
+                kind,
+            } => {
+                crate::core::remote::push_interaction_resolved(
+                    &request_id,
+                    &kind,
+                    Some(&session_id),
+                );
+                crate::core::remote::resume_run_state_after_interaction(&self.app, &session_id);
+                crate::commands::window::dismiss_tracked_interaction_notifications(
+                    &self.app,
+                    Some(&request_id),
+                    None,
+                );
+                let _ = self.app.emit(
+                    "interaction-resolved",
+                    serde_json::json!({"sessionId":session_id,"requestId":request_id,"kind":kind}),
+                );
+            }
             BusEvent::AgentEvent { event } => {
                 let _ = self.app.emit("agent-event", event);
             }

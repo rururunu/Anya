@@ -301,6 +301,11 @@ impl ConversationManager {
                 .execute(&mut *transaction)
                 .await
                 .map_err(|error| ChatError::Internal(error.to_string()))?;
+            sqlx::query("DELETE FROM chat_permission_events WHERE message_id = ?")
+                .bind(id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ChatError::Internal(error.to_string()))?;
             sqlx::query("DELETE FROM chat_messages WHERE id = ?;")
                 .bind(id)
                 .execute(&mut *transaction)

@@ -727,6 +727,7 @@
                 :focus-path="reviewFocusPath"
                 :focus-at="reviewFocusAt"
               />
+              <ReadCodeSidebar v-if="codePreview.selection" v-show="reviewView === 'code'" />
               <PlanPreviewSidebar
                 v-show="reviewView === 'plan'"
                 embedded
@@ -800,6 +801,8 @@
 </template>
 
 <script setup lang="ts">
+import ReadCodeSidebar from "@/components/chat/ReadCodeSidebar.vue";
+import { useCodeReadPreviewStore } from "@/stores/codeReadPreview";
 import {
   computed,
   defineAsyncComponent,
@@ -1122,6 +1125,8 @@ const {
   toolApprovalSession,
   setPendingInteraction,
   removePendingInteraction,
+  syncPendingInteractions,
+  resolvePendingInteraction,
   markSessionUnread,
   clearSessionUnread,
   isWorkbenchClosed,
@@ -1510,6 +1515,8 @@ useWorkbenchLifecycle({
   pendingInteractions,
   setPendingInteraction,
   removePendingInteraction,
+  syncPendingInteractions,
+  resolvePendingInteraction,
   sessionDisplayName,
   updateReviewWidth,
   updateNavigationWidth,
@@ -1584,6 +1591,24 @@ watch(settingsOpen, (open) => {
     language: settingStore.language,
     chromeFrostedGlass: settingStore.chromeFrostedGlass,
   });
+});
+const codePreview = useCodeReadPreviewStore();
+watch(
+  () => codePreview.selection,
+  (selection) => {
+    if (selection) {
+      reviewView.value = "code";
+      reviewOpen.value = true;
+      updateReviewWidth();
+    }
+  },
+);
+watch(activeSessionId, () => {
+  codePreview.clear();
+  if (reviewView.value === "code") {
+    reviewView.value = "diff";
+    reviewOpen.value = false;
+  }
 });
 </script>
 

@@ -214,6 +214,22 @@
                         {{ subagentTabLabel }}
                       </TooltipContent>
                     </Tooltip>
+                    <Tooltip v-if="codePreview.selection">
+                      <TooltipTrigger as-child>
+                        <button
+                          type="button"
+                          class="sidebar-tab"
+                          :class="{ active: sidebarTab === 'code' }"
+                          :aria-label="tr(settingStore.language, 'readCodeOpen')"
+                          @click="selectSidebarTab('code')"
+                        >
+                          <FileCode2 :size="13" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" :side-offset="6">
+                        {{ tr(settingStore.language, "readCodeOpen") }}
+                      </TooltipContent>
+                    </Tooltip>
                     <Tooltip v-if="openedImageSources.length">
                       <TooltipTrigger as-child>
                         <button
@@ -282,6 +298,7 @@
                     :focus-at="diffFocusAt"
                     embedded
                   />
+                  <ReadCodeSidebar v-if="codePreview.selection" v-show="sidebarTab === 'code'" />
                   <PlanPreviewSidebar
                     v-show="sidebarTab === 'plan'"
                     :session-id="activeSessionId"
@@ -381,9 +398,8 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { storeToRefs } from "pinia";
 import {
+  FileCode2,
   AppWindow,
   Bug,
   CircleAlert,
@@ -396,6 +412,12 @@ import {
   PinOff,
   X,
 } from "@lucide/vue";
+import ReadCodeSidebar from "@/components/chat/ReadCodeSidebar.vue";
+import { useCodeReadPreviewStore } from "@/stores/codeReadPreview";
+import { useSharedReviewState } from "@/composables/chat/useSharedReviewState";
+import { usePendingInteractions } from "@/composables/chat/usePendingInteractions";
+import { defineAsyncComponent, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import AppErrorBoundary from "@/components/AppErrorBoundary.vue";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
@@ -540,11 +562,45 @@ const isMinimizePreview = ref(false);
 const isAlwaysOnTop = ref(true);
 const MINIMIZE_PREVIEW_MS = 64;
 let minimizeTimer: ReturnType<typeof setTimeout> | null = null;
-const askUserSession = ref<AskUserSession | null>(null);
+const interactionQueue = usePendingInteractions();
+const activePendingInteraction = computed(
+  () => interactionQueue.pendingInteractions.value[activeSessionId.value],
+);
+const askUserSession = computed<AskUserSession | null>({
+  get: () =>
+    activePendingInteraction.value?.kind === "ask_user"
+      ? activePendingInteraction.value.value
+      : null,
+  set: (value) => {
+    if (value) interactionQueue.enqueue(activeSessionId.value, { kind: "ask_user", value });
+    else if (askUserSession.value)
+      interactionQueue.remove(activeSessionId.value, askUserSession.value.requestId);
+  },
+});
 const askUserSubmitting = ref(false);
-const pathPermissionSession = ref<PathPermissionSession | null>(null);
+const pathPermissionSession = computed<PathPermissionSession | null>({
+  get: () =>
+    activePendingInteraction.value?.kind === "path_permission"
+      ? activePendingInteraction.value.value
+      : null,
+  set: (value) => {
+    if (value) interactionQueue.enqueue(activeSessionId.value, { kind: "path_permission", value });
+    else if (pathPermissionSession.value)
+      interactionQueue.remove(activeSessionId.value, pathPermissionSession.value.requestId);
+  },
+});
 const pathPermissionSubmitting = ref(false);
-const toolApprovalSession = ref<ToolApprovalSession | null>(null);
+const toolApprovalSession = computed<ToolApprovalSession | null>({
+  get: () =>
+    activePendingInteraction.value?.kind === "tool_approval"
+      ? activePendingInteraction.value.value
+      : null,
+  set: (value) => {
+    if (value) interactionQueue.enqueue(activeSessionId.value, { kind: "tool_approval", value });
+    else if (toolApprovalSession.value)
+      interactionQueue.remove(activeSessionId.value, toolApprovalSession.value.requestId);
+  },
+});
 const toolApprovalSubmitting = ref(false);
 const checkpoints = ref<CheckpointInfo[]>([]);
 const historySessions = ref<ChatSessionSummary[] | null>(null);
@@ -554,6 +610,7 @@ const planSidebarOpen = ref(false);
 const subagentSidebarOpen = ref(false);
 const runtimeSidebarOpen = ref(false);
 const imageSidebarOpen = ref(false);
+const codeSidebarOpen = ref(false);
 const openedImageSources = ref<string[]>([]);
 const selectedImageSource = ref("");
 const openedSubagentIds = ref<string[]>([]);
@@ -570,6 +627,7 @@ const sidebarOpen = computed(
     subagentSidebarOpen.value ||
     runtimeSidebarOpen.value ||
     imageSidebarOpen.value ||
+    codeSidebarOpen.value ||
     pluginSidebarOpen.value,
 );
 const panelStyle = computed(() => ({
@@ -601,13 +659,7 @@ const messages = computed(() => {
   }
   return sessions.value[sessionId] ?? [];
 });
-watch(activeSessionId, () => {
-  openedSubagentIds.value = [];
-  selectedSubagentId.value = "";
-  openedImageSources.value = [];
-  selectedImageSource.value = "";
-  if (sidebarTab.value === "subagents" || sidebarTab.value === "image") closeSidebar();
-});
+
 const allToolActivities = computed(() =>
   messages.value.flatMap((message) => message.toolActivities ?? []),
 );
@@ -831,6 +883,7 @@ function selectSidebarTab(tab: SidebarTab) {
   subagentSidebarOpen.value = tab === "subagents";
   runtimeSidebarOpen.value = tab === "runtime";
   imageSidebarOpen.value = tab === "image";
+  codeSidebarOpen.value = tab === "code";
   pluginSidebarOpen.value = pluginSidebarTabs.value.some((item) => item.id === tab);
   if (pluginSidebarOpen.value) pluginsStore.activeSidebarTabId = String(tab);
   emitComposerLayout();
@@ -847,6 +900,7 @@ function closeSidebar() {
   subagentSidebarOpen.value = false;
   runtimeSidebarOpen.value = false;
   imageSidebarOpen.value = false;
+  codeSidebarOpen.value = false;
   pluginSidebarOpen.value = false;
 }
 
@@ -1162,7 +1216,7 @@ async function handleAskUserComplete(answer: string) {
       tr(settingStore.language, "askSubmitFailed", { error: String(error) }),
     );
     console.error("respond_ask_user failed:", error);
-    if (!isAlreadyResolvedError(error) && !askUserSession.value) {
+    if (!isAlreadyResolvedError(error)) {
       askUserSession.value = session;
     }
     askUserSubmitting.value = false;
@@ -1170,7 +1224,7 @@ async function handleAskUserComplete(answer: string) {
   }
 
   const label = getCurrentWebviewWindow().label;
-  await setOverlayPopupOpen(label, false);
+  await setOverlayPopupOpen(label, Boolean(activePendingInteraction.value));
   emitComposerLayout();
   await nextTick();
   void inputRef.value?.focusInput();
@@ -1263,7 +1317,7 @@ async function handlePathPermissionComplete(decision: PathPermissionDecision) {
     });
   } catch (error) {
     console.error("respond_path_permission failed:", error);
-    if (!isAlreadyResolvedError(error) && !pathPermissionSession.value) {
+    if (!isAlreadyResolvedError(error)) {
       pathPermissionSession.value = session;
     }
     pathPermissionSubmitting.value = false;
@@ -1271,7 +1325,7 @@ async function handlePathPermissionComplete(decision: PathPermissionDecision) {
   }
 
   const label = getCurrentWebviewWindow().label;
-  await setOverlayPopupOpen(label, false);
+  await setOverlayPopupOpen(label, Boolean(activePendingInteraction.value));
   pathPermissionSubmitting.value = false;
   emitComposerLayout();
   await nextTick();
@@ -1297,14 +1351,14 @@ async function handleToolApprovalComplete(decision: ToolApprovalDecision) {
     });
   } catch (error) {
     console.error("respond_tool_approval failed:", error);
-    if (!isAlreadyResolvedError(error) && !toolApprovalSession.value) {
+    if (!isAlreadyResolvedError(error)) {
       toolApprovalSession.value = session;
     }
     toolApprovalSubmitting.value = false;
     return;
   }
   const label = getCurrentWebviewWindow().label;
-  await setOverlayPopupOpen(label, false);
+  await setOverlayPopupOpen(label, Boolean(activePendingInteraction.value));
   toolApprovalSubmitting.value = false;
   emitComposerLayout();
   await nextTick();
@@ -1389,10 +1443,31 @@ function closeAskUser() {
   void setOverlayPopupOpen(getCurrentWebviewWindow().label, false);
 }
 
+async function syncPendingInteractions(sessionId: string) {
+  try {
+    await interactionQueue.sync(sessionId);
+  } catch (error) {
+    console.warn("get_pending_interactions failed:", error);
+  }
+}
+watch(
+  () => activePendingInteraction.value?.value.requestId,
+  async () => {
+    emitComposerLayout();
+    await setOverlayPopupOpen(
+      getCurrentWebviewWindow().label,
+      Boolean(activePendingInteraction.value),
+    );
+    void inputRef.value?.focusInput();
+  },
+);
+
 watch(
   () => activeSessionId.value,
-  () => {
+  (sessionId, previousSessionId) => {
     void refreshCheckpoints();
+    if (sessionId === previousSessionId) return;
+    void syncPendingInteractions(sessionId);
   },
 );
 
@@ -1446,12 +1521,10 @@ onMounted(async () => {
     void scheduleOverlayInputFocus();
   }
 
-  void listenAskUser(async (payload) => {
+  await listenAskUser(async (payload) => {
     if (payload.sessionId && payload.sessionId !== activeSessionId.value) {
       return;
     }
-    pathPermissionSession.value = null;
-    toolApprovalSession.value = null;
     askUserSession.value = {
       requestId: payload.requestId,
       questions: payload.questions,
@@ -1461,12 +1534,10 @@ onMounted(async () => {
     void inputRef.value?.focusInput();
   });
 
-  void listenPathPermission(async (payload) => {
+  await listenPathPermission(async (payload) => {
     if (payload.sessionId && payload.sessionId !== activeSessionId.value) {
       return;
     }
-    askUserSession.value = null;
-    toolApprovalSession.value = null;
     pathPermissionSession.value = {
       requestId: payload.requestId,
       path: payload.path,
@@ -1478,16 +1549,15 @@ onMounted(async () => {
     void inputRef.value?.focusInput();
   });
 
-  void listenToolApproval(async (payload) => {
+  await listenToolApproval(async (payload) => {
     if (payload.sessionId && payload.sessionId !== activeSessionId.value) {
       return;
     }
-    askUserSession.value = null;
-    pathPermissionSession.value = null;
     toolApprovalSession.value = {
       requestId: payload.requestId,
       toolName: payload.toolName,
       title: payload.title,
+      arguments: payload.arguments,
       preview: payload.preview ?? null,
     };
     chatStore.attachToolApprovalPreview(
@@ -1501,24 +1571,8 @@ onMounted(async () => {
     void inputRef.value?.focusInput();
   });
 
-  void listenInteractionResolved(async (payload) => {
-    let matched = false;
-    if (askUserSession.value?.requestId === payload.requestId) {
-      askUserSession.value = null;
-      matched = true;
-    }
-    if (pathPermissionSession.value?.requestId === payload.requestId) {
-      pathPermissionSession.value = null;
-      matched = true;
-    }
-    if (toolApprovalSession.value?.requestId === payload.requestId) {
-      toolApprovalSession.value = null;
-      matched = true;
-    }
-    if (!matched) return;
-    emitComposerLayout();
-    await setOverlayPopupOpen(getCurrentWebviewWindow().label, false);
-    void inputRef.value?.focusInput();
+  await listenInteractionResolved((payload) => {
+    interactionQueue.resolve(payload.requestId, payload.sessionId);
   });
 
   await window.listen("overlay-shown", () => {
@@ -1529,6 +1583,7 @@ onMounted(async () => {
     // Rust configure_overlay_window already applied shadow/toolwindow on show.
     panelVisible.value = true;
     void scheduleOverlayInputFocus();
+    void syncPendingInteractions(activeSessionId.value);
   });
 
   await window.listen("overlay-hidden", () => {
@@ -1612,6 +1667,7 @@ onMounted(async () => {
     "session",
   );
   if (initialSessionId) await handleHistorySelect(initialSessionId);
+  await syncPendingInteractions(activeSessionId.value);
 });
 
 onUnmounted(() => {
@@ -1623,6 +1679,34 @@ onUnmounted(() => {
   void setWindowSessionView();
   clearMinimizePreview();
   stopDiffSidebarResize();
+});
+useSharedReviewState(
+  () => activeSessionId.value,
+  {
+    images: openedImageSources,
+    selectedImage: selectedImageSource,
+    subagents: openedSubagentIds,
+    selectedSubagent: selectedSubagentId,
+    view: sidebarTab,
+    imageOpen: imageSidebarOpen,
+  },
+  (state) => {
+    if (state.view === "image" && state.imageOpen && openedImageSources.value.length)
+      selectSidebarTab("image");
+    else if (state.view === "subagents" && openedSubagentIds.value.length)
+      selectSidebarTab("subagents");
+  },
+);
+const codePreview = useCodeReadPreviewStore();
+watch(
+  () => codePreview.selection,
+  (selection) => {
+    if (selection) selectSidebarTab("code");
+  },
+);
+watch(activeSessionId, () => {
+  codePreview.clear();
+  if (sidebarTab.value === "code") closeSidebar();
 });
 </script>
 

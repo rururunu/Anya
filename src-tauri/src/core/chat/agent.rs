@@ -208,6 +208,30 @@ impl AgentRunner {
         let mut frozen_tools: Option<std::sync::Arc<[serde_json::Value]>> = None;
 
         loop {
+            let permission_mode = crate::core::tools::tool_approval::shared_tool_approval_store()
+                .mode_for_session(tool_ctx.root_session_id());
+            let policy = match permission_mode {
+                crate::models::settings::ToolApprovalMode::Ask => "Read-only: filesystem mutations and arbitrary shell execution are denied. Reading and session bookkeeping are allowed. User approval cannot elevate this mode; the user must switch permission mode.",
+                crate::models::settings::ToolApprovalMode::Auto => "Workspace-write: native file tools can modify the workspace. External paths retain their permission gate. Shell commands run without OS filesystem isolation and require separate approval for each invocation. Grants apply only once.",
+                crate::models::settings::ToolApprovalMode::AlwaysAllow => "Full-access: tools can operate outside the workspace without interactive approval. Explicit tool safety rules still apply.",
+            };
+            if !request
+                .messages
+                .iter()
+                .any(|message| message.id == "permission-policy" && message.content == policy)
+            {
+                request
+                    .messages
+                    .retain(|message| message.id != "permission-policy");
+                let mut message = crate::core::chat::conversation_manager::create_message(
+                    &request.session_id,
+                    Role::System,
+                    policy.into(),
+                    MessageStatus::Done,
+                );
+                message.id = "permission-policy".into();
+                request.messages.insert(0, message);
+            }
             if cancelled.load(Ordering::Relaxed) {
                 return Err(ProviderError::cancelled());
             }
@@ -633,7 +657,7 @@ impl AgentRunner {
             if user_denied {
                 let _ = tx
                     .send(StreamEvent::TurnComplete {
-                        content: "已停止：你拒绝了文件访问权限。".to_string(),
+                        content: "已停止：你拒绝了本次工具操作。".to_string(),
                         reasoning: None,
                         tool_calls: vec![],
                         finish_reason: Some("user_denied".to_string()),

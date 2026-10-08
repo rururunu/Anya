@@ -122,6 +122,8 @@
           v-else-if="showToolApprovalPicker"
           key="tool-approval-list"
           :header="toolApprovalHeader"
+          :summary="props.toolApproval?.title"
+          :arguments="props.toolApproval?.arguments"
           :options="toolApprovalOptions"
           :selected-index="selectedIndex"
           :ariaLabel="tr(language, 'toolApprovalTitle')"
@@ -575,7 +577,9 @@
                 :size="13"
                 class="footer-chip-icon"
               />
-              <span v-if="!props.inlineComposer" class="model-name">{{ approvalModeLabel }}</span>
+              <span v-if="!props.inlineComposer" class="model-name">
+                {{ approvalModeLabel }}
+              </span>
               <ChevronDown v-if="!props.inlineComposer" :size="11" class="model-chevron" />
             </button>
           </div>
@@ -750,9 +754,8 @@ import {
   MessageCircle,
   Sparkle,
   Paintbrush,
-  ShieldQuestion,
-  Shield,
   ShieldCheck,
+  Shield,
   ShieldOff,
   ListChecks,
   Check,
@@ -1617,8 +1620,7 @@ async function initializeSessionCompose(sessionId: string) {
 function getApprovalIcon(mode: ToolApprovalMode) {
   switch (mode) {
     case "ask":
-      // Ask before each tool —shield with question.
-      return ShieldQuestion;
+      return ShieldCheck;
     case "auto":
       // Auto-run under policy —guarded shield.
       return Shield;
@@ -1805,13 +1807,6 @@ const pathPermissionOptions = computed(() => [
     icon: Check,
   },
   {
-    slug: "always",
-    label: tr(language.value, "allowAlways"),
-    description: tr(language.value, "allowAlwaysDesc"),
-    decision: "allow_always" as const,
-    icon: ShieldCheck,
-  },
-  {
     slug: "no",
     label: tr(language.value, "deny"),
     description: tr(language.value, "denyDesc"),
@@ -1831,13 +1826,6 @@ const toolApprovalOptions = computed(() => [
     description: tr(language.value, "allowOnceDesc"),
     decision: "allow_once" as const,
     icon: Check,
-  },
-  {
-    slug: "session",
-    label: tr(language.value, "allowSession"),
-    description: tr(language.value, "allowSessionDesc"),
-    decision: "allow_session" as const,
-    icon: Shield,
   },
   {
     slug: "deny",

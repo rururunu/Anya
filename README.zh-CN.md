@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.zh-CN.md">使用文档</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.27 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.28 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
@@ -51,6 +51,10 @@ Alt+Alt 会在弹窗取得焦点前采集选中文字，并以紧凑的行内标
 | Agent | 使用工具完成任务，按审批策略执行操作 |
 | Plan  | 先制定计划，批准后再执行写操作       |
 | Image | 使用单独配置的生图服务生成图片       |
+
+权限与聊天模式独立：**只读**禁止文件修改和任意 Shell 命令；**工作区写入**允许工作区内的文件编辑，执行 Shell 命令或访问外部路径时需要审批；**完全访问**跳过这些审批提示，仍保留命令安全规则。批准仅允许本次操作，不能覆盖只读限制。
+
+工作台与弹窗打开或恢复焦点时会恢复待回答的问题与审批。成功的代码读取显示为可展开的语法高亮卡片；点击文件名，可在侧栏定位并高亮读取范围。文件已变化或无法加载时，显示读取时保存的片段。详见[权限与代码预览](./docs/permissions-and-preview.zh-CN.md)。
 
 Office 排版、转换和公式结果需按产物检查。部分搜索与扩展功能需要额外配置。详见 [Office 工作流](./docs/office.zh-CN.md) 与 [插件说明](./docs/plugin-system.zh-CN.md)。
 

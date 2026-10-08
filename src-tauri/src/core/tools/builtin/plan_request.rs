@@ -81,9 +81,10 @@ impl Tool for RequestPlanModeTool {
         );
         self.event_bus.emit(BusEvent::AskUser {
             session_id: session_id.to_string(),
-            request_id,
+            request_id: request_id.clone(),
             questions,
         });
+        let _pending = crate::core::tools::context::PendingAskGuard::new(ctx, &request_id);
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
         let answer = loop {

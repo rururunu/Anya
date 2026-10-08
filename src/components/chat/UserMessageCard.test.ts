@@ -21,9 +21,15 @@ const message: ChatMessage = {
   timestamp: 1,
 };
 const wrappers: ReturnType<typeof mount>[] = [];
-function card(inlineEdit = true) {
+function card(inlineEdit = true, content = message.content) {
   const wrapper = mount(UserMessageCard, {
-    props: { message, sessionId: message.sessionId, canResend: true, busy: false, inlineEdit },
+    props: {
+      message: { ...message, content },
+      sessionId: message.sessionId,
+      canResend: true,
+      busy: false,
+      inlineEdit,
+    },
   });
   wrappers.push(wrapper);
   return wrapper;
@@ -33,6 +39,18 @@ afterEach(() => {
 });
 
 describe("inline user message editing", () => {
+  it("shows the full user message in the overlay while keeping workbench folding", () => {
+    const longText = Array.from({ length: 14 }, (_, index) => `Line ${index + 1}`).join("\n");
+    const overlay = card(true, longText);
+    expect(overlay.get(".user-composer").classes()).not.toContain("is-collapsed");
+    expect(overlay.find(".user-bubble-toggle").exists()).toBe(false);
+    expect(overlay.get(".user-message-text").text()).toBe(longText);
+
+    const workbench = card(false, longText);
+    expect(workbench.get(".user-composer").classes()).toContain("is-collapsed");
+    expect(workbench.find(".user-bubble-toggle").exists()).toBe(true);
+  });
+
   it("does not expose a sent-time tooltip on workbench messages", () => {
     const wrapper = card(false);
     expect(wrapper.get(".user-composer").attributes("title")).not.toBe(

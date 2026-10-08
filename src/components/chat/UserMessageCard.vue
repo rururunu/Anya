@@ -73,7 +73,7 @@ const content = computed(() =>
 const plainText = computed(() =>
   [content.value.message, content.value.selection].filter(Boolean).join("\n"),
 );
-const needsFold = computed(() => shouldFoldUserMessage(plainText.value));
+const needsFold = computed(() => !props.inlineEdit && shouldFoldUserMessage(plainText.value));
 const collapsed = computed(() => needsFold.value && !expanded.value && !editing.value);
 const canEdit = computed(
   () =>

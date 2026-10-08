@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.27                                            |
+| **Version** | v0.2.28                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -723,6 +723,12 @@ Usage UI: `prompt_cache_hit_tokens` / miss fields → `cacheReadTokens`; hit % =
 
 ## 11. Tools, approval, and skills
 
+Implementation details and scope boundaries are documented in [permissions and code preview](./permissions-and-preview.md).
+
+Workbench and overlay use the same pending-interaction queue projection. Startup, focus and session changes reconcile backend snapshots; a global snapshot restores background-session requests too. Backend sequence numbers preserve request order, and resolved ids prevent late events or snapshots from reviving completed cards. All approval/question terminal paths broadcast `interaction-resolved`, including cancellation and timeout. Image tabs, selected image and subagent entry state are shared per root session through `anya.shared-review.v1.*`; native window dimensions remain local.
+
+Permission scope is independent of Ask/Agent/Plan chat mode. The three UI modes are **Read-only**, **Workspace-write**, and **Full-access**; legacy persisted values `ask`, `auto`, and `alwaysAllow` map to these modes respectively. Read-only rejects filesystem mutations and arbitrary shell execution, including DeepSeek tool aliases. Workspace-write permits native file edits in the workspace; external paths keep their path gate, and unsandboxed shell execution requires approval for each invocation. Full-access bypasses these interactive gates while retaining explicit safety rules. Tool approval grants only the current request; tool-wide session grants are removed. Pending tool/path decisions follow cancellation and expire after ten minutes. Policy changes and human approval requests/outcomes are committed to `chat_permission_events`; failed audit writes deny execution. These checks do not provide dsh's OS-enforced process sandbox.
+
 ```mermaid
 flowchart TB
   Model[Model tool_calls] --> Reg[ToolRegistry]
@@ -934,3 +940,5 @@ Call diagnostics go to configuration-directory JSONL files; `scripts/deepseek-me
 | Desktop pet                      | `src/components/pet/DesktopPetSvg.vue`, `src/composables/useDesktopPet.ts`, `petWindowBounds.ts`       |
 | Workbench glass / window radius  | `services/workbench_glass.rs`, `overlay/appearance.ts`                                                 |
 | Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                 |
+
+Successful text-file reads render as collapsible syntax-highlighted code cards. Clicking the file opens a read-only sidebar in either the workbench or popup and highlights the returned line range. The preview command accepts a recorded successful read activity ID, resolves its original workspace, and loads up to 1 MiB of UTF-8 text. Changed or unavailable files fall back to the captured read excerpt.

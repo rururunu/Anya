@@ -1,6 +1,6 @@
 [package]
 name = "peek"
-version = "0.2.27"
+version = "0.2.28"
 license = "MIT"
 description = "Hand your work & questions to Anya anytime."
 authors = ["you"]

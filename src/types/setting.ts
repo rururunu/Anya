@@ -507,15 +507,15 @@ export const webSearchProviderOptions: SelectOption<WebSearchProvider>[] = [
 export const toolApprovalModeOptions: SelectOption<ToolApprovalMode>[] = [
   {
     value: "ask",
-    label: { "zh-CN": "请求", "en-US": "Ask" },
+    label: { "zh-CN": "只读", "en-US": "Read-only" },
   },
   {
     value: "auto",
-    label: { "zh-CN": "自动", "en-US": "Auto" },
+    label: { "zh-CN": "工作区可写", "en-US": "Workspace-write" },
   },
   {
     value: "alwaysAllow",
-    label: { "zh-CN": "完全批准", "en-US": "Full approve" },
+    label: { "zh-CN": "完全访问", "en-US": "Full-access" },
   },
 ];
 

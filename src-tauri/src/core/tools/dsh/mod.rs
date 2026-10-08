@@ -387,6 +387,7 @@ fn ask(ctx: &ToolContext, args: &Value, _backing: &ToolManager) -> Result<String
         request_id: request_id.clone(),
         questions,
     });
+    let _pending = crate::core::tools::context::PendingAskGuard::new(ctx, &request_id);
     let result = loop {
         if ctx.is_cancelled() {
             ctx.ask_store.complete(&request_id, String::new());

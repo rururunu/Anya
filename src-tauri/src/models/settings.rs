@@ -145,9 +145,12 @@ pub enum WebSearchProvider {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum ToolApprovalMode {
+    /// Legacy wire value `ask`: read-only effects, with no write elevation.
     #[default]
     Ask,
+    /// Legacy wire value `auto`: workspace writes; outside access uses its gate.
     Auto,
+    /// Legacy wire value `alwaysAllow`: unrestricted effect scope.
     AlwaysAllow,
 }
 

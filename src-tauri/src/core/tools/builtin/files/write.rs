@@ -415,7 +415,7 @@ mod tests {
         let ctx = ToolContext {
             workspace_root: workspace,
             request_context: Default::default(),
-            session_id: "s".into(),
+            session_id: uuid::Uuid::new_v4().to_string(),
             assistant_message_id: "a".into(),
             conversation: Arc::new(ConversationManager::new(db.clone())),
             event_bus: Arc::new(NullBus),
@@ -431,6 +431,10 @@ mod tests {
             app_handle: None,
             cancelled: Arc::new(AtomicBool::new(false)),
         };
+        crate::core::tools::tool_approval::shared_tool_approval_store().set_session_mode(
+            &ctx.session_id,
+            Some(crate::models::settings::ToolApprovalMode::Auto),
+        );
         (ctx, db)
     }
 

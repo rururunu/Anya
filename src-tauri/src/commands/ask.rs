@@ -1,8 +1,47 @@
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::app_state::AppState;
 use crate::core::remote;
 use crate::models::chat::{InteractionResolvedEvent, RespondAskUserRequest};
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingInteractionsSnapshot {
+    ask_user: Vec<crate::core::tools::context::PendingAskSnapshot>,
+    path_permission: Vec<crate::core::tools::path_permission::PendingPathPermissionSnapshot>,
+    tool_approval: Vec<crate::core::tools::tool_approval::PendingToolApprovalSnapshot>,
+}
+
+#[tauri::command]
+pub fn get_pending_interactions(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> PendingInteractionsSnapshot {
+    PendingInteractionsSnapshot {
+        ask_user: state
+            .core
+            .chat()
+            .ask_store()
+            .pending_items()
+            .into_iter()
+            .filter(|item| session_id.is_empty() || item.session_id == session_id)
+            .collect(),
+        path_permission: state
+            .core
+            .chat()
+            .path_permission_store()
+            .pending_items()
+            .into_iter()
+            .filter(|item| session_id.is_empty() || item.session_id == session_id)
+            .collect(),
+        tool_approval: crate::core::tools::tool_approval::shared_tool_approval_store()
+            .pending_items()
+            .into_iter()
+            .filter(|item| session_id.is_empty() || item.session_id == session_id)
+            .collect(),
+    }
+}
 
 #[tauri::command]
 pub fn respond_ask_user(

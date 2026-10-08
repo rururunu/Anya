@@ -201,6 +201,30 @@ impl ConversationManager {
         self.db_pool.clone()
     }
 
+    /// Commit permission audit facts before execution or a human decision is consumed.
+    pub(crate) fn record_permission_event(
+        &self,
+        session: &str,
+        message: &str,
+        request: &str,
+        kind: &str,
+        payload: serde_json::Value,
+    ) -> Result<(), crate::core::tools::error::ToolError> {
+        let pool = self.db_pool.clone();
+        let (session, message, request, kind) = (
+            session.to_owned(),
+            message.to_owned(),
+            request.to_owned(),
+            kind.to_owned(),
+        );
+        helpers::block_on_compat(async move {
+            sqlx::query("INSERT INTO chat_permission_events (session_id,message_id,request_id,kind,payload,timestamp) VALUES (?,?,?,?,?,?)")
+                .bind(session).bind(message).bind(request).bind(kind).bind(payload.to_string())
+                .bind(chrono::Utc::now().timestamp_millis()).execute(&pool).await.map(|_| ())
+                .map_err(|error| crate::core::tools::error::ToolError::new(format!("permission audit could not be committed: {error}")))
+        })
+    }
+
     pub fn inner(&self) -> Arc<Mutex<HashMap<String, Vec<ChatMessage>>>> {
         Arc::clone(&self.sessions)
     }

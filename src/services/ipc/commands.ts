@@ -19,6 +19,7 @@ import type {
   ContextUsageResponse,
   ListChatSessionsResponse,
   RespondAskUserRequest,
+  PendingInteractionsSnapshot,
   RespondPathPermissionRequest,
   RespondToolApprovalRequest,
   CheckpointInfo,
@@ -305,6 +306,10 @@ export function getPreviewImage() {
 
 export function respondAskUser(request: RespondAskUserRequest) {
   return ipcInvoke<void>(IPC_COMMANDS.respondAskUser, { request });
+}
+
+export function getPendingInteractions(sessionId: string) {
+  return ipcInvoke<PendingInteractionsSnapshot>(IPC_COMMANDS.getPendingInteractions, { sessionId });
 }
 
 export function respondPathPermission(request: RespondPathPermissionRequest) {

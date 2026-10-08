@@ -235,10 +235,12 @@ impl Tool for AskUserTool {
             tx,
         );
         self.event_bus.emit(BusEvent::AskUser {
+            // Guard owns cancellation/timeout cleanup as well as successful replies.
             session_id: ctx.root_session_id().to_string(),
             request_id: request_id.clone(),
             questions,
         });
+        let _pending = crate::core::tools::context::PendingAskGuard::new(ctx, &request_id);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
         loop {
             ctx.ensure_not_cancelled()?;

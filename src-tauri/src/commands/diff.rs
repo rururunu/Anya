@@ -56,6 +56,89 @@ pub fn build_code_diff(request: CodeDiffRequest) -> CodeDiffDocument {
 }
 
 const MAX_UNTRACKED_BYTES: u64 = 256 * 1024;
+
+/// Preview only a file tied to an already successful read activity. The UI
+/// supplies an activity id, never a new arbitrary filesystem path.
+#[tauri::command]
+pub async fn preview_read_code(
+    state: State<'_, AppState>,
+    activity_id: String,
+) -> Result<String, String> {
+    let conversation = state.core.chat().conversation();
+    let sessions = conversation.inner();
+    let (session_id, activity) = {
+        let loaded = sessions.lock().map_err(|_| "Conversation is unavailable")?;
+        loaded
+            .iter()
+            .find_map(|(session, messages)| {
+                messages
+                    .iter()
+                    .flat_map(|message| message.tool_activities.iter().flatten())
+                    .find(|activity| {
+                        activity.id == activity_id
+                            && activity.success
+                            && matches!(activity.tool_name.as_str(), "read" | "read_file")
+                    })
+                    .map(|activity| (session.clone(), activity.clone()))
+            })
+            .ok_or("The successful read activity is no longer available")?
+    };
+    let result = activity.result.as_deref().unwrap_or("");
+    let recorded = result
+        .strip_prefix("<path>")
+        .and_then(|rest| rest.split_once("</path>"))
+        .map(|(path, _)| path);
+    let args = activity.arguments.as_ref();
+    let raw = recorded
+        .or_else(|| args.and_then(|args| args["file_path"].as_str().or(args["path"].as_str())))
+        .ok_or("The read activity has no file path")?;
+    let path = std::path::PathBuf::from(raw);
+    let file = if path.is_absolute() {
+        path
+    } else {
+        let root_session = session_id.split("-sub-").next().unwrap_or(&session_id);
+        let binding = conversation
+            .workspace_for_session(&session_id)
+            .or_else(|| conversation.workspace_for_session(root_session))
+            .ok_or("This session has no recorded workspace; use the read snapshot")?;
+        let root = state
+            .core
+            .workspaces()
+            .list()
+            .into_iter()
+            .find(|workspace| workspace.id == binding)
+            .map(|workspace| workspace.root)
+            .unwrap_or_else(|| std::path::PathBuf::from(binding));
+        if !root.is_absolute() {
+            return Err("The recorded workspace is unavailable".into());
+        }
+        root.join(path)
+    };
+    tauri::async_runtime::spawn_blocking(move || read_preview_text(&file))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn read_preview_text(file: &Path) -> Result<String, String> {
+    use std::io::Read;
+    let metadata = std::fs::metadata(file).map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.len() > 1024 * 1024 {
+        return Err("The file is not a text file under 1 MiB; use the read snapshot".into());
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(file)
+        .map_err(|error| error.to_string())?
+        .take(1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("The file grew beyond the preview limit".into());
+    }
+    if bytes.contains(&0) {
+        return Err("Binary file; use the read snapshot".into());
+    }
+    String::from_utf8(bytes).map_err(|_| "The file is not UTF-8; use the read snapshot".into())
+}
 const MAX_UNTRACKED_FILES: usize = 40;
 const MAX_DIFF_CHARS: usize = 1_500_000;
 

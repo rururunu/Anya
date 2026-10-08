@@ -253,7 +253,6 @@ import {
   ListChecks,
   Shield,
   ShieldAlert,
-  ShieldCheck,
   Sparkle,
   X,
 } from "@lucide/vue";
@@ -343,12 +342,6 @@ const pathOptions = computed(() => [
     icon: Check,
   },
   {
-    decision: "allow_always" as const,
-    label: tr(language.value, "allowAlways"),
-    description: tr(language.value, "allowAlwaysDesc"),
-    icon: ShieldCheck,
-  },
-  {
     decision: "deny" as const,
     label: tr(language.value, "deny"),
     description: tr(language.value, "denyDesc"),
@@ -362,12 +355,6 @@ const toolOptions = computed(() => [
     label: tr(language.value, "allowOnce"),
     description: tr(language.value, "allowOnceDesc"),
     icon: Check,
-  },
-  {
-    decision: "allow_session" as const,
-    label: tr(language.value, "allowSession"),
-    description: tr(language.value, "allowSessionDesc"),
-    icon: Shield,
   },
   {
     decision: "deny" as const,

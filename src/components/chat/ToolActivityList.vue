@@ -5,8 +5,12 @@
     :class="{ operations, nested, flat }"
   >
     <template v-for="item in enrichedActivities" :key="item.activity.id">
+      <FileReadCard
+        v-if="readCodePreview(item.activity)"
+        :preview="readCodePreview(item.activity)!"
+      />
       <ShellTerminalCard
-        v-if="item.activity.kind === 'shell'"
+        v-else-if="item.activity.kind === 'shell'"
         :activity="item.activity"
         start-collapsed
       />
@@ -258,6 +262,8 @@ import ShellTerminalCard from "@/components/chat/ShellTerminalCard.vue";
 import GeneratedImageCard from "@/components/chat/GeneratedImageCard.vue";
 import FileDiffCard from "@/components/chat/FileDiffCard.vue";
 import TaskListCard from "@/components/chat/TaskListCard.vue";
+import FileReadCard from "@/components/chat/FileReadCard.vue";
+import { readCodePreview } from "@/services/chat/readCodePreview";
 import type { ToolActivity } from "@/types/chat";
 import { useSettingStore } from "@/stores/setting";
 import { isAskUserTool, isPlanSwitchTool } from "@/services/chat/askUserAnswer";

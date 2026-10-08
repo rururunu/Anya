@@ -29,7 +29,13 @@ const LANGUAGE_BY_EXTENSION: Record<string, CodeLanguageInfo> = {
   hpp: { id: "cpp", label: "C++ header", badge: "H++", family: "systems" },
   html: { id: "xml", label: "HTML", badge: "<>", family: "markup" },
   java: { id: "java", label: "Java", badge: "J", family: "systems" },
-  js: { id: "javascript", label: "JavaScript", badge: "JS", icon: "/file-icons/javascript.svg", family: "script" },
+  js: {
+    id: "javascript",
+    label: "JavaScript",
+    badge: "JS",
+    icon: "/file-icons/javascript.svg",
+    family: "script",
+  },
   json: { id: "json", label: "JSON", badge: "{}", icon: "/file-icons/json.svg", family: "data" },
   jsx: { id: "javascript", label: "JavaScript JSX", badge: "JSX", family: "script" },
   kt: { id: "kotlin", label: "Kotlin", badge: "KT", family: "systems" },
@@ -45,7 +51,13 @@ const LANGUAGE_BY_EXTENSION: Record<string, CodeLanguageInfo> = {
   svelte: { id: "xml", label: "Svelte", badge: "SV", family: "markup" },
   swift: { id: "swift", label: "Swift", badge: "SW", family: "systems" },
   toml: { id: "ini", label: "TOML", badge: "T", family: "data" },
-  ts: { id: "typescript", label: "TypeScript", badge: "TS", icon: "/file-icons/typescript.svg", family: "script" },
+  ts: {
+    id: "typescript",
+    label: "TypeScript",
+    badge: "TS",
+    icon: "/file-icons/typescript.svg",
+    family: "script",
+  },
   tsx: { id: "typescript", label: "TypeScript JSX", badge: "TSX", family: "script" },
   vue: { id: "xml", label: "Vue", badge: "V", family: "markup" },
   xml: { id: "xml", label: "XML", badge: "<>", family: "markup" },
@@ -69,7 +81,7 @@ const FALLBACK_LANGUAGE: CodeLanguageInfo = {
 export function codeLanguageForPath(path: string): CodeLanguageInfo {
   const filename = path.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? "";
   const byFilename = LANGUAGE_BY_FILENAME[filename];
-  const extension = filename.includes(".") ? filename.split(".").pop() ?? "" : "";
+  const extension = filename.includes(".") ? (filename.split(".").pop() ?? "") : "";
   const language = byFilename ?? LANGUAGE_BY_EXTENSION[extension] ?? FALLBACK_LANGUAGE;
   const iconId = findMaterialIconId(filename, extension);
   return {
@@ -81,14 +93,100 @@ export function codeLanguageForPath(path: string): CodeLanguageInfo {
 function findMaterialIconId(filename: string, extension: string) {
   const fileNames = materialIconTheme.fileNames ?? {};
   const fileExtensions = materialIconTheme.fileExtensions ?? {};
-  return fileNames[filename]
-    ?? fileExtensions[filename]
-    ?? fileExtensions[extension]
-    ?? undefined;
+  return fileNames[filename] ?? fileExtensions[filename] ?? fileExtensions[extension] ?? undefined;
 }
 
 function iconPath(iconId?: string) {
   const iconPath = iconId ? materialIconTheme.iconDefinitions[iconId]?.iconPath : undefined;
   const filename = iconPath?.split("/").pop();
   return filename ? `/file-icons/${filename}` : undefined;
+}
+
+import type { Extension } from "@codemirror/state";
+export async function codeLanguage(path: string): Promise<Extension> {
+  const extension = path.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "";
+  const names: Record<string, string> = {
+    ts: "typescript",
+    tsx: "typescript",
+    js: "javascript",
+    jsx: "javascript",
+    mjs: "javascript",
+    cjs: "javascript",
+    yml: "yaml",
+    md: "markdown",
+    rs: "rust",
+    py: "python",
+    kt: "java",
+    h: "cpp",
+    cc: "cpp",
+    html: "xml",
+    svg: "xml",
+  };
+  const language = names[extension] ?? extension;
+  switch (language) {
+    case "javascript": {
+      const { javascript } = await import("@codemirror/lang-javascript");
+      return javascript({ jsx: true });
+    }
+    case "typescript": {
+      const { javascript } = await import("@codemirror/lang-javascript");
+      return javascript({ jsx: true, typescript: true });
+    }
+    case "json": {
+      const { json } = await import("@codemirror/lang-json");
+      return json();
+    }
+    case "xml": {
+      const { xml } = await import("@codemirror/lang-xml");
+      return xml();
+    }
+    case "css":
+    case "scss": {
+      const { css } = await import("@codemirror/lang-css");
+      return css();
+    }
+    case "rust": {
+      const { rust } = await import("@codemirror/lang-rust");
+      return rust();
+    }
+    case "python": {
+      const { python } = await import("@codemirror/lang-python");
+      return python();
+    }
+    case "yaml": {
+      const { yaml } = await import("@codemirror/lang-yaml");
+      return yaml();
+    }
+    case "markdown": {
+      const { markdown } = await import("@codemirror/lang-markdown");
+      return markdown();
+    }
+    case "sql": {
+      const { sql } = await import("@codemirror/lang-sql");
+      return sql();
+    }
+    case "go": {
+      const { go } = await import("@codemirror/lang-go");
+      return go();
+    }
+    case "java": {
+      const { java } = await import("@codemirror/lang-java");
+      return java();
+    }
+    case "cpp":
+    case "c": {
+      const { cpp } = await import("@codemirror/lang-cpp");
+      return cpp();
+    }
+    case "php": {
+      const { php } = await import("@codemirror/lang-php");
+      return php();
+    }
+    case "html": {
+      const { html } = await import("@codemirror/lang-html");
+      return html();
+    }
+    default:
+      return [];
+  }
 }

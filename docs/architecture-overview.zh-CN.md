@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.27                            |
+| **版本**   | v0.2.28                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -685,6 +685,12 @@ flowchart LR
 
 ## 11. 工具、审批与 Skills
 
+实现细节与能力边界见[权限与代码预览](./permissions-and-preview.zh-CN.md)。
+
+工作台和弹窗共用待处理交互的队列投影，启动、聚焦及切换会话时与后端快照对齐；全量快照也恢复后台会话的请求。后端序号保留请求顺序，已结束的请求 ID 防止迟到事件或快照重新显示旧卡片。审批和问题在所有结束路径广播 `interaction-resolved`，包括取消及超时。图片标签、选中图片和子 Agent 入口状态按根会话通过 `anya.shared-review.v1.*` 共享，原生窗口尺寸保留各自设置。
+
+权限范围独立于 Ask/Agent/Plan 聊天模式。界面三档为**只读**、**工作区可写**和**完全访问**，历史存储值 `ask`、`auto`、`alwaysAllow` 分别映射至这三档。只读拒绝文件写入和任意 Shell 执行，DeepSeek 工具别名遵循相同规则。工作区可写允许工作区内原生文件编辑，外部路径保留路径权限检查，非隔离 Shell 每次执行均需单独批准。完全访问跳过这些交互审批，但保留明确的安全规则。工具批准只对当前请求生效，不再按工具名称授予整个会话权限。工具和路径审批随取消结束，最长等待十分钟。策略变更、人工审批请求及结果写入 `chat_permission_events`；审计写入失败时拒绝执行。这些检查尚不具备 dsh 的操作系统级进程隔离。
+
 ```mermaid
 flowchart TB
   Model[Model tool_calls] --> Reg[ToolRegistry]
@@ -865,3 +871,5 @@ Companion 不得再长出第二套 Agent 运行时。
 | 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                 |
 
 可选 Chrome / Edge 选区扩展通过已注册的 Native Messaging host，将网页选中文字转发给经过认证的本地回环监听器。缓存选区绑定前台浏览器窗口，并在 60 秒后过期；不会采集浏览历史。安装与边界见[扩展说明](../browser-extension/README.zh-CN.md)。
+
+成功的文本文件读取以可展开的语法高亮代码卡片展示。点击文件后，工作台或弹窗会打开只读侧栏，并高亮实际返回的行范围。预览命令只接受已记录的成功读取活动 ID，按原工作区解析路径，最多加载 1 MiB 的 UTF-8 文本；文件已变化或无法加载时，回退到读取时保存的片段。

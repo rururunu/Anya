@@ -38,6 +38,7 @@ export const IPC_COMMANDS = {
   setOverlayPopupOpen: "set_overlay_popup_open_command",
   takeOverlayContext: "take_overlay_context",
   respondAskUser: "respond_ask_user",
+  getPendingInteractions: "get_pending_interactions",
   respondPathPermission: "respond_path_permission",
   respondToolApproval: "respond_tool_approval",
   setPlanMode: "set_plan_mode",

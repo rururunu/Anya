@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod apply_patch;
+mod approval_wait;
 pub mod builtin;
 pub mod display;
 pub mod dsh;

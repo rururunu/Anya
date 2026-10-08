@@ -11,7 +11,7 @@ impl EventBus for Events {
 fn context() -> ToolContext {
     let root = std::env::temp_dir().join(format!("anya-dsh-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&root).unwrap();
-    ToolContext {
+    let ctx = ToolContext {
         workspace_root: root.clone(),
         request_context: Default::default(),
         session_id: uuid::Uuid::new_v4().to_string(),
@@ -29,7 +29,12 @@ fn context() -> ToolContext {
         parent_activity_id: None,
         app_handle: None,
         cancelled: Arc::new(AtomicBool::new(false)),
-    }
+    };
+    crate::core::tools::tool_approval::shared_tool_approval_store().set_session_mode(
+        &ctx.session_id,
+        Some(crate::models::settings::ToolApprovalMode::Auto),
+    );
+    ctx
 }
 
 #[test]

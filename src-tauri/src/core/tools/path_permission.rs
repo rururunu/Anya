@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
@@ -23,6 +23,7 @@ impl PathAccess {
 }
 
 struct PendingPermission {
+    sequence: u64,
     sender: mpsc::Sender<PermissionDecision>,
     session_id: String,
     path: String,
@@ -33,6 +34,7 @@ struct PendingPermission {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingPathPermissionSnapshot {
+    pub sequence: u64,
     pub request_id: String,
     pub session_id: String,
     pub path: String,
@@ -43,7 +45,6 @@ pub struct PendingPathPermissionSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PermissionDecision {
     AllowOnce,
-    AllowAlways,
     Deny,
 }
 
@@ -51,57 +52,20 @@ impl PermissionDecision {
     fn parse(value: &str) -> Option<Self> {
         match value {
             "allow_once" => Some(Self::AllowOnce),
-            "allow_always" => Some(Self::AllowAlways),
             "deny" => Some(Self::Deny),
             _ => None,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PathGrant {
-    prefix: PathBuf,
-    access: PathAccess,
-}
-
 pub struct PathPermissionStore {
     pending: Mutex<HashMap<String, PendingPermission>>,
-    grants: Mutex<HashMap<String, Vec<PathGrant>>>,
 }
 
 impl PathPermissionStore {
     pub fn new() -> Self {
         Self {
             pending: Mutex::new(HashMap::new()),
-            grants: Mutex::new(HashMap::new()),
-        }
-    }
-
-    pub fn is_granted(&self, session_id: &str, path: &Path, access: PathAccess) -> bool {
-        let grants = match self.grants.lock() {
-            Ok(guard) => guard,
-            Err(_) => return false,
-        };
-        let Some(prefixes) = grants.get(session_id) else {
-            return false;
-        };
-        let normalized = super::path::normalize_path(path);
-        prefixes
-            .iter()
-            .any(|grant| grant.access == access && path_starts_with(&normalized, &grant.prefix))
-    }
-
-    /// Persist a session grant without prompting (AlwaysAllow / 通过所有权限).
-    pub fn grant_always(&self, session_id: &str, path: &Path, access: PathAccess) {
-        let grant = PathGrant {
-            prefix: grant_prefix_for_path(path, access),
-            access,
-        };
-        if let Ok(mut guard) = self.grants.lock() {
-            let entry = guard.entry(session_id.to_string()).or_default();
-            if !entry.iter().any(|item| item == &grant) {
-                entry.push(grant);
-            }
         }
     }
 
@@ -131,6 +95,7 @@ impl PathPermissionStore {
                 guard
                     .iter()
                     .map(|(request_id, pending)| PendingPathPermissionSnapshot {
+                        sequence: pending.sequence,
                         request_id: request_id.clone(),
                         session_id: pending.session_id.clone(),
                         path: pending.path.clone(),
@@ -142,6 +107,7 @@ impl PathPermissionStore {
             .unwrap_or_default()
     }
 
+    #[cfg(test)]
     pub fn request_and_grant(
         &self,
         session_id: &str,
@@ -150,12 +116,37 @@ impl PathPermissionStore {
         access: PathAccess,
         tool_name: &str,
     ) -> Result<PathBuf, ToolError> {
+        self.request_and_grant_with_cancel(
+            session_id, event_bus, path, access, tool_name, None, None,
+        )
+    }
+
+    pub(crate) fn request_and_grant_with_cancel(
+        &self,
+        session_id: &str,
+        event_bus: &Arc<dyn EventBus>,
+        path: PathBuf,
+        access: PathAccess,
+        tool_name: &str,
+        cancelled: Option<&std::sync::atomic::AtomicBool>,
+        context: Option<&super::context::ToolContext>,
+    ) -> Result<PathBuf, ToolError> {
         let request_id = uuid::Uuid::new_v4().to_string();
+        if let Some(ctx) = context {
+            ctx.conversation.record_permission_event(
+                session_id,
+                &ctx.assistant_message_id,
+                &request_id,
+                "approval/asked",
+                serde_json::json!({"toolName":tool_name,"path":path,"access":access.as_str()}),
+            )?;
+        }
         let (tx, rx) = mpsc::channel();
         if let Ok(mut guard) = self.pending.lock() {
             guard.insert(
                 request_id.clone(),
                 PendingPermission {
+                    sequence: super::context::next_interaction_sequence(),
                     sender: tx,
                     session_id: session_id.to_string(),
                     path: path.display().to_string(),
@@ -173,16 +164,34 @@ impl PathPermissionStore {
             tool_name: tool_name.to_string(),
         });
 
-        let decision = rx
-            .recv_timeout(Duration::from_secs(600))
-            .map_err(|_| ToolError::new("path permission request timed out or cancelled"))?;
+        let decision = super::approval_wait::wait(&rx, cancelled, Duration::from_secs(600));
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(&request_id);
+        }
+        event_bus.emit(BusEvent::InteractionResolved {
+            session_id: session_id.into(),
+            request_id: request_id.clone(),
+            kind: "path_permission".into(),
+        });
+        if let Some(ctx) = context {
+            let outcome = match &decision {
+                Ok(PermissionDecision::Deny) => "rejected",
+                Ok(_) => "allowed-once",
+                Err(_) if ctx.is_cancelled() => "cancelled",
+                Err(_) => "unavailable",
+            };
+            ctx.conversation.record_permission_event(
+                session_id,
+                &ctx.assistant_message_id,
+                &request_id,
+                "approval/decided",
+                serde_json::json!({"outcome":outcome}),
+            )?;
+        }
+        let decision = decision?;
 
         if decision == PermissionDecision::Deny {
             return Err(ToolError::user_denied("path access denied by user"));
-        }
-
-        if decision == PermissionDecision::AllowAlways {
-            self.grant_always(session_id, &path, access);
         }
 
         Ok(path)
@@ -195,30 +204,41 @@ impl Default for PathPermissionStore {
     }
 }
 
-fn grant_prefix_for_path(path: &Path, access: PathAccess) -> PathBuf {
-    let normalized = super::path::normalize_path(path);
-    match access {
-        PathAccess::Write => normalized
-            .parent()
-            .map(super::path::normalize_path)
-            .unwrap_or(normalized),
-        PathAccess::Read => normalized,
-    }
-}
-
-fn path_starts_with(path: &Path, prefix: &Path) -> bool {
-    path.starts_with(prefix)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn write_grant_uses_parent_directory() {
-        let path = PathBuf::from(r"C:\Users\demo\Desktop\test.txt");
-        let grant = grant_prefix_for_path(&path, PathAccess::Write);
-        assert_eq!(grant, PathBuf::from(r"C:\Users\demo\Desktop"));
+    fn repeated_path_access_requires_a_fresh_decision() {
+        struct Bus;
+        impl EventBus for Bus {
+            fn emit(&self, _: BusEvent) {}
+        }
+        let store = Arc::new(PathPermissionStore::new());
+        for _ in 0..2 {
+            let waiter = store.clone();
+            let handle = std::thread::spawn(move || {
+                let bus: Arc<dyn EventBus> = Arc::new(Bus);
+                waiter.request_and_grant(
+                    "same-session",
+                    &bus,
+                    PathBuf::from("outside.txt"),
+                    PathAccess::Read,
+                    "read",
+                )
+            });
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            let id = loop {
+                if let Some(item) = store.pending_items().first() {
+                    break item.request_id.clone();
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            assert!(store.complete(&id, "allow_once").is_some());
+            assert!(handle.join().unwrap().is_ok());
+            assert!(store.pending_items().is_empty());
+        }
     }
 
     #[test]
@@ -272,10 +292,7 @@ mod tests {
             PermissionDecision::parse("allow_once"),
             Some(PermissionDecision::AllowOnce)
         );
-        assert_eq!(
-            PermissionDecision::parse("allow_always"),
-            Some(PermissionDecision::AllowAlways)
-        );
+        assert_eq!(PermissionDecision::parse("allow_always"), None);
         assert_eq!(
             PermissionDecision::parse("deny"),
             Some(PermissionDecision::Deny)

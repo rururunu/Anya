@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.md">Documentation</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.27 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.28 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
@@ -51,6 +51,10 @@ Fallback shortcut: <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd>.
 | Agent | Complete tasks with tools under your approval policy        |
 | Plan  | Prepare a plan before approved write operations             |
 | Image | Generate images with a separately configured image provider |
+
+Permissions are separate from chat mode: **Read-only** blocks file changes and arbitrary shell commands; **Workspace-write** allows workspace file edits and asks before each shell command or external-path access; **Full-access** skips these approval prompts while retaining command safety rules. Approving a request allows that operation once and cannot override Read-only.
+
+The workbench and overlay recover pending questions and approvals when opened or focused. Successful code reads appear as expandable syntax-highlighted cards; click the filename to open a sidebar and highlight the read lines. If the file has changed or cannot be loaded, the sidebar shows the captured excerpt. See [permissions and code preview](./docs/permissions-and-preview.md).
 
 Office layout, conversion, and formula results need checks for each artifact. Some search and extension features require additional setup. See [Office workflows](./docs/office.md) and [plugins](./docs/plugin-system.md).
 

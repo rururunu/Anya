@@ -89,6 +89,7 @@ pub struct ToolError {
     pub message: String,
     terminal: bool,
     cancelled: bool,
+    user_rejected: bool,
 }
 
 impl ToolError {
@@ -97,6 +98,7 @@ impl ToolError {
             message: message.into(),
             terminal: false,
             cancelled: false,
+            user_rejected: false,
         }
     }
 
@@ -105,7 +107,22 @@ impl ToolError {
             message: message.into(),
             terminal: true,
             cancelled: false,
+            user_rejected: true,
         }
+    }
+
+    /// Policy and unavailable answerers must not be attributed to a user click.
+    pub fn policy_denied(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            terminal: true,
+            cancelled: false,
+            user_rejected: false,
+        }
+    }
+
+    pub fn is_user_denied(&self) -> bool {
+        self.user_rejected
     }
 
     pub fn cancelled() -> Self {
@@ -113,6 +130,7 @@ impl ToolError {
             message: "tool execution cancelled".to_string(),
             terminal: false,
             cancelled: true,
+            user_rejected: false,
         }
     }
 
@@ -151,7 +169,16 @@ mod tests {
     #[test]
     fn user_denial_is_a_terminal_tool_error() {
         assert!(ToolError::user_denied("denied").is_terminal());
+        assert!(ToolError::user_denied("denied").is_user_denied());
         assert!(!ToolError::new("ordinary failure").is_terminal());
+    }
+
+    #[test]
+    fn readonly_policy_denial_is_not_a_user_rejection() {
+        let error = ToolError::policy_denied("read-only mode denies filesystem writes");
+        assert!(error.is_terminal());
+        assert!(!error.is_user_denied());
+        assert_eq!(error.category(), ErrorCategory::Permission);
     }
 
     #[test]
