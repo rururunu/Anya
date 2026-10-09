@@ -157,6 +157,7 @@
                 class="user-turn"
                 :message="turn.user.message"
                 :session-id="sessionId ?? ''"
+                :workspace-root="workspaceRoot"
                 :can-resend="Boolean(checkpointFor(turn.user.message))"
                 :busy="rewindBusy"
                 :inline-edit="inlineConversation"
@@ -406,6 +407,7 @@
               class="user-turn"
               :message="message"
               :session-id="sessionId ?? ''"
+              :workspace-root="workspaceRoot"
               :can-resend="true"
               :busy="Boolean(sessionId && chatStore.stagedDispatching[sessionId])"
               queued

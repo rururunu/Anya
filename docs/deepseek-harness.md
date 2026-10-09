@@ -8,7 +8,7 @@ Schemas, descriptions, tool guidance, section ordering and the default identity 
 
 ## Tools and modes
 
-The core profile contains `read`, `read_image`, `write`, `edit`, `glob`, `grep`, `pwsh` on Windows or `bash`, `job_output`, `job_list`, `job_kill`, `todo_write`, `ask_user_question`, `skill`, `web_search`, `web_fetch`, `subagent`, `present` and `exit_plan_mode`. Tools without a corresponding host capability are omitted.
+The core profile contains `read`, `read_image`, `write`, `edit`, `glob`, `grep`, `pwsh` on Windows or `bash`, `job_output`, `job_list`, `job_kill`, `todo_write`, `ask_user_question`, `skill`, `web_search`, `web_fetch`, `subagent`, `present` and `exit_plan_mode`. Tools without a corresponding host capability are omitted. Enabled Anya plugin tools (`plugin_*`), MCP tools (`mcp__*`), and `manage_plugin` retain their own schemas and executors in the DeepSeek tool list; disabled or unavailable tools remain hidden.
 
 ### File delivery cards
 
@@ -28,7 +28,7 @@ Host guidance lists the tools exposed for the current turn and requires capabili
 - Todos replace the list and allow one in-progress item by default. Questions retain stable ids and wait for an answer or cancellation. Plan writers unlock only after the user chooses Approve.
 - Skills use the dsh catalog and `skill_content` framing. Office skills continue using the bundled Deno, Office Node and LibreOffice Kit.
 
-This ports core tool contracts rather than running the complete official plugin ecosystem. Anya supplies search, interaction UI, skill storage, image upload, child execution and permissions. Child delegation uses the upstream foreground configuration and exposes no background parameter. Optional MCP, LSP, PTY, computer-use, teams and continuable-agent plugins, and Anya-specific tools, are not mapped into this core profile. This implementation must not be described as a byte-for-byte copy of all official plugins and protocols.
+This ports core tool contracts rather than running the complete official plugin ecosystem. Anya supplies search, interaction UI, skill storage, image upload, child execution and permissions. Child delegation uses the upstream foreground configuration and exposes no background parameter. Enabled Anya MCP and plugin tools, including Anya's computer-use plugin, remain available as host tools; this does not port the upstream harness's optional MCP, LSP, PTY, computer-use, teams, or continuable-agent plugins. This implementation must not be described as a byte-for-byte copy of all official plugins and protocols.
 
 ## Permissions and read previews
 

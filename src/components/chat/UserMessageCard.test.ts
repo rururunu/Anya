@@ -4,10 +4,28 @@ import { flushPromises, mount } from "@vue/test-utils";
 import UserMessageCard from "./UserMessageCard.vue";
 import type { ChatMessage } from "@/types/chat";
 
-vi.mock("@/stores/setting", () => ({
-  useSettingStore: () => ({ language: "en", mcpServers: [] }),
+const mocked = vi.hoisted(() => ({
+  settings: {
+    language: "en",
+    mcpServers: [{ id: "example", title: "Example MCP", enabled: true }],
+    enabledBuiltinSkills: [] as string[],
+  },
+  plugins: {
+    plugins: [{ id: "computer-use", name: "Computer Use", enabled: true, role: "agent" }],
+    pluginsLoaded: true,
+    refresh: vi.fn().mockResolvedValue(undefined),
+  },
 }));
-vi.mock("@/stores/plugins", () => ({ usePluginsStore: () => ({ plugins: [] }) }));
+vi.mock("@/stores/setting", () => ({
+  useSettingStore: () => mocked.settings,
+}));
+vi.mock("@/stores/plugins", () => ({
+  usePluginsStore: () => mocked.plugins,
+}));
+vi.mock("@/commands/skills", () => ({ listSkills: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/commands/workspace", () => ({
+  listWorkspaceFiles: vi.fn().mockResolvedValue(["src/main.ts"]),
+}));
 vi.mock("@/components/chat/UserMessageFooter.vue", () => ({
   default: { template: '<div class="full-editor-footer" />' },
 }));
@@ -33,6 +51,12 @@ function card(inlineEdit = true, content = message.content) {
   });
   wrappers.push(wrapper);
   return wrapper;
+}
+async function typeInEdit(wrapper: ReturnType<typeof mount>, text: string) {
+  const field = wrapper.get("[contenteditable='true']");
+  field.element.textContent = text;
+  await field.trigger("input");
+  await flushPromises();
 }
 afterEach(() => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount();
@@ -85,6 +109,8 @@ describe("inline user message editing", () => {
     await wrapper.get(".user-message-text").trigger("click");
     await flushPromises();
     expect(wrapper.find(".full-editor-footer").exists()).toBe(false);
+    expect(wrapper.find(".user-message-text").exists()).toBe(false);
+    expect(wrapper.get(".user-composer-body").text()).toBe("Original message");
     const field = wrapper.get("[contenteditable='true']");
     field.element.textContent = "Edited message";
     await field.trigger("input");
@@ -114,5 +140,44 @@ describe("inline user message editing", () => {
     await field.trigger("input");
     await field.trigger("keydown", { key: "Enter" });
     expect(wrapper.emitted("resend")).toBeUndefined();
+  });
+
+  it.each([true, false])(
+    "shows # resources and / commands while editing (inline=%s)",
+    async (inline) => {
+      const wrapper = card(inline);
+      await wrapper.get(".user-message-text").trigger("click");
+      await flushPromises();
+      await typeInEdit(wrapper, "Try #");
+      expect(wrapper.get(".hash-suggestion-list").text()).toContain("Computer Use");
+      expect(wrapper.get(".hash-suggestion-list").text()).toContain("Example MCP");
+      await typeInEdit(wrapper, "Try /");
+      expect(wrapper.get(".user-edit-suggestions").text()).toContain("/new");
+    },
+  );
+
+  it("shows workspace files after @ while editing", async () => {
+    const wrapper = card(false);
+    await wrapper.setProps({ workspaceRoot: "workspace-1" });
+    await wrapper.get(".user-message-text").trigger("click");
+    await flushPromises();
+    await typeInEdit(wrapper, "Use @");
+    expect(wrapper.get(".file-suggestion-list").text()).toContain("src/main.ts");
+  });
+
+  it("scrolls the edit suggestions with keyboard selection", async () => {
+    const wrapper = card();
+    await wrapper.get(".user-message-text").trigger("click");
+    await flushPromises();
+    await typeInEdit(wrapper, "Try #");
+    const list = wrapper.get(".hash-suggestion-list").element as HTMLElement;
+    Object.defineProperty(list, "clientHeight", { configurable: true, value: 20 });
+    const rows = wrapper.findAll(".hash-suggestion-item");
+    Object.defineProperty(rows[1]!.element, "offsetTop", { configurable: true, value: 35 });
+    Object.defineProperty(rows[1]!.element, "offsetHeight", { configurable: true, value: 30 });
+    await wrapper.get("[contenteditable='true']").trigger("keydown", { key: "ArrowDown" });
+    await flushPromises();
+    expect(rows[1]!.classes()).toContain("active");
+    expect(list.scrollTop).toBe(45);
   });
 });

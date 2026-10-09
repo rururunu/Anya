@@ -2747,7 +2747,15 @@ async function ensureHashCatalog(force = false) {
   if (!force && (hashCatalogReady.value || hashCatalogLoading.value)) return;
   hashCatalogLoading.value = true;
   try {
-    const skills = await listSkills();
+    // The overlay is a separate WebView and does not run the workbench plugin
+    // bootstrap. Populate its store before building # suggestions.
+    if (!pluginsStore.pluginsLoaded) {
+      await pluginsStore.refresh();
+    }
+    const skills = await listSkills().catch((error) => {
+      console.error("list_skills failed while loading hash mentions:", error);
+      return [];
+    });
     const enabledBuiltins = new Set(settingStore.enabledBuiltinSkills ?? []);
     const skillItems: HashMentionItem[] = skills
       .filter((skill) => skill.source !== "builtin" || enabledBuiltins.has(skill.name))
@@ -2790,7 +2798,22 @@ async function ensureHashCatalog(force = false) {
     });
   } catch (error) {
     console.error("load hash mention catalog failed:", error);
-    hashCatalog.value = [];
+    // Skills or plugin discovery can fail independently of configured MCPs.
+    // Keep the locally configured resources visible in that case.
+    hashCatalog.value = [
+      ...pluginHashItems(),
+      ...(settingStore.mcpServers ?? [])
+        .filter((server) => server.enabled !== false)
+        .map((server) => ({
+          kind: "mcp" as const,
+          id: server.id,
+          title: server.title || server.id,
+          description: server.description || server.command || undefined,
+          iconUrl: server.iconUrl ?? null,
+          vendor: server.qualifiedName?.trim() || undefined,
+        })),
+    ];
+    hashCatalogReady.value = true;
   } finally {
     hashCatalogLoading.value = false;
   }

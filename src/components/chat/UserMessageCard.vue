@@ -15,10 +15,27 @@ import {
 } from "@lucide/vue";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import ComposerEditable from "@/components/chat/ComposerEditable.vue";
+import FileMentionPicker from "@/components/chat/input/FileMentionPicker.vue";
+import HashMentionPicker from "@/components/chat/input/HashMentionPicker.vue";
+import CommandSuggestions from "@/components/chat/input/CommandSuggestions.vue";
+import { listSkills } from "@/commands/skills";
+import { listWorkspaceFiles } from "@/commands/workspace";
+import { slashCommands } from "@/commands/slash";
 import UserMessageFooter from "@/components/chat/UserMessageFooter.vue";
 import UserMessageImage from "@/components/chat/UserMessageImage.vue";
 import { codeLanguageForPath } from "@/services/chat/codeLanguage";
-import { formatMentionPath, normalizeMentionPath } from "@/services/chat/composerSegments";
+import {
+  formatMentionPath,
+  formatResourceMention,
+  normalizeMentionPath,
+} from "@/services/chat/composerSegments";
+import {
+  activeFilePathMention,
+  activeHashMention,
+  filterHashMentionItems,
+  isHashableAgentPlugin,
+  type HashMentionItem,
+} from "@/services/chat/hashMentions";
 import { splitInlineTokenParts } from "@/services/chat/inlineTokenMarks";
 import "@/services/chat/inlineTokenMarks.css";
 import {
@@ -42,6 +59,7 @@ import type { ChatMessage } from "@/types/chat";
 const props = defineProps<{
   message: ChatMessage;
   sessionId: string;
+  workspaceRoot?: string;
   canResend: boolean;
   busy: boolean;
   inlineEdit?: boolean;
@@ -60,6 +78,14 @@ const settingStore = useSettingStore();
 const pluginsStore = usePluginsStore();
 const editing = ref(false);
 const draft = ref("");
+const editCaret = ref(0);
+const editSelectedIndex = ref(0);
+const editSuggestionsRef = ref<HTMLElement | null>(null);
+const editFiles = ref<string[]>([]);
+const editCatalog = ref<HashMentionItem[]>([]);
+const editCatalogLoading = ref(false);
+const editFilesLoading = ref(false);
+const dismissedEditSuggestion = ref<string | null>(null);
 const expanded = ref(false);
 const ignoreBlur = ref(false);
 const composerRoot = ref<HTMLElement | null>(null);
@@ -83,6 +109,54 @@ const canEdit = computed(
     props.message.injected !== true,
 );
 const canSend = computed(() => editing.value && draft.value.trim().length > 0);
+const activeEditCommand = computed(() => {
+  if (!editing.value) return null;
+  const before = draft.value.slice(0, editCaret.value);
+  const match = /(^|\s)(\/[\w-]*)$/.exec(before);
+  if (!match || (draft.value[editCaret.value] && !/\s/.test(draft.value[editCaret.value])))
+    return null;
+  return { start: before.length - match[2].length, query: match[2] };
+});
+const activeEditFile = computed(() =>
+  editing.value && props.workspaceRoot ? activeFilePathMention(draft.value, editCaret.value) : null,
+);
+const activeEditHash = computed(() =>
+  editing.value && !activeEditFile.value && !activeEditCommand.value
+    ? activeHashMention(draft.value, editCaret.value)
+    : null,
+);
+const editFileSuggestions = computed(() => {
+  const query = activeEditFile.value?.query.toLowerCase() ?? "";
+  return editFiles.value.filter((path) => path.toLowerCase().includes(query)).slice(0, 12);
+});
+const editHashSuggestions = computed(() =>
+  activeEditHash.value ? filterHashMentionItems(editCatalog.value, activeEditHash.value.query) : [],
+);
+const editCommandSuggestions = computed(() =>
+  activeEditCommand.value
+    ? slashCommands
+        .filter((item) => item.command.startsWith(activeEditCommand.value!.query.toLowerCase()))
+        .map((item) => ({ ...item, description: tr(settingStore.language, item.descriptionKey) }))
+    : [],
+);
+const editSuggestionKind = computed<"file" | "hash" | "command" | null>(() => {
+  if (activeEditFile.value) return "file";
+  if (activeEditHash.value) return "hash";
+  if (activeEditCommand.value) return "command";
+  return null;
+});
+const editSuggestionKey = computed(() =>
+  editSuggestionKind.value ? `${editSuggestionKind.value}:${editCaret.value}:${draft.value}` : null,
+);
+const showEditSuggestions = computed(
+  () =>
+    editSuggestionKind.value !== null && dismissedEditSuggestion.value !== editSuggestionKey.value,
+);
+const editSuggestionCount = computed(() => {
+  if (editSuggestionKind.value === "file") return editFileSuggestions.value.length;
+  if (editSuggestionKind.value === "hash") return editHashSuggestions.value.length;
+  return editCommandSuggestions.value.length;
+});
 
 type InlinePart =
   | { kind: "text"; text: string }
@@ -157,12 +231,97 @@ async function startEdit() {
   await nextTick();
   composerRef.value?.focus();
   const len = draft.value.length;
+  editCaret.value = len;
   composerRef.value?.setSelection(len, len);
+  void loadEditResources();
+}
+
+async function loadEditResources() {
+  editCatalogLoading.value = true;
+  await pluginsStore.refresh().catch((error) => console.error("list_plugins failed:", error));
+  const skills = await listSkills().catch((error) => {
+    console.error("list_skills failed:", error);
+    return [];
+  });
+  const enabledBuiltins = new Set(settingStore.enabledBuiltinSkills ?? []);
+  editCatalog.value = [
+    ...skills
+      .filter((skill) => skill.source !== "builtin" || enabledBuiltins.has(skill.name))
+      .map((skill) => ({
+        kind: "skill" as const,
+        id: skill.name,
+        title: skill.title || skill.name,
+        description: skill.description || undefined,
+        iconUrl: skill.iconUrl ?? null,
+        vendor: skill.qualifiedName?.trim() || undefined,
+      })),
+    ...pluginsStore.plugins.filter(isHashableAgentPlugin).map((plugin) => ({
+      kind: "plugin" as const,
+      id: plugin.id,
+      title: plugin.name || plugin.id,
+      description: plugin.description || undefined,
+      iconUrl: plugin.icon ? pluginMentionIconUrl(plugin.id, pluginsStore.plugins) : null,
+    })),
+    ...(settingStore.mcpServers ?? [])
+      .filter((server) => server.enabled !== false)
+      .map((server) => ({
+        kind: "mcp" as const,
+        id: server.id,
+        title: server.title || server.id,
+        description: server.description || server.command || undefined,
+        iconUrl: server.iconUrl ?? null,
+        vendor: server.qualifiedName?.trim() || undefined,
+      })),
+  ];
+  editCatalogLoading.value = false;
+  if (props.workspaceRoot) {
+    editFilesLoading.value = true;
+    editFiles.value = await listWorkspaceFiles().catch((error) => {
+      console.error("list_workspace_files failed:", error);
+      return [];
+    });
+    editFilesLoading.value = false;
+  }
+}
+
+function insertEditSuggestion(token: string, start: number, end: number) {
+  const before = draft.value.slice(0, start);
+  const after = draft.value.slice(end);
+  const inserted = `${token}${after && /^\s/.test(after) ? "" : " "}`;
+  const caret = before.length + inserted.length;
+  dismissedEditSuggestion.value = null;
+  editSelectedIndex.value = 0;
+  composerRef.value?.setText(`${before}${inserted}${after}`, caret);
+  composerRef.value?.focus({ preventScroll: true });
+}
+
+function selectEditSuggestion(index = editSelectedIndex.value) {
+  if (editSuggestionKind.value === "file" && activeEditFile.value) {
+    const path = editFileSuggestions.value[index];
+    if (path)
+      insertEditSuggestion(
+        formatMentionPath(path),
+        activeEditFile.value.start,
+        activeEditFile.value.end,
+      );
+  } else if (editSuggestionKind.value === "hash" && activeEditHash.value) {
+    const item = editHashSuggestions.value[index];
+    if (item)
+      insertEditSuggestion(
+        formatResourceMention(item.kind, item.id),
+        activeEditHash.value.start,
+        activeEditHash.value.end,
+      );
+  } else if (editSuggestionKind.value === "command" && activeEditCommand.value) {
+    const item = editCommandSuggestions.value[index];
+    if (item) insertEditSuggestion(item.command, activeEditCommand.value.start, editCaret.value);
+  }
 }
 
 function cancelEdit() {
   editing.value = false;
   draft.value = content.value.message;
+  dismissedEditSuggestion.value = null;
 }
 
 function commitEdit() {
@@ -214,6 +373,26 @@ async function attachFiles() {
 
 function onComposerKeydown(event: KeyboardEvent) {
   if (event.isComposing || event.keyCode === 229) return;
+  if (showEditSuggestions.value) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const count = editSuggestionCount.value;
+      if (count)
+        editSelectedIndex.value =
+          (editSelectedIndex.value + (event.key === "ArrowDown" ? 1 : -1) + count) % count;
+      return;
+    }
+    if ((event.key === "Enter" || event.key === "Tab") && editSuggestionCount.value) {
+      event.preventDefault();
+      selectEditSuggestion();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      dismissedEditSuggestion.value = editSuggestionKey.value;
+      return;
+    }
+  }
   if (event.key === "Escape") {
     event.preventDefault();
     cancelEdit();
@@ -224,6 +403,21 @@ function onComposerKeydown(event: KeyboardEvent) {
     commitEdit();
   }
 }
+
+watch(editSuggestionKey, () => {
+  editSelectedIndex.value = 0;
+});
+
+watch(editSelectedIndex, async () => {
+  await nextTick();
+  const list = editSuggestionsRef.value?.querySelector<HTMLElement>(".command-list");
+  const active = list?.querySelector<HTMLElement>(".command-item.active");
+  if (!list || !active) return;
+  const top = active.offsetTop;
+  const bottom = top + active.offsetHeight;
+  if (top < list.scrollTop) list.scrollTop = top;
+  else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+});
 
 watch(
   () => props.message.id,
@@ -312,10 +506,59 @@ watch(
         multiline
         :mcp-servers="settingStore.mcpServers ?? []"
         :plugins="pluginsStore.plugins"
+        :aria-expanded="showEditSuggestions"
+        :file-catalog="editFiles"
+        @caret-change="editCaret = $event"
         @keydown="onComposerKeydown"
         @click.stop
       />
-      <span v-else-if="content.message" class="user-message-text">
+      <div
+        v-if="editing && showEditSuggestions"
+        ref="editSuggestionsRef"
+        class="user-edit-suggestions"
+        @click.stop
+      >
+        <FileMentionPicker
+          v-if="editSuggestionKind === 'file'"
+          :loading="editFilesLoading"
+          :suggestions="editFileSuggestions"
+          :selected-index="editSelectedIndex"
+          :loading-text="tr(settingStore.language, 'loadingFiles')"
+          :empty-text="tr(settingStore.language, 'noMatchingFiles')"
+          :ariaLabel="tr(settingStore.language, 'workspace')"
+          @hover="editSelectedIndex = $event"
+          @select="(path) => selectEditSuggestion(editFileSuggestions.indexOf(path))"
+        />
+        <HashMentionPicker
+          v-else-if="editSuggestionKind === 'hash'"
+          :loading="editCatalogLoading"
+          :items="editHashSuggestions"
+          :selected-index="editSelectedIndex"
+          :loading-text="tr(settingStore.language, 'loadingHashMentions')"
+          :empty-text="tr(settingStore.language, 'noMatchingHashMentions')"
+          :ariaLabel="tr(settingStore.language, 'hashMentions')"
+          :skill-label="tr(settingStore.language, 'hashSkill')"
+          :mcp-label="tr(settingStore.language, 'hashMcp')"
+          :plugin-label="tr(settingStore.language, 'hashPlugin')"
+          @hover="editSelectedIndex = $event"
+          @select="(item) => selectEditSuggestion(editHashSuggestions.indexOf(item))"
+        />
+        <CommandSuggestions
+          v-else-if="editSuggestionKind === 'command'"
+          :commands="editCommandSuggestions"
+          :selected-index="editSelectedIndex"
+          :appearance="inlineEdit ? 'overlay' : 'workbench'"
+          :ariaLabel="tr(settingStore.language, 'commandSuggestions')"
+          @hover="editSelectedIndex = $event"
+          @select="
+            (command) =>
+              selectEditSuggestion(
+                editCommandSuggestions.findIndex((item) => item.command === command),
+              )
+          "
+        />
+      </div>
+      <span v-if="!editing && content.message" class="user-message-text">
         <template
           v-for="(part, partIdx) in inlineParts(content.message)"
           :key="`${message.id}-part-${partIdx}`"
@@ -662,6 +905,20 @@ watch(
 .user-composer-field {
   width: 100%;
   color: inherit;
+}
+.user-edit-suggestions {
+  width: min(420px, 100%);
+  margin-top: 6px;
+  border: 1px solid var(--peek-border);
+  border-radius: 10px;
+  background: var(--peek-list-bg);
+  overflow: hidden;
+}
+.user-edit-suggestions :deep(.command-list) {
+  width: 100%;
+  max-height: 180px;
+  margin: 0;
+  border: 0;
 }
 .user-composer :deep(.composer-editable) {
   color: inherit;

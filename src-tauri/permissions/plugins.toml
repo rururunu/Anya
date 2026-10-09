@@ -1,4 +1,9 @@
 [[permission]]
+identifier = "allow-plugin-list-commands"
+description = "Read installed plugins and plugin safe-mode status for composer suggestions."
+commands.allow = ["list_user_plugins", "plugin_safe_mode_status"]
+
+[[permission]]
 identifier = "allow-plugin-host-commands"
 description = "User plugin list/open/delete and the isolated plugin-window storage/ask IPC."
 commands.allow = [

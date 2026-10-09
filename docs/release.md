@@ -52,12 +52,12 @@ pnpm tauri:build
 3. Generate **`release/latest.json`**:
 
 ```powershell
-pnpm release:json -- --tag v0.2.27 --notes "Improved chat composer and overlay behavior, theme image storage, update prompts, and desktop pet."
+pnpm release:json -- --tag v0.2.29 --notes "Restore DeepSeek plugin and MCP tools; improve overlay and sent-message completions."
 ```
 
-4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.27` and upload:
-   - `Anya_0.2.27_x64.msi`
-   - `Anya_0.2.27_x64.msi.sig`
+4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.29` and upload:
+   - `Anya_0.2.29_x64.msi`
+   - `Anya_0.2.29_x64.msi.sig`
    - `latest.json` (from `release/latest.json`)
 
 5. Verify `https://github.com/rururunu/Anya/releases/latest/download/latest.json` and check for updates in the app.

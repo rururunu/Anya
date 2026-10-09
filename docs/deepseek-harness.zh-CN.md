@@ -8,7 +8,7 @@ DeepSeek 模型在 Rust agent 入口使用独立的 dsh 工具注册表。普通
 
 ## 工具与模式
 
-核心配置包含 `read`、`read_image`、`write`、`edit`、`glob`、`grep`、`pwsh`（Windows）或 `bash`、`job_output`、`job_list`、`job_kill`、`todo_write`、`ask_user_question`、`skill`、`web_search`、`web_fetch`、`subagent`、`present`、`exit_plan_mode`。缺少对应宿主能力时不公布该工具。
+核心配置包含 `read`、`read_image`、`write`、`edit`、`glob`、`grep`、`pwsh`（Windows）或 `bash`、`job_output`、`job_list`、`job_kill`、`todo_write`、`ask_user_question`、`skill`、`web_search`、`web_fetch`、`subagent`、`present`、`exit_plan_mode`。缺少对应宿主能力时不公布该工具。已启用的 Anya 插件工具（`plugin_*`）、MCP 工具（`mcp__*`）和 `manage_plugin` 保留各自的 schema 与执行器，加入本轮 DeepSeek 工具列表；停用或不可用的工具仍不公布。
 
 ### 文件交付卡片
 
@@ -28,7 +28,7 @@ DeepSeek 模型在 Rust agent 入口使用独立的 dsh 工具注册表。普通
 - `todo_write` 替换清单，默认最多一个进行中任务。问题使用稳定 id，等待用户回答或取消。Plan 审批只有用户选择 Approve 才解除写入限制。
 - 技能使用 dsh 目录格式和 `skill_content` 包装。Office 技能继续使用已经内置的 Deno、Office Node 和 LibreOffice Kit。
 
-这是一组原生移植的核心工具契约，不是运行整个官方插件生态。网络检索、交互 UI、技能存储、图像文件上传、子智能体和权限由 Anya 的宿主服务承接；子智能体采用官方的前台配置，不公布后台参数。官方可选的 MCP、LSP、PTY、computer-use、团队、续接子智能体等插件，以及 Anya 独有的工具，未映射为这组核心工具。不能将本实现描述为所有官方插件和协议都已逐字节复刻。
+这是一组原生移植的核心工具契约，不是运行整个官方插件生态。网络检索、交互 UI、技能存储、图像文件上传、子智能体和权限由 Anya 的宿主服务承接；子智能体采用官方的前台配置，不公布后台参数。Anya 已启用的 MCP 和插件工具可作为宿主工具使用，包括 Anya 的 computer-use 插件；这不等于移植了官方 harness 的可选 MCP、LSP、PTY、computer-use、团队或续接子智能体插件。不能将本实现描述为所有官方插件和协议都已逐字节复刻。
 
 ## 权限与读取预览
 

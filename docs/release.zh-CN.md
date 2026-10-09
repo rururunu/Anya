@@ -65,7 +65,7 @@ pnpm tauri:build
 ### 3. 生成本地 `latest.json`
 
 ```powershell
-pnpm release:json -- --tag v0.2.27 --notes "改进聊天输入与悬浮窗交互，优化主题背景存储、更新提示和桌面宠物。"
+pnpm release:json -- --tag v0.2.29 --notes "修复 DeepSeek 插件与 MCP 工具缺失，完善弹窗和历史消息编辑补全。"
 ```
 
 生成文件：**`release/latest.json`**（GitHub 附件必须用这个文件名），以及一份带版本说明的副本 **`release/Anya_<version>_latest_<说明摘要>.json`**。
@@ -74,13 +74,13 @@ pnpm release:json -- --tag v0.2.27 --notes "改进聊天输入与悬浮窗交互
 
 ```json
 {
-  "version": "0.2.27",
+  "version": "0.2.29",
   "notes": "更新说明",
   "pub_date": "2026-08-29T09:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://github.com/rururunu/Anya/releases/download/v0.2.27/Anya_0.2.27_x64.msi",
-      "signature": "<Anya_0.2.27_x64.msi.sig 文件的全部内容>"
+      "url": "https://github.com/rururunu/Anya/releases/download/v0.2.29/Anya_0.2.29_x64.msi",
+      "signature": "<Anya_0.2.29_x64.msi.sig 文件的全部内容>"
     }
   }
 }
@@ -89,11 +89,11 @@ pnpm release:json -- --tag v0.2.27 --notes "改进聊天输入与悬浮窗交互
 ### 4. 在 GitHub 创建 Release
 
 1. 打开 [Releases](https://github.com/rururunu/Anya/releases) → **Draft a new release**
-2. Tag：`v0.2.27`（与 `--tag` 一致）
+2. Tag：`v0.2.29`（与 `--tag` 一致）
 3. 填写 Release 说明（与 `notes` 可相同，给用户看）
 4. 上传 **3 个文件**：
-   - `Anya_0.2.27_x64.msi`
-   - `Anya_0.2.27_x64.msi.sig`
+   - `Anya_0.2.29_x64.msi`
+   - `Anya_0.2.29_x64.msi.sig`
    - `latest.json`（来自 `release/latest.json`，**文件名保持 `latest.json`**）
 5. 发布（不要勾 Pre-release，否则 `latest` 不会指向它）
 

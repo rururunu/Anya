@@ -203,6 +203,26 @@ fn dsh_registry_is_separate_preserves_exact_schemas_and_plan_gate() {
 }
 
 #[test]
+fn dsh_keeps_available_plugin_and_mcp_tools() {
+    let backing = manager();
+    backing.register_dynamic(Arc::new(BackTool("plugin_computer-use__see")));
+    backing.register_dynamic(Arc::new(BackTool("mcp__example__search")));
+    backing.register_dynamic(Arc::new(BackTool("manage_plugin")));
+    backing.register_dynamic(Arc::new(BackTool("unrelated_dynamic_tool")));
+    let dsh = backing.dsh_contract();
+    let names = dsh.registry().names();
+    assert!(names.contains(&"plugin_computer-use__see".into()));
+    assert!(names.contains(&"mcp__example__search".into()));
+    assert!(names.contains(&"manage_plugin".into()));
+    assert!(!names.contains(&"unrelated_dynamic_tool".into()));
+    assert!(dsh
+        .schemas()
+        .iter()
+        .any(|schema| { schema["function"]["name"] == "plugin_computer-use__see" }));
+    assert!(dsh.registry().get("mcp__example__search").is_some());
+}
+
+#[test]
 fn present_verifies_all_files_and_returns_replayable_original_references() {
     let ctx = context();
     std::fs::write(ctx.workspace_root.join("报告.pptx"), b"original").unwrap();

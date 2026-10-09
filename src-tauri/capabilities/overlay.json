@@ -46,6 +46,7 @@
     "allow-window-commands",
     "allow-settings-commands",
     "allow-chat-commands",
+    "allow-plugin-list-commands",
     "allow-staged-commands"
   ]
 }

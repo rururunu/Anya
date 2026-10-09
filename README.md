@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.md">Documentation</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.28 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.29 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
@@ -29,7 +29,7 @@
 | **Extend your tools**  | Use skills, MCP, and plugins; manually enable computer use and OpenCLI.                              |
 | **Connect your phone** | Chat, approve actions, and transfer files with [Companion](https://github.com/rururunu/AnyaAndroid). |
 
-DeepSeek models use natively integrated dsh tools and prompts, with cache usage, response timing, and retry diagnostics. Other models use Anya's general tool set. See [DeepSeek integration](./docs/deepseek-harness.md).
+DeepSeek models use natively integrated dsh core tools and prompts while retaining enabled Anya plugin and MCP tools plus plugin management. Cache usage, response timing, and retries are recorded. Other models use Anya's general tool set. See [DeepSeek integration](./docs/deepseek-harness.md).
 
 ## Get started
 
@@ -37,7 +37,7 @@ Alt+Alt captures selected text before the overlay takes focus and displays a com
 
 The **Profile** settings page shows local usage insights and lets you transfer your profile, settings, and API keys. Treat exported files as sensitive. A factory reset is available from the profile actions.
 
-The chat composer keeps model and thinking controls on the right; on narrow windows, controls collapse to icons. Editing a sent message uses the same controls. When an update is available, open it from the workbench sidebar or **Settings → About** to review the release notes before installing.
+The chat composer keeps model and thinking controls on the right; on narrow windows, controls collapse to icons. In the overlay and workbench, `#` suggests skills, plugins, and MCP servers, `@` suggests workspace files, and `/` suggests commands. These suggestions also appear when editing a sent message. When an update is available, open it from the workbench sidebar or **Settings → About** to review the release notes before installing.
 
 1. Download and install the MSI from [Releases](../../releases).
 2. Open **Settings**, add a model provider, and configure its credentials.
