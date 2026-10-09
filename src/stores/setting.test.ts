@@ -197,6 +197,30 @@ describe("applySettings", () => {
     expect(store.chatMode).toBe(FULL_SETTINGS.chatMode);
   });
 
+  it("applies provider and secret changes from a settings broadcast", () => {
+    const store = useSettingStore();
+    const changed = {
+      ...store.$state,
+      deepseekApiKey: "new-deepseek-key",
+      mem0ApiKey: "new-memory-key",
+      serperApiKey: "new-search-key",
+      reasoningEffort: "high" as const,
+      toolApprovalMode: "auto" as const,
+      customProviders: FULL_SETTINGS.customProviders,
+      imageProviders: FULL_SETTINGS.imageProviders,
+    };
+
+    store.applySettingsBroadcast(changed);
+
+    expect(store.deepseekApiKey).toBe(changed.deepseekApiKey);
+    expect(store.mem0ApiKey).toBe(changed.mem0ApiKey);
+    expect(store.serperApiKey).toBe(changed.serperApiKey);
+    expect(store.reasoningEffort).toBe(changed.reasoningEffort);
+    expect(store.toolApprovalMode).toBe(changed.toolApprovalMode);
+    expect(store.customProviders).toEqual(changed.customProviders);
+    expect(store.imageProviders).toEqual(changed.imageProviders);
+  });
+
   it("updates only the approval mode without reapplying visual settings", async () => {
     const store = useSettingStore();
     const applySettings = vi.spyOn(store, "applySettings");
@@ -210,6 +234,25 @@ describe("applySettings", () => {
     expect(store.toolApprovalMode).toBe("alwaysAllow");
     expect(applySettings).not.toHaveBeenCalled();
     expect(setAppSettings).toHaveBeenCalledWith({ toolApprovalMode: "alwaysAllow" });
+  });
+
+  it("accepts another window's settings broadcast immediately after a composer update", async () => {
+    const store = useSettingStore();
+    vi.mocked(setAppSettings).mockResolvedValue({
+      ...FULL_SETTINGS,
+      toolApprovalMode: "alwaysAllow",
+    });
+
+    await store.update({ toolApprovalMode: "alwaysAllow" });
+    store.applySettingsBroadcast({
+      ...FULL_SETTINGS,
+      toolApprovalMode: "alwaysAllow",
+      deepseekApiKey: "changed-in-another-window",
+      customProviders: [],
+    });
+
+    expect(store.deepseekApiKey).toBe("changed-in-another-window");
+    expect(store.customProviders).toEqual([]);
   });
 
   it("updates reasoning effort without reapplying the full settings object", async () => {

@@ -290,6 +290,33 @@ const mem0UserIdDraft = ref("");
 const mem0BaseUrlDraft = ref("");
 const serperApiKeyDraft = ref("");
 const tavilyApiKeyDraft = ref("");
+
+watch(
+  () =>
+    [
+      settingStore.deepseekApiKey,
+      settingStore.mem0ApiKey,
+      settingStore.mem0UserId,
+      settingStore.mem0BaseUrl,
+      settingStore.serperApiKey,
+      settingStore.tavilyApiKey,
+    ] as const,
+  (current, previous) => {
+    const drafts = [
+      apiKeyDraft,
+      mem0ApiKeyDraft,
+      mem0UserIdDraft,
+      mem0BaseUrlDraft,
+      serperApiKeyDraft,
+      tavilyApiKeyDraft,
+    ];
+    current.forEach((value, index) => {
+      const draft = drafts[index]!;
+      if (!previous || draft.value === previous[index]) draft.value = value;
+    });
+  },
+  { immediate: true },
+);
 let settingsNavEl: Element | null = null;
 const expandedHistoryGroups = ref<Record<string, boolean>>({});
 
@@ -687,12 +714,6 @@ function onWebSearchProviderChange(value: unknown) {
 }
 
 onMounted(async () => {
-  apiKeyDraft.value = settingStore.deepseekApiKey;
-  mem0ApiKeyDraft.value = settingStore.mem0ApiKey;
-  mem0UserIdDraft.value = settingStore.mem0UserId;
-  mem0BaseUrlDraft.value = settingStore.mem0BaseUrl;
-  serperApiKeyDraft.value = settingStore.serperApiKey;
-  tavilyApiKeyDraft.value = settingStore.tavilyApiKey;
   void chatModelStore.fetch();
 
   const info = await getAppInfo();

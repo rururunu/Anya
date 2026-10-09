@@ -24,7 +24,6 @@ import { applyUiFonts } from "@/services/theme/fonts";
 
 const LEGACY_STORAGE_KEY = "peek.settings";
 let settingsUpdateSequence = 0;
-let fastComposerUpdateAt = 0;
 
 const defaultSettings: AppSettings = {
   colorScheme: "light",
@@ -249,38 +248,11 @@ export const useSettingStore = defineStore("setting", {
       applyChangedAppearance(this);
     },
     applySettingsBroadcast(settings: AppSettings) {
-      // Settings broadcasts contain the complete persisted object. Scalar
-      // composer changes are frequent and arrive while the editor is active;
-      // avoid reprocessing every collection when the broadcast only confirms
-      // the local reasoning/approval value.
-      if (settings.reasoningEffort !== this.reasoningEffort) {
-        this.reasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
-        writeCachedComposerSettings(this);
-        return;
-      }
-      // The Rust writer broadcasts the complete snapshot after the scalar
-      // update. When it arrives with the same value, it is only an echo of our
-      // local optimistic update; applying the full snapshot here would still
-      // block the editor a moment later.
-      if (fastComposerUpdateAt && performance.now() - fastComposerUpdateAt < 2000) return;
-      if (settings.toolApprovalMode !== this.toolApprovalMode) {
-        this.toolApprovalMode = settings.toolApprovalMode;
-        writeCachedComposerSettings(this);
-        return;
-      }
-      const sameComposerState =
-        settings.chatModel === this.chatModel &&
-        settings.chatModelProvider === this.chatModelProvider &&
-        settings.chatMode === this.chatMode &&
-        settings.language === this.language &&
-        settings.zoom === this.zoom &&
-        settings.opacity === this.opacity &&
-        settings.colorScheme === this.colorScheme;
-      if (sameComposerState) {
-        writeCachedComposerSettings(this);
-        return;
-      }
+      // A scalar composer update also broadcasts a complete settings snapshot.
+      // Do not discard it: another window may have changed providers or keys
+      // while that update was in flight.
       applyCommonSettings(this, settings);
+      applySecretSettings(this, settings);
       writeCachedComposerSettings(this);
       applyChangedAppearance(this);
     },
@@ -326,7 +298,6 @@ export const useSettingStore = defineStore("setting", {
         Object.keys(partial).length === 1 &&
         (partial.toolApprovalMode !== undefined || partial.reasoningEffort !== undefined)
       ) {
-        fastComposerUpdateAt = performance.now();
         const previousMode = this.toolApprovalMode;
         const previousEffort = this.reasoningEffort;
         if (partial.toolApprovalMode !== undefined)

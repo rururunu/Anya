@@ -1,6 +1,6 @@
 # Permissions and code preview
 
-[简体中文](./permissions-and-preview.zh-CN.md) · Applies to Anya v0.2.29.
+[简体中文](./permissions-and-preview.zh-CN.md) · Applies to Anya v0.2.30.
 
 ## Permission scopes
 

@@ -8,6 +8,7 @@ import { tr } from "@/services/i18n";
 
 const props = defineProps<{
   modelValue?: string;
+  disabled?: boolean;
   class?: HTMLAttributes["class"];
   placeholder?: string;
 }>();
@@ -31,6 +32,7 @@ function onInput(event: Event) {
       :value="modelValue"
       type="text"
       :placeholder="placeholder"
+      :disabled="disabled"
       spellcheck="false"
       autocomplete="off"
       :class="
@@ -47,6 +49,7 @@ function onInput(event: Event) {
       type="button"
       class="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
       :aria-label="tr(settingStore.language, visible ? 'hideSecret' : 'showSecret')"
+      :disabled="disabled"
       tabindex="-1"
       @mousedown.prevent
       @click="visible = !visible"

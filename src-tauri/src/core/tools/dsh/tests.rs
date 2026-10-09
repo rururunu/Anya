@@ -223,6 +223,18 @@ fn dsh_keeps_available_plugin_and_mcp_tools() {
 }
 
 #[test]
+fn dsh_keeps_generate_image_as_the_only_image_mode_tool() {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(BackTool("generate_image")));
+    registry.register(Arc::new(BackTool("run_shell")));
+    let image_tools = Arc::new(ToolManager::new(registry).image_mode());
+    let dsh = image_tools.dsh_contract();
+    assert!(dsh.is_dsh());
+    assert_eq!(dsh.registry().names(), vec!["generate_image"]);
+    assert_eq!(dsh.schemas()[0]["function"]["name"], "generate_image");
+}
+
+#[test]
 fn present_verifies_all_files_and_returns_replayable_original_references() {
     let ctx = context();
     std::fs::write(ctx.workspace_root.join("报告.pptx"), b"original").unwrap();

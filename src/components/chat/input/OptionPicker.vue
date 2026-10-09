@@ -6,6 +6,7 @@
     role="listbox"
     :aria-label="ariaLabel"
   >
+    <li v-if="error" class="option-error" role="alert">{{ error }}</li>
     <li
       v-for="(option, index) in options"
       :key="option.id"
@@ -18,7 +19,10 @@
       role="option"
       :aria-selected="index === selectedIndex"
       @mouseenter="$emit('hover', index)"
-      @mousedown.prevent="$emit('select', option.id)"
+      tabindex="0"
+      @pointerdown.stop.prevent="onPointerSelect($event, option.id)"
+      @keydown.enter.prevent="$emit('select', option.id)"
+      @keydown.space.prevent="$emit('select', option.id)"
     >
       <span v-if="option.icon" class="option-leading" aria-hidden="true">
         <component :is="option.icon" :size="13" class="option-icon" />
@@ -78,12 +82,17 @@ defineProps<{
   ariaLabel: string;
   /** Narrow single-line rows without icon background chips. */
   compact?: boolean;
+  error?: string;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   hover: [index: number];
   select: [id: string];
 }>();
+
+function onPointerSelect(event: PointerEvent, id: string) {
+  if (event.button === 0) emit("select", id);
+}
 </script>
 
 <style scoped>
@@ -118,6 +127,12 @@ defineEmits<{
   min-height: var(--command-row-height);
   height: auto;
   cursor: default;
+}
+.option-error {
+  padding: 6px 12px;
+  color: var(--peek-danger, #c54135);
+  font-size: 12px;
+  white-space: normal;
 }
 
 .command-item.active {

@@ -65,7 +65,7 @@ pnpm tauri:build
 ### 3. 生成本地 `latest.json`
 
 ```powershell
-pnpm release:json -- --tag v0.2.29 --notes "修复 DeepSeek 插件与 MCP 工具缺失，完善弹窗和历史消息编辑补全。"
+pnpm release:json -- --tag v0.2.30 --notes "修复 DeepSeek 生图、设置同步和 Windows 设置保存。"
 ```
 
 生成文件：**`release/latest.json`**（GitHub 附件必须用这个文件名），以及一份带版本说明的副本 **`release/Anya_<version>_latest_<说明摘要>.json`**。
@@ -74,13 +74,13 @@ pnpm release:json -- --tag v0.2.29 --notes "修复 DeepSeek 插件与 MCP 工具
 
 ```json
 {
-  "version": "0.2.29",
+  "version": "0.2.30",
   "notes": "更新说明",
   "pub_date": "2026-08-29T09:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://github.com/rururunu/Anya/releases/download/v0.2.29/Anya_0.2.29_x64.msi",
-      "signature": "<Anya_0.2.29_x64.msi.sig 文件的全部内容>"
+      "url": "https://github.com/rururunu/Anya/releases/download/v0.2.30/Anya_0.2.30_x64.msi",
+      "signature": "<Anya_0.2.30_x64.msi.sig 文件的全部内容>"
     }
   }
 }
@@ -89,11 +89,11 @@ pnpm release:json -- --tag v0.2.29 --notes "修复 DeepSeek 插件与 MCP 工具
 ### 4. 在 GitHub 创建 Release
 
 1. 打开 [Releases](https://github.com/rururunu/Anya/releases) → **Draft a new release**
-2. Tag：`v0.2.29`（与 `--tag` 一致）
+2. Tag：`v0.2.30`（与 `--tag` 一致）
 3. 填写 Release 说明（与 `notes` 可相同，给用户看）
 4. 上传 **3 个文件**：
-   - `Anya_0.2.29_x64.msi`
-   - `Anya_0.2.29_x64.msi.sig`
+   - `Anya_0.2.30_x64.msi`
+   - `Anya_0.2.30_x64.msi.sig`
    - `latest.json`（来自 `release/latest.json`，**文件名保持 `latest.json`**）
 5. 发布（不要勾 Pre-release，否则 `latest` 不会指向它）
 
@@ -109,8 +109,8 @@ pnpm release:json -- --tag v0.2.29 --notes "修复 DeepSeek 插件与 MCP 工具
 仓库已包含 `.github/workflows/release.yml`：推送 `v*` 标签时自动构建、签名并上传 Release。
 
 ```powershell
-git tag v0.2.27
-git push origin v0.2.27
+git tag v0.2.30
+git push origin v0.2.30
 ```
 
 配置好上述 Secrets 后，无需再手动写 Release 正文或上传 MSI；`latest.json` 由 `tauri-action` 生成并上传。
@@ -141,7 +141,7 @@ MSI 可能已构建成功，但 **updater 签名**（`.msi.sig` / `latest.json`�
 
 ```powershell
 $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$env:USERPROFILE\.tauri\anya.key" -Raw
-pnpm tauri signer sign -f "src-tauri\target\release\bundle\msi\Anya_0.2.27_x64.msi"
+pnpm tauri signer sign -f "src-tauri\target\release\bundle\msi\Anya_0.2.30_x64.msi"
 ```
 
 若本地也报同样错误，说明 Secret 内容不对，需重新生成并更新 Secret / `pubkey`（更新公钥后旧客户端需重装一次才能再收自动更新）。

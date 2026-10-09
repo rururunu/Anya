@@ -125,7 +125,6 @@ async function bootstrap() {
     void syncEnabledPluginUi();
   } else if (isOverlay) {
     markPeekWindow();
-    hideBootSplash({ fadeMs: 0 });
     // Native conversation windows carry their session in the hash query.
     // Preserve it when normalizing the route so PeekPanel can load that chat.
     await router.replace(initialOverlayRoute(location.hash));
@@ -144,6 +143,8 @@ async function bootstrap() {
     markBootPhase("router ready");
     await waitForNextPaint();
     markBootPhase("first paint");
+    hideBootSplash({ fadeMs: 0 });
+    markBootPhase("splash hidden");
   } else if (isDesktopPet || isComputerUseSurface) {
     markPeekWindow();
     hideBootSplash({ fadeMs: 0 });

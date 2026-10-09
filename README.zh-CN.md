@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.zh-CN.md">使用文档</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.29 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.30 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 

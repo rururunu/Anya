@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -49,7 +50,48 @@ fn persist_settings_file(path: &Path, settings: &AppSettings) -> Result<(), Stri
         let damaged = path.with_extension(format!("json.corrupt-{}", uuid::Uuid::new_v4()));
         fs::copy(path, damaged).map_err(|e| e.to_string())?;
     }
-    crate::core::tools::file_io::atomic_write(path, raw).map_err(|e| e.to_string())
+    write_settings_snapshot(path, raw.as_bytes()).map_err(|e| e.to_string())
+}
+
+fn write_settings_snapshot(path: &Path, raw: &[u8]) -> io::Result<()> {
+    write_settings_snapshot_with(path, raw, |path, raw| {
+        crate::core::tools::file_io::atomic_write(path, raw)
+    })
+}
+
+fn write_settings_snapshot_with(
+    path: &Path,
+    raw: &[u8],
+    atomic_write: impl FnOnce(&Path, &[u8]) -> io::Result<()>,
+) -> io::Result<()> {
+    match atomic_write(path, raw) {
+        Ok(()) => Ok(()),
+        Err(replace_error)
+            if cfg!(windows) && path.exists() && is_replace_blocked(&replace_error) =>
+        {
+            // Some Windows processes open settings.json without FILE_SHARE_DELETE.
+            // The atomic rename then fails even though the file permits writes.
+            // A valid .bak was written immediately before this call, so a torn
+            // fallback write can still be recovered on the next startup.
+            let fallback = (|| {
+                let mut file = fs::OpenOptions::new().write(true).open(path)?;
+                file.set_len(0)?;
+                file.write_all(raw)?;
+                file.sync_all()
+            })();
+            fallback.map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("atomic settings replacement failed ({replace_error}); in-place fallback failed ({error})"),
+                )
+            })
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn is_replace_blocked(error: &io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(5 | 32)) || error.kind() == io::ErrorKind::PermissionDenied
 }
 
 /// Keep embedded wallpaper bytes out of settings snapshots and IPC events.
@@ -527,6 +569,24 @@ pub fn broadcast_settings(app: &AppHandle, settings: &AppSettings) {
 #[cfg(test)]
 mod tests {
     use crate::models::settings::{AppSettings, CustomThemeConfig, ThemeBackgroundConfig};
+
+    #[cfg(windows)]
+    #[test]
+    fn settings_write_uses_existing_file_when_windows_replace_is_denied() {
+        let directory =
+            std::env::temp_dir().join(format!("anya-settings-replace-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("settings.json");
+        std::fs::write(&path, b"old").unwrap();
+
+        super::write_settings_snapshot_with(&path, b"new", |_, _| {
+            Err(std::io::Error::from_raw_os_error(5))
+        })
+        .unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn embedded_theme_backgrounds_become_shared_files_and_paths() {

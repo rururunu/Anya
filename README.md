@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.md">Documentation</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.29 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.30 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 

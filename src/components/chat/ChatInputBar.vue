@@ -239,6 +239,7 @@
           :selected-id="imageGenPickerSelectedId"
           :selected-index="selectedIndex"
           :ariaLabel="imageGenPickerAriaLabel"
+          :error="imageGenPickerOpen === 'model' ? imageGenModelError : undefined"
           @hover="selectedIndex = $event"
           @select="selectImageGenOption"
         />
@@ -1699,6 +1700,8 @@ const imageGenPickerGroup = computed(
   () => imageGenFieldGroups.value.find((group) => group.id === imageGenPickerOpen.value) ?? null,
 );
 const imageGenModelChoices = computed(() => listImageModelChoices(settingStore.imageProviders));
+const imageGenModelError = ref("");
+const imageGenModelSaving = ref(false);
 const imageGenPickerOptions = computed(() => {
   if (imageGenPickerOpen.value === "model") {
     const choices = imageGenModelChoices.value;
@@ -2241,6 +2244,7 @@ function toggleChatModeMenu() {
 }
 
 async function toggleImageGenPicker(id: ImageGenFieldId, button: HTMLElement) {
+  imageGenModelError.value = "";
   if (imageGenPickerOpen.value === id) {
     closeImageGenPicker();
     return;
@@ -2264,18 +2268,27 @@ async function toggleImageGenPicker(id: ImageGenFieldId, button: HTMLElement) {
   }
 }
 
-function selectImageGenOption(id: string) {
+async function selectImageGenOption(id: string) {
   const field = imageGenPickerOpen.value;
   if (!field) return;
   if (field === "model") {
     const selected = decodeImageModelSelection(id);
     if (selected) {
-      void settingStore.update({
-        imageModel: selected.model,
-        imageModelProvider: selected.provider,
-      });
+      if (imageGenModelSaving.value) return;
+      imageGenModelSaving.value = true;
+      imageGenModelError.value = "";
+      try {
+        await settingStore.update({
+          imageModel: selected.model,
+          imageModelProvider: selected.provider,
+        });
+        closeImageGenPicker();
+      } catch (error) {
+        imageGenModelError.value = error instanceof Error ? error.message : String(error);
+      } finally {
+        imageGenModelSaving.value = false;
+      }
     }
-    closeImageGenPicker();
     return;
   }
   setImageGenOptions(applyImageGenField(imageGenOptions.value, field, id));

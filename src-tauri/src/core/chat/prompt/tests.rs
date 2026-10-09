@@ -74,6 +74,43 @@ fn dsh_prompt_omits_legacy_tool_policies_and_keeps_stable_prefix() {
 }
 
 #[test]
+fn dsh_image_mode_prompt_requires_generation_with_selected_options() {
+    let preferences = PromptPreferences {
+        image_mode: Some(ImageModePolicy {
+            size: "1024x1536".into(),
+            quality: "high".into(),
+            n: 2,
+            style_prompt: "ink painting".into(),
+            has_reference: false,
+        }),
+        ..Default::default()
+    };
+    let request = PromptBuilder::build_dsh(PromptBuildInput {
+        request_id: "r",
+        session_id: "s",
+        history: &[],
+        context: &RequestContext::default(),
+        project_rules: None,
+        recalled_memories: None,
+        preferred_resources: None,
+        provider: Some("deepseek".into()),
+        preferences: &preferences,
+    });
+    let prompt = request
+        .messages
+        .iter()
+        .find(|message| message.id == "image-mode-s")
+        .expect("image mode policy must reach DeepSeek");
+    assert!(prompt
+        .content
+        .contains("Call `generate_image` exactly once"));
+    assert!(prompt.content.contains("size: `1024x1536`"));
+    assert!(prompt.content.contains("quality: `high`"));
+    assert!(prompt.content.contains("n: 2"));
+    assert!(prompt.content.contains("ink painting"));
+}
+
+#[test]
 fn collaboration_models_are_injected_only_when_configured() {
     let context = RequestContext::default();
     let preferences = PromptPreferences {

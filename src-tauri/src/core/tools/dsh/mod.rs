@@ -138,11 +138,15 @@ pub fn registry(backing: Arc<ToolManager>) -> ToolRegistry {
             }));
         }
     }
-    // DSH replaces the built-in tool names, but installed integrations and
-    // plugin management keep their own schemas and executors. Otherwise
-    // DeepSeek silently loses them from its model-facing tool set.
+    // DSH replaces the built-in tool names, but image mode and installed
+    // integrations keep their own schemas and executors. Image mode passes a
+    // registry containing only generate_image into this adapter.
     for name in backing.registry().names() {
-        if name == "manage_plugin" || name.starts_with("plugin_") || name.starts_with("mcp__") {
+        if name == "generate_image"
+            || name == "manage_plugin"
+            || name.starts_with("plugin_")
+            || name.starts_with("mcp__")
+        {
             if let Some(tool) = backing.registry().get(&name) {
                 if tool.available() {
                     registry.register(tool);

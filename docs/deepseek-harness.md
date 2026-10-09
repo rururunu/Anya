@@ -10,6 +10,23 @@ Schemas, descriptions, tool guidance, section ordering and the default identity 
 
 The core profile contains `read`, `read_image`, `write`, `edit`, `glob`, `grep`, `pwsh` on Windows or `bash`, `job_output`, `job_list`, `job_kill`, `todo_write`, `ask_user_question`, `skill`, `web_search`, `web_fetch`, `subagent`, `present` and `exit_plan_mode`. Tools without a corresponding host capability are omitted. Enabled Anya plugin tools (`plugin_*`), MCP tools (`mcp__*`), and `manage_plugin` retain their own schemas and executors in the DeepSeek tool list; disabled or unavailable tools remain hidden.
 
+Image chat mode passes only Anya's `generate_image` tool to DeepSeek. The dsh adapter preserves its schema and executor, and the DeepSeek prompt includes the selected image size, quality, count and style instructions. Image generation still requires a configured provider under Settings → Image.
+
+### Compared with the standard Agent
+
+These differences follow the current source registries and prompts; they do not by themselves mean a plugin is uninstalled. DeepSeek uses the fixed dsh core contract, while other models use Anya's full built-in registry.
+
+| Capability          | Standard Agent                                                                         | DeepSeek dsh                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Files and shell     | Anya's granular file tools, `apply_patch`, commands and task tools                     | Core `read/write/edit/glob/grep/pwsh` tools; common work remains possible without every equivalent named operation |
+| Code navigation     | Symbol, LSP, code index, Git and workspace tools                                       | Primarily search, read and shell; no corresponding dedicated tools                                                 |
+| Skills and subtasks | Skill installation/management, exploration/review/document tools and parallel subtasks | `skill` loads enabled skills, plus one `subagent` tool; no equivalent management or parallel tool                  |
+| Host helpers        | Memory management, chat history operations, theme management and Companion tools       | Not part of the core contract; available plugins, MCP tools and `manage_plugin` are added separately               |
+| Plugin extensions   | Plugin prompts and before/after tool hooks                                             | Plugin/MCP tools can run, but plugin prompts and before/after hooks are not applied                                |
+| Optional policies   | Multi-model collaboration, minimal coding and Companion-origin prompts                 | These standard Agent policies are not currently injected; image mode injects its own policy                        |
+
+The actual list also depends on mode, permissions and tool availability. Image mode deliberately narrows the list to image generation, so it cannot be used to infer plugin availability in Agent mode.
+
 ### File delivery cards
 
 The `present` name, description, input schema and delivery guidance are imported from upstream. Its native Rust executor verifies paths and regular files, with at most eight files per call. Anya's general tool registry also exposes `present`; local cards do not start the Companion gateway. Successful tool declarations produce cards, without scanning closing prose, listing every source edit, or copying file contents.

@@ -164,6 +164,19 @@ impl PromptBuilder {
                 preferences.companion_origin,
                 preferences.image_mode.as_ref(),
             );
+        } else if preferences.image_mode.is_some() {
+            // DeepSeek keeps its stable dsh preamble, but image turns still
+            // need the required generate_image call and pinned arguments.
+            inject_optional_policy_suffix(
+                &mut messages,
+                session_id,
+                &[],
+                false,
+                false,
+                false,
+                false,
+                preferences.image_mode.as_ref(),
+            );
         }
         let plugin_prompts = if cfg!(test) || dsh {
             None

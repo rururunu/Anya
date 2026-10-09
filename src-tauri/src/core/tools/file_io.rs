@@ -49,7 +49,14 @@ fn replace_file(source: &Path, target: &Path) -> io::Result<()> {
             PCWSTR(target.as_ptr()),
             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
         )
-        .map_err(io::Error::other)
+        .map_err(|error| {
+            let code = error.code().0 as u32;
+            if code & 0xffff_0000 == 0x8007_0000 {
+                io::Error::from_raw_os_error((code & 0xffff) as i32)
+            } else {
+                io::Error::other(error)
+            }
+        })
     }
 }
 
