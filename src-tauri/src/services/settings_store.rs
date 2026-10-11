@@ -467,6 +467,7 @@ pub fn update_settings<R>(
             register_enabled_mcp_tools(app);
         }
         broadcast_settings(app, &next);
+        crate::core::remote::broadcast_desktop_defaults(&next);
     }
     Ok((next, result))
 }

@@ -5,6 +5,8 @@ import {
   appendTimelineText,
   withTimelineInject,
   rollbackStreamAttempt,
+  applyLiveTextDelta,
+  hasSynchronizedLiveTimeline,
 } from "./chatStream";
 
 function assistant(timeline?: ChatMessage["workTimeline"]): ChatMessage {
@@ -33,6 +35,27 @@ describe("rollbackStreamAttempt", () => {
       workTimeline: committed.workTimeline,
     });
     expect(rollbackStreamAttempt(current, { ...committed, id: "other" }).content).toBe("");
+  });
+});
+
+describe("live timeline synchronization", () => {
+  it("marks a matching timeline so later chunks need no full-text reconciliation", () => {
+    const message = { ...assistant([]), content: "" };
+    applyLiveTextDelta(message, "first", "");
+    applyLiveTextDelta(message, " second", "thinking");
+    expect(hasSynchronizedLiveTimeline(message)).toBe(true);
+    expect(message.content).toBe("first second");
+    expect(message.workTimeline?.map((item) => item.type)).toEqual([
+      "content",
+      "reasoning",
+      "content",
+    ]);
+  });
+
+  it("keeps reconciliation enabled for a stale timeline", () => {
+    const message = assistant([{ type: "content", id: "old", content: "partial" }]);
+    applyLiveTextDelta(message, " more", "");
+    expect(hasSynchronizedLiveTimeline(message)).toBe(false);
   });
 });
 

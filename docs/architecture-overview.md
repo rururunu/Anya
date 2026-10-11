@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.30                                            |
+| **Version** | v0.2.31                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -941,4 +941,6 @@ Call diagnostics go to configuration-directory JSONL files; `scripts/deepseek-me
 | Workbench glass / window radius  | `services/workbench_glass.rs`, `overlay/appearance.ts`                                                 |
 | Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                 |
 
-Successful text-file reads render as collapsible syntax-highlighted code cards. Clicking the file opens a read-only sidebar in either the workbench or popup and highlights the returned line range. The preview command accepts a recorded successful read activity ID, resolves its original workspace, and loads up to 1 MiB of UTF-8 text. Changed or unavailable files fall back to the captured read excerpt.
+Successful text-file reads render as collapsible syntax-highlighted code cards. Clicking the file opens a read-only sidebar in either the workbench or popup and highlights the returned line range. The sidebar supports line wrapping; when the file changed, it retains the captured excerpt and can open the current file context. The preview command accepts a recorded successful read activity ID, resolves its original workspace, and loads up to 1 MiB of UTF-8 text. Unavailable files fall back to the captured read excerpt.
+
+The Diff sidebar stacks files in one continuous view; its file tree navigates and collapses automatically in narrow space. Diff bodies outside the viewport or in an inactive sidebar unmount while preserving measured placeholder heights. Streaming Markdown parses during idle time, and the live work timeline avoids repeated full-text reconciliation to reduce input latency. Companion receives current code through `session.readCodePreview`, archived workspace snapshots through `workspace.archived.snapshot`, and only allowlisted compose defaults through `settings.defaults`, not the full settings object or credentials.

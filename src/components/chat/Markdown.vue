@@ -22,17 +22,7 @@ import {
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import { marked } from "marked";
-import {
-  computed,
-  h,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  ref,
-  render,
-  watch,
-  type Component,
-} from "vue";
+import { h, nextTick, onMounted, onUnmounted, ref, render, watch, type Component } from "vue";
 import { copyText } from "@/services/clipboard";
 import { parseChartSpec } from "@/services/chat/chartSpec";
 import { normalizeMarkdownInput } from "@/services/chat/markdownNormalize";
@@ -59,6 +49,7 @@ const rootRef = ref<HTMLElement | null>(null);
 const workspaceRoot = inject(markdownWorkspaceRoot, undefined);
 const renderedContent = ref(props.content);
 let renderTimer: ReturnType<typeof setTimeout> | null = null;
+let idleRenderId: number | null = null;
 watch(
   () => [props.content, props.streaming] as const,
   () => {
@@ -316,6 +307,7 @@ function unmountPortalHosts(root: HTMLElement) {
 onMounted(hydrateAll);
 onUnmounted(() => {
   if (renderTimer !== null) clearTimeout(renderTimer);
+  if (idleRenderId !== null) window.cancelIdleCallback?.(idleRenderId);
   localImages.clear();
   stickyScrollCleanup?.();
   stickyScrollCleanup = null;
@@ -323,9 +315,9 @@ onUnmounted(() => {
   if (root) unmountPortalHosts(root);
 });
 
-const html = computed(() => {
+function renderHtml(content: string): string {
   try {
-    const raw = marked.parse(normalizeMarkdownInput(renderedContent.value || ""), {
+    const raw = marked.parse(normalizeMarkdownInput(content || ""), {
       async: false,
       renderer,
       breaks: true,
@@ -357,7 +349,31 @@ const html = computed(() => {
       `<pre class="markdown-fallback">${escapeHtmlAttribute(props.content || "")}</pre>`,
     );
   }
-});
+}
+
+const html = ref(renderHtml(renderedContent.value));
+watch(
+  () => [renderedContent.value, props.streaming] as const,
+  ([content]) => {
+    if (idleRenderId !== null) {
+      window.cancelIdleCallback?.(idleRenderId);
+      idleRenderId = null;
+    }
+    if (!props.streaming || !window.requestIdleCallback) {
+      html.value = renderHtml(content);
+      return;
+    }
+    // Parsing and sanitizing a long growing answer can block input. Keep the
+    // existing stream batch, then spend the render work in an idle window.
+    idleRenderId = window.requestIdleCallback(
+      () => {
+        idleRenderId = null;
+        html.value = renderHtml(renderedContent.value);
+      },
+      { timeout: 100 },
+    );
+  },
+);
 
 watch(html, () => {
   void nextTick(hydrateAll);

@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.md">Documentation</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.30 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.31 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
@@ -54,7 +54,9 @@ Fallback shortcut: <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd>.
 
 Permissions are separate from chat mode: **Read-only** blocks file changes and arbitrary shell commands; **Workspace-write** allows workspace file edits and asks before each shell command or external-path access; **Full-access** skips these approval prompts while retaining command safety rules. Approving a request allows that operation once and cannot override Read-only.
 
-The workbench and overlay recover pending questions and approvals when opened or focused. Successful code reads appear as expandable syntax-highlighted cards; click the filename to open a sidebar and highlight the read lines. If the file has changed or cannot be loaded, the sidebar shows the captured excerpt. See [permissions and code preview](./docs/permissions-and-preview.md).
+The workbench and overlay recover pending questions and approvals when opened or focused. Successful code reads appear as expandable syntax-highlighted cards; click the filename to open a sidebar and highlight the read lines. The sidebar can wrap long lines; when the file has changed, it preserves the captured excerpt and can show the current file context. See [permissions and code preview](./docs/permissions-and-preview.md).
+
+The Diff sidebar shows files in one continuous list. Its file tree navigates to a file, collapses automatically when space is tight, and can be toggled manually. Streaming replies and long diff lists defer unnecessary rendering to reduce interface stalls during Agent runs.
 
 Office layout, conversion, and formula results need checks for each artifact. Some search and extension features require additional setup. See [Office workflows](./docs/office.md) and [plugins](./docs/plugin-system.md).
 

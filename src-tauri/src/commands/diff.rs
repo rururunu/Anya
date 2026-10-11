@@ -64,6 +64,14 @@ pub async fn preview_read_code(
     state: State<'_, AppState>,
     activity_id: String,
 ) -> Result<String, String> {
+    preview_read_code_for_state(&state, &activity_id, None).await
+}
+
+pub async fn preview_read_code_for_state(
+    state: &AppState,
+    activity_id: &str,
+    requested_session_id: Option<&str>,
+) -> Result<String, String> {
     let conversation = state.core.chat().conversation();
     let sessions = conversation.inner();
     let (session_id, activity) = {
@@ -71,6 +79,11 @@ pub async fn preview_read_code(
         loaded
             .iter()
             .find_map(|(session, messages)| {
+                if requested_session_id.is_some_and(|requested| {
+                    session != requested && !session.starts_with(&format!("{requested}-sub-"))
+                }) {
+                    return None;
+                }
                 messages
                     .iter()
                     .flat_map(|message| message.tool_activities.iter().flatten())

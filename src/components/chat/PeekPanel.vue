@@ -292,6 +292,7 @@
                 <div class="workspace-sidebar-content">
                   <CodeDiffSidebar
                     v-show="sidebarTab === 'diff'"
+                    :active="sidebarOpen && sidebarTab === 'diff'"
                     :messages="messages"
                     :width="diffSidebarWidth"
                     :focus-path="diffFocusPath"

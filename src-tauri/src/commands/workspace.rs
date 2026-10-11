@@ -153,6 +153,7 @@ pub async fn delete_workspace(
     manager.delete(id).await?;
     app.emit("workspaces-changed", manager.current())
         .map_err(|error| error.to_string())?;
+    crate::core::remote::broadcast_session_snapshots(&app);
     Ok(())
 }
 
@@ -386,6 +387,7 @@ pub async fn set_workspace_archived(
         .set_sessions_archived_for_workspace(&id, archived);
     app.emit("workspaces-changed", manager.current())
         .map_err(|error| error.to_string())?;
+    crate::core::remote::broadcast_session_snapshots(&app);
     Ok(())
 }
 

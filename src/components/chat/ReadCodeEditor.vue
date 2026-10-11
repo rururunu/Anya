@@ -12,6 +12,7 @@ const props = withDefaults(
     firstLine?: number;
     startLine?: number;
     endLine?: number;
+    wrapLines?: boolean;
   }>(),
   { firstLine: 1 },
 );
@@ -46,6 +47,7 @@ async function rebuild() {
         EditorView.editable.of(false),
         lineNumbers({ formatNumber: (line) => String(line + props.firstLine - 1) }),
         language,
+        ...(props.wrapLines ? [EditorView.lineWrapping] : []),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         EditorView.decorations.of(selected.finish()),
         EditorView.theme({
@@ -84,7 +86,14 @@ async function rebuild() {
 }
 onMounted(() => void rebuild());
 watch(
-  () => [props.content, props.path, props.firstLine, props.startLine, props.endLine],
+  () => [
+    props.content,
+    props.path,
+    props.firstLine,
+    props.startLine,
+    props.endLine,
+    props.wrapLines,
+  ],
   () => void rebuild(),
 );
 onBeforeUnmount(() => {

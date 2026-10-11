@@ -247,6 +247,28 @@ pub fn build_archived_session_list(app: &AppHandle) -> Value {
     json!({ "sessions": sessions })
 }
 
+pub fn build_archived_workspace_list(app: &AppHandle) -> Value {
+    let Some(state) = app.try_state::<AppState>() else {
+        return json!({ "workspaces": [] });
+    };
+    let workspaces: Vec<Value> = state
+        .core
+        .workspaces()
+        .list_archived()
+        .into_iter()
+        .map(|workspace| {
+            json!({
+                "id": workspace.id,
+                "name": workspace.name,
+                "rootPath": workspace.root.to_string_lossy(),
+                "pinned": workspace.pinned,
+                "archived": true,
+            })
+        })
+        .collect();
+    json!({ "workspaces": workspaces })
+}
+
 fn map_remote_session(
     session: &crate::models::chat::ChatSessionSummary,
     workspace_names: &HashMap<String, String>,
@@ -255,7 +277,13 @@ fn map_remote_session(
         id: session.session_id.clone(),
         title: session.preview.clone(),
         updated_at_epoch_ms: session.updated_at,
-        workspace_id: session.workspace_id.clone(),
+        // Deleted workspace bindings may remain on retained conversations.
+        // Expose those sessions as unbound instead of recreating a ghost group.
+        workspace_id: session
+            .workspace_id
+            .as_ref()
+            .filter(|id| workspace_names.contains_key(*id))
+            .cloned(),
         workspace_name: session
             .workspace_id
             .as_ref()
@@ -263,5 +291,35 @@ fn map_remote_session(
         run_state: run_state_for(&session.session_id),
         plan_mode_active: crate::core::tools::plan_mode::shared_plan_mode_store()
             .is_active(&session.session_id),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::map_remote_session;
+    use crate::models::chat::ChatSessionSummary;
+
+    #[test]
+    fn deleted_workspace_binding_is_not_sent_to_companion() {
+        let session = ChatSessionSummary {
+            session_id: "s1".into(),
+            workspace_id: Some("deleted".into()),
+            preview: "Kept conversation".into(),
+            message_count: 1,
+            turn_count: 1,
+            estimated_tokens: 1,
+            updated_at: 1,
+            archived: false,
+        };
+        let orphan = map_remote_session(&session, &HashMap::new());
+        assert_eq!(orphan.workspace_id, None);
+        assert_eq!(orphan.workspace_name, None);
+
+        let known = HashMap::from([("deleted".into(), "Restored".into())]);
+        let bound = map_remote_session(&session, &known);
+        assert_eq!(bound.workspace_id.as_deref(), Some("deleted"));
+        assert_eq!(bound.workspace_name.as_deref(), Some("Restored"));
     }
 }

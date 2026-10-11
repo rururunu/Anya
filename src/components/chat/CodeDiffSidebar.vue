@@ -19,6 +19,33 @@
           <span class="added">+{{ totals.added }}</span>
           <span class="removed">-{{ totals.removed }}</span>
         </span>
+        <button
+          v-if="visibleChanges.length > 1"
+          type="button"
+          class="icon-button tree-toggle"
+          :aria-label="
+            treeHidden
+              ? settingStore.language === 'zh-CN'
+                ? '展开文件树'
+                : 'Show file tree'
+              : settingStore.language === 'zh-CN'
+                ? '收起文件树'
+                : 'Hide file tree'
+          "
+          :title="
+            treeHidden
+              ? settingStore.language === 'zh-CN'
+                ? '展开文件树'
+                : 'Show file tree'
+              : settingStore.language === 'zh-CN'
+                ? '收起文件树'
+                : 'Hide file tree'
+          "
+          :aria-pressed="!treeHidden"
+          @click="treeHidden = !treeHidden"
+        >
+          <PanelRightClose :size="15" aria-hidden="true" />
+        </button>
       </header>
 
       <div v-if="visibleChanges.length" class="diff-workspace">
@@ -136,26 +163,16 @@
             </div>
           </header>
           <SplitDiffStack
-            v-if="viewMode === 'split'"
             ref="diffStackRef"
             :files="stackedFiles"
             :active-id="activeId"
             :wrap-lines="wrapLines"
-          />
-          <CodeDiffEditor
-            v-else
-            ref="diffEditorRef"
-            :key="activeChange.id"
-            :old-text="activeChange.oldText"
-            :new-text="activeChange.newText"
-            :unified-diff="activeChange.diff"
-            :language="activeChange.language.id"
-            view-mode="unified"
-            :wrap-lines="wrapLines"
+            :view-mode="viewMode"
+            :active="active ?? true"
           />
         </section>
         <div
-          v-if="visibleChanges.length > 1"
+          v-if="visibleChanges.length > 1 && !treeHidden"
           class="change-tree-resize"
           :class="{ active: treeResizing }"
           role="separator"
@@ -171,7 +188,7 @@
           @keydown="handleResizeKey"
         />
         <nav
-          v-if="visibleChanges.length > 1"
+          v-if="visibleChanges.length > 1 && !treeHidden"
           ref="changeFilesRef"
           class="change-tree peek-scrollbar"
           :style="{ width: `${treeWidth}px` }"
@@ -208,7 +225,7 @@
               type="button"
               class="change-tree-file"
               :title="changeById(row.changeId)?.path"
-              @click="activeId = row.changeId"
+              @click="selectFile(row.changeId)"
             >
               <img
                 v-if="changeById(row.changeId)?.language.icon"
@@ -261,8 +278,8 @@ import {
   SquarePen,
   SquarePlus,
   TextWrap,
+  PanelRightClose,
 } from "@lucide/vue";
-import CodeDiffEditor from "@/components/chat/CodeDiffEditor.vue";
 import DiffScopePicker from "@/components/chat/DiffScopePicker.vue";
 import SplitDiffStack from "@/components/chat/SplitDiffStack.vue";
 import { useDiffScope } from "@/composables/chat/useDiffScope";
@@ -287,12 +304,13 @@ const props = defineProps<{
   messages: ChatMessage[];
   width: number;
   embedded?: boolean;
+  active?: boolean;
   focusPath?: string;
   focusAt?: number;
 }>();
 const settingStore = useSettingStore();
 const activeId = ref("");
-const diffEditorRef = ref<InstanceType<typeof CodeDiffEditor> | null>(null);
+const treeHidden = ref(localStorage.getItem("anya.diffTreeHidden") === "true");
 const diffStackRef = ref<{
   nextChange: () => string;
   scrollToFile: (id: string) => void;
@@ -305,9 +323,15 @@ const storedViewMode = localStorage.getItem("anya.diffViewMode");
 const preferredViewMode = ref<DiffViewMode | null>(
   storedViewMode === "unified" || storedViewMode === "split" ? storedViewMode : null,
 );
-const viewMode = computed<DiffViewMode>(
-  () => preferredViewMode.value ?? (props.width < 820 ? "unified" : "split"),
+const viewMode = computed<DiffViewMode>(() => preferredViewMode.value ?? "unified");
+watch(
+  () => props.width < 620,
+  (narrow) => {
+    if (narrow) treeHidden.value = true;
+  },
+  { immediate: true },
 );
+watch(treeHidden, (hidden) => localStorage.setItem("anya.diffTreeHidden", String(hidden)));
 const wrapLines = ref(localStorage.getItem("anya.diffWrapLines") !== "false");
 let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
 let skipFileScroll = false;
@@ -399,7 +423,7 @@ watch(activeId, () => {
     changeFilesRef.value
       ?.querySelector<HTMLElement>(".change-tree-row.active")
       ?.scrollIntoView({ block: "nearest" });
-    if (viewMode.value === "split" && !skipFileScroll) {
+    if (!skipFileScroll) {
       diffStackRef.value?.scrollToFile(activeId.value);
     }
     skipFileScroll = false;
@@ -479,11 +503,11 @@ function nextFile() {
   const index = visibleChanges.value.findIndex((change) => change.id === activeChange.value?.id);
   activeId.value = visibleChanges.value[(index + 1) % visibleChanges.value.length]?.id ?? "";
 }
+function selectFile(id: string) {
+  activeId.value = id;
+  void nextTick(() => diffStackRef.value?.scrollToFile(id));
+}
 function goNextChange() {
-  if (viewMode.value !== "split") {
-    diffEditorRef.value?.nextChange();
-    return;
-  }
   const id = diffStackRef.value?.nextChange() ?? "";
   if (id && id !== activeId.value) {
     skipFileScroll = true;
@@ -850,16 +874,7 @@ async function copyActiveDiff() {
   font-size: 10px;
   line-height: 1.5;
 }
-@container workspace-sidebar (max-width: 620px) {
-  .diff-workspace {
-    flex-direction: column;
-  }
-  .change-tree {
-    width: 100%;
-    max-height: 148px;
-    order: -1;
-    border-left: 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
-  }
+.tree-toggle {
+  margin-left: auto;
 }
 </style>

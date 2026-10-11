@@ -75,6 +75,16 @@ pub enum ClientMessage {
         #[serde(rename = "messageIds", default)]
         message_ids: Vec<String>,
     },
+    /// Current UTF-8 file content for a successful recorded read activity.
+    #[serde(rename = "session.readCodePreview")]
+    SessionReadCodePreview {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "activityId")]
+        activity_id: String,
+    },
     #[serde(rename = "session.delete")]
     SessionDelete {
         #[serde(rename = "requestId")]

@@ -240,16 +240,8 @@
                   }}
                 </button>
                 <AgentWorkDetails
-                  :message="
-                    inlineConversation
-                      ? {
-                          ...item.message,
-                          workTimeline: item.message.workTimeline?.filter(
-                            (entry) => entry.type !== 'inject',
-                          ),
-                        }
-                      : item.message
-                  "
+                  :message="item.message"
+                  :hide-timeline-inject="inlineConversation"
                   :language="settingStore.language"
                   :show-reasoning="settingStore.showReasoning"
                   :display-mode="settingStore.agentWorkDisplay"

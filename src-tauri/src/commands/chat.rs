@@ -227,6 +227,7 @@ pub async fn set_chat_session_archived(
             }
         }
     }
+    crate::core::remote::broadcast_session_snapshots(&app);
     Ok(())
 }
 

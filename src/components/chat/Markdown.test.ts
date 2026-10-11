@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import Markdown from "./Markdown.vue";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { computed } from "vue";
+import { computed, nextTick } from "vue";
 import { markdownWorkspaceRoot, resolveMarkdownImagePath } from "@/services/chat/localImageSrc";
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
@@ -62,6 +62,30 @@ describe("local markdown images", () => {
     expect(wrapper.get("code").text()).toContain("final = 3");
     expect(wrapper.find(".hljs-keyword").exists()).toBe(true);
     wrapper.unmount();
+    vi.useRealTimers();
+  });
+  it("defers growing Markdown work to idle time but commits the final answer immediately", async () => {
+    vi.useFakeTimers();
+    const idleCallbacks: IdleRequestCallback[] = [];
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: IdleRequestCallback) => {
+        idleCallbacks.push(callback);
+        return idleCallbacks.length;
+      }),
+    );
+    vi.stubGlobal("cancelIdleCallback", vi.fn());
+    const wrapper = mount(Markdown, { props: { content: "Start", streaming: true } });
+    await wrapper.setProps({ content: "Start **later**" });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(wrapper.text()).toBe("Start");
+    idleCallbacks[0]?.({ didTimeout: false, timeRemaining: () => 20 });
+    await nextTick();
+    expect(wrapper.text()).toBe("Start later");
+    await wrapper.setProps({ content: "Finished **now**", streaming: false });
+    expect(wrapper.text()).toBe("Finished now");
+    wrapper.unmount();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
   it("loads workspace SVG images through the same file reader as user thumbnails", async () => {

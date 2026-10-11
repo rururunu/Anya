@@ -130,6 +130,31 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
             let data = session_message_detail(app, &session_id, &message_ids).await;
             send_msg(ws, &ServerMessage::rpc_ok(request_id, data)).await
         }
+        ClientMessage::SessionReadCodePreview {
+            request_id,
+            session_id,
+            activity_id,
+        } => {
+            let Some(state) = app.try_state::<AppState>() else {
+                return send_msg(ws, &ServerMessage::rpc_err(request_id, "app not ready")).await;
+            };
+            match crate::commands::diff::preview_read_code_for_state(
+                &state,
+                &activity_id,
+                Some(&session_id),
+            )
+            .await
+            {
+                Ok(content) => {
+                    send_msg(
+                        ws,
+                        &ServerMessage::rpc_ok(request_id, json!({ "content": content })),
+                    )
+                    .await
+                }
+                Err(error) => send_msg(ws, &ServerMessage::rpc_err(request_id, &error)).await,
+            }
+        }
         ClientMessage::SessionRewind {
             request_id,
             session_id,

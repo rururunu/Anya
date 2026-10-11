@@ -1,6 +1,6 @@
 # Permissions and code preview
 
-[简体中文](./permissions-and-preview.zh-CN.md) · Applies to Anya v0.2.30.
+[简体中文](./permissions-and-preview.zh-CN.md) · Applies to Anya v0.2.31.
 
 ## Permission scopes
 
@@ -32,7 +32,7 @@ Policy decisions, approval requests and outcomes are written to SQLite `chat_per
 
 Clicking the filename or preview button opens `ReadCodeSidebar.vue` in the workbench or overlay. `preview_read_code` accepts a successful recorded activity ID, never an arbitrary UI-supplied path. It resolves relative paths through the recorded session or parent workspace, without falling back to the currently selected workspace. Disk reading runs in a blocking worker and accepts regular UTF-8 files up to 1 MiB, rejecting NUL-containing content.
 
-The sidebar compares the captured range with the current file. Matching content displays the complete file, scrolls to the read range and highlights those lines. Changed or unavailable files display the captured excerpt with a notice. The comparison covers the read range; it does not assert that unrelated file content is unchanged. Switching conversations clears code-read selection. Previewing is read-only and does not append content to model context.
+The sidebar compares the captured range with the current file. Matching content displays the complete file, scrolls to the read range and highlights those lines. When it differs, the captured excerpt remains visible and a button opens the current full-file context. If the file is unavailable, the snapshot remains visible. A line-wrap toggle remembers its setting. The comparison covers the read range; it does not assert that unrelated file content is unchanged. Switching conversations clears code-read selection. Previewing is read-only and does not append content to model context.
 
 ## Verification boundaries
 

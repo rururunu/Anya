@@ -40,7 +40,7 @@
           <span>{{ foldLabel }}</span>
           <span v-if="foldMeta" class="agent-work-fold-meta">{{ foldMeta }}</span>
         </summary>
-        <div class="agent-work-fold-body">
+        <div v-if="foldOpen" class="agent-work-fold-body">
           <AgentWorkSegment
             v-for="segment in preambleSegments"
             :key="segment.id"
@@ -105,6 +105,7 @@ import { activityMatchesQuery, textIncludesQuery } from "@/services/chat/convers
 import { conversationFindKey } from "@/composables/chat/useConversationFind";
 import { isImageGenActivity } from "@/services/chat/toolActivityEnrichment";
 import { tr } from "@/services/i18n";
+import { hasSynchronizedLiveTimeline } from "@/stores/chatStream";
 
 const props = withDefaults(
   defineProps<{
@@ -116,6 +117,8 @@ const props = withDefaults(
     /** Content is a special-cased marker (e.g. "configure a provider") rendered
      * elsewhere, so skip showing it as regular inline text here. */
     suppressContent?: boolean;
+    /** The overlay displays injected user guidance as its own message row. */
+    hideTimelineInject?: boolean;
   }>(),
   {
     displayMode: "detailed",
@@ -435,6 +438,7 @@ const segments = computed<TimelineSegment[]>(() => {
   for (const item of timeline) {
     if (item.type === "content" && props.suppressContent) continue;
     if (item.type === "inject") {
+      if (props.hideTimelineInject) continue;
       if (item.content.trim()) {
         out.push({ type: "inject", id: item.id, content: item.content });
       }
@@ -459,9 +463,13 @@ const segments = computed<TimelineSegment[]>(() => {
     considerActivity(out, seen, activity);
   }
 
-  reconcileTrailingText(out, "reasoning", props.message.reasoning);
-  if (!props.suppressContent) {
-    reconcileTrailingText(out, "content", props.message.content);
+  // The live append path writes the same delta to both fields and timeline.
+  // Avoid concatenating the entire growing timeline on every streamed chunk.
+  if (!streaming.value || !hasSynchronizedLiveTimeline(props.message)) {
+    reconcileTrailingText(out, "reasoning", props.message.reasoning);
+    if (!props.suppressContent) {
+      reconcileTrailingText(out, "content", props.message.content);
+    }
   }
 
   if (props.showReasoning === false) {

@@ -45,6 +45,62 @@ pub fn broadcast_compose_event(session_id: &str, compose: &SessionCompose) {
     });
 }
 
+/// Refresh both live and archived lists after a desktop-side archive change.
+pub fn broadcast_session_snapshots(app: &tauri::AppHandle) {
+    let snapshot = bridge::build_session_snapshot(app);
+    bridge::broadcast_server_message(&protocol::ServerMessage::Event {
+        name: "session.snapshot".into(),
+        data: snapshot.as_object().cloned().unwrap_or_default(),
+    });
+    let archived = bridge::build_archived_session_list(app);
+    bridge::broadcast_server_message(&protocol::ServerMessage::Event {
+        name: "session.archived.snapshot".into(),
+        data: archived.as_object().cloned().unwrap_or_default(),
+    });
+    let archived_workspaces = bridge::build_archived_workspace_list(app);
+    bridge::broadcast_server_message(&protocol::ServerMessage::Event {
+        name: "workspace.archived.snapshot".into(),
+        data: archived_workspaces.as_object().cloned().unwrap_or_default(),
+    });
+}
+
+/// Public compose defaults only; desktop settings also contain private credentials.
+pub fn desktop_defaults_payload(settings: &crate::models::settings::AppSettings) -> serde_json::Value {
+    serde_json::json!({
+        "chatMode": settings.chat_mode,
+        "toolApprovalMode": settings.tool_approval_mode,
+        "chatModel": settings.chat_model,
+        "chatModelProvider": settings.chat_model_provider,
+        "reasoningEffort": settings.reasoning_effort,
+    })
+}
+
+pub fn broadcast_desktop_defaults(settings: &crate::models::settings::AppSettings) {
+    let payload = desktop_defaults_payload(settings);
+    bridge::broadcast_server_message(&protocol::ServerMessage::Event {
+        name: "settings.defaults".into(),
+        data: payload.as_object().cloned().unwrap_or_default(),
+    });
+}
+
+#[cfg(test)]
+mod defaults_tests {
+    use super::desktop_defaults_payload;
+
+    #[test]
+    fn remote_defaults_are_a_small_allowlisted_projection() {
+        let payload = desktop_defaults_payload(&crate::models::settings::AppSettings::default());
+        let object = payload.as_object().expect("object");
+        let keys: std::collections::BTreeSet<_> = object.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            ["chatMode", "chatModel", "chatModelProvider", "reasoningEffort", "toolApprovalMode"]
+                .into_iter()
+                .collect(),
+        );
+    }
+}
+
 pub fn list_staged(session_id: &str) -> Vec<String> {
     staged::list(session_id)
 }

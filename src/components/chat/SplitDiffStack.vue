@@ -31,10 +31,10 @@
         :new-text="file.newText"
         :unified-diff="file.diff"
         :language="file.language.id"
-        view-mode="split"
         :wrap-lines="wrapLines"
+        :view-mode="viewMode"
       />
-      <div v-else class="split-file-pending" :style="{ height: `${estimateHeight(file)}px` }" />
+      <div v-else class="split-file-pending" :style="{ height: `${placeholderHeight(file)}px` }" />
     </article>
   </div>
 </template>
@@ -61,6 +61,8 @@ const props = defineProps<{
   files: SplitDiffFile[];
   activeId: string;
   wrapLines: boolean;
+  viewMode: "split" | "unified";
+  active: boolean;
 }>();
 
 /** Rough split-row height; only used while a body is still a placeholder. */
@@ -72,15 +74,12 @@ const PREMOUNT_MARGIN = "800px 0px";
 const root = ref<HTMLElement | null>(null);
 const mountedIds = ref<Set<string>>(new Set());
 const articles = new Map<string, HTMLElement>();
+const measuredHeights = new Map<string, number>();
 let observer: IntersectionObserver | null = null;
 let cursorFile = 0;
 let cursorHunk = -1;
 
-/**
- * Stacked files keep their header but defer the diff body until the block is
- * about to scroll in: rendering every file up front is what makes a large
- * change set expensive.
- */
+/** Keep only nearby diff bodies mounted while retaining file headers and heights. */
 function registerArticle(id: string, element: Element | ComponentPublicInstance | null) {
   const host = element instanceof HTMLElement ? element : null;
   const previous = articles.get(id);
@@ -94,8 +93,22 @@ function registerArticle(id: string, element: Element | ComponentPublicInstance 
 }
 
 function mount(id: string) {
+  if (!props.active) return;
   if (mountedIds.value.has(id)) return;
   mountedIds.value = new Set(mountedIds.value).add(id);
+}
+
+function placeholderHeight(file: SplitDiffFile): number {
+  return measuredHeights.get(file.id) ?? estimateHeight(file);
+}
+
+function unmount(id: string) {
+  if (!mountedIds.value.has(id)) return;
+  const body = articles.get(id)?.querySelector<HTMLElement>(".code-diff-editor");
+  if (body && body.offsetHeight > 0) measuredHeights.set(id, body.offsetHeight);
+  const next = new Set(mountedIds.value);
+  next.delete(id);
+  mountedIds.value = next;
 }
 
 function countLines(text: string): number {
@@ -119,10 +132,14 @@ function changeStarts(fileId: string): HTMLElement[] {
   const article = root.value?.querySelector<HTMLElement>(
     `[data-change-id="${CSS.escape(fileId)}"]`,
   );
-  const rows = [...(article?.querySelectorAll<HTMLElement>(".split-row") ?? [])];
+  const selector = props.viewMode === "split" ? ".split-row" : ".cm-line";
+  const rows = [...(article?.querySelectorAll<HTMLElement>(selector) ?? [])];
+  const changed = (element: HTMLElement) =>
+    props.viewMode === "split"
+      ? element.classList.contains("is-change")
+      : element.classList.contains("diff-addition") || element.classList.contains("diff-deletion");
   return rows.filter(
-    (element, index) =>
-      element.classList.contains("is-change") && !rows[index - 1]?.classList.contains("is-change"),
+    (element, index) => changed(element) && !(rows[index - 1] && changed(rows[index - 1]!)),
   );
 }
 
@@ -185,23 +202,42 @@ watch(
   () => {
     cursorFile = 0;
     cursorHunk = -1;
+    const live = new Set(props.files.map((file) => file.id));
+    for (const id of measuredHeights.keys()) if (!live.has(id)) measuredHeights.delete(id);
+  },
+);
+watch(
+  () => [props.viewMode, props.wrapLines],
+  () => measuredHeights.clear(),
+);
+
+watch(
+  () => props.active,
+  (active) => {
+    if (!active) {
+      for (const id of [...mountedIds.value]) unmount(id);
+    } else {
+      if (!observer && typeof IntersectionObserver === "undefined") {
+        mountedIds.value = new Set(props.files.map((file) => file.id));
+      }
+      for (const article of articles.values()) observer?.observe(article);
+    }
   },
 );
 
 onMounted(() => {
   if (typeof IntersectionObserver === "undefined") {
     // Without an observer, render everything rather than nothing.
-    mountedIds.value = new Set(props.files.map((file) => file.id));
+    if (props.active) mountedIds.value = new Set(props.files.map((file) => file.id));
     return;
   }
   observer = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
         const id = (entry.target as HTMLElement).dataset.changeId;
         if (!id) continue;
-        mount(id);
-        observer?.unobserve(entry.target);
+        if (entry.isIntersecting) mount(id);
+        else unmount(id);
       }
     },
     { root: root.value, rootMargin: PREMOUNT_MARGIN },
@@ -284,6 +320,16 @@ onBeforeUnmount(() => {
 }
 .diff-stack :deep(.code-diff-editor) {
   flex: none;
+  overflow: visible;
+}
+.diff-stack :deep(.code-diff-editor.is-unified) {
+  height: auto;
+}
+.diff-stack :deep(.code-diff-editor.is-unified .editor-pane) {
+  height: auto;
+  overflow: visible;
+}
+.diff-stack :deep(.code-diff-editor.is-unified .cm-scroller) {
   overflow: visible;
 }
 .split-file-pending {

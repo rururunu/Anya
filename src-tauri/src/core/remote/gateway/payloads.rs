@@ -33,6 +33,7 @@ pub(super) async fn list_remote_models_payload(app: &AppHandle) -> serde_json::V
     json!({
         "models": enriched,
         "providers": catalog.values().collect::<Vec<_>>(),
+        "defaults": settings.as_ref().map(crate::core::remote::desktop_defaults_payload),
     })
 }
 

@@ -27,8 +27,9 @@ src-tauri/client_secret.local.json
 src-tauri/updater.pubkey
 *.key
 
-# Local release metadata (upload latest.json to GitHub Releases)
-release/
+# Local release artifacts (upload latest.json to GitHub Releases)
+release/**
+!release/Anya_0.2.31_GITHUB_RELEASE.md
 
 # Editor directories and files
 .vscode/*
