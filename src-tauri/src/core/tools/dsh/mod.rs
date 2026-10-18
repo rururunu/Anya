@@ -71,16 +71,50 @@ pub fn tool_prompt(schemas: &[Value]) -> String {
     if names.contains("present") {
         notes.push("Anya delivery cards preview raster images in the existing image sidebar. Other file cards open the current file in the default application and offer Show in folder; do not promise in-app Office/PDF previews or a copied snapshot. Local present cards do not send files to Companion.".into());
     }
+    if names.contains("save_plan") {
+        notes.push("Anya Plan mode: save the full proposal with `save_plan` before submitting pending steps with `update_tasks` (or `todo_write`). These steps must pass Anya's plan validation. Wait for explicit user approval before execution; use `complete_plan_step` with evidence during execution. `request_plan_mode` asks the user to enter Plan mode. If using `exit_plan_mode`, submit the same saved proposal for review.".into());
+    }
     format!("{imported}\n\n{}", notes.join("\n\n"))
 }
 
 pub const IDENTITY: &str = include_str!("../../../../prompts/dsh/identity.md");
 
+// Anya capabilities with no equivalent in the upstream DSH contract.
+const HOST_TOOLS: &[&str] = &[
+    "generate_image",
+    "manage_custom_theme",
+    "manage_plugin",
+    "save_memory",
+    "search_memory",
+    "delete_memory",
+    "list_chats",
+    "read_chat",
+    "search_past_chats",
+    "share_to_companion",
+    "share_preview_url",
+    "read_office_file",
+    "prepare_office_runtime",
+    "lsp",
+    "list_symbols",
+    "search_codebase",
+    "rebuild_codebase_index",
+    "connect_tools",
+    "list_skills",
+    "install_skill",
+    "uninstall_skill",
+    "run_skill",
+    "run_slash_command",
+    "search_tools",
+    "list_failure_candidates",
+    "save_plan",
+    "request_plan_mode",
+    "complete_plan_step",
+    "update_tasks",
+];
+
 pub fn skill_catalog() -> String {
     let mut skills = crate::core::tools::skills::list_skill_infos().unwrap_or_default();
-    skills.retain(|s| {
-        crate::core::tools::skills::is_skill_enabled(&s.name) && s.name != "plugin_creator"
-    });
+    skills.retain(|s| crate::core::tools::skills::is_skill_enabled(&s.name));
     skills.sort_by(|a, b| a.name.cmp(&b.name));
     let lines = skills
         .iter()
@@ -138,12 +172,11 @@ pub fn registry(backing: Arc<ToolManager>) -> ToolRegistry {
             }));
         }
     }
-    // DSH replaces the built-in tool names, but image mode and installed
-    // integrations keep their own schemas and executors. Image mode passes a
-    // registry containing only generate_image into this adapter.
+    // DSH replaces core tools; Anya capabilities and installed integrations
+    // keep their original schemas, executors, and permission metadata.
+    // Image mode passes only generate_image into this adapter.
     for name in backing.registry().names() {
-        if name == "generate_image"
-            || name == "manage_plugin"
+        if HOST_TOOLS.contains(&name.as_str())
             || name.starts_with("plugin_")
             || name.starts_with("mcp__")
         {
@@ -211,7 +244,15 @@ impl Tool for DshTool {
             "edit" => files::mutate(ctx, &args, true),
             "glob" | "grep" => search::execute(ctx, self.name(), &args),
             "pwsh" | "bash" | "job_output" | "job_list" | "job_kill" => shell::execute(ctx, self.name(), &args),
-            "todo_write" => todos(ctx, &args),
+            "todo_write" => {
+                if crate::core::tools::plan_mode::shared_plan_mode_store().is_active(ctx.root_session_id())
+                    && self.backing.registry().get("save_plan").is_some()
+                {
+                    self.backing.dispatch(ctx, "update_tasks", json!({"tasks": args["todos"]}))
+                } else {
+                    todos(ctx, &args)
+                }
+            }
             "exit_plan_mode" => {
                 let store = crate::core::tools::plan_mode::shared_plan_mode_store();
                 if !store.is_active(ctx.root_session_id()) { return Err(ToolError::new("exit_plan_mode is only available in plan mode")); }

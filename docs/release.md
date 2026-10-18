@@ -52,12 +52,12 @@ pnpm tauri:build
 3. Generate **`release/latest.json`**:
 
 ```powershell
-pnpm release:json -- --tag v0.2.31 --notes "Improve multi-file diffs and code previews, reduce streaming render work, and update Companion sync."
+pnpm release:json -- --tag v0.2.32 --notes "Improve multi-file diffs and code previews, reduce streaming render work, and update Companion sync."
 ```
 
-4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.31` and upload:
-   - `Anya_0.2.31_x64.msi`
-   - `Anya_0.2.31_x64.msi.sig`
+4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.32` and upload:
+   - `Anya_0.2.32_x64.msi`
+   - `Anya_0.2.32_x64.msi.sig`
    - `latest.json` (from `release/latest.json`)
 
 5. Verify `https://github.com/rururunu/Anya/releases/latest/download/latest.json` and check for updates in the app.

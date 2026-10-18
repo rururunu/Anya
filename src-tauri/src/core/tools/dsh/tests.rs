@@ -176,6 +176,11 @@ fn dsh_registry_is_separate_preserves_exact_schemas_and_plan_gate() {
     assert!(old.registry().names().contains(&"run_shell".into()));
     assert!(!dsh.registry().names().contains(&"run_shell".into()));
     for schema in dsh.schemas() {
+        let name = schema["function"]["name"].as_str().unwrap();
+        if HOST_TOOLS.contains(&name) {
+            assert!(old.schemas().contains(&schema), "host schema changed: {name}");
+            continue;
+        }
         assert!(
             contracts().contains(&schema),
             "schema differs from upstream: {schema}"
@@ -220,6 +225,109 @@ fn dsh_keeps_available_plugin_and_mcp_tools() {
         .iter()
         .any(|schema| { schema["function"]["name"] == "plugin_computer-use__see" }));
     assert!(dsh.registry().get("mcp__example__search").is_some());
+}
+
+#[test]
+fn dsh_keeps_available_theme_tool_with_original_schema_and_executor() {
+    let backing = manager();
+    backing.register_dynamic(Arc::new(BackTool("manage_custom_theme")));
+    let original = backing
+        .schemas()
+        .into_iter()
+        .find(|schema| schema["function"]["name"] == "manage_custom_theme")
+        .unwrap();
+    let dsh = backing.dsh_contract();
+    assert!(dsh.schemas().contains(&original));
+    assert!(Arc::ptr_eq(
+        &backing.registry().get("manage_custom_theme").unwrap(),
+        &dsh.registry().get("manage_custom_theme").unwrap(),
+    ));
+    assert!(tool_prompt(&dsh.schemas()).contains("`manage_custom_theme`"));
+}
+
+#[test]
+fn dsh_keeps_all_host_tools_with_original_contracts() {
+    let backing = manager();
+    for &name in HOST_TOOLS {
+        backing.register_dynamic(Arc::new(BackTool(name)));
+    }
+    let dsh = backing.dsh_contract();
+    for &name in HOST_TOOLS {
+        let original = backing.registry().get(name).unwrap();
+        let exposed = dsh.registry().get(name).unwrap();
+        assert!(Arc::ptr_eq(&original, &exposed), "executor changed: {name}");
+        let schema = backing
+            .schemas()
+            .into_iter()
+            .find(|schema| schema["function"]["name"] == name)
+            .unwrap();
+        assert!(dsh.schemas().contains(&schema), "schema changed: {name}");
+    }
+    assert!(tool_prompt(&dsh.schemas()).contains("save the full proposal"));
+}
+
+#[test]
+fn dsh_host_tools_preserve_availability_and_mode_filters() {
+    let ctx = context();
+    let registry = crate::core::tools::default_registry(
+        Arc::clone(&ctx.conversation),
+        Arc::clone(&ctx.event_bus),
+    );
+    let backing = Arc::new(ToolManager::new(registry));
+    let dsh = backing.dsh_contract();
+    for &name in HOST_TOOLS {
+        let original = backing.registry().get(name).unwrap();
+        assert_eq!(
+            dsh.registry().get(name).is_some(),
+            original.available(),
+            "{name}"
+        );
+    }
+    let ask = dsh.ask_mode();
+    assert!(ask.registry().get("search_memory").is_some());
+    assert!(ask.registry().get("save_memory").is_none());
+    assert!(ask.registry().get("manage_custom_theme").is_none());
+    assert_eq!(dsh.image_mode().registry().names(), vec!["generate_image"]);
+    if crate::core::tools::skills::is_skill_enabled("plugin_creator") {
+        assert!(skill_catalog().contains("`plugin_creator`"));
+    }
+}
+
+#[test]
+fn dsh_plan_todos_require_saved_proposal_and_pending_steps() {
+    let ctx = context();
+    let backing = Arc::new(ToolManager::new(crate::core::tools::default_registry(
+        Arc::clone(&ctx.conversation),
+        Arc::clone(&ctx.event_bus),
+    )));
+    let dsh = backing.dsh_contract();
+    let store = crate::core::tools::plan_mode::shared_plan_mode_store();
+    store.set_active(ctx.root_session_id(), true);
+    let pending = json!({"todos":[{"content":"Update src/main.rs", "status":"pending"}]});
+    assert!(dsh.dispatch(&ctx, "todo_write", pending.clone()).is_err());
+    dsh.dispatch(
+        &ctx,
+        "save_plan",
+        json!({"content":"# Update main\n\nUpdate src/main.rs and run cargo check."}),
+    )
+    .unwrap();
+    assert!(store.has_saved_plan(ctx.root_session_id()));
+    assert!(dsh
+        .dispatch(
+            &ctx,
+            "todo_write",
+            json!({"todos":[{"content":"Update src/main.rs", "status":"completed"}]})
+        )
+        .is_err());
+    dsh.dispatch(&ctx, "todo_write", pending).unwrap();
+    assert!(dsh
+        .dispatch(
+            &ctx,
+            "complete_plan_step",
+            json!({"step":"1", "evidence":"src/main.rs"})
+        )
+        .is_err());
+    store.set_active(ctx.root_session_id(), false);
 }
 
 #[test]

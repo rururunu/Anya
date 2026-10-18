@@ -1,6 +1,6 @@
 # 权限与代码预览
 
-[English](./permissions-and-preview.md) · 适用于 Anya v0.2.31。
+[English](./permissions-and-preview.md) · 适用于 Anya v0.2.32。
 
 ## 权限范围
 
