@@ -104,8 +104,17 @@ export function exitApp() {
   return ipcInvoke<void>(IPC_COMMANDS.exitApp);
 }
 
-export function getAppSettings() {
-  return ipcInvoke<AppSettings>(IPC_COMMANDS.getAppSettings);
+export async function getAppSettings(): Promise<AppSettings> {
+  // WebViews can reach IPC before setup has registered SettingsState.
+  // Keep the boot splash up until the real settings (including themes) arrive.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await ipcInvoke<AppSettings>(IPC_COMMANDS.getAppSettings);
+    } catch (error) {
+      if (String(error) !== "settings state is unavailable" || attempt >= 100) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+  }
 }
 
 export function listSystemFonts() {

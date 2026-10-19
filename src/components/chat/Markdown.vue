@@ -33,7 +33,7 @@ import {
   resolveMarkdownImagePath,
   markdownWorkspaceRoot,
 } from "@/services/chat/localImageSrc";
-import { inject } from "vue";
+import { computed, inject } from "vue";
 import { loadImageSourceAsDataUrl } from "@/services/chat/imageEditReference";
 import { disposeChartBlocks, hydrateChartBlocks } from "./chartHydration";
 import { disposeMermaidBlocks, hydrateMermaidBlocks } from "./mermaidHydration";
@@ -47,6 +47,18 @@ const emit = defineEmits<{
 }>();
 const rootRef = ref<HTMLElement | null>(null);
 const workspaceRoot = inject(markdownWorkspaceRoot, undefined);
+const publicWorkspaceRoot = ref("");
+const imageWorkspaceRoot = computed(() => workspaceRoot?.value || publicWorkspaceRoot.value);
+onMounted(async () => {
+  // Keep general chats aligned with stream/lifecycle.rs::public_workspace_root.
+  if (workspaceRoot?.value) return;
+  try {
+    const { tempDir, join } = await import("@tauri-apps/api/path");
+    publicWorkspaceRoot.value = await join(await tempDir(), "peek-public");
+  } catch {
+    // Non-Tauri previews can still render remote and absolute image sources.
+  }
+});
 const renderedContent = ref(props.content);
 let renderTimer: ReturnType<typeof setTimeout> | null = null;
 let idleRenderId: number | null = null;
@@ -101,7 +113,7 @@ renderer.code = ({ text, lang }) => {
 };
 
 renderer.image = ({ href, title, text }) => {
-  const original = resolveMarkdownImagePath(href ?? "", workspaceRoot?.value);
+  const original = resolveMarkdownImagePath(href ?? "", imageWorkspaceRoot.value);
   const src = resolveChatImageSrc(original);
   const titleAttr = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
   return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(text ?? "")}" data-image-source="${escapeHtmlAttribute(original)}"${titleAttr} />`;
@@ -353,7 +365,7 @@ function renderHtml(content: string): string {
 
 const html = ref(renderHtml(renderedContent.value));
 watch(
-  () => [renderedContent.value, props.streaming] as const,
+  () => [renderedContent.value, props.streaming, imageWorkspaceRoot.value] as const,
   ([content]) => {
     if (idleRenderId !== null) {
       window.cancelIdleCallback?.(idleRenderId);
@@ -465,7 +477,7 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   font-size: var(--peek-agent-font-size, 13px);
   font-weight: 500;
   line-height: 1.7;
-  color: var(--peek-text);
+  color: var(--peek-assistant-text, var(--peek-text));
   overflow-wrap: break-word;
   word-break: normal;
 }
@@ -491,7 +503,7 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 .markdown-body :deep(h3),
 .markdown-body :deep(h4) {
   margin: 0.8em 0 0.35em;
-  color: var(--peek-text);
+  color: var(--peek-assistant-text, var(--peek-text));
   font-weight: 650;
   line-height: 1.35;
 }

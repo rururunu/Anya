@@ -823,17 +823,16 @@ watch(
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  padding: 8px 36px 8px 12px;
-  border: 1px solid
-    var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
-  border-radius: var(--peek-radius-composer, 16px);
-  background: var(--peek-composer-fill, var(--peek-user-bubble-bg));
+  padding: var(--peek-user-bubble-padding, 8px 36px 8px 12px);
+  border: 1px solid var(--peek-user-bubble-border, var(--peek-border));
+  border-radius: var(--peek-user-bubble-radius, var(--peek-radius-composer, 16px));
+  background: var(--peek-user-bubble-bg);
   color: var(--peek-user-bubble-text, var(--peek-text));
   font-size: var(--peek-font-md, 14px);
   font-weight: 450;
   line-height: 1.5;
   letter-spacing: -0.01em;
-  box-shadow: var(--peek-composer-shadow, none);
+  box-shadow: var(--peek-user-bubble-shadow, none);
   transition: border-color var(--motion-fast, 110ms) var(--motion-ease-out, ease);
 }
 .user-composer.is-editable {
@@ -842,10 +841,10 @@ watch(
 .user-composer.is-editing {
   padding-right: 12px;
   border-color: var(
-    --peek-composer-border-focus,
-    var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent))
+    --peek-user-bubble-border-focus,
+    var(--peek-user-bubble-border, var(--peek-border))
   );
-  box-shadow: var(--peek-composer-shadow-focus, none);
+  box-shadow: var(--peek-user-bubble-shadow-focus, var(--peek-user-bubble-shadow, none));
 }
 .user-images {
   display: flex;

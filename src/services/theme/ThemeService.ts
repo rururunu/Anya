@@ -123,6 +123,13 @@ function getContrastRatio(
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+/** Advisory only: never changes the author's palette. Unknown CSS colors are skipped. */
+export function themeColorContrast(foreground: string, background: string): number | null {
+  const fg = parseRgbColor(foreground);
+  const bg = parseRgbColor(background);
+  return fg && bg ? getContrastRatio(fg, bg) : null;
+}
+
 /** Mix two rgb colors with a weight for c1 (0..1). */
 function mixColors(
   c1: { r: number; g: number; b: number },
@@ -179,18 +186,14 @@ export function harmonizeCustomTheme(theme: CustomThemeConfig): Record<string, s
       : "#ececec";
   }
 
-  // 4. Contrast Guard for Primary Text (ensure minimum 4.5:1 ratio)
+  // 4. Fill missing colors only. Explicit author choices must survive unchanged.
   const textRaw = tokens["--peek-text"];
-  const textRgb = textRaw ? parseRgbColor(textRaw) : null;
-  const currentRatio = textRgb ? getContrastRatio(textRgb, bgRgb) : 1;
-
-  if (!textRaw || currentRatio < 4.5) {
+  if (!textRaw) {
     tokens["--peek-text"] = isDark ? "#f1f5f9" : "#0f172a";
   }
 
   const mutedRaw = tokens["--peek-muted"];
-  const mutedRgb = mutedRaw ? parseRgbColor(mutedRaw) : null;
-  if (!mutedRaw || (mutedRgb && getContrastRatio(mutedRgb, bgRgb) < 3.0)) {
+  if (!mutedRaw) {
     tokens["--peek-muted"] = isDark ? "#94a3b8" : "#64748b";
   }
   if (!tokens["--peek-faint"]) {
@@ -203,6 +206,11 @@ export function harmonizeCustomTheme(theme: CustomThemeConfig): Record<string, s
   if (!tokens["--peek-user-bubble-text"]) {
     tokens["--peek-user-bubble-text"] = bubbleLuminance < 0.45 ? "#f8fafc" : "#0f172a";
   }
+  if (!tokens["--peek-composer-text"]) {
+    const composerRgb = parseRgbColor(tokens["--peek-composer-fill"]) || surfaceRgb;
+    const luminance = getRelativeLuminance(composerRgb.r, composerRgb.g, composerRgb.b);
+    tokens["--peek-composer-text"] = luminance < 0.45 ? "#f8fafc" : "#0f172a";
+  }
 
   // 5. Accent & Action Buttons
   const accentRaw = tokens["--peek-accent"] || (isDark ? "#38bdf8" : "#2563eb");
@@ -214,9 +222,9 @@ export function harmonizeCustomTheme(theme: CustomThemeConfig): Record<string, s
   if (!tokens["--peek-accent-fg"]) {
     tokens["--peek-accent-fg"] = accentLuminance > 0.45 ? "#09090b" : "#ffffff";
   }
-  tokens["--peek-send-active-bg"] = tokens["--peek-accent"];
-  tokens["--peek-send-active-fg"] = tokens["--peek-accent-fg"];
-  tokens["--peek-primary-foreground"] = tokens["--peek-accent-fg"];
+  tokens["--peek-send-active-bg"] ||= tokens["--peek-accent"];
+  tokens["--peek-send-active-fg"] ||= tokens["--peek-accent-fg"];
+  tokens["--peek-primary-foreground"] ||= tokens["--peek-accent-fg"];
 
   if (!tokens["--peek-send-bg"]) {
     tokens["--peek-send-bg"] = isDark
@@ -252,6 +260,12 @@ export function harmonizeCustomTheme(theme: CustomThemeConfig): Record<string, s
   }
   if (!tokens["--peek-strong-border"]) {
     tokens["--peek-strong-border"] = isDark ? "rgba(255, 255, 255, 0.18)" : "rgba(0, 0, 0, 0.22)";
+  }
+  if (!tokens["--peek-user-bubble-border"]) {
+    tokens["--peek-user-bubble-border"] = tokens["--peek-border"];
+  }
+  if (!tokens["--peek-user-bubble-shadow"]) {
+    tokens["--peek-user-bubble-shadow"] = "none";
   }
   if (!tokens["--peek-composer-border"]) {
     tokens["--peek-composer-border"] = isDark

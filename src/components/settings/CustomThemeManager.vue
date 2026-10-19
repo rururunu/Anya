@@ -1,5 +1,6 @@
 <template>
   <CustomBackgroundCard :is-zh="isZh" />
+  <ThemeEditor v-if="editingTheme" :theme="editingTheme" @close="editingTheme = null" />
 
   <section class="settings-group custom-theme-group">
     <AppConfirmDialog ref="confirmDialogRef" />
@@ -9,6 +10,9 @@
         {{ isZh ? "个性化主题库" : "Custom Themes" }}
       </h2>
       <div class="settings-group-actions">
+        <Button variant="outline" size="sm" @click="createTheme">
+          {{ isZh ? "新建主题" : "New theme" }}
+        </Button>
         <span v-if="copiedPrompt" class="prompt-copied-badge">
           {{ isZh ? "已复制创作提示词" : "Prompt Copied" }}
         </span>
@@ -103,6 +107,14 @@
 
         <div class="settings-row-control">
           <div class="settings-theme-actions">
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-7 px-2.5 text-xs"
+              @click="editingTheme = theme"
+            >
+              {{ isZh ? "编辑" : "Edit" }}
+            </Button>
             <Button
               v-if="!isActiveTheme(theme.id)"
               variant="outline"
@@ -208,6 +220,7 @@ import {
 import { Button } from "@/components/ui/button";
 import AppConfirmDialog from "@/components/ui/confirm-dialog/AppConfirmDialog.vue";
 import CustomBackgroundCard from "@/components/settings/CustomBackgroundCard.vue";
+import ThemeEditor from "@/components/settings/ThemeEditor.vue";
 import { harmonizeCustomTheme } from "@/services/theme/ThemeService";
 import { useSettingStore } from "@/stores/setting";
 import type { CustomThemeConfig, ThemeId } from "@/types/setting";
@@ -221,6 +234,18 @@ const importJsonDraft = ref("");
 const importError = ref("");
 const copiedThemeId = ref<string | null>(null);
 const copiedPrompt = ref(false);
+const editingTheme = ref<CustomThemeConfig | null>(null);
+function createTheme() {
+  const current = settingStore.customThemes.find((theme) => theme.id === settingStore.colorScheme);
+  editingTheme.value = {
+    ...(current ? JSON.parse(JSON.stringify(current)) : {}),
+    id: `custom-${crypto.randomUUID()}`,
+    name: isZh.value ? "我的主题" : "My theme",
+    mode: current?.mode ?? (settingStore.colorScheme === "dark" ? "dark" : "light"),
+    tokens: { ...current?.tokens },
+    updatedAt: Date.now(),
+  };
+}
 
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
 let promptTimer: ReturnType<typeof setTimeout> | null = null;

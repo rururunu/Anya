@@ -1964,8 +1964,12 @@ defineExpose({ openFind, closeFind, scrollToLatest });
   max-width: 100%;
   min-width: 0;
   margin-left: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
-  padding: 0;
-  color: var(--peek-text);
+  padding: var(--peek-assistant-padding, 0);
+  color: var(--peek-assistant-text, var(--peek-text));
+  background: var(--peek-assistant-bg, transparent);
+  border: 1px solid var(--peek-assistant-border, transparent);
+  border-radius: var(--peek-assistant-radius, 0);
+  box-shadow: var(--peek-assistant-shadow, none);
 }
 
 .provider-setup-card {

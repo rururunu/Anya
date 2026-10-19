@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import Markdown from "./Markdown.vue";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { computed, nextTick } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { markdownWorkspaceRoot, resolveMarkdownImagePath } from "@/services/chat/localImageSrc";
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
@@ -14,6 +14,10 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `http://asset.localhost/${path}`,
 }));
+vi.mock("@tauri-apps/api/path", () => ({
+  tempDir: async () => "C:/Temp",
+  join: async (...parts: string[]) => parts.join("/"),
+}));
 vi.mock("./chartHydration", () => ({ hydrateChartBlocks: vi.fn(), disposeChartBlocks: vi.fn() }));
 vi.mock("./mermaidHydration", () => ({
   hydrateMermaidBlocks: vi.fn(),
@@ -22,6 +26,31 @@ vi.mock("./mermaidHydration", () => ({
 
 describe("local markdown images", () => {
   beforeEach(() => vi.clearAllMocks());
+  it("resolves general-chat screenshots against the tools' public workspace", async () => {
+    const wrapper = mount(Markdown, {
+      props: { content: "![Theme](.anya/screenshots/latest.png)" },
+    });
+    await flushPromises();
+    expect(readFile).toHaveBeenCalledWith("C:/Temp/peek-public/.anya/screenshots/latest.png");
+    expect(wrapper.get("img").attributes("src")).toMatch(/^data:image\/png;base64,/);
+    wrapper.unmount();
+  });
+  it("reloads relative images when the conversation workspace becomes available", async () => {
+    const root = ref("");
+    const wrapper = mount(Markdown, {
+      props: { content: "![Theme](.anya/screenshots/latest.png)" },
+      global: { provide: { [markdownWorkspaceRoot as symbol]: computed(() => root.value) } },
+    });
+    await flushPromises();
+    root.value = "D:/project";
+    await flushPromises();
+    expect(readFile).toHaveBeenLastCalledWith("D:/project/.anya/screenshots/latest.png");
+    await wrapper.get("img").trigger("click");
+    expect(wrapper.emitted("previewImage")?.[0]).toEqual([
+      "D:/project/.anya/screenshots/latest.png",
+    ]);
+    wrapper.unmount();
+  });
   it("loads relative PDF preview images from the conversation workspace and previews their real path", async () => {
     const wrapper = mount(Markdown, {
       props: { content: "![封面](build/review/p-01.png)" },

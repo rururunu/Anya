@@ -8,6 +8,8 @@
 
 Product home: [../README.md](../README.md)
 
+Appearance customization: [Theme editor](./themes.md).
+
 These pages are the maintainer map — start at the root README for the product story, then open the guide that matches your task.
 
 | Document                                                       | Audience                      | When to open it                                                                                                                            |

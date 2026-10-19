@@ -6,6 +6,8 @@
   <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
+外观自定义：[主题编辑器](./themes.zh-CN.md)。
+
 产品主页：[../README.zh-CN.md](../README.zh-CN.md)
 
 这里是文档地图——产品介绍请看根目录 README；按任务打开对应指南即可。

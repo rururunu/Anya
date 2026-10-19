@@ -1850,7 +1850,7 @@ watch(activeSessionId, () => {
 }
 
 .workbench.has-custom-bg .conversation-header {
-  background: transparent !important;
+  background: var(--peek-header-bg, transparent) !important;
   border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 42%, transparent) !important;
 }
 
@@ -2630,14 +2630,14 @@ button {
   padding: 6px 8px 4px 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--peek-border) 42%, transparent);
   border-top-left-radius: inherit;
-  background: var(--peek-list-bg);
+  background: var(--peek-header-bg, var(--peek-list-bg));
 }
 .conversation-title {
   flex: 1;
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: var(--peek-text);
+  color: var(--peek-header-text, var(--peek-text));
   font-size: 13px;
   font-weight: 550;
   line-height: 1.35;

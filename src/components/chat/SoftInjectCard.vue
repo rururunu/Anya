@@ -50,10 +50,9 @@ const collapsed = computed(() => needsFold.value && !expanded.value);
   max-width: 100%;
   box-sizing: border-box;
   padding: 8px 12px;
-  border: 1px solid
-    var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
-  border-radius: var(--peek-radius-composer, 16px);
-  background: var(--peek-composer-fill, var(--peek-user-bubble-bg));
+  border: 1px solid var(--peek-user-bubble-border, var(--peek-border));
+  border-radius: var(--peek-user-bubble-radius, var(--peek-radius-composer, 16px));
+  background: var(--peek-user-bubble-bg);
   color: var(--peek-user-bubble-text, var(--peek-text));
 }
 .inject-label {

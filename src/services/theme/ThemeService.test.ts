@@ -5,6 +5,7 @@ import { COLOR_SCHEME_CACHE_KEY, CUSTOM_THEMES_CACHE_KEY } from "@/services/them
 
 import {
   applyThemeAppearance,
+  harmonizeCustomTheme,
   readCachedCustomThemes,
   readThemeState,
   THEME_CHANGE_EVENT,
@@ -15,6 +16,38 @@ vi.mock("@/services/overlay/appearance", () => ({
 }));
 
 describe("ThemeService", () => {
+  it("keeps explicit colors even when contrast is low or actions differ from the accent", () => {
+    const tokens = {
+      "--peek-bg": "#ffffff",
+      "--peek-text": "#ffffff",
+      "--peek-muted": "#eeeeee",
+      "--peek-send-active-bg": "#123456",
+      "--peek-send-active-fg": "#abcdef",
+      "--peek-primary-foreground": "#654321",
+    };
+    expect(
+      harmonizeCustomTheme({ id: "custom", name: "Custom", mode: "light", tokens }),
+    ).toMatchObject(tokens);
+  });
+  it("preserves independently configured region colors", () => {
+    const regions = {
+      "--peek-bg": "#EDEDF0",
+      "--peek-sidebar": "#E6E6EA",
+      "--peek-list-bg": "#FFFFFF",
+      "--peek-surface": "#F5F5F7",
+      "--peek-composer-fill": "#FEFEFE",
+      "--peek-interaction-fill": "#F2F2F7",
+      "--peek-input-bg": "#FAFAFA",
+      "--peek-user-bubble-bg": "#E3EEFF",
+      "--peek-user-bubble-text": "#142844",
+      "--peek-user-bubble-border": "#A8BDDC",
+      "--peek-composer-text": "#243224",
+      "--peek-composer-border": "#B9CABA",
+    };
+    expect(
+      harmonizeCustomTheme({ id: "custom-mac", name: "Mac", mode: "light", tokens: regions }),
+    ).toMatchObject(regions);
+  });
   beforeEach(() => {
     document.documentElement.lang = "zh-CN";
     document.documentElement.dataset.theme = "light";

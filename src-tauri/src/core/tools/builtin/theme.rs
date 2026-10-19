@@ -49,7 +49,7 @@ impl Tool for ManageCustomThemeTool {
                 },
                 "tokens": {
                     "type": "object",
-                    "description": "Map of CSS custom property tokens, e.g. {\"--peek-bg\": \"#120d1c\", \"--peek-accent\": \"#39ff14\"}",
+                    "description": "Map of CSS custom property tokens. Set independent region colors with --peek-bg (window), --peek-sidebar (sidebar and chrome tint), --peek-list-bg (conversation), --peek-surface (cards/dialogs), --peek-composer-fill, --peek-composer-text and --peek-composer-border (composer background/text/border), --peek-interaction-fill (interaction cards), --peek-input-bg (input fields), --peek-user-bubble-bg, --peek-user-bubble-text and --peek-user-bubble-border (user message background/text/border, independent of composer). Focus borders use --peek-composer-border-focus and --peek-user-bubble-border-focus. Also set --peek-text, --peek-muted, --peek-accent and --peek-accent-fg for readable text and controls. Each region can have its own color; omitted regions inherit harmonized defaults.",
                     "additionalProperties": { "type": "string" }
                 },
                 "background": {

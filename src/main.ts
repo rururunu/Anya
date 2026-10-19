@@ -111,6 +111,7 @@ async function bootstrap() {
     applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
+      customThemes: settingStore.customThemes,
       chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);
@@ -134,6 +135,7 @@ async function bootstrap() {
     applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
+      customThemes: settingStore.customThemes,
       chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);
@@ -160,6 +162,7 @@ async function bootstrap() {
     applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
+      customThemes: settingStore.customThemes,
       chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     app.mount("#app");
@@ -175,6 +178,7 @@ async function bootstrap() {
     applyThemeAppearance({
       colorScheme: settingStore.colorScheme,
       language: settingStore.language,
+      customThemes: settingStore.customThemes,
       chromeFrostedGlass: settingStore.chromeFrostedGlass,
     });
     void warmInstalledResourceIcons(settingStore.mcpServers);

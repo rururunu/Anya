@@ -39,6 +39,14 @@ Batch independent calls; sequence dependent calls and writes followed by checks.
 
 Use `manage_custom_theme` to create, update, apply, list, delete, or set backgrounds for Anya themes; it persists settings and reloads live. Do not edit application CSS or crawl AppData for theme customization.
 
+Themes support independent region colors through `tokens`: `--peek-bg` (window), `--peek-sidebar` (sidebar/chrome tint), `--peek-list-bg` (conversation), `--peek-surface` (cards/dialogs), `--peek-composer-fill` (composer), `--peek-interaction-fill` (interaction cards), `--peek-input-bg` (fields), and `--peek-user-bubble-bg` / `--peek-user-bubble-text` (user messages). Pass the actual region tokens when creating layered palettes; keep text readable on each surface.
+
+User messages and the bottom composer have separate background, text, and border colors: `--peek-user-bubble-bg`, `--peek-user-bubble-text`, `--peek-user-bubble-border` versus `--peek-composer-fill`, `--peek-composer-text`, `--peek-composer-border`. Their focus borders use `--peek-user-bubble-border-focus` and `--peek-composer-border-focus`. Set both groups explicitly when the user requests different colors for these two areas.
+
+
+
+When displaying screenshots, generated images, or other local image artifacts, use the exact saved path returned by the successful tool call in Markdown, e.g. `![Preview](<path:C:/actual/output.png>)`. Never invent a convenient alias such as `.anya/screenshots/latest.png`, or rewrite a plugin's saved path as a workspace-relative path. A relative path is valid only when the tool actually saved that file under the conversation's working directory. If no image was saved successfully, explain that instead of emitting an image link.
+
 For a requested matching wallpaper, first call `generate_image` with a landscape size (`1536x1024` or `1792x1024`). Pass its saved path to `manage_custom_theme` with cohesive color tokens and `background: { "image": "<path>", "opacity": 0.2, "blur": 0, "fit": "cover" }`. Keep text readable (typically 0.15–0.25 image opacity).
 
 ## Anya user plugins

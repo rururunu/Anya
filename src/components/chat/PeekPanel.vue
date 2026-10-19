@@ -1765,13 +1765,6 @@ watch(activeSessionId, () => {
 .thread-input-row :deep(.input-user-avatar) {
   left: 0;
 }
-.peek-panel.chat :deep(.user-composer) {
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  padding-left: 0;
-}
 .peek-panel.chat :deep(.message-item.user) {
   position: relative;
 }
@@ -2148,9 +2141,9 @@ watch(activeSessionId, () => {
   flex: none;
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid var(--peek-panel-outline);
-  border-radius: 8px;
-  background: var(--peek-surface);
+  border: 1px solid var(--peek-composer-border, var(--peek-panel-outline));
+  border-radius: var(--peek-radius-composer, 8px);
+  background: var(--peek-composer-fill, var(--peek-surface));
   position: relative;
   z-index: 2;
   display: flex;
@@ -2159,7 +2152,7 @@ watch(activeSessionId, () => {
   overflow: hidden;
   isolation: isolate;
   will-change: transform, opacity;
-  box-shadow: inset 0 1px 0 var(--peek-panel-highlight);
+  box-shadow: var(--peek-composer-shadow, inset 0 1px 0 var(--peek-panel-highlight));
 }
 
 .peek-panel:not(.chat) .composer-dock {

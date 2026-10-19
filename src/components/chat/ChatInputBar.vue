@@ -5069,7 +5069,7 @@ watch(
   border: 0;
   outline: none;
   background: transparent;
-  color: var(--peek-text);
+  color: var(--peek-composer-text, var(--peek-text));
   font-family: var(--peek-font-sans);
   font-size: 14px;
   line-height: 24px;
