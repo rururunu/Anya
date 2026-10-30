@@ -33,4 +33,21 @@ describe("theme editor values", () => {
     expect(preview["--peek-assistant-radius"]).toBe("30px");
     expect(preview["--peek-header-bg"]).toBe("var(--peek-list-bg)");
   });
+  it("supports custom fonts, footer chip colors, radii, and shadows in theme tokens", () => {
+    const tokens = validateThemeTokens({
+      "--peek-font-sans": '"LXGW WenKai", "PingFang SC", sans-serif',
+      "--peek-font-mono": '"JetBrains Mono", monospace',
+      "--peek-sidebar-text": "#112233",
+      "--peek-composer-chip-text": "#445566",
+      "--peek-composer-chip-radius": "999px",
+      "--peek-composer-chip-shadow": "0 2px 6px rgba(0, 0, 0, 0.12)",
+      "--peek-composer-full-access-text": "#ff3b30",
+      "--peek-composer-meta-text": "#778899",
+      "--peek-card-radius": "16px",
+      "--peek-card-shadow": "0 8px 24px rgba(0, 0, 0, 0.16)",
+    });
+    expect(tokens["--peek-font-sans"]).toBe('"LXGW WenKai", "PingFang SC", sans-serif');
+    expect(tokens["--peek-composer-chip-radius"]).toBe("999px");
+    expect(tokens["--peek-composer-full-access-text"]).toBe("#ff3b30");
+  });
 });

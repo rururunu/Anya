@@ -244,7 +244,7 @@ const tone = computed(() => {
 }
 
 .track {
-  stroke: color-mix(in srgb, var(--peek-muted) 28%, transparent);
+  stroke: color-mix(in srgb, var(--peek-composer-meta-text, var(--peek-muted)) 28%, transparent);
 }
 
 .progress {
@@ -254,11 +254,15 @@ const tone = computed(() => {
 }
 
 .context-usage-ring.normal .progress {
-  stroke: color-mix(in srgb, var(--peek-accent) 72%, var(--peek-muted));
+  stroke: color-mix(
+    in srgb,
+    var(--peek-accent) 72%,
+    var(--peek-composer-meta-text, var(--peek-muted))
+  );
 }
 
 .context-usage-ring.warn .progress {
-  stroke: #f59e0b;
+  stroke: var(--peek-warning, #f59e0b);
 }
 
 .context-usage-ring.critical .progress {

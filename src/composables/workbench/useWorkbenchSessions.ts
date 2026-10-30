@@ -224,8 +224,7 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     }
   }
 
-  function createConversation(workspaceId: string | null) {
-    const sessionId = createSessionId();
+  function createConversation(workspaceId: string | null, sessionId = createSessionId()) {
     chatStore.setSessionMessages(sessionId, []);
     chatStore.ensureCompose(sessionId);
     chatStore.setComposeDraft(sessionId, "", { workspaceId });
@@ -235,6 +234,7 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     checkpoints.value = [];
     reviewOpen.value = false;
     void nextTick(() => inputRef.value?.focusInput());
+    return sessionId;
   }
 
   async function createQuickConversation() {

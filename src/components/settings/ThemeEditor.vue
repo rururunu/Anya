@@ -103,8 +103,23 @@
                     {{ tr("工具执行 · 等待确认", "Tool action · Awaiting approval") }}
                   </button>
                   <button class="preview-composer" @click="select('composer')">
-                    <span>{{ tr("输入消息…", "Write a message…") }}</span>
-                    <span class="preview-send" @click.stop="select('controls')">↑</span>
+                    <span class="preview-composer-input">
+                      {{ tr("输入消息…", "Write a message…") }}
+                    </span>
+                    <span class="preview-composer-footer">
+                      <span class="preview-composer-chips">
+                        <span class="preview-chip">+</span>
+                        <span class="preview-chip">Agent</span>
+                        <span class="preview-chip is-full-approve">
+                          {{ tr("完全访问", "Full access") }}
+                        </span>
+                        <span class="preview-chip">flash</span>
+                      </span>
+                      <span class="preview-composer-actions">
+                        <span class="preview-meta">7.8万 | 96%</span>
+                        <span class="preview-send" @click.stop="select('controls')">↑</span>
+                      </span>
+                    </span>
                   </button>
                 </div>
               </div>

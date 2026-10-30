@@ -7,9 +7,6 @@
 *,
 .peek-scrollbar {
   scrollbar-gutter: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--peek-scrollbar, color-mix(in srgb, var(--peek-text) 14%, transparent))
-    transparent;
 }
 
 *::-webkit-scrollbar,
@@ -114,10 +111,6 @@
 }
 
 /* 设置页左侧分类栏 */
-[data-sidebar="content"].peek-scrollbar {
-  scrollbar-color: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent) transparent;
-}
-
 [data-sidebar="content"].peek-scrollbar::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);
   background-clip: padding-box;
@@ -129,11 +122,6 @@
 }
 
 /* 欢迎引导：固定浅色底 */
-.onboarding.peek-scrollbar,
-.onboarding .peek-scrollbar {
-  scrollbar-color: rgba(28, 25, 21, 0.18) transparent;
-}
-
 .onboarding.peek-scrollbar::-webkit-scrollbar-thumb,
 .onboarding .peek-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(28, 25, 21, 0.18);

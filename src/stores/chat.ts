@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 
-import { chat, chatHistory } from "@/services/ipc";
+import { chat, chatCancel, chatHistory } from "@/services/ipc";
 import { createLogger } from "@/services/logger";
 import { useSettingStore } from "./setting";
 import { useChatModelStore } from "./chatModel";
@@ -61,7 +61,6 @@ import {
 import {
   cacheUsagesFromHistory,
   lastTurnUserContent,
-  lastSoftInjectContent,
   mergeActiveHistory,
   messagesHistoryFingerprint,
   settleInterruptedMessages,
@@ -69,7 +68,6 @@ import {
 import {
   appendTimelineText,
   applyLiveTextDelta,
-  appendTimelineInject,
   findLastMessageIndex,
   rollbackStreamAttempt,
 } from "./chatStream";
@@ -105,9 +103,9 @@ export const useChatStore = defineStore("chat", {
     historyLoadingOlder: {} as Record<string, boolean>,
     /** Per-conversation compose settings (model / mode / approval / draft). */
     sessionCompose: {} as Record<string, SessionCompose>,
-    /** User messages typed while a turn is executing — held until the guide
-     * button is clicked (inject into the running turn) or the turn finishes
-     * (auto-send as the next turn). */
+    /** User messages typed while a turn is executing. They wait until the
+     * turn finishes (auto-send) or the user stops the current turn and sends
+     * one immediately. */
     stagedMessages: {} as Record<string, string[]>,
     /** Prevent duplicate finish events from dispatching multiple queued turns. */
     stagedDispatching: {} as Record<string, boolean>,
@@ -700,7 +698,7 @@ export const useChatStore = defineStore("chat", {
         return;
       }
       // Double-submit while a turn is running would otherwise queue the same
-      // question, then flush/guide it as "已追加到本轮".
+      // question twice.
       const messages = sessionsStore().sessions[sessionId] ?? [];
       if (lastTurnUserContent(messages) === trimmed) {
         return;
@@ -839,9 +837,9 @@ export const useChatStore = defineStore("chat", {
         this.stagedDispatching = next;
       }
     },
-    /** Guide a single staged message into the running turn immediately. The
-     * message is removed from the queue and soft-injected; the rest of the
-     * queue stays put. */
+    /** Stop the running turn, then send this queued message as a new turn.
+     * The rest of the queue stays put. The dispatch lock keeps chat-finished
+     * from also flushing the next item. */
     async guideStagedMessage(sessionId: string, index: number) {
       if (this.stagedDispatching[sessionId]) return;
       this.stagedDispatching[sessionId] = true;
@@ -852,44 +850,33 @@ export const useChatStore = defineStore("chat", {
           return remoteTakeStaged(sessionId, index);
         });
         await this.refreshStagedFromRemote(sessionId);
-        if (content) await this.send(content, sessionId, { fromQueue: true, guide: true });
+        if (!content) return;
+        await this.stopActiveTurn(sessionId);
+        await this.send(content, sessionId, { fromQueue: true });
       } catch (error) {
-        log.warn("staged guide failed; not sending local mirror", error);
+        log.warn("staged send-now failed; not sending local mirror", error);
       } finally {
         delete this.stagedDispatching[sessionId];
       }
     },
-    stageSoftInject(sessionId: string, content: string) {
-      const trimmed = content.trim();
-      if (!trimmed) return;
-      const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const injectId = `local-user-${token}`;
-      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
-      const liveIndex = findLastMessageIndex(
-        messages,
-        (item) =>
-          normalizeRole(item.role) === "assistant" &&
-          (item.status === "pending" || item.status === "streaming"),
-      );
-      // Never decorate a finished assistant — queue-continue / late guide must
-      // open a new turn instead of looking like "已追加到本轮" on a dead agent.
-      if (liveIndex !== -1) {
-        const assistant = messages[liveIndex]!;
-        messages[liveIndex] = {
-          ...assistant,
-          workTimeline: appendTimelineInject(assistant.workTimeline, injectId, trimmed),
-        };
+    /** Cancel the in-flight assistant so the next send starts a new turn. */
+    async stopActiveTurn(sessionId: string) {
+      const pending = [...(sessionsStore().sessions[sessionId] ?? [])]
+        .reverse()
+        .find(
+          (message) =>
+            normalizeRole(message.role) === "assistant" &&
+            (message.status === "pending" || message.status === "streaming"),
+        );
+      this.clearSending(sessionId);
+      if (pending) {
+        try {
+          await chatCancel({ messageId: pending.id });
+        } catch (error) {
+          log.warn("cancel before queued send failed", error);
+        }
       }
-      messages.push({
-        id: injectId,
-        sessionId,
-        role: "user",
-        content: trimmed,
-        injected: true,
-        status: "done",
-        timestamp: Date.now(),
-      });
-      this.setSessionMessages(sessionId, messages);
+      this.settleInterruptedSession(sessionId);
     },
     stageTurn(sessionId: string, content: string, fromQueue = false) {
       const trimmed = content.trim();
@@ -1048,24 +1035,7 @@ export const useChatStore = defineStore("chat", {
       }
       if (changed) this.setSessionMessages(sessionId, messages);
     },
-    markMessageInjected(sessionId: string, messageId: string) {
-      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
-      const index = messages.findIndex((item) => item.id === messageId);
-      if (index === -1) return;
-      const current = messages[index]!;
-      messages[index] = {
-        ...current,
-        injected: true,
-        content: current.content.startsWith("<!--peek:soft-inject-->")
-          ? current.content
-          : `<!--peek:soft-inject-->\n${current.content}`,
-      };
-      this.setSessionMessages(sessionId, messages);
-    },
-    failOptimisticSend(sessionId: string, error: unknown, softInject = false) {
-      if (softInject) {
-        return;
-      }
+    failOptimisticSend(sessionId: string, error: unknown) {
       const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
       const index = findLastMessageIndex(
         messages,
@@ -1746,11 +1716,8 @@ export const useChatStore = defineStore("chat", {
         workspaceId?: string;
         quickAsk?: boolean;
         capturedContext?: import("@/types/chat").CapturedContext;
-        /** Internal: this send comes from the staged queue (guide / auto-send
-         * after the turn finishes) and must never be re-staged. */
+        /** Internal: this send comes from the staged queue and must never be re-staged. */
         fromQueue?: boolean;
-        /** Inject into the running turn. Auto-flush must not set this. */
-        guide?: boolean;
         /** Skip complexity auto-plan (approve & execute follow-up). */
         skipAutoPlan?: boolean;
         /** Approve & execute continuation: unlocks writers; message is persisted. */
@@ -1772,27 +1739,15 @@ export const useChatStore = defineStore("chat", {
         return false;
       }
 
-      // Composer send while a turn is running always queues. Only the staged
-      // chip 追加 button (guide: true) injects into the current turn.
-      if (!options?.staged && !options?.fromQueue && !options?.guide && busy) {
+      // Composer send while a turn is running always queues.
+      if (!options?.staged && !options?.fromQueue && busy) {
         this.pushStagedMessage(sessionId, trimmed);
         return true;
       }
 
-      // Auto-flush must wait for the current turn; only explicit guide injects.
-      if (options?.fromQueue && !options?.guide && busy) {
+      // Auto-flush must wait for the current turn.
+      if (options?.fromQueue && busy) {
         return false;
-      }
-
-      // Soft-inject only while an assistant is actually live. `sending` alone
-      // (e.g. stuck flag after cancel) must not append onto a finished agent.
-      const softInject =
-        Boolean(options?.guide) && this.hasActiveAssistantResponse(sessionId) && !options?.staged;
-      if (
-        softInject &&
-        lastSoftInjectContent(sessionsStore().sessions[sessionId] ?? []) === trimmed
-      ) {
-        return true;
       }
 
       if (!options?.isolate) {
@@ -1800,16 +1755,10 @@ export const useChatStore = defineStore("chat", {
       }
 
       if (!options?.staged) {
-        if (softInject) {
-          this.stageSoftInject(sessionId, trimmed);
-        } else {
-          this.stageTurn(sessionId, trimmed, Boolean(options?.fromQueue));
-        }
+        this.stageTurn(sessionId, trimmed, Boolean(options?.fromQueue));
       }
 
-      if (!softInject) {
-        this.sending[sessionId] = true;
-      }
+      this.sending[sessionId] = true;
       try {
         const chatModelStore = useChatModelStore();
         if (chatModelStore.models.length === 0 && !chatModelStore.loading) {
@@ -1842,10 +1791,8 @@ export const useChatStore = defineStore("chat", {
         }
 
         if (chatModelStore.models.length === 0 || !compose.chatModel.trim()) {
-          this.failOptimisticSend(sessionId, "CONFIGURE_PROVIDER", softInject);
-          if (!softInject) {
-            this.clearSending(sessionId);
-          }
+          this.failOptimisticSend(sessionId, "CONFIGURE_PROVIDER");
+          this.clearSending(sessionId);
           return false;
         }
 
@@ -1872,25 +1819,17 @@ export const useChatStore = defineStore("chat", {
               : undefined,
           skipAutoPlan: options?.skipAutoPlan,
           resumePlan: options?.resumePlan,
-          softInject: softInject || undefined,
         });
         this.reconcileOptimisticIds(sessionId, response.userMessageId, response.assistantMessageId);
-        if (softInject) {
-          this.markMessageInjected(sessionId, response.userMessageId);
-        }
         if (response.sessionId && response.sessionId !== sessionId) {
           this.mergeSession(response.sessionId, sessionId);
-          if (!softInject) {
-            this.sending[sessionId] = true;
-          }
+          this.sending[sessionId] = true;
         }
         return true;
       } catch (error) {
         log.error("chat failed", error);
-        this.failOptimisticSend(sessionId, error, softInject);
-        if (!softInject) {
-          this.clearSending(sessionId);
-        }
+        this.failOptimisticSend(sessionId, error);
+        this.clearSending(sessionId);
         return false;
       }
     },

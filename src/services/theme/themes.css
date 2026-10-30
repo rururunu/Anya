@@ -5,8 +5,8 @@
 :root,
 html[data-theme="light"],
 html[data-theme-mode="light"] {
-  --peek-bg: #f8f8f8;
-  --peek-sidebar: #f3f3f3;
+  --peek-bg: #f8f8f9;
+  --peek-sidebar: #f1f1f2;
   --peek-surface: #ffffff;
   --peek-input-bg: #ffffff;
   --peek-text: #242424;
@@ -14,47 +14,49 @@ html[data-theme-mode="light"] {
   --peek-faint: #767676;
   --peek-accent: #111111;
   --peek-accent-fg: #ffffff;
-  --peek-border: rgba(0, 0, 0, 0.16);
-  --peek-strong-border: rgba(0, 0, 0, 0.24);
+  --peek-border: rgba(16, 18, 24, 0.12);
+  --peek-strong-border: rgba(16, 18, 24, 0.2);
   --peek-icon: #242424;
   --peek-icon-muted: #6e6e6e;
   --peek-icon-accent: var(--peek-accent);
   --peek-icon-glow: none;
   --peek-active-fg: #111111;
   --peek-list-bg: #ffffff;
-  --peek-list-active: #e8e8e8;
+  --peek-list-active: #ebebed;
   --peek-placeholder: #6b6b6b;
-  --peek-send-bg: #e5e5e5;
+  --peek-send-bg: #e8e8ea;
   --peek-send-fg: #4d4d4d;
   --peek-send-active-bg: #111111;
   --peek-send-active-fg: #ffffff;
   --peek-primary-foreground: #ffffff;
-  --peek-user-bubble-bg: #ececec;
+  --peek-user-bubble-bg: #eeeeef;
   --peek-user-bubble-border: transparent;
   --peek-user-bubble-text: #1a1a1a;
   --peek-user-bubble-radius: 18px;
-  --peek-user-bubble-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  --peek-user-bubble-shadow: 0 1px 1px rgb(16 18 24 / 4%), 0 1px 3px rgb(16 18 24 / 4%);
   --peek-warning: #8a6500;
   --peek-danger: #c42b1c;
   --peek-success: #18794e;
   --peek-info: #006ab1;
   --peek-focus: #111111;
-  --peek-shadow: rgb(0 0 0 / 18%);
+  --peek-shadow: rgb(16 18 24 / 18%);
   --peek-composer-fill: var(--peek-list-bg);
   --peek-interaction-fill: var(--peek-composer-fill);
   --peek-composer-border: color-mix(in srgb, var(--peek-text) 9%, transparent);
   --peek-composer-border-focus: var(--peek-composer-border);
   --peek-composer-shadow: none;
   --peek-composer-shadow-focus: none;
-  --peek-pane-shadow: -2px 1px 8px color-mix(in srgb, var(--peek-shadow) 22%, transparent);
+  --peek-pane-shadow:
+    -1px 0 0 color-mix(in srgb, var(--peek-shadow) 14%, transparent),
+    -6px 2px 20px color-mix(in srgb, var(--peek-shadow) 16%, transparent);
   --workbench-glass-fill: color-mix(
     in srgb,
-    var(--peek-sidebar, #f3f3f3) var(--workbench-glass-opacity, 82%),
+    var(--peek-sidebar, #f1f1f2) var(--workbench-glass-opacity, 82%),
     transparent
   );
   --workbench-glass-fill-covering: color-mix(
     in srgb,
-    var(--peek-sidebar, #f3f3f3) 98%,
+    var(--peek-sidebar, #f1f1f2) 98%,
     transparent
   );
   --peek-scrollbar: rgba(0, 0, 0, 0.12);
@@ -90,57 +92,59 @@ html[data-theme-mode="light"] {
 
 html[data-theme="dark"],
 html[data-theme-mode="dark"] {
-  --peek-bg: #141414;
-  --peek-sidebar: #101010;
-  --peek-surface: #1c1c1c;
-  --peek-input-bg: #242424;
+  --peek-bg: #151516;
+  --peek-sidebar: #0f0f10;
+  --peek-surface: #1d1d1f;
+  --peek-input-bg: #252527;
   --peek-text: #e8e8e8;
   --peek-muted: #9a9a9a;
   --peek-faint: #6e6e6e;
   --peek-accent: #f5f5f5;
-  --peek-accent-fg: #141414;
-  --peek-border: rgba(255, 255, 255, 0.1);
-  --peek-strong-border: rgba(255, 255, 255, 0.18);
+  --peek-accent-fg: #151516;
+  --peek-border: rgba(255, 255, 255, 0.09);
+  --peek-strong-border: rgba(255, 255, 255, 0.16);
   --peek-icon: #e0e0e0;
   --peek-icon-muted: #8a8a8a;
   --peek-icon-accent: var(--peek-accent);
   --peek-icon-glow: none;
   --peek-active-fg: #ffffff;
-  --peek-list-bg: #1c1c1c;
-  --peek-list-active: #2a2a2a;
+  --peek-list-bg: #1d1d1f;
+  --peek-list-active: #2b2b2e;
   --peek-placeholder: #737373;
-  --peek-send-bg: #2e2e2e;
+  --peek-send-bg: #2f2f32;
   --peek-send-fg: #c4c4c4;
   --peek-send-active-bg: #f5f5f5;
-  --peek-send-active-fg: #141414;
-  --peek-primary-foreground: #141414;
-  --peek-user-bubble-bg: #2a2a2a;
+  --peek-send-active-fg: #151516;
+  --peek-primary-foreground: #151516;
+  --peek-user-bubble-bg: #2b2b2e;
   --peek-user-bubble-border: transparent;
   --peek-user-bubble-text: #f0f0f0;
   --peek-user-bubble-radius: 18px;
-  --peek-user-bubble-shadow: 0 1px 3px rgb(0 0 0 / 36%);
+  --peek-user-bubble-shadow:
+    0 1px 2px rgb(0 0 0 / 30%), inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
   --peek-warning: #d4a017;
   --peek-danger: #e85d5d;
   --peek-success: #5dba83;
   --peek-info: #6cb6ff;
   --peek-focus: #f5f5f5;
   --peek-shadow: rgb(0 0 0 / 48%);
-  --peek-composer-fill: #222222;
+  --peek-composer-fill: #212123;
   --peek-interaction-fill: var(--peek-composer-fill);
   --peek-composer-border: color-mix(in srgb, var(--peek-text) 12%, transparent);
   --peek-composer-border-focus: var(--peek-composer-border);
   --peek-composer-shadow: none;
   --peek-composer-shadow-focus: none;
   --peek-pane-shadow:
-    -2px 1px 10px rgb(0 0 0 / 32%), inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+    -1px 0 0 rgb(0 0 0 / 40%), -8px 2px 24px rgb(0 0 0 / 30%),
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
   --workbench-glass-fill: color-mix(
     in srgb,
-    var(--peek-sidebar, #101010) var(--workbench-glass-opacity, 82%),
+    var(--peek-sidebar, #0f0f10) var(--workbench-glass-opacity, 82%),
     transparent
   );
   --workbench-glass-fill-covering: color-mix(
     in srgb,
-    var(--peek-sidebar, #101010) 98%,
+    var(--peek-sidebar, #0f0f10) 98%,
     transparent
   );
   --peek-scrollbar: rgba(255, 255, 255, 0.12);
@@ -149,7 +153,7 @@ html[data-theme-mode="dark"] {
   --peek-code-muted: #8a8a8a;
   --peek-code-selection: #264f78;
   --peek-code-bg: #1a1a1a;
-  --peek-code-body-bg: #121212;
+  --peek-code-body-bg: #131314;
   --peek-code-border: rgba(255, 255, 255, 0.08);
   --peek-code-toolbar-bg: #202020;
   --peek-code-shadow: 0 1px 2px rgb(0 0 0 / 32%), 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -220,6 +224,26 @@ html[data-theme] {
   --peek-radius-md: 8px;
   --peek-radius-lg: 12px;
   --peek-radius-composer: 16px;
+  --peek-pane-radius: 20px;
+  --peek-card-radius: var(--peek-radius-lg, 12px);
+  --peek-code-radius: var(--peek-radius-lg, 12px);
+  --peek-composer-chip-radius: var(--peek-radius-md, 8px);
+  --peek-send-radius: 999px;
+
+  --peek-sidebar-text: var(--peek-text);
+  --peek-sidebar-muted: var(--peek-muted);
+  --peek-conversation-text: var(--peek-text);
+  --peek-card-text: var(--peek-text);
+  --peek-card-border: var(--peek-border);
+  --peek-card-shadow: none;
+  --peek-composer-placeholder: var(--peek-placeholder);
+  --peek-composer-chip-text: var(--peek-muted);
+  --peek-composer-chip-hover-text: var(--peek-text);
+  --peek-composer-chip-bg: transparent;
+  --peek-composer-chip-shadow: none;
+  --peek-composer-full-access-text: var(--peek-danger);
+  --peek-composer-meta-text: var(--peek-faint);
+  --peek-send-shadow: none;
 
   --peek-control-icon: 30px;
   --peek-control-row: 32px;
@@ -232,12 +256,17 @@ html[data-theme] {
   --peek-agent-font-size: 13px;
 
   --peek-elev-sm:
-    0 1px 3px color-mix(in srgb, var(--peek-shadow) 18%, transparent),
-    0 4px 12px color-mix(in srgb, var(--peek-shadow) 12%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--peek-text) 4%, transparent),
+    0 1px 2px color-mix(in srgb, var(--peek-shadow) 14%, transparent),
+    0 4px 10px -2px color-mix(in srgb, var(--peek-shadow) 12%, transparent);
   --peek-elev-md:
-    0 4px 16px color-mix(in srgb, var(--peek-shadow) 28%, transparent),
-    0 12px 32px color-mix(in srgb, var(--peek-shadow) 16%, transparent);
-  --peek-focus-ring: 0 0 0 2px color-mix(in srgb, var(--peek-accent) 28%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--peek-text) 5%, transparent),
+    0 2px 4px color-mix(in srgb, var(--peek-shadow) 12%, transparent),
+    0 8px 20px -4px color-mix(in srgb, var(--peek-shadow) 22%, transparent),
+    0 20px 40px -12px color-mix(in srgb, var(--peek-shadow) 20%, transparent);
+  --peek-focus-ring:
+    0 0 0 1px color-mix(in srgb, var(--peek-bg) 90%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--peek-accent) 24%, transparent);
 }
 
 /* Icons styling inheritance and custom glow */

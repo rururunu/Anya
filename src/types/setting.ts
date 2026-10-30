@@ -82,7 +82,6 @@ export type CategoryId =
   | "mcp"
   | "skills"
   | "pinTools"
-  | "pet"
   | "workspace"
   | "history"
   | "archive"

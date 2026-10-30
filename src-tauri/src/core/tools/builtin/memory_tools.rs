@@ -1,15 +1,11 @@
 //! Cross-chat memory builtin tools.
 
-use std::sync::Arc;
-
 use serde_json::{json, Value};
 
 use crate::core::tools::context::{Tool, ToolContext};
 use crate::core::tools::error::ToolError;
 
-pub(super) struct SaveMemoryTool {
-    pub memory: Arc<crate::core::tools::memory::MemoryStore>,
-}
+pub(super) struct SaveMemoryTool;
 
 impl Tool for SaveMemoryTool {
     fn name(&self) -> &str {
@@ -28,17 +24,15 @@ impl Tool for SaveMemoryTool {
             "required": ["title", "content"]
         })
     }
-    fn execute(&self, _ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
+    fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
         let title = args["title"].as_str().unwrap_or("").to_string();
         let content = args["content"].as_str().unwrap_or("").to_string();
-        let id = self.memory.save(title, content)?;
+        let id = crate::core::bots::memory_for_session(&ctx.session_id).save(title, content)?;
         Ok(format!("saved id={id}"))
     }
 }
 
-pub(super) struct SearchMemoryTool {
-    pub memory: Arc<crate::core::tools::memory::MemoryStore>,
-}
+pub(super) struct SearchMemoryTool;
 
 impl Tool for SearchMemoryTool {
     fn name(&self) -> &str {
@@ -57,14 +51,13 @@ impl Tool for SearchMemoryTool {
     fn read_only(&self) -> bool {
         true
     }
-    fn execute(&self, _ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
-        self.memory.search(args["query"].as_str().unwrap_or(""))
+    fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
+        crate::core::bots::memory_for_session(&ctx.session_id)
+            .search(args["query"].as_str().unwrap_or(""))
     }
 }
 
-pub(super) struct DeleteMemoryTool {
-    pub memory: Arc<crate::core::tools::memory::MemoryStore>,
-}
+pub(super) struct DeleteMemoryTool;
 
 impl Tool for DeleteMemoryTool {
     fn name(&self) -> &str {
@@ -80,7 +73,8 @@ impl Tool for DeleteMemoryTool {
             "required": ["id"]
         })
     }
-    fn execute(&self, _ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
-        self.memory.delete(args["id"].as_str().unwrap_or(""))
+    fn execute(&self, ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
+        crate::core::bots::memory_for_session(&ctx.session_id)
+            .delete(args["id"].as_str().unwrap_or(""))
     }
 }

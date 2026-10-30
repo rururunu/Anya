@@ -189,6 +189,13 @@ impl PromptBuilder {
             "plugin-prompts",
             plugin_prompts.as_deref(),
         );
+        let bot_persona = crate::core::bots::persona_block(session_id);
+        inject_system_block(
+            &mut messages,
+            session_id,
+            "bot-persona",
+            bot_persona.as_deref(),
+        );
 
         // [5..] History（排除 pending 的空 assistant）
         let (prior, current_user) = split_current_user(history);

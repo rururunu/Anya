@@ -10,7 +10,6 @@ const standalonePrefixes: Record<string, readonly string[]> = {
   image: ["settings.image."],
   history: ["settings.history."],
   archive: ["settings.archive."],
-  pet: ["settings.pet."],
   workspace: ["workspace."],
   usage: ["usage."],
   about: ["about."],

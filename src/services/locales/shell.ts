@@ -23,7 +23,6 @@ export const shellEn = {
   "shell.profile.localUser": "Local user",
   "shell.computerUse.active": "Anya is controlling your computer",
   "shell.computerUse.stop": "Stop",
-  "shell.pet.aria": "Desktop pet",
 } as const;
 
 export type ShellI18nKey = keyof typeof shellEn;
@@ -54,7 +53,6 @@ export const shellLocales: Record<AppLanguage, ShellLocale> = {
     "shell.profile.localUser": "本地用户",
     "shell.computerUse.active": "Anya 正在操控电脑",
     "shell.computerUse.stop": "结束",
-    "shell.pet.aria": "桌面宠物",
   },
   "ja-JP": {
     "shell.search.title": "検索",
@@ -79,7 +77,6 @@ export const shellLocales: Record<AppLanguage, ShellLocale> = {
     "shell.profile.localUser": "ローカルユーザー",
     "shell.computerUse.active": "Anya がコンピューターを操作しています",
     "shell.computerUse.stop": "終了",
-    "shell.pet.aria": "デスクトップペット",
   },
   "ru-RU": {
     "shell.search.title": "Поиск",
@@ -104,7 +101,6 @@ export const shellLocales: Record<AppLanguage, ShellLocale> = {
     "shell.profile.localUser": "Локальный пользователь",
     "shell.computerUse.active": "Anya управляет вашим компьютером",
     "shell.computerUse.stop": "Остановить",
-    "shell.pet.aria": "Питомец на рабочем столе",
   },
   "de-DE": {
     "shell.search.title": "Suche",
@@ -129,7 +125,6 @@ export const shellLocales: Record<AppLanguage, ShellLocale> = {
     "shell.profile.localUser": "Lokaler Benutzer",
     "shell.computerUse.active": "Anya steuert deinen Computer",
     "shell.computerUse.stop": "Beenden",
-    "shell.pet.aria": "Desktop-Haustier",
   },
   "fr-FR": {
     "shell.search.title": "Rechercher",
@@ -154,7 +149,6 @@ export const shellLocales: Record<AppLanguage, ShellLocale> = {
     "shell.profile.localUser": "Utilisateur local",
     "shell.computerUse.active": "Anya contrôle votre ordinateur",
     "shell.computerUse.stop": "Arrêter",
-    "shell.pet.aria": "Animal de bureau",
   },
   "ko-KR": {
     "shell.search.title": "검색",
@@ -179,6 +173,5 @@ export const shellLocales: Record<AppLanguage, ShellLocale> = {
     "shell.profile.localUser": "로컬 사용자",
     "shell.computerUse.active": "Anya가 컴퓨터를 조작하고 있습니다",
     "shell.computerUse.stop": "중지",
-    "shell.pet.aria": "데스크톱 펫",
   },
 };

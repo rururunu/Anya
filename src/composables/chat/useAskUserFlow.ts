@@ -36,6 +36,8 @@ export function useAskUserFlow(options: {
   const askQuestionIndex = ref(0);
   const askAnswers = ref<Record<number, string[]>>({});
   const askUserFinishing = ref(false);
+  const askCustomInputOpen = ref(false);
+  const askCustomText = ref("");
 
   const showAskUserPicker = computed(() => {
     const session = options.askUser();
@@ -120,6 +122,15 @@ export function useAskUserFlow(options: {
     options.emitLayoutChange();
   }
 
+  function syncCustomInputDefaultState() {
+    const question = activeAskQuestion.value;
+    const hasPresetOptions = (question?.options?.length ?? 0) > 0;
+    askCustomText.value = "";
+    askCustomInputOpen.value = Boolean(
+      question && !isPlanSwitchQuestion(question) && !hasPresetOptions,
+    );
+  }
+
   function advanceAskQuestion() {
     const session = options.askUser();
     if (!session) {
@@ -129,6 +140,7 @@ export function useAskUserFlow(options: {
     if (askQuestionIndex.value < session.questions.length - 1) {
       askQuestionIndex.value += 1;
       options.selectedIndex.value = 0;
+      syncCustomInputDefaultState();
       options.emitLayoutChange();
       return;
     }
@@ -149,9 +161,45 @@ export function useAskUserFlow(options: {
     finishAskUser(answers, true);
   }
 
+  function openAskCustomInput() {
+    const skipIdx = activeAskOptions.value.findIndex((item) => item.isSkip);
+    if (skipIdx >= 0) {
+      options.selectedIndex.value = skipIdx;
+    }
+    askCustomInputOpen.value = true;
+    options.emitLayoutChange();
+  }
+
+  function closeAskCustomInput() {
+    const hasPresetOptions = (activeAskQuestion.value?.options?.length ?? 0) > 0;
+    if (!hasPresetOptions) {
+      return;
+    }
+    if (!askCustomInputOpen.value) {
+      return;
+    }
+    askCustomInputOpen.value = false;
+    options.emitLayoutChange();
+  }
+
+  function submitCustomAskAnswer(rawText?: string): boolean {
+    const text = (rawText ?? askCustomText.value).trim();
+    if (!text) {
+      return false;
+    }
+    if (!activeAskQuestion.value) {
+      return false;
+    }
+    askAnswers.value[askQuestionIndex.value] = [text];
+    askCustomInputOpen.value = false;
+    askCustomText.value = "";
+    advanceAskQuestion();
+    return true;
+  }
+
   function selectAskOption(option: AskDisplayOption) {
     if (option.isSkip) {
-      completeAskUserWithSkip();
+      openAskCustomInput();
       return;
     }
 
@@ -159,6 +207,8 @@ export function useAskUserFlow(options: {
     if (!question) {
       return;
     }
+
+    askCustomInputOpen.value = false;
 
     if (question.multiSelect) {
       const current = askAnswers.value[askQuestionIndex.value] ?? [];
@@ -177,6 +227,7 @@ export function useAskUserFlow(options: {
     if (current.length === 0) {
       return;
     }
+    askCustomInputOpen.value = false;
     advanceAskQuestion();
   }
 
@@ -187,15 +238,22 @@ export function useAskUserFlow(options: {
       askQuestionIndex.value = 0;
       askAnswers.value = {};
       options.selectedIndex.value = 0;
-      void options.syncPopupState(Boolean(requestId));
+      syncCustomInputDefaultState();
+      // Callers may pass a binding that is initialized later in the same setup.
+      queueMicrotask(() => {
+        void options.syncPopupState(Boolean(requestId));
+      });
       options.emitLayoutChange();
     },
+    { immediate: true },
   );
 
   return {
     askQuestionIndex,
     askAnswers,
     askUserFinishing,
+    askCustomInputOpen,
+    askCustomText,
     showAskUserPicker,
     askQuestionCount,
     activeAskQuestion,
@@ -207,6 +265,9 @@ export function useAskUserFlow(options: {
     askPickerRowCount,
     isAskOptionSelected,
     selectAskOption,
+    openAskCustomInput,
+    closeAskCustomInput,
+    submitCustomAskAnswer,
     confirmAskSelection,
     completeAskUserWithSkip,
     finishAskUser,

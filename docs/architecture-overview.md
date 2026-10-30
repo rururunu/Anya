@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.33                                            |
+| **Version** | v0.2.34                                            |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -323,7 +323,7 @@ sequenceDiagram
 
 | Module              | Path                                        | Role                                                                                                                                                                                                             |
 | ------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Chat service        | `core/chat/service/`                        | Entry: persist messages, resolve context/model, start or soft-inject (`mod.rs` façade)                                                                                                                           |
+| Chat service        | `core/chat/service/`                        | Entry: persist messages, resolve context/model, start a new turn (reject when one is already active; `mod.rs` façade)                                                                                            |
 | Stream manager      | `core/chat/stream/`                         | Background task, cancel, stream aggregation, UI events, timeline text                                                                                                                                            |
 | Agent runner        | `core/chat/agent.rs`                        | **Primary** model↔tools loop                                                                                                                                                                                     |
 | Agent loop policies | `core/chat/agent_loop/`                     | stream_turn, tools, challenge, compact, post_edit_verify, soft_inject, failure                                                                                                                                   |
@@ -331,7 +331,7 @@ sequenceDiagram
 | DB / journal        | `core/chat/db/`, `core/chat/journal.rs`     | Schema, save/load, crash recovery (`db/{schema,messages,sessions,tool_activity}`)                                                                                                                                |
 | Prompts (markdown)  | `core/chat/prompts/`, `prompts/*.md`        | System / tools / policies / skills markdown (`include_str!`)                                                                                                                                                     |
 | Prompt builder      | `core/chat/prompt/`                         | Slot assembly (`PromptBuilder` + `slots`) for KV-cache-stable prefixes; volatile + `#skill` chips on user tail; agent-state append-only; tool schemas frozen per turn (DeepSeek disk cache = exact prefix units) |
-| Agent runtime       | `core/agent/runtime/`                       | Run state machine, cancel, soft-inject queue, debug                                                                                                                                                              |
+| Agent runtime       | `core/agent/runtime/`                       | Run state machine, cancel, debug                                                                                                                                                                                 |
 | AI providers        | `core/ai/`                                  | Chat provider registry, DeepSeek/Gemini, multimodal; **Images API** is separate (`image_gen`)                                                                                                                    |
 | DeepSeek / OpenAI   | `core/ai/deepseek/`                         | `provider`, `messages/`, `stream/`, `anthropic`, `models`, `multimodal`                                                                                                                                          |
 | Shell jobs          | `core/tools/shell_jobs/`                    | Foreground/background shell process lifecycle and output                                                                                                                                                         |
@@ -400,7 +400,7 @@ sequenceDiagram
   FE->>IPC: invoke("chat")
   IPC->>CS: send(session, message, prefs)
   alt active assistant for session
-    CS->>AR: soft_inject
+    CS-->>FE: reject (TurnInProgress)
   else new turn
     CS->>CM: persist user + pending assistant
     CS->>AR: create_run + collect_context
@@ -423,7 +423,7 @@ sequenceDiagram
   end
 ```
 
-Mid-turn follow-up takes the `soft_inject` branch and does not create a new assistant bubble.
+Queued "Send now" cancels the current turn first, then follows the new-turn path above.
 
 ### 6.2 Frontend projection
 
@@ -462,7 +462,7 @@ and existing journal/checkpoints; it does not resume execution after an app rest
 ```text
 commands/chat.rs::chat
   → ChatService::send
-      → AgentRuntime::{create_run, collect_context} | soft_inject
+      → AgentRuntime::{create_run, collect_context}
       → StreamManager::spawn
           → AgentRunner::run
               → agent_loop::collect_stream_turn
@@ -505,7 +505,7 @@ stateDiagram-v2
 | `mid_turn_compact` | Context-window pressure compaction (mechanical summary pins goals/paths; may fold append-only agent-state)                                                       |
 | `task_state`       | Runtime task memory; injects append-only `agent-state-*` user tips (never relocate mid-history)                                                                  |
 | `post_edit_verify` | After a successful file mutation, run a light check; **only `exit_code=0` counts**; feed result as **system text** (not `role=tool`)                             |
-| `soft_inject`      | Merge queued user follow-ups at a safe boundary (append-only)                                                                                                    |
+| `soft_inject`      | The loop can still drain an internal follow-up queue. Composer "Send now" does not use it: it cancels the current turn and starts a new one                      |
 | `failure`          | Consecutive / identical tool-error circuit breaker                                                                                                               |
 
 Tool schemas for the turn are **frozen on the first provider step** (`AgentRunner`
@@ -604,8 +604,8 @@ Defense in depth: `ChatService` selects `tools.image_mode()`, and
 
 |                | AgentRunner                                 | AgentRuntime                                                        |
 | -------------- | ------------------------------------------- | ------------------------------------------------------------------- |
-| Question       | “What does the model do next?”              | “Is this run active / cancelled / injectible?”                      |
-| Owns           | Stream turns, tool batches, completion gate | Run id, epoch, soft-inject queue, event bridge                      |
+| Question       | “What does the model do next?”              | “Is this run active / cancelled?”                                   |
+| Owns           | Stream turns, tool batches, completion gate | Run id, epoch, cancellation, event bridge                           |
 | Call direction | Invoked by `StreamManager`                  | Creates run; delegates streaming to `StreamManager` → `AgentRunner` |
 
 Planner / executor under `core/agent/` support run-level plan steps and a tool
@@ -699,13 +699,13 @@ cache hits require a **full match** of a persisted prefix unit (Sliding Window
 Attention). Construction takes seconds; hits are best-effort. Practical rules
 we enforce in-product:
 
-| Rule                               | Implementation                                                         |
-| ---------------------------------- | ---------------------------------------------------------------------- |
-| Append-only history inside a turn  | Soft-inject and tool results only push; never rewrite earlier messages |
-| Never relocate mid-history state   | `task_state::inject` updates the tip or appends `agent-state-{n}`      |
-| Stable `tools` for the turn        | First step’s schemas frozen on `AgentRunner`                           |
-| Volatile UI context off the prefix | Cursor / selection / git / clipboard / `#skill` chips on user tail     |
-| Deterministic plugin prose         | Plugin prompt blocks sorted before assemble                            |
+| Rule                               | Implementation                                                     |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| Append-only history inside a turn  | Tool results only push; never rewrite earlier messages             |
+| Never relocate mid-history state   | `task_state::inject` updates the tip or appends `agent-state-{n}`  |
+| Stable `tools` for the turn        | First step’s schemas frozen on `AgentRunner`                       |
+| Volatile UI context off the prefix | Cursor / selection / git / clipboard / `#skill` chips on user tail |
+| Deterministic plugin prose         | Plugin prompt blocks sorted before assemble                        |
 
 **Hit-rate expectations:** multi-step Agent turns often land ~85–95% on steps
 after the cold first call when the prefix stays intact. Session aggregates are
@@ -907,7 +907,7 @@ Call diagnostics go to configuration-directory JSONL files; `scripts/deepseek-me
 
 `services/settings_store.rs` moves embedded theme images into content-addressed files under the app settings directory's `theme-backgrounds` folder. Runtime settings retain file paths, while readable images remain embedded in portable profile exports. `commands/settings.rs` performs settings I/O on a blocking worker instead of the window event thread.
 
-`SidebarUpdateButton.vue` appears when `stores/updater.ts` reports an available version. `WorkbenchUpdateDialog.vue` shows release notes before install and shares `UpdaterProgress.vue` with About settings. `DesktopPetSvg.vue` renders the pet; `useDesktopPet.ts` and `petWindowBounds.ts` clamp its position to available monitors and provide edge feedback.
+`SidebarUpdateButton.vue` appears when `stores/updater.ts` reports an available version. `WorkbenchUpdateDialog.vue` shows release notes before install and shares `UpdaterProgress.vue` with About settings.
 
 ## 16. Related source entry points
 
@@ -937,7 +937,6 @@ Call diagnostics go to configuration-directory JSONL files; `scripts/deepseek-me
 | Composer and sent-message editor | `src/components/chat/ChatInputBar.vue`, `UserMessageFooter.vue`                                        |
 | Overlay positioning and sizing   | `services/window.rs`, `core/context/provider/clipboard_provider.rs`, `src/layouts/Overlay.vue`         |
 | In-app updater UI                | `src/components/workbench/SidebarUpdateButton.vue`, `WorkbenchUpdateDialog.vue`, `UpdaterProgress.vue` |
-| Desktop pet                      | `src/components/pet/DesktopPetSvg.vue`, `src/composables/useDesktopPet.ts`, `petWindowBounds.ts`       |
 | Workbench glass / window radius  | `services/workbench_glass.rs`, `overlay/appearance.ts`                                                 |
 | Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                 |
 

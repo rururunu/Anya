@@ -12,7 +12,7 @@
   border: 0;
   outline: none;
   background: transparent;
-  color: var(--peek-text);
+  color: var(--peek-composer-text, var(--peek-text));
   font-family: var(--peek-font-sans);
   font-size: var(--peek-font-md, 14px);
   line-height: 24px;
@@ -32,7 +32,7 @@
   right: 0;
   left: 0;
   transform: translateY(-50%);
-  color: var(--peek-placeholder);
+  color: var(--peek-composer-placeholder, var(--peek-placeholder));
   font-weight: 500;
   line-height: inherit;
   white-space: nowrap;

@@ -59,17 +59,25 @@ function cacheCustomThemes(themes?: CustomThemeConfig[]) {
 export function readCachedCustomThemes(): CustomThemeConfig[] {
   try {
     const raw = localStorage.getItem(CUSTOM_THEMES_CACHE_KEY);
-    if (raw) {
-      if (raw.includes("data:image/")) {
-        localStorage.removeItem(CUSTOM_THEMES_CACHE_KEY);
-        return [];
-      }
-      return JSON.parse(raw);
-    }
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const themes = parsed.filter(
+      (theme): theme is CustomThemeConfig =>
+        Boolean(theme) && typeof theme === "object" && typeof theme.id === "string",
+    );
+    if (!raw.includes("data:")) return themes;
+    // An older cache may still embed wallpaper bytes. Keep the palette and
+    // drop only the image, instead of forgetting every saved theme.
+    const stripped = themes.map((theme) => {
+      if (!theme.background?.image?.startsWith("data:")) return theme;
+      return { ...theme, background: { ...theme.background, image: undefined } };
+    });
+    cacheCustomThemes(stripped);
+    return stripped;
   } catch {
-    // ignore
+    return [];
   }
-  return [];
 }
 
 /** Parse hex or rgb color string to { r, g, b } in [0, 255] */
@@ -199,6 +207,24 @@ export function harmonizeCustomTheme(theme: CustomThemeConfig): Record<string, s
   if (!tokens["--peek-faint"]) {
     tokens["--peek-faint"] = isDark ? "#64748b" : "#94a3b8";
   }
+  if (!tokens["--peek-placeholder"]) {
+    tokens["--peek-placeholder"] = tokens["--peek-faint"];
+  }
+  if (!tokens["--peek-danger"]) {
+    tokens["--peek-danger"] = isDark ? "#e85d5d" : "#c42b1c";
+  }
+  if (!tokens["--peek-warning"]) {
+    tokens["--peek-warning"] = isDark ? "#d4a017" : "#8a6500";
+  }
+  if (!tokens["--peek-success"]) {
+    tokens["--peek-success"] = isDark ? "#5dba83" : "#18794e";
+  }
+  if (!tokens["--peek-info"]) {
+    tokens["--peek-info"] = isDark ? "#6cb6ff" : "#006ab1";
+  }
+  if (!tokens["--peek-shadow"]) {
+    tokens["--peek-shadow"] = isDark ? "rgb(0 0 0 / 48%)" : "rgb(0 0 0 / 18%)";
+  }
 
   // User bubble text contrast
   const bubbleBgRgb = parseRgbColor(tokens["--peek-user-bubble-bg"]) || surfaceRgb;
@@ -267,6 +293,15 @@ export function harmonizeCustomTheme(theme: CustomThemeConfig): Record<string, s
   if (!tokens["--peek-user-bubble-shadow"]) {
     tokens["--peek-user-bubble-shadow"] = "none";
   }
+  const hasAssistantCard =
+    (tokens["--peek-assistant-bg"] && tokens["--peek-assistant-bg"] !== "transparent") ||
+    (tokens["--peek-assistant-border"] && tokens["--peek-assistant-border"] !== "transparent") ||
+    (tokens["--peek-assistant-padding"] &&
+      tokens["--peek-assistant-padding"] !== "0" &&
+      tokens["--peek-assistant-padding"] !== "0px");
+  if (hasAssistantCard && !tokens["--chat-reply-inset"]) {
+    tokens["--chat-reply-inset"] = "0px";
+  }
   if (!tokens["--peek-composer-border"]) {
     tokens["--peek-composer-border"] = isDark
       ? "color-mix(in srgb, var(--peek-text) 12%, transparent)"
@@ -293,6 +328,48 @@ export function harmonizeCustomTheme(theme: CustomThemeConfig): Record<string, s
   return tokens;
 }
 
+const CUSTOM_PROP = /^--[a-zA-Z0-9-]+$/;
+
+function cssAttributeValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/** Keep one bad token from closing the rule and hiding every theme after it. */
+function cssDeclarationValue(value: string): string {
+  const first = value.split(";")[0] ?? "";
+  const printable = Array.from(first, (ch) => (ch.charCodeAt(0) < 0x20 ? " " : ch)).join("");
+  return printable
+    .replace(/[{}]|<\/|\*\//g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function customThemeDeclarations(theme: CustomThemeConfig): string[] {
+  const harmonized = harmonizeCustomTheme(theme);
+  const declarations = Object.entries(harmonized).flatMap(([prop, val]) => {
+    if (!CUSTOM_PROP.test(prop)) return [];
+    const safe = cssDeclarationValue(String(val));
+    return safe ? [`  ${prop}: ${safe};`] : [];
+  });
+  if (theme.background?.image && !isLocalImagePath(theme.background.image)) {
+    const resolvedUrl = cssDeclarationValue(resolveChatImageSrc(theme.background.image));
+    if (resolvedUrl) {
+      declarations.push(`  --theme-bg-image: url(${JSON.stringify(resolvedUrl)});`);
+    }
+  }
+  if (typeof theme.background?.opacity === "number" && Number.isFinite(theme.background.opacity)) {
+    declarations.push(`  --theme-bg-opacity: ${theme.background.opacity};`);
+  }
+  if (typeof theme.background?.blur === "number" && Number.isFinite(theme.background.blur)) {
+    declarations.push(`  --theme-bg-blur: ${theme.background.blur}px;`);
+  }
+  if (theme.background?.fit) {
+    const fit = cssDeclarationValue(theme.background.fit);
+    if (fit) declarations.push(`  --theme-bg-fit: ${fit};`);
+  }
+  return declarations;
+}
+
 export function ensureCustomThemeStyleSheet(themes: CustomThemeConfig[] = []): void {
   if (typeof document === "undefined") return;
   let styleEl = document.getElementById(CUSTOM_STYLE_TAG_ID) as HTMLStyleElement | null;
@@ -307,30 +384,17 @@ export function ensureCustomThemeStyleSheet(themes: CustomThemeConfig[] = []): v
     return;
   }
 
-  const cssRules = themes
+  // `[data-theme-mode]` beats the builtin light/dark palette, which uses the
+  // same specificity as `html[data-theme="…"]` and otherwise covers custom themes.
+  styleEl.textContent = themes
     .map((theme) => {
-      const harmonized = harmonizeCustomTheme(theme);
-      const declarations = Object.entries(harmonized).map(([prop, val]) => `  ${prop}: ${val};`);
-      if (theme.background?.image) {
-        if (!isLocalImagePath(theme.background.image)) {
-          const resolvedUrl = resolveChatImageSrc(theme.background.image);
-          declarations.push(`  --theme-bg-image: url(${JSON.stringify(resolvedUrl)});`);
-        }
-        if (typeof theme.background.opacity === "number") {
-          declarations.push(`  --theme-bg-opacity: ${theme.background.opacity};`);
-        }
-        if (typeof theme.background.blur === "number") {
-          declarations.push(`  --theme-bg-blur: ${theme.background.blur}px;`);
-        }
-        if (theme.background.fit) {
-          declarations.push(`  --theme-bg-fit: ${theme.background.fit};`);
-        }
-      }
-      return `html[data-theme="${theme.id}"] {\n${declarations.join("\n")}\n}`;
+      const declarations = customThemeDeclarations(theme);
+      if (!theme.id || declarations.length === 0) return "";
+      const selector = `html[data-theme="${cssAttributeValue(theme.id)}"][data-theme-mode]`;
+      return `${selector} {\n${declarations.join("\n")}\n}`;
     })
+    .filter(Boolean)
     .join("\n\n");
-
-  styleEl.textContent = cssRules;
 }
 
 function applyDocumentColorScheme(colorScheme: ColorScheme, glass: boolean) {
@@ -400,9 +464,21 @@ function dispatchThemeChange(detail: ThemeChangeDetail) {
 
 /** Apply theme by setting html[data-theme]. Does not use a `.dark` class. */
 export function applyThemeAppearance(input: ThemeAppearanceInput): ThemeState {
-  const customThemes = input.customThemes ?? readCachedCustomThemes();
-  cacheCustomThemes(input.customThemes);
-  ensureCustomThemeStyleSheet(customThemes);
+  const explicitThemes = input.customThemes;
+  let customThemes: CustomThemeConfig[];
+  if (explicitThemes) {
+    customThemes = explicitThemes;
+    cacheCustomThemes(explicitThemes);
+    ensureCustomThemeStyleSheet(explicitThemes);
+  } else {
+    customThemes = readCachedCustomThemes();
+    const sheet = document.getElementById(CUSTOM_STYLE_TAG_ID) as HTMLStyleElement | null;
+    // A boot paint may omit the theme list. Do not wipe a sheet that settings
+    // already installed when that cache is missing or still holds wallpaper bytes.
+    if (!sheet?.textContent && customThemes.length > 0) {
+      ensureCustomThemeStyleSheet(customThemes);
+    }
+  }
 
   const themeId = normalizeColorScheme(input.colorScheme);
   const language = input.language;

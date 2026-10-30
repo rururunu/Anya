@@ -38,7 +38,6 @@ fn clear_root(path: &Path, preserve_settings: bool) -> std::io::Result<()> {
                     | "skills"
                     | "mcp-auth"
                     | "icons"
-                    | "desktop-pet.json"
                     | "workbench-window.json"
                     | "remote_gateway.json"
                     | "remote_devices.json"

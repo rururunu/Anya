@@ -50,7 +50,7 @@ impl ChatService {
         }
     }
 
-    /// Sends a user message and starts (or soft-injects into) an agent turn.
+    /// Sends a user message and starts an agent turn.
     #[tracing::instrument(
         target = "peek.agent",
         name = "chat.send",
@@ -88,33 +88,14 @@ impl ChatService {
         let session_id = session_id.unwrap_or_else(|| DEFAULT_SESSION_ID.to_string());
         shared_session_origin_store().mark(&session_id, origin);
 
-        // Soft-inject only when the client explicitly asks (staged chip 追加 /
-        // guide). Auto-flush after a turn must never ride a still-active or
-        // cancelling agent — that duplicated sends and attached queue-continue
-        // messages onto an already-finished assistant.
-        if let Some(assistant_message_id) =
-            self.agent_runtime.active_assistant_for_session(&session_id)
+        // A running turn is never appended to. The queue action cancels it
+        // first; a send that still finds an active assistant is rejected.
+        if self
+            .agent_runtime
+            .active_assistant_for_session(&session_id)
+            .is_some()
         {
-            if overrides.soft_inject {
-                match self.agent_runtime.soft_inject(&session_id, content.clone()) {
-                    Ok(_) => {
-                        return self.persist_soft_inject(
-                            &session_id,
-                            content,
-                            &assistant_message_id,
-                        );
-                    }
-                    Err(ChatError::MessageNotFound) => {
-                        tracing::warn!(
-                            session_id = %session_id,
-                            "soft inject: agent already finished; starting a new turn"
-                        );
-                    }
-                    Err(error) => return Err(error),
-                }
-            } else {
-                return Err(ChatError::TurnInProgress);
-            }
+            return Err(ChatError::TurnInProgress);
         }
 
         let known_workspaces = self.workspace_manager.list();
@@ -253,11 +234,13 @@ impl ChatService {
             .workspace
             .as_ref()
             .map(|workspace| std::path::PathBuf::from(&workspace.root));
+        let recall_session_id = session_id.clone();
         let task_rules_result = tauri::async_runtime::spawn_blocking(move || {
             crate::core::rules::RuleEngine::prepare_task(
                 &recall_text_for_rules,
                 workspace_root.as_deref(),
                 is_new_session,
+                &recall_session_id,
             )
         })
         .await;
@@ -650,36 +633,6 @@ impl ChatService {
         }
     }
 
-    fn persist_soft_inject(
-        &self,
-        session_id: &str,
-        content: String,
-        assistant_message_id: &str,
-    ) -> Result<ChatSendResult, ChatError> {
-        // Marker persists soft-inject identity across history reload.
-        const SOFT_INJECT_MARKER: &str = "<!--peek:soft-inject-->\n";
-        let stored = format!("{SOFT_INJECT_MARKER}{content}");
-        let user_message = create_message(session_id, Role::User, stored, MessageStatus::Done);
-        self.conversation.append(session_id, user_message.clone());
-        self.conversation.append_work_timeline_inject(
-            session_id,
-            assistant_message_id,
-            &user_message.id,
-            &content,
-        );
-
-        // Do not emit ChatStarted: that would re-project the assistant bubble and can
-        // wipe in-flight streamed content. Frontend already staged the user message.
-        Ok(ChatSendResult {
-            session_id: session_id.to_string(),
-            user_message_id: user_message.id,
-            assistant_message_id: assistant_message_id.to_string(),
-            agent_run_id: self
-                .agent_runtime
-                .run_for_message(assistant_message_id)
-                .map(|run| run.id),
-        })
-    }
 }
 
 fn append_plan_checklist(

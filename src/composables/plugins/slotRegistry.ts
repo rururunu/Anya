@@ -27,7 +27,7 @@ export type SlotEntry = {
 
 export type AnchorDescriptor = {
   id: string;
-  /** Surfaces (workbench/peek/pet/settings) this anchor is meaningful on. */
+  /** Surfaces (workbench/peek/settings) this anchor is meaningful on. */
   surfaces: string[];
   multiplicity: SlotMultiplicity;
 };

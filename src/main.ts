@@ -91,7 +91,6 @@ async function bootstrap() {
     (windowLabel === "overlay" || windowLabel.startsWith("overlay-")) &&
     !windowLabel.startsWith("overlay-preview-");
 
-  const isDesktopPet = windowLabel === "desktop-pet";
   const isComputerUseHud = windowLabel === "computer-use-hud";
   const isComputerUseBanner = windowLabel === "computer-use-banner";
   const isComputerUseSurface = isComputerUseHud || isComputerUseBanner;
@@ -147,14 +146,10 @@ async function bootstrap() {
     markBootPhase("first paint");
     hideBootSplash({ fadeMs: 0 });
     markBootPhase("splash hidden");
-  } else if (isDesktopPet || isComputerUseSurface) {
+  } else if (isComputerUseSurface) {
     markPeekWindow();
     hideBootSplash({ fadeMs: 0 });
-    const route = isComputerUseBanner
-      ? "/computer-use-banner"
-      : isComputerUseHud
-        ? "/computer-use-hud"
-        : "/desktop-pet";
+    const route = isComputerUseBanner ? "/computer-use-banner" : "/computer-use-hud";
     void router.replace(route);
     applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     await settingStore.load();
@@ -192,12 +187,12 @@ async function bootstrap() {
   if (windowLabel.startsWith("overlay-preview-")) {
     document.documentElement.classList.add("peek-window");
     await router.replace("/image-preview");
-  } else if (isOverlay || isDesktopPet || isComputerUseSurface) {
-    // Overlay / pet / computer-use surfaces were mounted eagerly above.
+  } else if (isOverlay || isComputerUseSurface) {
+    // Overlay and computer-use surfaces were mounted eagerly above.
   }
 
   await router.isReady();
-  if (windowLabel !== "workbench" && !isOverlay && !isDesktopPet && !isComputerUseSurface) {
+  if (windowLabel !== "workbench" && !isOverlay && !isComputerUseSurface) {
     app.mount("#app");
     markBootPhase("mounted");
     await waitForNextPaint();

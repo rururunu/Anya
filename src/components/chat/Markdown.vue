@@ -530,9 +530,10 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 .markdown-body :deep(pre:not(.code-block pre)) {
   margin: 0.75em 0;
   padding: 12px 16px;
-  border: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
-  border-radius: 12px;
+  border: 1px solid var(--peek-code-border, color-mix(in srgb, var(--peek-text) 8%, transparent));
+  border-radius: var(--peek-code-radius, var(--peek-radius-lg, 12px));
   background: var(--peek-code-body-bg);
+  box-shadow: var(--peek-code-shadow, none);
   overflow-x: auto;
   line-height: 1.65;
   tab-size: 2;
@@ -541,9 +542,10 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 .markdown-body :deep(.code-block) {
   margin: 0.85em 0;
   overflow: clip;
-  border: 1px solid color-mix(in srgb, var(--peek-text) 8%, transparent);
-  border-radius: 12px;
+  border: 1px solid var(--peek-code-border, color-mix(in srgb, var(--peek-text) 8%, transparent));
+  border-radius: var(--peek-code-radius, var(--peek-radius-lg, 12px));
   background: var(--peek-code-body-bg);
+  box-shadow: var(--peek-code-shadow, none);
 }
 
 .markdown-body :deep(.code-block-toolbar) {
@@ -561,9 +563,9 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   padding: 6px 8px 2px 14px;
   overflow: hidden;
   line-height: 1;
-  background: var(--peek-code-body-bg);
-  border-top-left-radius: 11px;
-  border-top-right-radius: 11px;
+  background: var(--peek-code-toolbar-bg, var(--peek-code-body-bg));
+  border-top-left-radius: calc(var(--peek-code-radius, var(--peek-radius-lg, 12px)) - 1px);
+  border-top-right-radius: calc(var(--peek-code-radius, var(--peek-radius-lg, 12px)) - 1px);
 }
 
 .markdown-body :deep(.code-block.is-stuck),
@@ -716,7 +718,7 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
 }
 
 .markdown-body :deep(code) {
-  font-family: var(--font-mono);
+  font-family: var(--peek-font-mono, var(--font-mono));
   font-size: 12.5px;
   line-height: 1.65;
 }

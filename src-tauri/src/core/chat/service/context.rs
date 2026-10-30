@@ -115,8 +115,12 @@ impl ChatService {
             .filter(|message| matches!(message.role, Role::User))
             .count()
             <= 1;
-        let task_rules =
-            RuleEngine::prepare_task(recall_text, workspace_root.as_deref(), is_new_session);
+        let task_rules = RuleEngine::prepare_task(
+            recall_text,
+            workspace_root.as_deref(),
+            is_new_session,
+            session_id.unwrap_or(""),
+        );
 
         let session_id = session_id.unwrap_or("");
         let plan_mode = !session_id.is_empty() && shared_plan_mode_store().is_active(session_id);

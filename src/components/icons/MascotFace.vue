@@ -2,13 +2,17 @@
   <span
     ref="rootRef"
     class="mascot-face"
-    :class="[`st-${visualState}`, { interactive, pleased, turning }]"
+    :class="[`st-${visualState}`, { interactive, pleased, turning, 'eyes-only': eyesOnly }]"
     :role="alt ? 'img' : undefined"
     :aria-label="alt || undefined"
     :aria-hidden="alt ? undefined : true"
     @click="handleClick"
   >
-    <svg viewBox="64 76 384 384" xmlns="http://www.w3.org/2000/svg" focusable="false">
+    <svg
+      :viewBox="eyesOnly ? '112 160 288 216' : '64 76 384 384'"
+      xmlns="http://www.w3.org/2000/svg"
+      focusable="false"
+    >
       <!-- No clip-path on purpose: the gaze range keeps the eyes well inside the body,
            and shared/hidden clipPath ids across instances can clip everything away. -->
       <g class="mascot-all" :class="{ wiggle }">
@@ -20,7 +24,13 @@
               <g class="mascot-tool-bob">
                 <!-- ask: a ringing phone beside its head -->
                 <template v-if="tool === 'phone'">
-                  <g transform="translate(440 262) rotate(16)">
+                  <g
+                    :transform="
+                      eyesOnly
+                        ? 'translate(358 262) rotate(14) scale(0.62)'
+                        : 'translate(440 262) rotate(16)'
+                    "
+                  >
                     <rect class="mp-obj" x="-32" y="-60" width="64" height="120" rx="16" />
                     <rect class="mp-dot" x="-22" y="-44" width="44" height="72" rx="6" />
                     <circle class="mp-dot" cx="0" cy="44" r="5" />
@@ -33,7 +43,13 @@
 
                 <!-- agent: a chunky wrench poking out from behind -->
                 <template v-else-if="tool === 'wrench'">
-                  <g transform="translate(424 352) rotate(42)">
+                  <g
+                    :transform="
+                      eyesOnly
+                        ? 'translate(354 294) rotate(36) scale(0.62)'
+                        : 'translate(424 352) rotate(42)'
+                    "
+                  >
                     <rect class="mp-obj" x="-14" y="-40" width="28" height="150" rx="14" />
                     <circle class="mp-obj" cx="0" cy="-62" r="34" />
                     <path class="mp-dot" d="M-12 -104h24v34a12 12 0 0 1-24 0z" />
@@ -42,7 +58,13 @@
 
                 <!-- plan: a clipboard with a checklist -->
                 <template v-else-if="tool === 'clipboard'">
-                  <g transform="translate(438 366) rotate(-12)">
+                  <g
+                    :transform="
+                      eyesOnly
+                        ? 'translate(362 284) rotate(-10) scale(0.6)'
+                        : 'translate(438 366) rotate(-12)'
+                    "
+                  >
                     <rect class="mp-obj" x="-52" y="-66" width="104" height="132" rx="14" />
                     <rect class="mp-dot" x="-22" y="-78" width="44" height="26" rx="9" />
                     <rect class="mp-line" x="-32" y="-34" width="18" height="18" rx="5" />
@@ -58,7 +80,13 @@
 
                 <!-- image: a fat paintbrush with a drop of paint -->
                 <template v-else-if="tool === 'brush'">
-                  <g transform="translate(432 336) rotate(44)">
+                  <g
+                    :transform="
+                      eyesOnly
+                        ? 'translate(358 292) rotate(38) scale(0.62)'
+                        : 'translate(432 336) rotate(44)'
+                    "
+                  >
                     <rect class="mp-obj" x="-12" y="-20" width="24" height="150" rx="12" />
                     <rect class="mp-obj" x="-17" y="-52" width="34" height="34" rx="6" />
                     <path class="mp-obj" d="M-17 -52L-24 -96Q0 -118 24 -96L17 -52Z" />
@@ -69,20 +97,20 @@
             </g>
           </Transition>
 
-          <path class="mascot-body" :d="BLOB_PATH" />
+          <path v-if="!eyesOnly" class="mascot-body" :d="BLOB_PATH" />
           <!-- Every eye variant is always in the DOM; the state class picks which one shows,
              so switching states cross-fades instead of re-mounting. The extra wrapper
              carries the "turn around" animation played when the state changes. -->
           <g class="mascot-face-turn">
             <g class="mascot-eyes" :style="eyesStyle">
-              <g transform="translate(208 290)">
+              <g transform="translate(208 268)">
                 <rect
                   class="mascot-eye eye-l"
                   :class="{ blink: blinking }"
                   x="-17"
-                  y="-46"
+                  y="-44"
                   width="34"
-                  height="92"
+                  height="88"
                   rx="17"
                 />
                 <path class="mascot-smile-eye" d="M-26 10A26 26 0 0 1 26 10" />
@@ -92,14 +120,14 @@
                 </g>
                 <path class="mascot-ouch-eye" d="M-14 -18L14 0L-14 18" />
               </g>
-              <g transform="translate(304 290)">
+              <g transform="translate(304 268)">
                 <rect
                   class="mascot-eye eye-r"
                   :class="{ blink: blinking }"
                   x="-17"
-                  y="-46"
+                  y="-44"
                   width="34"
-                  height="92"
+                  height="88"
                   rx="17"
                 />
                 <path class="mascot-smile-eye" d="M-26 10A26 26 0 0 1 26 10" />
@@ -156,6 +184,8 @@ const props = withDefaults(
     busy?: boolean;
     /** Item carried behind the lower right of the body; null hides it. */
     tool?: MascotTool | null;
+    /** Render only the expressive eyes without the outer body or tool prop. */
+    eyesOnly?: boolean;
   }>(),
   {
     alt: "",
@@ -166,13 +196,14 @@ const props = withDefaults(
     turnOnChange: true,
     busy: false,
     tool: null,
+    eyesOnly: false,
   },
 );
 
 const emit = defineEmits<{ click: [] }>();
 
 const BLOB_PATH =
-  "M256 108C356 108 428 164 428 272C428 388 381 428 256 428C131 428 84 388 84 272C84 164 156 108 256 108Z";
+  "M256 108C344 108 416 180 416 268C416 356 344 428 256 428C168 428 96 356 96 268C96 180 168 108 256 108Z";
 
 /* How far (in SVG units) the eyes may travel from centre. */
 const MAX_DX = 30;
@@ -474,6 +505,17 @@ onBeforeUnmount(() => {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.eyes-only .mascot-eye,
+.eyes-only .mascot-round-eye {
+  fill: var(--peek-text);
+}
+.eyes-only .mascot-smile-eye,
+.eyes-only .mascot-ouch-eye {
+  stroke: var(--peek-text);
+}
+.eyes-only .mascot-glint {
+  fill: var(--peek-bg);
+}
 
 /* ---- states ---- */
 .st-thinking .mascot-eyes {
@@ -558,7 +600,7 @@ onBeforeUnmount(() => {
   transform-origin: 256px 268px;
 }
 .mascot-face-turn {
-  transform-origin: 256px 290px;
+  transform-origin: 256px 268px;
 }
 .turning .mascot-turner {
   animation: mascot-turn-body 600ms ease-in-out both;

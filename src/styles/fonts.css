@@ -16,11 +16,13 @@
   --font-sans-cjk:
     "PingFang SC", "Microsoft YaHei", "微软雅黑", "Microsoft YaHei UI", "Hiragino Sans GB",
     "Noto Sans SC", sans-serif;
-  --peek-font-sans: var(--font-sans-latin), var(--font-sans-cjk);
-  --font-mono:
+  --settings-font-sans: var(--font-sans-latin), var(--font-sans-cjk);
+  --peek-font-sans: var(--settings-font-sans);
+  --settings-font-mono:
     "Fira Code", "Cascadia Code", "Cascadia Mono", "JetBrains Mono Variable", Consolas, "SF Mono",
     Menlo, ui-monospace, monospace;
-  --peek-font-mono: var(--font-mono);
+  --peek-font-mono: var(--settings-font-mono);
+  --font-mono: var(--peek-font-mono);
 }
 
 html {

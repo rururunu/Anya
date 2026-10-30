@@ -2,7 +2,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Effect, EffectState } from "@tauri-apps/api/window";
 
 function isPeekWindow(label: string) {
-  return label === "overlay" || label.startsWith("overlay-") || label === "desktop-pet";
+  return label === "overlay" || label.startsWith("overlay-");
 }
 
 export async function refreshOverlayWindowBackground() {

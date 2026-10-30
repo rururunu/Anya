@@ -3,7 +3,6 @@ pub mod ask;
 pub mod chat;
 pub mod computer_use;
 pub mod deepseek_files;
-pub mod desktop_pet;
 pub mod diff;
 pub mod harness;
 pub mod icons;

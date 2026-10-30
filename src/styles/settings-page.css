@@ -63,10 +63,11 @@
 
 .settings-card {
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 55%, transparent);
-  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--peek-card-border, var(--peek-border)) 55%, transparent);
+  border-radius: var(--peek-card-radius, var(--peek-radius-lg, 14px));
   background: var(--peek-list-bg);
-  box-shadow: none;
+  color: var(--peek-card-text, var(--peek-text));
+  box-shadow: var(--peek-card-shadow, none);
 }
 
 html.chrome-frosted-glass .settings-row:hover,
@@ -104,7 +105,7 @@ html.has-custom-bg .settings-row:hover,
   gap: 5px;
   max-width: 100%;
   margin: 0;
-  color: var(--peek-text);
+  color: var(--peek-card-text, var(--peek-text));
   font-size: var(--peek-font-md, 13px);
   font-weight: 600;
   line-height: 1.35;
@@ -294,9 +295,10 @@ html.has-custom-bg .settings-row:hover,
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: var(--peek-radius-lg, 12px);
+  border: 1px solid color-mix(in srgb, var(--peek-card-border, var(--peek-border)) 88%, transparent);
+  border-radius: var(--peek-card-radius, var(--peek-radius-lg, 12px));
   background: var(--peek-list-bg);
+  box-shadow: var(--peek-card-shadow, none);
 }
 
 .settings-nav-row {

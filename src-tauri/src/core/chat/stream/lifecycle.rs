@@ -28,7 +28,6 @@ pub(crate) struct ActiveTask {
     pub session_id: String,
     pub epoch: u64,
     pub cancelled: Arc<AtomicBool>,
-    pub soft_queue: Arc<Mutex<VecDeque<String>>>,
     pub content: Arc<Mutex<String>>,
     pub reasoning: Arc<Mutex<String>>,
 }
@@ -85,7 +84,6 @@ impl StreamManager {
                     session_id: session_id.clone(),
                     epoch,
                     cancelled: cancelled.clone(),
-                    soft_queue: Arc::clone(&soft_queue),
                     content: Arc::clone(&content_ref),
                     reasoning: Arc::clone(&reasoning_ref),
                 },

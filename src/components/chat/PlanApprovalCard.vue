@@ -160,9 +160,11 @@ function statusClass(status: string) {
   width: 100%;
   margin: 8px 0 4px;
   padding: 8px 10px 8px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--peek-card-border, var(--peek-border)) 88%, transparent);
+  border-radius: var(--peek-card-radius, var(--peek-radius-lg, 12px));
   background: color-mix(in srgb, var(--peek-text) 3.5%, var(--peek-bg, var(--peek-surface)));
+  color: var(--peek-card-text, var(--peek-text));
+  box-shadow: var(--peek-card-shadow, none);
   box-sizing: border-box;
 }
 

@@ -372,28 +372,13 @@ deepseek.balance  {} → { configured, isAvailable?, balances: [{ currency, tota
 
 Example: `await ctx.host.rpc("deepseek.balance")`.
 
-### Desktop pet (needs `pet` permission)
-
-```
-pet.show / pet.hide / pet.toggle { visible? } / pet.visible
-pet.setSize { size: "small"|"medium"|"large" } / pet.getSize
-pet.setAppearance { mode: "mascot"|"companion"|"media"|"spritesheet", kind?, source?, config? } / pet.getAppearance / pet.clearAppearance
-pet.setMode { mode: "mascot"|"companion", config?: { accent?, variant?: "orb"|"pill", glow? } }
-pet.setSkin { kind: "image"|"video"|"lottie"|"svg"|"html", source } / pet.clearSkin   // legacy alias for media mode
-pet.setExpression { expression } / pet.clearExpression
-```
-
-`spritesheet` = ChatGPT/Codex atlas via `source` → `pet.json` next to `spritesheet.png` (transparent **1536×1872**, 8×9, frame 192×208). Rows: idle / runRight / runLeft / wave / jump / fail / wait / work / review. Agent expressions map to those rows; click plays `wave`.
-
-`companion` = built-in GPT-style glowing orb. `media` relative `source` → `anya-plugin://localhost/<id>/<source>`. Or `ctx.assets.register("pet.stage.atlas", { kind: "spritesheet", source: "…/pet.json" })` (also needs `pet`).
-
 ## Agent tools / hooks
 
 `agent.tools` → `host/main.ts` `describe` → `{ tools, hooks }`. Names are `plugin_<id>__<name>`. Cannot overlay core tools, approval, sandbox, or Plan. Hooks may **deny** a call; they cannot skip Anya gates.
 
 ## Permissions
 
-`storage` `ask_anya` `pty` `run` `fs.workspace` `fs.pick` `net` `agent.tools` `agent.hooks` `agent.prompt` `ui.workbench` `computer` `deepseek.balance` `pet`
+`storage` `ask_anya` `pty` `run` `fs.workspace` `fs.pick` `net` `agent.tools` `agent.hooks` `agent.prompt` `ui.workbench` `computer` `deepseek.balance`
 
 Optional `capabilities` (do not invent ids — `describe_contract`):
 

@@ -1,10 +1,11 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn main() {
     if let Ok(triple) = std::env::var("TARGET") {
         println!("cargo:rustc-env=TARGET_TRIPLE={triple}");
     }
+    ensure_windows_rc_tool();
     configure_debug_identity();
     configure_updater_pubkey();
     tauri_build::build();
@@ -20,6 +21,88 @@ fn main() {
          publicKeyToken='6595b64144ccf1df' \
          language='*'"
     );
+}
+
+fn ensure_windows_rc_tool() {
+    if !cfg!(target_os = "windows") || std::env::var_os("RC").is_some() {
+        return;
+    }
+
+    let host = std::env::var("HOST").unwrap_or_default();
+    let arch_dir = if host.starts_with("aarch64") {
+        "arm64"
+    } else if host.starts_with("x86_64") {
+        "x64"
+    } else {
+        "x86"
+    };
+
+    let mut kit_roots = Vec::<PathBuf>::new();
+    if let Some(pf86) = std::env::var_os("ProgramFiles(x86)") {
+        kit_roots.push(PathBuf::from(pf86).join("Windows Kits").join("10"));
+    }
+    if let Some(pf) = std::env::var_os("ProgramFiles") {
+        kit_roots.push(PathBuf::from(pf).join("Windows Kits").join("10"));
+    }
+    kit_roots.push(PathBuf::from(r"C:\Program Files (x86)\Windows Kits\10"));
+
+    for kit_root in kit_roots {
+        let bin_root = kit_root.join("bin");
+        let Ok(entries) = fs::read_dir(&bin_root) else {
+            continue;
+        };
+        let mut versions: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.is_dir())
+            .collect();
+        versions.sort();
+        versions.reverse();
+
+        for ver_dir in versions {
+            let rc_path = ver_dir.join(arch_dir).join("rc.exe");
+            if rc_path.is_file() {
+                std::env::set_var("RC", &rc_path);
+                append_windows_kit_includes(&kit_root);
+                return;
+            }
+        }
+    }
+}
+
+fn append_windows_kit_includes(kit_root: &Path) {
+    let include_root = kit_root.join("Include");
+    let Ok(entries) = fs::read_dir(&include_root) else {
+        return;
+    };
+    let mut versions: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir())
+        .collect();
+    versions.sort();
+    versions.reverse();
+
+    let Some(latest_ver) = versions.into_iter().next() else {
+        return;
+    };
+    let Ok(sub_dirs) = fs::read_dir(&latest_ver) else {
+        return;
+    };
+
+    let mut include = std::env::var("INCLUDE").unwrap_or_default();
+    if !include.is_empty() && !include.ends_with(';') {
+        include.push(';');
+    }
+    for sub in sub_dirs.filter_map(|e| e.ok().map(|e| e.path())) {
+        if sub.is_dir() {
+            if let Some(s) = sub.to_str() {
+                if !include.contains(s) {
+                    include.push_str(s);
+                    include.push(';');
+                }
+            }
+        }
+    }
+    std::env::set_var("INCLUDE", include);
 }
 
 fn configure_updater_pubkey() {

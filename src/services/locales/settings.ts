@@ -65,7 +65,6 @@ type CategoryKey =
   | "mcp"
   | "skills"
   | "pinTools"
-  | "pet"
   | "workspace"
   | "history"
   | "archive"
@@ -163,16 +162,6 @@ type ArchiveKey =
   | "deleteSelectedWorkspaces"
   | "deleteSelectedMixed";
 
-type PetKey =
-  | "intro"
-  | "visibilityTitle"
-  | "visibilityHint"
-  | "sizeTitle"
-  | "sizeHint"
-  | "sizeSmall"
-  | "sizeMedium"
-  | "sizeLarge";
-
 export type SettingsI18nKey =
   | "settings.profile.searchTerms"
   | "settings.title"
@@ -246,8 +235,7 @@ export type SettingsI18nKey =
   | `settings.history.${HistoryKey}`
   | `settings.historyConfirm.${HistoryConfirmKey}`
   | `settings.archive.${ArchiveKey}`
-  | `settings.image.${ImageKey}`
-  | `settings.pet.${PetKey}`;
+  | `settings.image.${ImageKey}`;
 
 export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.title": "Settings",
@@ -335,16 +323,6 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.categories.archive": "Archive",
   "settings.categories.about": "About",
   "settings.categories.provider": "Provider",
-  "settings.categories.pet": "Desktop pet",
-  "settings.pet.intro": "Place an always-present Anya pet on your desktop for companionship.",
-  "settings.pet.visibilityTitle": "Show desktop pet",
-  "settings.pet.visibilityHint":
-    "When enabled, the pet appears in a screen corner and can be dismissed at any time.",
-  "settings.pet.sizeTitle": "Pet size",
-  "settings.pet.sizeHint": "Adjust the pet's display size.",
-  "settings.pet.sizeSmall": "Small",
-  "settings.pet.sizeMedium": "Medium",
-  "settings.pet.sizeLarge": "Large",
 
   "settings.groups.themeLanguage": "Theme & language",
   "settings.groups.fonts": "Fonts",
@@ -618,15 +596,6 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "归档",
     "settings.categories.about": "关于",
     "settings.categories.provider": "提供商",
-    "settings.categories.pet": "宠物",
-    "settings.pet.intro": "在桌面上放置一个常驻陪伴的 Anya 宠物。",
-    "settings.pet.visibilityTitle": "显示桌面宠物",
-    "settings.pet.visibilityHint": "打开后宠物会出现在屏幕角落，可随时关闭。",
-    "settings.pet.sizeTitle": "宠物大小",
-    "settings.pet.sizeHint": "调整宠物的显示尺寸。",
-    "settings.pet.sizeSmall": "小",
-    "settings.pet.sizeMedium": "中",
-    "settings.pet.sizeLarge": "大",
 
     "settings.provider.deepseek": "DeepSeek 提供商",
     "settings.provider.custom": "自定义提供商",
@@ -921,16 +890,6 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "アーカイブ",
     "settings.categories.about": "情報",
     "settings.categories.provider": "プロバイダー",
-    "settings.categories.pet": "ペット",
-    "settings.pet.intro": "デスクトップにいつでも寄り添うAnyaペットを配置します。",
-    "settings.pet.visibilityTitle": "デスクトップペットを表示",
-    "settings.pet.visibilityHint":
-      "オンにすると画面の隅にペットが表示され、いつでも閉じることができます。",
-    "settings.pet.sizeTitle": "ペットのサイズ",
-    "settings.pet.sizeHint": "ペットの表示サイズを調整します。",
-    "settings.pet.sizeSmall": "小",
-    "settings.pet.sizeMedium": "中",
-    "settings.pet.sizeLarge": "大",
     "settings.provider.deepseek": "DeepSeek プロバイダー",
     "settings.provider.custom": "カスタムプロバイダー",
     "settings.provider.title": "プロバイダー設定",
@@ -1100,17 +1059,6 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "Архив",
     "settings.categories.about": "О программе",
     "settings.categories.provider": "Провайдер",
-    "settings.categories.pet": "Питомец",
-    "settings.pet.intro":
-      "Поместите питомца Anya на рабочий стол для постоянного присутствия и общения.",
-    "settings.pet.visibilityTitle": "Показывать питомца на рабочем столе",
-    "settings.pet.visibilityHint":
-      "При включении питомец появится в углу экрана; его можно скрыть в любое время.",
-    "settings.pet.sizeTitle": "Размер питомца",
-    "settings.pet.sizeHint": "Настройка размера отображения питомца.",
-    "settings.pet.sizeSmall": "Маленький",
-    "settings.pet.sizeMedium": "Средний",
-    "settings.pet.sizeLarge": "Большой",
     "settings.provider.deepseek": "Провайдер DeepSeek",
     "settings.provider.custom": "Пользовательский провайдер",
     "settings.provider.title": "Настройки провайдеров",
@@ -1283,17 +1231,6 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "Archiv",
     "settings.categories.about": "Info",
     "settings.categories.provider": "Anbieter",
-    "settings.categories.pet": "Haustier",
-    "settings.pet.intro":
-      "Platziere ein ständiges Anya-Haustier zur Begleitung auf deinem Desktop.",
-    "settings.pet.visibilityTitle": "Desktop-Haustier anzeigen",
-    "settings.pet.visibilityHint":
-      "Wenn aktiviert, erscheint das Haustier in einer Bildschirmecke und kann jederzeit geschlossen werden.",
-    "settings.pet.sizeTitle": "Haustiergröße",
-    "settings.pet.sizeHint": "Passe die Anzeigegröße des Haustiers an.",
-    "settings.pet.sizeSmall": "Klein",
-    "settings.pet.sizeMedium": "Mittel",
-    "settings.pet.sizeLarge": "Groß",
     "settings.provider.deepseek": "DeepSeek-Anbieter",
     "settings.provider.custom": "Benutzerdefinierter Anbieter",
     "settings.provider.title": "Anbieterkonfigurationen",
@@ -1468,16 +1405,6 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "Archive",
     "settings.categories.about": "À propos",
     "settings.categories.provider": "Fournisseur",
-    "settings.categories.pet": "Animal",
-    "settings.pet.intro": "Placez un animal de bureau Anya pour vous accompagner en permanence.",
-    "settings.pet.visibilityTitle": "Afficher l'animal de bureau",
-    "settings.pet.visibilityHint":
-      "Une fois activé, l'animal apparaît dans un coin de l'écran et peut être masqué à tout moment.",
-    "settings.pet.sizeTitle": "Taille de l'animal",
-    "settings.pet.sizeHint": "Ajustez la taille d'affichage de l'animal.",
-    "settings.pet.sizeSmall": "Petit",
-    "settings.pet.sizeMedium": "Moyen",
-    "settings.pet.sizeLarge": "Grand",
     "settings.provider.deepseek": "Fournisseur DeepSeek",
     "settings.provider.custom": "Fournisseur personnalisé",
     "settings.provider.title": "Configurations du fournisseur",
@@ -1654,16 +1581,6 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.archive": "보관함",
     "settings.categories.about": "정보",
     "settings.categories.provider": "제공자",
-    "settings.categories.pet": "펫",
-    "settings.pet.intro": "바탕화면에 항상 함께하는 Anya 펫을 배치합니다.",
-    "settings.pet.visibilityTitle": "데스크톱 펫 표시",
-    "settings.pet.visibilityHint":
-      "활성화하면 화면 구석에 펫이 나타나며 언제든지 닫을 수 있습니다.",
-    "settings.pet.sizeTitle": "펫 크기",
-    "settings.pet.sizeHint": "펫의 표시 크기를 조정합니다.",
-    "settings.pet.sizeSmall": "작게",
-    "settings.pet.sizeMedium": "보통",
-    "settings.pet.sizeLarge": "크게",
     "settings.provider.deepseek": "DeepSeek 제공자",
     "settings.provider.custom": "사용자 정의 제공자",
     "settings.provider.title": "모델 제공자 설정",

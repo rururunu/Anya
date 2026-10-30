@@ -159,9 +159,10 @@ function escapeHtml(text: string) {
   width: 100%;
   box-sizing: border-box;
   margin: 4px 0 8px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--peek-card-border, var(--peek-border)) 88%, transparent);
+  border-radius: var(--peek-card-radius, var(--peek-radius-md, 10px));
   background: color-mix(in srgb, var(--peek-input-bg) 92%, #0b0d10);
+  box-shadow: var(--peek-card-shadow, none);
   overflow: hidden;
 }
 .file-diff-card.running {

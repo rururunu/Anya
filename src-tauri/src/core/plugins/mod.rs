@@ -17,7 +17,6 @@ mod manifest;
 pub mod opencli;
 mod package;
 mod permissions;
-mod pet;
 mod prompt;
 mod pty;
 mod runtime;

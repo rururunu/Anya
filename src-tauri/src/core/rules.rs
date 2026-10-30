@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::core::tools::error::ToolError;
-use crate::core::tools::memory::{shared_memory_store, MemoryDecision, MemoryRuleEngine};
+use crate::core::tools::memory::{MemoryDecision, MemoryRuleEngine};
 
 const MAX_RULE_FILES: usize = 8;
 const MAX_RULE_DEPTH: usize = 3;
@@ -29,10 +29,13 @@ impl RuleEngine {
         user_message: &str,
         workspace_root: Option<&Path>,
         is_new_session: bool,
+        session_id: &str,
     ) -> TaskRules {
         TaskRules {
             recalled_memories: should_recall_memory(user_message, is_new_session)
-                .then(|| shared_memory_store().recall_block(user_message))
+                .then(|| {
+                    crate::core::bots::memory_for_session(session_id).recall_block(user_message)
+                })
                 .flatten(),
             // Always attempt project rules when a workspace is active.
             // Missing files are ignored (returns None).

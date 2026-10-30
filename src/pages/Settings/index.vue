@@ -108,7 +108,6 @@
                 :version="appVersion"
                 :identifier="appIdentifier"
               />
-              <PetSettings v-else-if="activeCategory === 'pet'" />
               <SettingFieldList
                 v-else
                 :items="visibleItems"
@@ -167,7 +166,6 @@ import {
   Info,
   Minus,
   Palette,
-  PawPrint,
   Pin,
   Server,
   Settings2,
@@ -184,7 +182,6 @@ import TokenUsageSettings from "@/components/settings/TokenUsageSettings.vue";
 import ProfileSettings from "@/components/settings/ProfileSettings.vue";
 import AboutSettings from "@/components/settings/AboutSettings.vue";
 import ProviderSettings from "@/components/settings/ProviderSettings.vue";
-import PetSettings from "@/components/settings/PetSettings.vue";
 import ImageSettings from "@/components/settings/ImageSettings.vue";
 import SettingFieldList from "@/components/settings/SettingFieldList.vue";
 import CustomThemeManager from "@/components/settings/CustomThemeManager.vue";
@@ -354,7 +351,6 @@ const t = computed(() => {
       usage: tr(language, "settings.categories.usage"),
       about: tr(language, "settings.categories.about"),
       provider: tr(language, "settings.categories.provider"),
-      pet: tr(language, "settings.categories.pet"),
     },
   };
 });
@@ -368,11 +364,6 @@ const categories = computed(() => [
     id: "workspace" as const,
     label: t.value.categories.workspace,
     icon: FolderOpen,
-  },
-  {
-    id: "pet" as const,
-    label: t.value.categories.pet,
-    icon: PawPrint,
   },
   { id: "agent" as const, label: t.value.categories.agent, icon: Workflow },
   { id: "history" as const, label: t.value.categories.history, icon: History },
@@ -443,7 +434,6 @@ const categorySections = computed(() => {
     section("general", tr(language, "settings.sections.general"), [
       "profile",
       "appearance",
-      "pet",
       "workspace",
     ]),
     section("intelligence", tr(language, "settings.sections.intelligence"), [
@@ -867,9 +857,9 @@ watch(
   border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
   border-right: 0;
   border-bottom: 0;
-  border-radius: 20px 0 0 0;
+  border-radius: var(--peek-pane-radius, 20px) 0 0 0;
   background: var(--peek-list-bg) !important;
-  box-shadow: none;
+  box-shadow: var(--peek-pane-shadow, none);
 }
 
 .settings-workbench.is-glass,
@@ -960,9 +950,9 @@ watch(
   height: 36px;
   gap: 9px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: var(--peek-radius-md, 10px);
   background: transparent;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
   font-size: var(--peek-font-sm);
   letter-spacing: 0;
 }
@@ -975,12 +965,12 @@ watch(
   align-items: center;
   justify-content: center;
   border-radius: 7px;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"]:hover) .settings-nav-icon,
 .settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) .settings-nav-icon {
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) .settings-nav-icon {
@@ -989,12 +979,12 @@ watch(
 
 .settings-nav :deep([data-slot="sidebar-menu-button"]:hover) {
   background: var(--peek-row-hover);
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) {
   background: transparent;
-  color: var(--peek-text);
+  color: var(--peek-active-fg, var(--peek-sidebar-text, var(--peek-text)));
   font-weight: 600;
 }
 

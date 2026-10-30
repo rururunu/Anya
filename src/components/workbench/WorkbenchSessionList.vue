@@ -465,7 +465,7 @@ function sessionStatusLabel(sessionId: string) {
   padding: 0 62px 0 8px;
   border-radius: var(--peek-radius-sm, 6px);
   background: transparent;
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
@@ -504,12 +504,12 @@ function sessionStatusLabel(sessionId: string) {
 }
 .session-row.active > strong {
   font-weight: 600;
-  color: var(--peek-text);
+  color: var(--peek-active-fg, var(--peek-sidebar-text, var(--peek-text)));
 }
 .session-row.is-archiving > strong,
 .session-row.is-archive-leaving > strong {
   font-weight: 500;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
 }
 .session-row:focus-visible {
   outline: none;
@@ -538,7 +538,11 @@ function sessionStatusLabel(sessionId: string) {
   overflow: hidden;
   font-size: var(--peek-font-sm, 12px);
   font-weight: 500;
-  color: color-mix(in srgb, var(--peek-text) 92%, var(--peek-muted));
+  color: color-mix(
+    in srgb,
+    var(--peek-sidebar-text, var(--peek-text)) 92%,
+    var(--peek-sidebar-muted, var(--peek-muted))
+  );
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
@@ -657,7 +661,7 @@ function sessionStatusLabel(sessionId: string) {
   border: 0;
   border-radius: var(--peek-radius-sm, 6px);
   background: transparent;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
   cursor: pointer;
   opacity: 0;
   transform: none;
@@ -672,7 +676,7 @@ function sessionStatusLabel(sessionId: string) {
   opacity: 1;
 }
 .session-action:hover {
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
   background: var(--peek-hover-bg);
 }
 .session-action:active {

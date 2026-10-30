@@ -20,10 +20,6 @@ const router = createRouter({
       component: () => import("@/pages/ImagePreview.vue"),
     },
     {
-      path: "/desktop-pet",
-      component: () => import("@/pages/DesktopPet.vue"),
-    },
-    {
       path: "/computer-use-hud",
       component: () => import("@/pages/ComputerUseHud.vue"),
     },

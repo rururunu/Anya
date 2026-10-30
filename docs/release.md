@@ -52,12 +52,12 @@ pnpm tauri:build
 3. Generate **`release/latest.json`**:
 
 ```powershell
-pnpm release:json -- --tag v0.2.33 --notes "Add visual theme editing and independent region colors; fix startup theme loading and chat image path resolution."
+pnpm release:json -- --tag v0.2.34 --notes "Remove the desktop pet. Refine built-in light and dark shadows and tonal steps, and fix custom themes that sometimes stay hidden until edited. A queued message now stops the current reply and sends immediately instead of being appended to the running turn."
 ```
 
-4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.33` and upload:
-   - `Anya_0.2.33_x64.msi`
-   - `Anya_0.2.33_x64.msi.sig`
+4. On GitHub → [Releases](https://github.com/rururunu/Anya/releases), create tag `v0.2.34` and upload:
+   - `Anya_0.2.34_x64.msi`
+   - `Anya_0.2.34_x64.msi.sig`
    - `latest.json` (from `release/latest.json`)
 
 5. Verify `https://github.com/rururunu/Anya/releases/latest/download/latest.json` and check for updates in the app.

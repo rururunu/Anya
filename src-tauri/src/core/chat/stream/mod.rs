@@ -37,34 +37,6 @@ impl StreamManager {
             .map(|active| active.keys().cloned().collect())
             .unwrap_or_default()
     }
-
-    /// Queues a soft-inject user message into an active stream for the session.
-    pub fn soft_inject(
-        &self,
-        session_id: &str,
-        content: String,
-    ) -> Result<String, crate::core::chat::error::ChatError> {
-        use crate::core::chat::error::ChatError;
-
-        let content = content.trim().to_string();
-        if content.is_empty() {
-            return Err(ChatError::EmptyMessage);
-        }
-        let mut active = self
-            .active_tasks
-            .lock()
-            .map_err(|error| ChatError::Internal(error.to_string()))?;
-        let (message_id, task) = active
-            .iter_mut()
-            .find(|(_, task)| task.session_id == session_id)
-            .map(|(id, task)| (id.clone(), task))
-            .ok_or(ChatError::MessageNotFound)?;
-        task.soft_queue
-            .lock()
-            .map_err(|error| ChatError::Internal(error.to_string()))?
-            .push_back(content);
-        Ok(message_id)
-    }
 }
 
 impl Default for StreamManager {
@@ -77,7 +49,6 @@ impl Default for StreamManager {
 mod tests {
     use super::*;
     use lifecycle::{epoch_still_active, ActiveTask};
-    use std::collections::VecDeque;
     use std::sync::atomic::AtomicBool;
 
     #[test]
@@ -89,7 +60,6 @@ mod tests {
                 session_id: "s1".into(),
                 epoch: 2,
                 cancelled: Arc::new(AtomicBool::new(false)),
-                soft_queue: Arc::new(Mutex::new(VecDeque::new())),
                 content: Arc::new(Mutex::new(String::new())),
                 reasoning: Arc::new(Mutex::new(String::new())),
             },

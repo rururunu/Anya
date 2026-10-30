@@ -372,8 +372,10 @@ function onThinkingOpen(open: boolean) {
   margin-left: -6px;
   margin-right: 6px;
   border: 0;
-  background: transparent;
-  color: var(--peek-muted);
+  border-radius: var(--peek-composer-chip-radius, 0);
+  background: var(--peek-composer-chip-bg, transparent);
+  color: var(--peek-composer-chip-text, var(--peek-muted));
+  box-shadow: var(--peek-composer-chip-shadow, none);
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -382,7 +384,7 @@ function onThinkingOpen(open: boolean) {
   transition: color var(--motion-fast, 110ms) ease;
 }
 .attach-trigger-btn:hover {
-  color: var(--peek-text);
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
 }
 .attach-trigger-btn:focus-visible {
   outline: 2px solid var(--peek-focus);
@@ -393,9 +395,10 @@ function onThinkingOpen(open: boolean) {
   width: 34px;
   height: 34px;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--peek-send-radius, 50%);
   background: var(--peek-send-bg);
   color: var(--peek-send-fg);
+  box-shadow: var(--peek-send-shadow, none);
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -405,6 +408,7 @@ function onThinkingOpen(open: boolean) {
   transition:
     background 120ms ease,
     color 120ms ease,
+    box-shadow 120ms ease,
     transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .send-btn.active:hover:not(:disabled) {
@@ -417,10 +421,10 @@ function onThinkingOpen(open: boolean) {
   height: var(--peek-control-icon, 28px);
   padding: 0 8px;
   border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--peek-muted);
-  box-shadow: none;
+  border-radius: var(--peek-composer-chip-radius, var(--peek-radius-md, 8px));
+  background: var(--peek-composer-chip-bg, transparent);
+  color: var(--peek-composer-chip-text, var(--peek-muted));
+  box-shadow: var(--peek-composer-chip-shadow, none);
   font-family: var(--peek-font-sans);
   font-size: 13px;
   font-weight: 500;
@@ -429,19 +433,21 @@ function onThinkingOpen(open: boolean) {
   cursor: pointer;
   transition:
     color var(--motion-fast, 110ms) ease,
+    background-color var(--motion-fast, 110ms) ease,
+    box-shadow var(--motion-fast, 110ms) ease,
     opacity var(--motion-fast, 110ms) ease;
 }
 .footer-chip:hover,
 .footer-chip:focus-visible,
 .footer-chip:active {
-  color: var(--peek-text);
-  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
+  background: color-mix(in srgb, var(--peek-text) 6%, var(--peek-composer-chip-bg, transparent));
   border: 0;
-  box-shadow: none;
+  box-shadow: var(--peek-composer-chip-shadow, none);
   outline: none;
 }
 .footer-chip.open {
-  color: var(--peek-text);
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
   background: color-mix(in srgb, var(--peek-accent) 10%, var(--peek-surface));
 }
 .footer-chip:focus-visible {
@@ -453,11 +459,11 @@ function onThinkingOpen(open: boolean) {
 .footer-chip.is-full-approve.open,
 .footer-chip.is-full-approve:focus-visible,
 .footer-chip.is-full-approve:active {
-  color: var(--peek-danger, #ef4444);
+  color: var(--peek-composer-full-access-text, var(--peek-danger, #ef4444));
 }
 .footer-chip.is-full-approve .footer-chip-icon {
   opacity: 1;
-  color: var(--peek-danger, #ef4444);
+  color: var(--peek-composer-full-access-text, var(--peek-danger, #ef4444));
 }
 .footer-chip-icon {
   flex: none;
@@ -531,7 +537,8 @@ function onThinkingOpen(open: boolean) {
   gap: 5px;
   flex: none;
   min-width: 0;
-  color: var(--peek-faint);
+  color: var(--peek-composer-meta-text, var(--peek-faint));
+  font-family: var(--peek-font-sans);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

@@ -19,6 +19,8 @@ use super::registry::provider_model_is_disabled;
 pub const DEFAULT_IMAGE_MODEL: &str = "gpt-image-2";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+const MAX_TRANSIENT_ATTEMPTS: usize = 3;
+const TRANSIENT_RETRY_BASE_MS: u64 = 1_500;
 /// Keep in sync with `image_markdown::MAX_IMAGE_REFS` and FE `IMAGE_GEN` count max.
 const MAX_IMAGES: u8 = MAX_IMAGE_REFS as u8;
 
@@ -274,7 +276,16 @@ pub fn generate_images_blocking(
     let mut results = Vec::with_capacity(count);
     std::thread::scope(|scope| {
         let handles: Vec<_> = (0..count)
-            .map(|_| scope.spawn(|| generate_one_blocking(settings, request)))
+            .map(|index| {
+                scope.spawn(move || {
+                    if index > 0 {
+                        // Stagger multi-image calls so aggregator account pools
+                        // are not hit by N simultaneous requests at t=0.
+                        std::thread::sleep(Duration::from_millis((index as u64) * 350));
+                    }
+                    generate_one_blocking(settings, request)
+                })
+            })
             .collect();
         for handle in handles {
             results.push(
@@ -287,6 +298,71 @@ pub fn generate_images_blocking(
     collect_image_results(results)
 }
 
+fn is_transient_image_http_error(code: u16, body: &str) -> bool {
+    if matches!(code, 429 | 500 | 502 | 503 | 504 | 529) {
+        return true;
+    }
+    let lower = body.to_ascii_lowercase();
+    lower.contains("overloaded_error")
+        || lower.contains("upstream throttled")
+        || lower.contains("no usable account")
+        || lower.contains("retry shortly")
+        || lower.contains("temporarily unavailable")
+}
+
+fn push_unique_model(out: &mut Vec<String>, candidate: &str) {
+    let trimmed = candidate.trim();
+    if !trimmed.is_empty() && !out.iter().any(|existing| existing == trimmed) {
+        out.push(trimmed.to_string());
+    }
+}
+
+fn candidate_image_models(
+    primary_model: &str,
+    provider: Option<&CustomProviderConfig>,
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let primary = if primary_model.trim().is_empty() {
+        DEFAULT_IMAGE_MODEL
+    } else {
+        primary_model.trim()
+    };
+    push_unique_model(&mut candidates, primary);
+
+    // Aggregators (such as micuapi / NewAPI) often expose `-openai` suffixed
+    // channel aliases (e.g. `gpt-image-2.5-flare-openai`) whose upstream pool
+    // returns HTTP 529 `no usable account` while the unsuffixed base model
+    // (`gpt-image-2.5-flare`) routes to the active pool.
+    if let Some(stripped) = primary.strip_suffix("-openai") {
+        if provider.map_or(true, |p| !provider_model_is_disabled(p, stripped)) {
+            push_unique_model(&mut candidates, stripped);
+        }
+    }
+
+    if let Some(provider) = provider {
+        for raw in provider.models.split([',', '\n']) {
+            let id = raw.trim();
+            if id.is_empty() || provider_model_is_disabled(provider, id) {
+                continue;
+            }
+            push_unique_model(&mut candidates, id);
+            if let Some(stripped) = id.strip_suffix("-openai") {
+                if !provider_model_is_disabled(provider, stripped) {
+                    push_unique_model(&mut candidates, stripped);
+                }
+            }
+        }
+    }
+
+    if primary.starts_with("gpt-image-")
+        && provider.map_or(true, |p| !provider_model_is_disabled(p, DEFAULT_IMAGE_MODEL))
+    {
+        push_unique_model(&mut candidates, DEFAULT_IMAGE_MODEL);
+    }
+
+    candidates
+}
+
 fn generate_one_blocking(
     settings: &AppSettings,
     request: &ImageGenRequest,
@@ -297,41 +373,96 @@ fn generate_one_blocking(
         request.model.trim().to_string()
     };
     let endpoint = resolve_image_endpoint(settings, &model, &settings.image_model_provider)?;
+    let provider = image_provider_for_selection(settings, &model, &settings.image_model_provider);
+    let candidate_models = candidate_image_models(&model, provider);
     let prompt = request.prompt.trim();
     if prompt.is_empty() {
         return Err("prompt is required".into());
     }
 
     let client = images_http_client()?;
-    let (post_url, response) = if request.reference_images.is_empty() {
-        let response = client
-            .post(&endpoint.url)
-            .header("Authorization", format!("Bearer {}", endpoint.api_key))
-            .header("Content-Type", "application/json")
-            .json(&build_images_body(&model, prompt, request))
-            .send()
-            .map_err(|error| images_transport_error(&endpoint.url, &error))?;
-        (endpoint.url.clone(), response)
-    } else {
-        let edits_url = images_edits_url(&endpoint.url);
-        let form = build_images_edits_form(&model, prompt, request)?;
-        let response = client
-            .post(&edits_url)
-            .header("Authorization", format!("Bearer {}", endpoint.api_key))
-            .multipart(form)
-            .send()
-            .map_err(|error| images_transport_error(&edits_url, &error))?;
-        (edits_url, response)
-    };
+    let mut last_error = String::new();
+    for attempt in 0..MAX_TRANSIENT_ATTEMPTS {
+        if attempt > 0 {
+            let delay_ms = TRANSIENT_RETRY_BASE_MS * (1u64 << (attempt - 1));
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
+        for (model_idx, active_model) in candidate_models.iter().enumerate() {
+            let send_result = if request.reference_images.is_empty() {
+                client
+                    .post(&endpoint.url)
+                    .header("Authorization", format!("Bearer {}", endpoint.api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&build_images_body(active_model, prompt, request))
+                    .send()
+                    .map(|response| (endpoint.url.clone(), response))
+                    .map_err(|error| images_transport_error(&endpoint.url, &error))
+            } else {
+                let edits_url = images_edits_url(&endpoint.url);
+                let form = build_images_edits_form(active_model, prompt, request)?;
+                client
+                    .post(&edits_url)
+                    .header("Authorization", format!("Bearer {}", endpoint.api_key))
+                    .multipart(form)
+                    .send()
+                    .map(|response| (edits_url.clone(), response))
+                    .map_err(|error| images_transport_error(&edits_url, &error))
+            };
 
-    let status = response.status();
-    let text = response
-        .text()
-        .map_err(|error| format!("Failed to read image API response: {error}"))?;
-    if !status.is_success() {
-        return Err(images_http_error(status.as_u16(), &post_url, &text));
+            let (post_url, response) = match send_result {
+                Ok(pair) => pair,
+                Err(err) => {
+                    last_error = err;
+                    if model_idx + 1 < candidate_models.len() || attempt + 1 < MAX_TRANSIENT_ATTEMPTS {
+                        continue;
+                    }
+                    return Err(last_error);
+                }
+            };
+
+            let status = response.status();
+            let text = response
+                .text()
+                .map_err(|error| format!("Failed to read image API response: {error}"))?;
+            if !status.is_success() {
+                let code = status.as_u16();
+                let err_msg = images_http_error(code, &post_url, &text);
+                if model_idx == 0 || last_error.is_empty() {
+                    last_error = err_msg.clone();
+                }
+                if is_transient_image_http_error(code, &text) {
+                    if model_idx + 1 < candidate_models.len() {
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            code,
+                            from_model = %active_model,
+                            to_model = %candidate_models[model_idx + 1],
+                            url = %post_url,
+                            "image model channel throttled/overloaded, falling back to alternate model"
+                        );
+                        continue;
+                    }
+                    if attempt + 1 < MAX_TRANSIENT_ATTEMPTS {
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            code,
+                            model = %active_model,
+                            url = %post_url,
+                            "transient image provider error, backing off and retrying"
+                        );
+                        break;
+                    }
+                } else if model_idx > 0 {
+                    // Fallback candidate was rejected by the upstream (e.g. model not found);
+                    // try the next candidate if any.
+                    continue;
+                }
+                return Err(last_error);
+            }
+            return parse_images_response(&text);
+        }
     }
-    parse_images_response(&text)
+    Err(last_error)
 }
 
 fn collect_image_results(
@@ -568,6 +699,7 @@ pub fn images_http_error(code: u16, url: &str, body: &str) -> String {
             "Endpoint or model name is incorrect: the provider may not expose `/v1/images/generations` or gpt-image-2."
         }
         429 => "Rate limited or quota exceeded. Retry later, or check the provider billing quota.",
+        529 => "Image provider overloaded or upstream account pool throttled (529). Retry shortly or switch to another image provider.",
         500..=599 => "Image provider server error. Usually temporary — retry later.",
         _ => "Image API call failed.",
     };
@@ -776,6 +908,31 @@ mod tests {
         assert_eq!(
             images_edits_url("https://api.openai.com/v1/images/generations"),
             "https://api.openai.com/v1/images/edits"
+        );
+    }
+
+    #[test]
+    fn transient_529_overloaded_is_detected() {
+        let body = r#"{"error":{"message":"upstream throttled (no usable account), retry shortly","type":"overloaded_error"}}"#;
+        assert!(is_transient_image_http_error(529, body));
+        assert!(!is_transient_image_http_error(401, r#"{"error":"unauthorized"}"#));
+        let msg = images_http_error(529, "https://www.micuapi.ai/v1/images/generations", body);
+        assert!(msg.contains("529"));
+        assert!(msg.contains("overloaded"));
+    }
+
+    #[test]
+    fn candidate_models_include_unsuffixed_openai_fallback() {
+        let p = provider("micu", "gpt-image-2.5-flare-openai, gpt-image-2.5-sunburst");
+        let list = candidate_image_models("gpt-image-2.5-flare-openai", Some(&p));
+        assert_eq!(
+            list,
+            vec![
+                "gpt-image-2.5-flare-openai",
+                "gpt-image-2.5-flare",
+                "gpt-image-2.5-sunburst",
+                "gpt-image-2",
+            ]
         );
     }
 }

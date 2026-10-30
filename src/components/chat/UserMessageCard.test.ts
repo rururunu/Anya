@@ -87,7 +87,10 @@ describe("inline user message editing", () => {
     const actions = wrapper.findAll(".queued-message-actions button");
     expect(wrapper.find(".user-rewind-btn").exists()).toBe(false);
     expect(wrapper.get(".queued-message-actions").text()).toBe("");
-    expect(actions.map((action) => action.attributes("aria-label"))).toEqual(["Guide", "Delete"]);
+    expect(actions.map((action) => action.attributes("aria-label"))).toEqual([
+      "Send now",
+      "Delete",
+    ]);
     expect(actions[0]!.find(".lucide-corner-down-left").exists()).toBe(true);
     expect(wrapper.find(".queued-state .lucide-clock-3").exists()).toBe(true);
     await actions[0]!.trigger("click");

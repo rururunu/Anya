@@ -13,6 +13,7 @@ const DEFAULT_MEM0_BASE_URL: &str = "https://api.mem0.ai/v1";
 const DEFAULT_USER_ID: &str = "peek-user";
 const MAX_MEMORY_CHARS: usize = 8_000;
 const MEM0_RETRY_COOLDOWN_SECS: u64 = 60;
+static MEMORY_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryEntry {
@@ -346,6 +347,7 @@ impl MemoryStore {
 
     pub fn configure(&self, settings: &crate::models::settings::AppSettings) {
         *lock_recover(&self.enabled) = settings.memory_enabled;
+        MEMORY_ENABLED.store(settings.memory_enabled, Ordering::Relaxed);
         let api_key = if settings.mem0_api_key.trim().is_empty() {
             std::env::var("MEM0_API_KEY").unwrap_or_default()
         } else {
@@ -507,7 +509,7 @@ impl MemoryStore {
     }
 
     fn is_enabled(&self) -> bool {
-        *lock_recover(&self.enabled)
+        MEMORY_ENABLED.load(Ordering::Relaxed) && *lock_recover(&self.enabled)
     }
     fn active_mem0(&self) -> Option<Arc<Mem0Backend>> {
         if now_secs() < self.mem0_unavailable_until.load(Ordering::Relaxed) {

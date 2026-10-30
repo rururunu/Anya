@@ -15,7 +15,6 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
     "computer",
     "opencli",
     "deepseek.balance",
-    "pet",
 ];
 
 pub fn is_known_permission(perm: &str) -> bool {
@@ -42,7 +41,6 @@ pub fn permission_label(perm: &str) -> &'static str {
         "deepseek.balance" => {
             "Read the DeepSeek account balance using Anya's stored API key (ctx.host.rpc)"
         }
-        "pet" => "Show, hide, resize, re-skin, or set expression on the desktop pet (ctx.host.rpc)",
         _ => "Custom permission",
     }
 }

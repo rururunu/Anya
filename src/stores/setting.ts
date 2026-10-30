@@ -104,35 +104,13 @@ export function bootstrapThemeHint(language: AppLanguage = "zh-CN") {
 
 export function applyZoom(zoom: number) {
   let isWorkbench = false;
-  let isDesktopPet = false;
   try {
-    const label = getCurrentWebviewWindow().label;
-    isWorkbench = label === "workbench";
-    isDesktopPet = label === "desktop-pet";
+    isWorkbench = getCurrentWebviewWindow().label === "workbench";
   } catch {
-    if (typeof window !== "undefined") {
-      isDesktopPet =
-        window.location.hash.includes("/desktop-pet") ||
-        window.location.href.includes("/desktop-pet");
-    }
-  }
-  if (!isDesktopPet && typeof window !== "undefined") {
-    isDesktopPet =
-      window.location.hash.includes("/desktop-pet") ||
-      window.location.href.includes("/desktop-pet");
+    // Auxiliary windows fall through to document zoom.
   }
 
   const root = document.documentElement;
-
-  // Desktop pet is explicitly independent of the UI zoom setting
-  if (isDesktopPet) {
-    root.style.removeProperty("zoom");
-    root.style.setProperty("--ui-zoom", "1");
-    root.dataset.uiZoomed = "false";
-    root.dataset.zoomShell = "pet";
-    return;
-  }
-
   const normalized = Math.max(zoom, 1) / 100;
   root.style.setProperty("--ui-zoom", String(normalized));
   root.dataset.uiZoomed = normalized === 1 ? "false" : "true";

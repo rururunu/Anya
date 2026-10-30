@@ -5,7 +5,7 @@ import { applyZoom, useSettingStore } from "./setting";
 import { setAppSettings } from "@/services/ipc";
 import type { AppSettings } from "@/types/setting";
 
-let mockWindowLabel = "desktop-pet";
+let mockWindowLabel = "overlay";
 
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => ({
@@ -33,16 +33,6 @@ describe("applyZoom", () => {
     document.documentElement.style.removeProperty("--ui-zoom");
     delete document.documentElement.dataset.uiZoomed;
     delete document.documentElement.dataset.zoomShell;
-  });
-
-  it("exempts desktop-pet window from UI zoom", () => {
-    mockWindowLabel = "desktop-pet";
-    applyZoom(150);
-
-    expect(document.documentElement.style.zoom).toBe("");
-    expect(document.documentElement.style.getPropertyValue("--ui-zoom")).toBe("1");
-    expect(document.documentElement.dataset.uiZoomed).toBe("false");
-    expect(document.documentElement.dataset.zoomShell).toBe("pet");
   });
 
   it("applies scale handling to workbench window", () => {

@@ -57,8 +57,16 @@ impl ErrorCategory {
             "timeout",
             "timed out",
             "429",
+            "500",
             "502",
             "503",
+            "504",
+            "529",
+            "overloaded_error",
+            "upstream throttled",
+            "no usable account",
+            "retry shortly",
+            "retry later",
             "connection reset",
             "temporarily unavailable",
         ]
@@ -186,5 +194,13 @@ mod tests {
         let error = ToolError::cancelled();
         assert!(error.is_cancelled());
         assert!(!error.is_terminal());
+    }
+
+    #[test]
+    fn classifies_529_upstream_throttled_as_transient() {
+        let error = ToolError::new(
+            "Image API returned 529 from https://www.micuapi.ai/v1/images/generations. Response: {\"error\":{\"message\":\"upstream throttled (no usable account), retry shortly\",\"type\":\"overloaded_error\"}}",
+        );
+        assert_eq!(error.category(), ErrorCategory::Transient);
     }
 }

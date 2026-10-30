@@ -8,6 +8,7 @@ mod memory_tools;
 mod misc;
 mod plan_request;
 mod plugin;
+mod schedule;
 mod shell;
 mod tasks;
 mod theme;
@@ -16,7 +17,6 @@ use std::sync::Arc;
 
 use crate::core::chat::conversation_manager::ConversationManager;
 use crate::core::event::EventBus;
-use crate::core::tools::memory::shared_memory_store;
 use crate::core::tools::registry::ToolRegistry;
 use crate::core::tools::shell_jobs::ShellJobStore;
 use crate::core::tools::task_list::shared_task_list;
@@ -38,7 +38,6 @@ pub fn register_all(
     event_bus: Arc<dyn EventBus>,
 ) {
     let shell_jobs = ShellJobStore::new();
-    let memory = shared_memory_store();
     let tasks = shared_task_list();
 
     macro_rules! reg {
@@ -87,13 +86,10 @@ pub fn register_all(
         event_bus: Arc::clone(&event_bus),
     }));
 
-    registry.register(Arc::new(SaveMemoryTool {
-        memory: Arc::clone(&memory),
-    }));
-    registry.register(Arc::new(SearchMemoryTool { memory }));
-    registry.register(Arc::new(DeleteMemoryTool {
-        memory: shared_memory_store(),
-    }));
+    registry.register(Arc::new(SaveMemoryTool));
+    registry.register(Arc::new(SearchMemoryTool));
+    registry.register(Arc::new(DeleteMemoryTool));
+    registry.register(Arc::new(schedule::ManageScheduleTool));
 
     registry.register(Arc::new(ListChatsTool));
     registry.register(Arc::new(ReadChatTool {

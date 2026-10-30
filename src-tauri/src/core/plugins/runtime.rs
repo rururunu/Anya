@@ -351,15 +351,6 @@ impl PluginRuntime {
                 .ok_or_else(|| ToolError::new("plugin runtime has no app handle"))?;
             return super::deepseek::dispatch_rpc(&app, id, method);
         }
-        if method.starts_with("pet.") {
-            let app = self
-                .app
-                .lock()
-                .ok()
-                .and_then(|guard| guard.clone())
-                .ok_or_else(|| ToolError::new("plugin runtime has no app handle"))?;
-            return super::pet::dispatch_rpc(&app, id, method, &params);
-        }
         let mut map = self
             .sessions
             .lock()

@@ -23,7 +23,7 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use app_state::AppState;
 use commands::{
-    app, ask, chat, computer_use, deepseek_files, desktop_pet, diff, harness, icons, mcp, opencli,
+    app, ask, chat, computer_use, deepseek_files, diff, harness, icons, mcp, opencli,
     permission, plugins, remote, settings, skills, token_usage, updater, window, workspace,
 };
 use services::app_lifecycle;
@@ -148,10 +148,9 @@ fn start_hotkey_listener(app: AppHandle) {
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let workbench = MenuItem::with_id(app, "workbench", "Open Workbench", true, None::<&str>)?;
-    let pet = MenuItem::with_id(app, "desktop_pet", "桌面宠物", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&workbench, &pet, &settings, &quit])?;
+    let menu = Menu::with_items(app, &[&workbench, &settings, &quit])?;
     // The tray shows the mascot's front view; the app icon keeps the tilted pose.
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
         .unwrap_or_else(|_| {
@@ -167,9 +166,6 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .tooltip(app.package_info().name.clone())
         .on_menu_event(|app, event| match event.id.as_ref() {
             "workbench" => show_workbench_window(app),
-            "desktop_pet" => {
-                crate::services::desktop_pet::toggle_desktop_pet(app, None);
-            }
             "settings" => show_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
@@ -257,7 +253,6 @@ pub fn run() {
             show_workbench_window(app.handle());
             boot_timing::phase("workbench window shown");
             crate::services::webview_theme::apply_webview_theme(app.handle(), &settings);
-            crate::services::desktop_pet::restore_desktop_pet_on_startup(app.handle());
             crate::services::computer_use_hud::init(app.handle());
             crate::core::remote::restore_gateway_if_enabled(app.handle());
             boot_timing::phase("setup done");
@@ -360,12 +355,6 @@ pub fn run() {
             window::take_overlay_context,
             window::open_image_preview,
             window::get_preview_image,
-            desktop_pet::toggle_desktop_pet,
-            desktop_pet::get_desktop_pet_visible,
-            desktop_pet::set_desktop_pet_size,
-            desktop_pet::get_desktop_pet_size,
-            desktop_pet::show_workbench,
-            desktop_pet::toggle_overlay_from_pet,
             computer_use::dismiss_computer_use_hud,
             computer_use::list_computer_use_playbooks,
             computer_use::get_computer_use_playbook,

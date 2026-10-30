@@ -102,8 +102,62 @@ describe("ThemeService", () => {
     expect(readCachedCustomThemes()[0]?.background?.image).toBeUndefined();
 
     localStorage.setItem(CUSTOM_THEMES_CACHE_KEY, JSON.stringify([theme]));
-    expect(readCachedCustomThemes()).toEqual([]);
-    expect(localStorage.getItem(CUSTOM_THEMES_CACHE_KEY)).toBeNull();
+    expect(readCachedCustomThemes()[0]).toMatchObject({ id: "custom-test", name: "Test" });
+    expect(readCachedCustomThemes()[0]?.background?.image).toBeUndefined();
+    expect(localStorage.getItem(CUSTOM_THEMES_CACHE_KEY)).not.toContain("data:image");
+  });
+
+  it("keeps an installed custom theme when a later paint omits the theme list", () => {
+    const theme = {
+      id: "custom-neon",
+      name: "Neon",
+      mode: "dark" as const,
+      tokens: { "--peek-bg": "#0a0a0a", "--peek-accent": "#00ffcc" },
+      updatedAt: 1,
+    };
+    applyThemeAppearance({
+      colorScheme: theme.id,
+      language: "zh-CN",
+      customThemes: [theme],
+    });
+    localStorage.removeItem(CUSTOM_THEMES_CACHE_KEY);
+
+    applyThemeAppearance({
+      colorScheme: theme.id,
+      language: "zh-CN",
+    });
+
+    const styleEl = document.getElementById("anya-custom-theme-sheet");
+    expect(styleEl?.textContent).toContain("--peek-accent: #00ffcc;");
+    expect(styleEl?.textContent).toContain("[data-theme-mode]");
+  });
+
+  it("does not let one broken token hide themes that follow it", () => {
+    applyThemeAppearance({
+      colorScheme: "later",
+      language: "zh-CN",
+      customThemes: [
+        {
+          id: "broken",
+          name: "Broken",
+          mode: "light",
+          tokens: { "--peek-bg": "red; } html { color: blue" },
+          updatedAt: 1,
+        },
+        {
+          id: "later",
+          name: "Later",
+          mode: "dark",
+          tokens: { "--peek-accent": "#123456" },
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    const styleEl = document.getElementById("anya-custom-theme-sheet");
+    expect(styleEl?.textContent).toContain("--peek-accent: #123456;");
+    expect(styleEl?.textContent).not.toContain("html {");
+    expect(styleEl?.textContent).toContain("--peek-bg: red;");
   });
 
   it("dispatches peek-theme-change", () => {

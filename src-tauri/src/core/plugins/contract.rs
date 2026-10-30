@@ -175,14 +175,6 @@ const ASSET_KEYS: &[AssetKeyInfo] = &[
         key: "workbench.backdrop",
         allowed_kinds: &["image", "video", "lottie"],
     },
-    AssetKeyInfo {
-        key: "pet.stage.skin",
-        allowed_kinds: &["image", "video", "lottie", "svg", "html", "spritesheet"],
-    },
-    AssetKeyInfo {
-        key: "pet.stage.atlas",
-        allowed_kinds: &["spritesheet"],
-    },
 ];
 
 pub fn describe_contract() -> ContractDescription {

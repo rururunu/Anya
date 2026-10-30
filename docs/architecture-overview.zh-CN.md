@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.33                            |
+| **版本**   | v0.2.34                            |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -304,7 +304,7 @@ sequenceDiagram
 
 | 模块               | 路径                                        | 职责                                                                                                                                                                  |
 | ------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Chat service       | `core/chat/service/`                        | 入口：落库、解析上下文/模型、启动或 soft-inject（`mod.rs` façade）                                                                                                    |
+| Chat service       | `core/chat/service/`                        | 入口：落库、解析上下文/模型、启动新回合（已有活跃回合则拒绝；`mod.rs` façade）                                                                                        |
 | Stream manager     | `core/chat/stream/`                         | 后台任务、取消、流式聚合、UI 事件、时间线文本                                                                                                                         |
 | Agent runner       | `core/chat/agent.rs`                        | **主** model↔tools 循环                                                                                                                                               |
 | Agent loop 策略    | `core/chat/agent_loop/`                     | stream_turn、tools、challenge、compact、post_edit_verify、soft_inject、failure                                                                                        |
@@ -312,7 +312,7 @@ sequenceDiagram
 | DB / journal       | `core/chat/db/`、`core/chat/journal.rs`     | Schema、存取、崩溃恢复（`db/{schema,messages,sessions,tool_activity}`）                                                                                               |
 | 提示词（markdown） | `core/chat/prompts/`、`prompts/*.md`        | system / tools / policies / skills（`include_str!`）                                                                                                                  |
 | Prompt 组装        | `core/chat/prompt/`                         | 固定槽位组装（`PromptBuilder` + `slots`）；易变语境与 `#skill` chips 挂在用户消息尾部；agent-state 只追加；整轮冻结 tool schemas（DeepSeek 磁盘缓存要求精确前缀单元） |
-| Agent runtime      | `core/agent/runtime/`                       | Run 状态机、取消、soft-inject、debug                                                                                                                                  |
+| Agent runtime      | `core/agent/runtime/`                       | Run 状态机、取消、debug                                                                                                                                               |
 | AI providers       | `core/ai/`                                  | 聊天 Provider 注册表、DeepSeek/Gemini、多模态；**Images API** 独立（`image_gen`）                                                                                     |
 | DeepSeek / OpenAI  | `core/ai/deepseek/`                         | `provider`、`messages/`、`stream/`、`anthropic`、`models`、`multimodal`                                                                                               |
 | Shell jobs         | `core/tools/shell_jobs/`                    | 前台/后台 shell 进程生命周期与输出                                                                                                                                    |
@@ -381,7 +381,7 @@ sequenceDiagram
   FE->>IPC: invoke("chat")
   IPC->>CS: send(session, message, prefs)
   alt 会话已有活跃 assistant
-    CS->>AR: soft_inject
+    CS-->>FE: 拒绝（TurnInProgress）
   else 新回合
     CS->>CM: 落库 user + pending assistant
     CS->>AR: create_run + collect_context
@@ -404,7 +404,7 @@ sequenceDiagram
   end
 ```
 
-回合中追问走 `soft_inject`，不会新建 assistant 气泡。
+队列里的「立即发送」会先取消当前回合，再走上面的新回合。
 
 ### 6.2 前端投影
 
@@ -438,7 +438,7 @@ flowchart LR
 ```text
 commands/chat.rs::chat
   → ChatService::send
-      → AgentRuntime::{create_run, collect_context} | soft_inject
+      → AgentRuntime::{create_run, collect_context}
       → StreamManager::spawn
           → AgentRunner::run
               → agent_loop::collect_stream_turn
@@ -480,7 +480,7 @@ stateDiagram-v2
 | `mid_turn_compact` | 上下文窗口压力下的压缩（机械摘要钉住目标与路径；可折叠只追加的 agent-state）                      |
 | `task_state`       | 运行时任务记忆；以只追加的 `agent-state-*` 用户 tip 注入（从不中途搬移历史）                      |
 | `post_edit_verify` | 成功改文件后做轻量检查；仅 `exit_code=0` 算成功；结果以 **system 文本**回灌（不是 `role=tool`）   |
-| `soft_inject`      | 在安全边界合并排队中的用户追问（只追加）                                                          |
+| `soft_inject`      | 循环里仍会排空内部追问队列。排队消息的「立即发送」不走这里：先取消当前回合，再作为新回合发出      |
 | `failure`          | 连续失败 / 同错重复的熔断                                                                         |
 
 整轮工具 Schema 在**第一次** Provider 调用时冻结（`AgentRunner` 保留首步
@@ -574,8 +574,8 @@ flowchart LR
 
 |            | AgentRunner                  | AgentRuntime                                         |
 | ---------- | ---------------------------- | ---------------------------------------------------- |
-| 回答的问题 | 「模型下一步做什么？」       | 「本轮 run 是否活跃 / 已取消 / 可注入？」            |
-| 拥有       | 流式回合、工具批次、完成门禁 | Run id、epoch、soft-inject 队列、事件桥              |
+| 回答的问题 | 「模型下一步做什么？」       | 「本轮 run 是否活跃 / 已取消？」                     |
+| 拥有       | 流式回合、工具批次、完成门禁 | Run id、epoch、取消、事件桥                          |
 | 调用方向   | 由 `StreamManager` 调用      | 创建 run；流式委托给 `StreamManager` → `AgentRunner` |
 
 `core/agent/` 下的 Planner / Executor **不是**第二套对话 Agent 循环。
@@ -666,7 +666,7 @@ flowchart LR
 
 | 规则                 | 实现                                                     |
 | -------------------- | -------------------------------------------------------- |
-| 回合内历史只追加     | soft-inject / 工具结果只 push，不改写更早消息            |
+| 回合内历史只追加     | 工具结果只 push，不改写更早消息                          |
 | 不中途搬移 state     | `task_state::inject` 只更新 tip 或追加 `agent-state-{n}` |
 | 整轮 `tools` 稳定    | `AgentRunner` 冻结首步 schemas                           |
 | 易变 UI 语境离开前缀 | 光标 / 选区 / git / 剪贴板 / `#skill` chips 挂用户尾部   |
@@ -833,7 +833,7 @@ Companion 不得再长出第二套 Agent 运行时。
 
 `services/settings_store.rs` 将内嵌主题图片迁移到应用设置目录下的 `theme-backgrounds` 文件夹，以内容哈希命名。运行时设置只保存路径，可读取的图片仍会内嵌到便携资料导出文件中。`commands/settings.rs` 将设置 I/O 移至阻塞工作线程，避免占用窗口事件线程。
 
-`stores/updater.ts` 检测到新版本时显示 `SidebarUpdateButton.vue`。`WorkbenchUpdateDialog.vue` 在安装前展示版本说明，并与关于页共用 `UpdaterProgress.vue`。`DesktopPetSvg.vue` 绘制桌面宠物；`useDesktopPet.ts` 和 `petWindowBounds.ts` 将宠物限制在可用显示器内并提供边缘反馈。
+`stores/updater.ts` 检测到新版本时显示 `SidebarUpdateButton.vue`。`WorkbenchUpdateDialog.vue` 在安装前展示版本说明，并与关于页共用 `UpdaterProgress.vue`。
 
 ## 16. 相关源码入口
 
@@ -863,7 +863,6 @@ Companion 不得再长出第二套 Agent 运行时。
 | 输入栏与历史消息编辑栏      | `src/components/chat/ChatInputBar.vue`、`UserMessageFooter.vue`                                        |
 | 悬浮窗定位与尺寸            | `services/window.rs`、`core/context/provider/clipboard_provider.rs`、`src/layouts/Overlay.vue`         |
 | 应用内更新界面              | `src/components/workbench/SidebarUpdateButton.vue`、`WorkbenchUpdateDialog.vue`、`UpdaterProgress.vue` |
-| 桌面宠物                    | `src/components/pet/DesktopPetSvg.vue`、`src/composables/useDesktopPet.ts`、`petWindowBounds.ts`       |
 | 工作台毛玻璃 / 窗口圆角     | `services/workbench_glass.rs`、`overlay/appearance.ts`                                                 |
 | 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                                              |
 | Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                                                 |

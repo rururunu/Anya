@@ -215,31 +215,7 @@ describe("staged queue mirror", () => {
     ]);
     expect(remote.remoteTakeStaged).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith("first", "guide", { fromQueue: true });
     expect(store.stagedMessages.guide).toEqual(["second"]);
-  });
-
-  it("stageSoftInject does not attach timeline chrome to a finished assistant", async () => {
-    const { useChatStore } = await import("./chat");
-    const { useChatSessionsStore } = await import("./chatSessions");
-    const store = useChatStore();
-    const sessions = useChatSessionsStore();
-    const sessionId = "s-staged-inject";
-
-    store.setSessionMessages(sessionId, [
-      {
-        id: "a-done",
-        sessionId,
-        role: "assistant",
-        content: "done",
-        status: "done",
-        timestamp: 1,
-        workTimeline: [{ type: "content", id: "c1", content: "done" }],
-      },
-    ]);
-    store.stageSoftInject(sessionId, "late nudge");
-    const messages = sessions.sessions[sessionId] ?? [];
-    const assistant = messages.find((item) => item.id === "a-done");
-    expect(assistant?.workTimeline?.some((item) => item.type === "inject")).toBe(false);
-    expect(messages.some((item) => item.injected && item.content === "late nudge")).toBe(true);
   });
 });

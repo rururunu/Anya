@@ -100,9 +100,16 @@
           :ariaLabel="tr(language, 'select')"
           :plan-switch="askIsPlanSwitch"
           :is-option-selected="isAskOptionSelected"
+          :custom-input-open="askCustomInputOpen"
+          v-model:custom-text="askCustomText"
+          :custom-placeholder="tr(language, 'typeYourAnswer')"
+          :send-label="tr(language, 'send')"
           @hover="selectedIndex = $event"
           @select="selectAskOption"
           @confirm="confirmAskSelection"
+          @submit-custom="submitCustomAskAnswer"
+          @cancel-custom="onCancelAskCustomInput"
+          @navigate-from-custom="onNavigateFromAskCustomInput"
         />
 
         <PathPermissionPicker
@@ -1106,6 +1113,8 @@ const { language } = storeToRefs(settingStore);
 
 const {
   askQuestionIndex,
+  askCustomInputOpen,
+  askCustomText,
   showAskUserPicker,
   askQuestionCount,
   activeAskQuestion,
@@ -1115,6 +1124,8 @@ const {
   askPickerRowCount,
   isAskOptionSelected,
   selectAskOption,
+  closeAskCustomInput,
+  submitCustomAskAnswer,
   confirmAskSelection,
   askIsPlanSwitch,
 } = useAskUserFlow({
@@ -1125,6 +1136,20 @@ const {
   emitLayoutChange: () => emitLayoutChangeImpl(),
   syncPopupState: (open) => syncPopupState(open),
 });
+
+function onCancelAskCustomInput() {
+  closeAskCustomInput();
+  void focusInput();
+}
+
+function onNavigateFromAskCustomInput(delta: number) {
+  closeAskCustomInput();
+  const totalRows = activeAskOptions.value.length + (activeAskQuestion.value?.multiSelect ? 1 : 0);
+  if (totalRows > 0) {
+    selectedIndex.value = (selectedIndex.value + delta + totalRows) % totalRows;
+  }
+  void focusInput();
+}
 
 const {
   attachedImages,
@@ -1980,6 +2005,7 @@ function layoutChromeSignature() {
     thinkingPopupOpen.value,
     imageGenPickerOpen.value,
     interactionRequestOpen.value,
+    askCustomInputOpen.value ? 1 : 0,
     activePickerRowCount(),
     showSuggestions.value ? 1 : 0,
     attachPanelOpen.value ? 1 : 0,
@@ -2030,7 +2056,7 @@ function estimateActivePickerHeight(pickerRows: number): number {
   }
   if (showAskUserPicker.value) {
     const options = activeAskOptions.value.length + (activeAskQuestion.value?.multiSelect ? 1 : 0);
-    return 10 + 26 + 48 + options * 30;
+    return 14 + 28 + 48 + options * 44;
   }
   if (showPathPermissionPicker.value) {
     // Header + path chip + option cards (with descriptions) + card padding.
@@ -3490,6 +3516,10 @@ async function submit() {
 
     const option = activeAskOptions.value[selectedIndex.value];
     if (option) {
+      if (option.isSkip && askCustomInputOpen.value) {
+        submitCustomAskAnswer();
+        return;
+      }
       selectAskOption(option);
     }
     return;
@@ -3842,12 +3872,14 @@ function handleComposerKeydown(event: KeyboardEvent) {
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      closeAskCustomInput();
       selectedIndex.value = (selectedIndex.value + 1) % Math.max(totalRows, 1);
       return;
     }
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      closeAskCustomInput();
       selectedIndex.value =
         (selectedIndex.value - 1 + Math.max(totalRows, 1)) % Math.max(totalRows, 1);
       return;
@@ -3864,6 +3896,10 @@ function handleComposerKeydown(event: KeyboardEvent) {
       }
       const option = activeAskOptions.value[selectedIndex.value];
       if (option) {
+        if (option.isSkip && askCustomInputOpen.value) {
+          submitCustomAskAnswer();
+          return;
+        }
         selectAskOption(option);
       }
       return;
@@ -3871,6 +3907,9 @@ function handleComposerKeydown(event: KeyboardEvent) {
 
     if (event.key === "Escape") {
       event.preventDefault();
+      if (askCustomInputOpen.value) {
+        onCancelAskCustomInput();
+      }
       return;
     }
   }
@@ -4107,6 +4146,13 @@ const { handleKeydown, handleGlobalKeydown, restorePickerFocus } = useComposerKe
       await nextTick();
       (pickerTeleportTarget.value ?? chatInputShellRef.value)
         ?.querySelector<HTMLInputElement>(".model-search-input")
+        ?.focus({ preventScroll: true });
+      return;
+    }
+    if (showAskUserPicker.value && askCustomInputOpen.value) {
+      await nextTick();
+      (pickerTeleportTarget.value ?? chatInputShellRef.value)
+        ?.querySelector<HTMLInputElement>(".ask-custom-input")
         ?.focus({ preventScroll: true });
       return;
     }
@@ -5033,7 +5079,8 @@ watch(
   gap: 5px;
   flex: none;
   min-width: 0;
-  color: var(--peek-faint);
+  color: var(--peek-composer-meta-text, var(--peek-faint));
+  font-family: var(--peek-font-sans);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -5088,7 +5135,7 @@ watch(
 }
 
 .chat-input::placeholder {
-  color: var(--peek-placeholder);
+  color: var(--peek-composer-placeholder, var(--peek-placeholder));
   transition:
     color 160ms ease,
     opacity 160ms ease;
@@ -5616,7 +5663,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--peek-muted);
+  color: var(--peek-composer-chip-text, var(--peek-muted));
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
@@ -5648,10 +5695,10 @@ watch(
 .footer-chip {
   height: var(--peek-control-icon, 28px);
   border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--peek-muted);
-  box-shadow: none;
+  border-radius: var(--peek-composer-chip-radius, var(--peek-radius-md, 8px));
+  background: var(--peek-composer-chip-bg, transparent);
+  color: var(--peek-composer-chip-text, var(--peek-muted));
+  box-shadow: var(--peek-composer-chip-shadow, none);
   font-family: var(--peek-font-sans);
   font-size: var(--peek-font-xs, 12px);
   font-weight: 500;
@@ -5659,21 +5706,23 @@ watch(
   line-height: 1.2;
   transition:
     color var(--motion-fast, 110ms) ease,
+    background-color var(--motion-fast, 110ms) ease,
+    box-shadow var(--motion-fast, 110ms) ease,
     opacity var(--motion-fast, 110ms) ease;
 }
 
 .footer-chip:hover:not(:disabled),
 .footer-chip:focus-visible {
-  color: var(--peek-text);
-  background: transparent;
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
+  background: var(--peek-composer-chip-bg, transparent);
   border: 0;
-  box-shadow: none;
+  box-shadow: var(--peek-composer-chip-shadow, none);
   outline: none;
 }
 
 .footer-chip:active:not(:disabled) {
-  color: var(--peek-text);
-  background: transparent;
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
+  background: var(--peek-composer-chip-bg, transparent);
 }
 
 .footer-chip-icon {
@@ -5692,23 +5741,23 @@ watch(
 
 .footer-chip.active,
 .footer-chip.open {
-  color: var(--peek-text);
-  background: transparent;
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
+  background: var(--peek-composer-chip-bg, transparent);
   border: 0;
-  box-shadow: none;
+  box-shadow: var(--peek-composer-chip-shadow, none);
 }
 
 .footer-chip.is-full-approve,
 .footer-chip.is-full-approve:hover:not(:disabled),
 .footer-chip.is-full-approve.open,
 .footer-chip.is-full-approve:focus-visible {
-  color: var(--peek-danger, #ef4444);
+  color: var(--peek-composer-full-access-text, var(--peek-danger, #ef4444));
 }
 
 .footer-chip.is-full-approve .footer-chip-icon,
 .footer-chip.is-full-approve:hover .footer-chip-icon,
 .footer-chip.is-full-approve.open .footer-chip-icon {
-  color: var(--peek-danger, #ef4444);
+  color: var(--peek-composer-full-access-text, var(--peek-danger, #ef4444));
   opacity: 1;
 }
 
@@ -6082,15 +6131,15 @@ watch(
 .model-badge:hover,
 .model-badge.open,
 .model-badge:focus-visible {
-  color: var(--peek-text);
-  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
+  background: color-mix(in srgb, var(--peek-text) 6%, var(--peek-composer-chip-bg, transparent));
   border: 0;
-  box-shadow: none;
+  box-shadow: var(--peek-composer-chip-shadow, none);
   outline: none;
 }
 
 .input-footer .footer-chip.open {
-  border-radius: 8px;
+  border-radius: var(--peek-composer-chip-radius, var(--peek-radius-md, 8px));
   background: color-mix(in srgb, var(--peek-accent) 10%, var(--peek-surface));
 }
 
@@ -6105,9 +6154,9 @@ watch(
   display: inline-flex;
   align-items: center;
   padding: 0 7px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--peek-text) 4%, transparent);
-  color: var(--peek-muted);
+  border-radius: var(--peek-composer-chip-radius, 7px);
+  background: color-mix(in srgb, var(--peek-text) 4%, var(--peek-composer-chip-bg, transparent));
+  color: var(--peek-composer-chip-text, var(--peek-muted));
   font-family: var(--peek-font-sans);
   font-size: 10px;
   font-weight: 500;
@@ -6121,9 +6170,10 @@ watch(
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--peek-send-radius, 50%);
   background: var(--peek-send-bg);
   color: var(--peek-send-fg);
+  box-shadow: var(--peek-send-shadow, none);
   padding: 0;
   cursor: default;
   display: inline-flex;
@@ -6133,6 +6183,7 @@ watch(
   transition:
     background 120ms ease,
     color 120ms ease,
+    box-shadow 120ms ease,
     transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -6141,9 +6192,10 @@ watch(
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--peek-muted);
+  border-radius: var(--peek-composer-chip-radius, 0);
+  background: var(--peek-composer-chip-bg, transparent);
+  color: var(--peek-composer-chip-text, var(--peek-muted));
+  box-shadow: var(--peek-composer-chip-shadow, none);
   padding: 0;
   cursor: pointer;
   display: inline-flex;
@@ -6153,15 +6205,15 @@ watch(
 }
 
 .attach-trigger-btn:hover {
-  color: var(--peek-text);
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
 }
 
 .attach-trigger-btn:active {
-  color: var(--peek-muted);
+  color: var(--peek-composer-chip-text, var(--peek-muted));
 }
 
 .attach-trigger-btn.open {
-  color: var(--peek-text);
+  color: var(--peek-composer-chip-hover-text, var(--peek-text));
 }
 
 .attach-trigger-btn:focus-visible {

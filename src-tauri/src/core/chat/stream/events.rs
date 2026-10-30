@@ -42,9 +42,11 @@ pub(crate) fn finish_success(
         reasoning,
         finish_reason: finish_reason.clone().or(Some("stop".to_string())),
     });
-    if let Some(user) = current_user {
+    crate::core::bots::note_run_finished(session_id, &content, true);
+    if let Some(user) = current_user.clone() {
+        let memory_session = session_id.to_string();
         tauri::async_runtime::spawn_blocking(move || {
-            crate::core::tools::memory::shared_memory_store().remember_exchange(user, content);
+            crate::core::bots::memory_for_session(&memory_session).remember_exchange(user, content);
         });
     }
 }
@@ -116,8 +118,9 @@ pub(crate) fn finish_with_error(
     event_bus.emit(crate::core::event::BusEvent::ChatError {
         session_id: session_id.to_string(),
         message_id: message_id.to_string(),
-        message: content,
+        message: content.clone(),
     });
+    crate::core::bots::note_run_finished(session_id, &content, false);
 }
 
 pub(crate) fn non_empty_string(value: String) -> Option<String> {

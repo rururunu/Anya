@@ -534,7 +534,7 @@
                   >
                     <MascotFace
                       interactive
-                      :tool="heroMascotTool"
+                      eyes-only
                       :look-at="composerFocused ? composerWrapRef : null"
                     />
                   </div>
@@ -857,7 +857,7 @@ import NavCollapse from "@/components/workbench/NavCollapse.vue";
 import WorkbenchSearchPalette from "@/components/workbench/WorkbenchSearchPalette.vue";
 import WorkbenchLoading from "@/components/workbench/WorkbenchLoading.vue";
 import WelcomeOnboarding from "@/components/onboarding/WelcomeOnboarding.vue";
-import MascotFace, { type MascotTool } from "@/components/icons/MascotFace.vue";
+import MascotFace from "@/components/icons/MascotFace.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import EditWorkspaceDialog from "@/components/workspace/EditWorkspaceDialog.vue";
@@ -886,7 +886,6 @@ import { useChatStore } from "@/stores/chat";
 import { useChatSessionsStore } from "@/stores/chatSessions";
 import { useSubagentSessionStore } from "@/stores/subagentSessions";
 import { useSettingStore, applyZoom, applyTheme } from "@/stores/setting";
-import { normalizeChatMode, type ChatMode } from "@/types/setting";
 import { usePluginsStore } from "@/stores/plugins";
 import { remoteGatewayStatus, type GatewayStatus } from "@/commands/remote";
 import { useResolvedBackgroundSrc } from "@/composables/theme/useResolvedBackgroundSrc";
@@ -1067,21 +1066,6 @@ const conversationMessages = computed(() => {
 });
 const viewingSubagent = computed(() => isSubagentSessionId(activeSessionId.value));
 const parentMessages = messages;
-
-/** What the hero mascot holds, per chat mode: ask -> phone, agent -> wrench, plan -> plan, image -> brush. */
-const MASCOT_TOOL_BY_MODE: Record<ChatMode, MascotTool> = {
-  ask: "phone",
-  agent: "wrench",
-  plan: "clipboard",
-  image: "brush",
-};
-const heroMascotTool = computed<MascotTool>(() => {
-  // Mirrors the composer's mode chip: per-session choice, falling back to the global default.
-  const compose = activeSessionId.value
-    ? chatStore.sessionCompose[activeSessionId.value]
-    : undefined;
-  return MASCOT_TOOL_BY_MODE[normalizeChatMode(compose?.chatMode ?? settingStore.chatMode)];
-});
 
 const {
   isMaximized,
@@ -1575,21 +1559,26 @@ watch(
 );
 
 watch(
-  () => [settingStore.colorScheme, settingStore.language, settingStore.chromeFrostedGlass] as const,
-  ([colorScheme, language, chromeFrostedGlass]) => {
-    applyTheme({ colorScheme, language, chromeFrostedGlass });
+  () =>
+    [
+      settingStore.colorScheme,
+      settingStore.language,
+      settingStore.chromeFrostedGlass,
+      settingStore.customThemes,
+    ] as const,
+  ([colorScheme, language, chromeFrostedGlass, customThemes]) => {
+    applyTheme({ colorScheme, language, chromeFrostedGlass, customThemes });
   },
   { immediate: true },
 );
 
 watch(settingsOpen, (open) => {
   if (!open) return;
-  // Opening settings used to "magically" fix a stale theme after boot; re-sync
-  // explicitly so the workbench never depends on that side effect.
   applyTheme({
     colorScheme: settingStore.colorScheme,
     language: settingStore.language,
     chromeFrostedGlass: settingStore.chromeFrostedGlass,
+    customThemes: settingStore.customThemes,
   });
 });
 const codePreview = useCodeReadPreviewStore();
@@ -2125,6 +2114,7 @@ button {
   gap: 0;
   padding: var(--peek-space-2, 8px) var(--peek-space-2, 8px) var(--peek-space-3, 12px);
   background: var(--peek-sidebar);
+  color: var(--peek-sidebar-text, var(--peek-text));
   overflow: hidden;
 }
 .workbench[data-theme="light"]:not(.has-custom-bg):not(.is-glass) .navigation-pane {
@@ -2170,7 +2160,7 @@ button {
   min-height: 36px;
   margin: 0 2px var(--peek-space-2, 8px);
   padding: 2px 4px 2px 8px;
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
 }
 .navigation-brand-text {
   min-width: 0;
@@ -2194,10 +2184,10 @@ button {
 .navigation-search-button {
   flex: none;
   margin-left: auto;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
 }
 .navigation-search-button:hover {
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
 }
 .debug-badge {
   flex: none;
@@ -2258,19 +2248,19 @@ button {
 }
 .nav-shortcut-button.active {
   background: var(--peek-row-active);
-  color: var(--peek-text);
+  color: var(--peek-active-fg, var(--peek-sidebar-text, var(--peek-text)));
   font-weight: 600;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--peek-accent) 10%, transparent);
 }
 .nav-shortcut-button > svg {
   flex: none;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
 }
 .nav-shortcut-icon {
   position: relative;
   display: inline-flex;
   flex: none;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
 }
 .nav-shortcut-icon > svg {
   display: block;
@@ -2289,7 +2279,7 @@ button {
 .nav-shortcut-button.active > svg,
 .nav-shortcut-button:hover .nav-shortcut-icon,
 .nav-shortcut-button.active .nav-shortcut-icon {
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
 }
 .session-list {
   flex: 1;
@@ -2333,7 +2323,7 @@ button {
   border: 0;
   border-radius: var(--peek-radius-sm);
   background: transparent;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
   cursor: pointer;
   font-size: var(--peek-font-sm);
   font-weight: 600;
@@ -2346,7 +2336,7 @@ button {
 }
 .navigation-section-toggle:hover {
   background: var(--peek-row-hover);
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
 }
 .navigation-section-toggle > svg:first-child {
   flex: none;
@@ -2381,7 +2371,7 @@ button {
   border: 0;
   border-radius: var(--peek-radius-sm);
   background: transparent;
-  color: var(--peek-muted);
+  color: var(--peek-sidebar-muted, var(--peek-muted));
   cursor: pointer;
 }
 .section-action {
@@ -2390,7 +2380,7 @@ button {
 }
 .section-action:hover,
 .workspace-actions button:hover {
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
   background: var(--peek-hover-bg);
 }
 .section-action.active {
@@ -2494,14 +2484,14 @@ button {
   border: 0;
   border-radius: var(--peek-radius-sm);
   background: transparent;
-  color: var(--peek-text);
+  color: var(--peek-sidebar-text, var(--peek-text));
   cursor: inherit;
   font-size: var(--peek-font-sm);
   text-align: left;
 }
 .workspace-group-header > svg {
   flex: none;
-  color: color-mix(in srgb, var(--peek-accent) 55%, var(--peek-muted));
+  color: color-mix(in srgb, var(--peek-accent) 55%, var(--peek-sidebar-muted, var(--peek-muted)));
 }
 .workspace-group-header span {
   min-width: 0;
@@ -2592,9 +2582,9 @@ button {
   border: 1px solid color-mix(in srgb, var(--peek-border) 62%, transparent);
   border-right: 0;
   border-bottom: 0;
-  border-radius: 20px 0 0 0;
+  border-radius: var(--peek-pane-radius, 20px) 0 0 0;
   background: var(--peek-list-bg);
-  box-shadow: none;
+  box-shadow: var(--peek-pane-shadow, none);
   container-type: size;
   container-name: conversation;
 }
@@ -2730,10 +2720,14 @@ button {
 .workbench-messages :deep(.message-list) {
   --code-block-sticky-top: -18px;
   --chat-sticky-top: -16px;
-  padding: 18px max(calc(var(--chat-column-gutter) / 2), calc((100% - var(--chat-column-max)) / 2))
-    var(--composer-list-clearance);
+  padding: 18px 0 var(--composer-list-clearance)
+    max(calc(var(--chat-column-gutter) / 2), calc((100cqw - var(--chat-column-max)) / 2));
   gap: 20px;
   scroll-behavior: auto;
+}
+.workbench-messages :deep(.message-list-content) {
+  width: min(calc(100cqw - var(--chat-column-gutter)), var(--chat-column-max));
+  max-width: 100%;
 }
 .workbench-messages :deep(.chat-turn.is-first-turn) {
   --chat-sticky-top: 0px;
@@ -2944,20 +2938,19 @@ button {
   transform: translateX(-50%) translateY(12px) scale(0.98);
 }
 .empty-conversation-brand {
-  width: 104px;
-  height: 104px;
+  width: 168px;
+  height: 124px;
   flex: none;
   /* The hero itself is click-through; the mascot alone reacts to clicks. */
   pointer-events: auto;
 }
 .empty-conversation-brand :deep(.mascot-face) {
-  opacity: 0.94;
-  filter: drop-shadow(0 10px 24px color-mix(in srgb, var(--peek-text) 18%, transparent));
+  opacity: 1;
 }
 .empty-conversation-prompt {
   margin: 0;
   max-width: 28em;
-  color: var(--peek-text);
+  color: var(--peek-conversation-text, var(--peek-text));
   font-size: clamp(20px, 2.4vw, 26px);
   font-weight: 560;
   letter-spacing: -0.025em;
@@ -3045,7 +3038,7 @@ button {
   letter-spacing: -0.01em;
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.composer-textarea::placeholder) {
-  color: var(--peek-placeholder);
+  color: var(--peek-composer-placeholder, var(--peek-placeholder));
   letter-spacing: 0;
 }
 .conversation-pane.empty-conversation .composer-wrap :deep(.footer-chip) {
@@ -3307,12 +3300,8 @@ button {
 }
 
 @container conversation (max-width: 400px) {
-  .workbench-messages :deep(.message-list) {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-  .composer-wrap {
-    width: calc(100% - 10px);
+  .conversation-pane {
+    --chat-column-gutter: 20px;
   }
 }
 

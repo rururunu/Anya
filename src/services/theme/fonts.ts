@@ -104,8 +104,10 @@ export function applyUiFonts(settings: {
   const root = document.documentElement;
   root.style.setProperty("--font-sans-latin", fontStack("latin", settings.fontLatin));
   root.style.setProperty("--font-sans-cjk", fontStack("cjk", settings.fontCjk));
-  root.style.setProperty("--peek-font-sans", uiSansStack(settings));
-  root.style.setProperty("--font-mono", fontStack("mono", settings.fontMono));
+  root.style.setProperty("--settings-font-sans", uiSansStack(settings));
+  root.style.setProperty("--settings-font-mono", fontStack("mono", settings.fontMono));
+  root.style.removeProperty("--peek-font-sans");
+  root.style.removeProperty("--font-mono");
 }
 
 export function isFontPreset(kind: FontKind, value: string): boolean {

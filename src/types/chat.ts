@@ -263,9 +263,6 @@ export interface ChatSendRequest {
   /** Approve & execute continuation: drives the turn but never persists a
    * user bubble / history entry for the approval message. */
   resumePlan?: boolean;
-  /** Explicit mid-turn soft-inject (staged chip 追加). Queue-continue after
-   * the turn finishes must omit this so a cancelling agent cannot swallow it. */
-  softInject?: boolean;
 }
 
 /** 与 Rust `RequestContext` 对齐 — overlay 唤起时采集的上下文 */

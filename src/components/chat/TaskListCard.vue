@@ -148,10 +148,11 @@ function statusClass(status: string): string {
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--peek-card-border, var(--peek-border)) 88%, transparent);
+  border-radius: var(--peek-card-radius, var(--peek-radius-md, 10px));
   background: var(--peek-surface, #fff);
-  box-shadow: 0 1px 0 color-mix(in srgb, #000 4%, transparent);
+  color: var(--peek-card-text, var(--peek-text));
+  box-shadow: var(--peek-card-shadow, 0 1px 0 color-mix(in srgb, #000 4%, transparent));
   overflow: hidden;
 }
 

@@ -17,6 +17,13 @@ impl ChatService {
         }
     }
 
+    /// Stops the assistant currently streaming in this session, if any.
+    pub fn cancel_active_session(&self, session_id: &str) {
+        if let Some(message_id) = self.agent_runtime.active_assistant_for_session(session_id) {
+            let _ = self.cancel(&message_id);
+        }
+    }
+
     /// Returns the message history for a session.
     pub fn history(&self, session_id: &str) -> Result<Vec<ChatMessage>, ChatError> {
         self.conversation.history(session_id)

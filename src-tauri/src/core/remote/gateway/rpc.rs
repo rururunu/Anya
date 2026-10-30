@@ -725,7 +725,6 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 chat_model,
                 chat_model_provider,
                 image_gen,
-                false,
             )
             .await
         }
@@ -873,7 +872,9 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 "remote-staged-changed",
                 json!({ "sessionId": session_id, "messages": messages }),
             );
-            // Soft-inject into the running turn (same path as mid-turn chat.send).
+            if let Some(state) = app.try_state::<AppState>() {
+                state.core.chat().cancel_active_session(&session_id);
+            }
             handle_chat_send(
                 app,
                 ws,
@@ -886,7 +887,6 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
                 None,
                 None,
                 None,
-                true,
             )
             .await
         }

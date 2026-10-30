@@ -365,9 +365,11 @@ function summonAnyaThemeDesign() {
   align-items: stretch;
   gap: 8px;
   padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 55%, transparent);
-  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--peek-card-border, var(--peek-border)) 55%, transparent);
+  border-radius: var(--peek-card-radius, var(--peek-radius-lg, 14px));
   background: var(--peek-list-bg);
+  color: var(--peek-card-text, var(--peek-text));
+  box-shadow: var(--peek-card-shadow, none);
 }
 
 .theme-grid .settings-row-copy {

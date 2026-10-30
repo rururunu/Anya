@@ -266,7 +266,7 @@ pub enum ClientMessage {
         session_id: String,
         index: usize,
     },
-    /// Soft-inject one staged message into the running turn immediately.
+    /// Stop the running turn and send this staged message as a new turn.
     #[serde(rename = "session.staged.guide")]
     SessionStagedGuide {
         #[serde(rename = "requestId")]
