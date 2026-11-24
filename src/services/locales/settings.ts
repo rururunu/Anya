@@ -8,6 +8,7 @@ export const settingsFieldIds = [
   "fontMono",
   "zoom",
   "hardwareAccelerationEnabled",
+  "externalPluginGatewayEnabled",
   "opacity",
   "chromeFrostedGlass",
   "primaryHotkey",
@@ -21,6 +22,10 @@ export const settingsFieldIds = [
   "reasoningEffort",
   "reasoningLanguage",
   "showReasoning",
+  "showExecutionProcess",
+  "showContextUsage",
+  "showCacheHit",
+  "showTokenBudget",
   "passToolReasoning",
   "continueThinkingAfterTools",
   "memoryEnabled",
@@ -68,6 +73,7 @@ type CategoryKey =
   | "workspace"
   | "history"
   | "archive"
+  | "components"
   | "about"
   | "provider";
 type GroupKey =
@@ -86,6 +92,7 @@ type GroupKey =
   | "searchKeys"
   | "agentSafety"
   | "agentDisplay"
+  | "chat"
   | "agentCapabilities"
   | "pinBadges"
   | "about";
@@ -163,6 +170,7 @@ type ArchiveKey =
   | "deleteSelectedMixed";
 
 export type SettingsI18nKey =
+  | `settings.components.${"office" | "officeDescription" | "officialSource" | "notInstalled" | "engineSource" | "working" | "enabled" | "disabled" | "enable" | "disable"}`
   | "settings.profile.searchTerms"
   | "settings.title"
   | "settings.minimize"
@@ -307,7 +315,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.provider.delete": "Delete Provider",
   "settings.provider.deleteConfirm": "Are you sure you want to delete this provider?",
 
-  "settings.categories.appearance": "Appearance",
+  "settings.categories.appearance": "General",
   "settings.categories.profile": "Profile",
   "settings.profile.searchTerms": "Profile avatar display name handle token activity streak habits",
   "settings.categories.ai": "Model",
@@ -321,6 +329,18 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.categories.workspace": "Workspace",
   "settings.categories.history": "History",
   "settings.categories.archive": "Archive",
+  "settings.categories.components": "Components",
+  "settings.components.office": "Office",
+  "settings.components.officeDescription":
+    "Read, create and render Word, Excel and PowerPoint files.",
+  "settings.components.officialSource": "Official source",
+  "settings.components.notInstalled": "Engine not installed",
+  "settings.components.engineSource": "Built-in engine · DeepSeek LibreOffice Kit",
+  "settings.components.working": "Working…",
+  "settings.components.enabled": "Enabled",
+  "settings.components.disabled": "Disabled",
+  "settings.components.enable": "Enable",
+  "settings.components.disable": "Disable",
   "settings.categories.about": "About",
   "settings.categories.provider": "Provider",
 
@@ -339,12 +359,13 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.groups.searchKeys": "API keys",
   "settings.groups.agentSafety": "Safety",
   "settings.groups.agentDisplay": "Display",
+  "settings.groups.chat": "Chat",
   "settings.groups.agentCapabilities": "Capabilities",
   "settings.groups.pinBadges": "Badges",
   "settings.groups.about": "Application",
 
   "settings.pages.appearance.description":
-    "Theme, fonts, window, and the shortcuts that wake Anya.",
+    "Theme, fonts, window, shortcuts, and what the chat shows.",
   "settings.pages.ai.description":
     "Default chat model, vision fallback, and reasoning. Configure API keys under Provider. Image generation is under Image.",
   "settings.pages.image.description":
@@ -397,6 +418,9 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.zoom.title": "Interface Zoom",
   "settings.fields.zoom.description":
     "Adjust the scale of interface elements and fonts for high-DPI displays.",
+  "settings.fields.externalPluginGatewayEnabled.title": "External plugin gateway",
+  "settings.fields.externalPluginGatewayEnabled.description":
+    "Allow local connections from VS Code, JetBrains IDEs and browser extensions.",
   "settings.fields.hardwareAccelerationEnabled.title": "Hardware acceleration",
   "settings.fields.hardwareAccelerationEnabled.description":
     "Requires a full app restart to take effect.",
@@ -437,7 +461,7 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
     "For text-only primary models: the multimodal model describes the image, then the primary model answers and runs tools. Not used when the primary model already supports vision (e.g. Gemini).",
   "settings.fields.largeContextEnabled.title": "1M context window",
   "settings.fields.largeContextEnabled.description":
-    "Raise the compaction / turn budget ceiling to 1,000,000 tokens. The effective window is still capped by the selected model's native limit (unknown models stay at 256k).",
+    "Raise the compaction / turn budget ceiling to 1,000,000 tokens. Off uses 258,000 tokens. The effective window is still capped by the selected model's native limit (unknown models stay at 258k).",
   "settings.fields.reasoningEffort.title": "Reasoning Effort",
   "settings.fields.reasoningEffort.description":
     "Preferred thinking depth. The input bar shows each model's official levels and names (DeepSeek: off/low/high/max; GPT: none/minimal/low…; Grok: low/medium/high/xhigh). Unsupported values are mapped.",
@@ -447,6 +471,18 @@ export const settingsEn: Record<SettingsI18nKey, string> = {
   "settings.fields.showReasoning.title": "Show reasoning process",
   "settings.fields.showReasoning.description":
     "Show model reasoning in chat when the provider supplies it.",
+  "settings.fields.showExecutionProcess.title": "Show execution process",
+  "settings.fields.showExecutionProcess.description":
+    "Show the “Worked” summary and live tool activity above replies.",
+  "settings.fields.showContextUsage.title": "Show context usage",
+  "settings.fields.showContextUsage.description":
+    "Show how much of the context window this conversation is using.",
+  "settings.fields.showCacheHit.title": "Show cache hit rate",
+  "settings.fields.showCacheHit.description":
+    "Show the cache-hit percentage on replies and in the composer.",
+  "settings.fields.showTokenBudget.title": "Show token budget",
+  "settings.fields.showTokenBudget.description":
+    "Show token counts on replies and in the composer.",
   "settings.fields.passToolReasoning.title": "Pass tool-turn reasoning",
   "settings.fields.passToolReasoning.description": "Turning off may cause request errors.",
   "settings.fields.passToolReasoning.help":
@@ -580,7 +616,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.hotkey.listenOff": "未监听",
     "settings.hotkey.toggleListen": "开关全局快捷键监听",
 
-    "settings.categories.appearance": "外观",
+    "settings.categories.appearance": "通用设置",
     "settings.categories.profile": "个人资料",
     "settings.profile.searchTerms": "个人资料 头像 昵称 个人标识 Token 活动 连续天数 习惯",
     "settings.categories.ai": "模型",
@@ -594,6 +630,17 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.categories.workspace": "工作区",
     "settings.categories.history": "历史",
     "settings.categories.archive": "归档",
+    "settings.categories.components": "组件",
+    "settings.components.office": "Office",
+    "settings.components.officeDescription": "读取、生成和渲染 Word、Excel 和 PowerPoint 文件。",
+    "settings.components.officialSource": "官方来源",
+    "settings.components.notInstalled": "引擎未安装",
+    "settings.components.engineSource": "内置引擎 · DeepSeek LibreOffice Kit",
+    "settings.components.working": "正在处理…",
+    "settings.components.enabled": "已开启",
+    "settings.components.disabled": "已关闭",
+    "settings.components.enable": "开启",
+    "settings.components.disable": "关闭",
     "settings.categories.about": "关于",
     "settings.categories.provider": "提供商",
 
@@ -665,11 +712,13 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.groups.searchKeys": "密钥",
     "settings.groups.agentSafety": "安全",
     "settings.groups.agentDisplay": "显示",
+    "settings.groups.chat": "聊天",
     "settings.groups.agentCapabilities": "能力",
     "settings.groups.pinBadges": "角标",
     "settings.groups.about": "应用信息",
 
-    "settings.pages.appearance.description": "主题、字体、窗口与唤起快捷键。",
+    "settings.pages.appearance.description":
+      "主题、字体、窗口、唤起快捷键，以及聊天里要显示的内容。",
     "settings.pages.ai.description":
       "默认对话模型、视觉回退与推理行为。API Key 在「提供商」中配置。生图请到「生图」。",
     "settings.pages.image.description":
@@ -718,6 +767,9 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.fontMono.description": "用于 diff、终端和代码块。默认优先 Fira Code。",
     "settings.fields.zoom.title": "界面缩放",
     "settings.fields.zoom.description": "调整软件界面大小。",
+    "settings.fields.externalPluginGatewayEnabled.title": "外部插件网关",
+    "settings.fields.externalPluginGatewayEnabled.description":
+      "允许 VS Code、JetBrains IDE 和浏览器扩展通过本机连接 Anya。",
     "settings.fields.hardwareAccelerationEnabled.title": "硬件加速",
     "settings.fields.hardwareAccelerationEnabled.description": "更改后需完整重启。",
     "settings.fields.hardwareAccelerationEnabled.help":
@@ -752,7 +804,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
       "面向无视觉能力的主模型：多模态模型先描述图片，再由主模型作答与调用工具。主模型已支持识图（如 Gemini）时不会启用。",
     "settings.fields.largeContextEnabled.title": "1M 上下文",
     "settings.fields.largeContextEnabled.description":
-      "将压缩与单轮预算上限提到约 100 万 token。实际窗口仍受当前模型原生上限约束（未知模型按 256k）。",
+      "将压缩与单轮预算上限提到约 100 万 token。关闭时使用 258k。实际窗口仍受当前模型原生上限约束（未知模型按 258k）。",
     "settings.fields.reasoningEffort.title": "思考深度",
     "settings.fields.reasoningEffort.description":
       "默认思考强度。输入栏会按当前模型显示官方档位和名称（DeepSeek：关闭/低/高/最高；GPT：none/minimal/low…；Grok：low/medium/high/xhigh）。不支持的值会自动映射。",
@@ -760,6 +812,15 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.fields.reasoningLanguage.description": "推理文本与回答语言偏好",
     "settings.fields.showReasoning.title": "显示思考过程",
     "settings.fields.showReasoning.description": "模型提供推理内容时，在聊天中显示思考过程。",
+    "settings.fields.showExecutionProcess.title": "显示执行过程",
+    "settings.fields.showExecutionProcess.description":
+      "在回复上方显示「已完成」以及工具、思考摘要。",
+    "settings.fields.showContextUsage.title": "显示上下文",
+    "settings.fields.showContextUsage.description": "在输入框显示当前对话占用了多少上下文。",
+    "settings.fields.showCacheHit.title": "显示缓存命中率",
+    "settings.fields.showCacheHit.description": "在回复和输入框显示缓存命中百分比。",
+    "settings.fields.showTokenBudget.title": "显示 token 预算",
+    "settings.fields.showTokenBudget.description": "在回复和输入框显示 token 数量。",
     "settings.fields.passToolReasoning.title": "工具轮次回传推理",
     "settings.fields.passToolReasoning.description": "关闭可能导致请求失败。",
     "settings.fields.passToolReasoning.help":
@@ -877,7 +938,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.searchPlaceholder": "設定を検索",
     "settings.empty": "一致する設定がありません",
 
-    "settings.categories.appearance": "外観",
+    "settings.categories.appearance": "一般",
     "settings.categories.ai": "モデル",
     "settings.categories.image": "画像生成",
     "settings.categories.memory": "記憶",
@@ -1046,7 +1107,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.searchPlaceholder": "Поиск настроек",
     "settings.empty": "Настройки не найдены",
 
-    "settings.categories.appearance": "Тема",
+    "settings.categories.appearance": "Общие",
     "settings.categories.ai": "Модель",
     "settings.categories.image": "Изображения",
     "settings.categories.memory": "Память",
@@ -1218,7 +1279,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.searchPlaceholder": "Einstellungen durchsuchen",
     "settings.empty": "Keine passenden Einstellungen",
 
-    "settings.categories.appearance": "Design",
+    "settings.categories.appearance": "Allgemein",
     "settings.categories.ai": "Modell",
     "settings.categories.image": "Bilder",
     "settings.categories.memory": "Gedächtnis",
@@ -1392,7 +1453,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.searchPlaceholder": "Rechercher dans les paramètres",
     "settings.empty": "Aucun paramètre correspondant",
 
-    "settings.categories.appearance": "Thème",
+    "settings.categories.appearance": "Général",
     "settings.categories.ai": "Modèle",
     "settings.categories.image": "Images",
     "settings.categories.memory": "Mémoire",
@@ -1568,7 +1629,7 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
     "settings.searchPlaceholder": "설정 검색",
     "settings.empty": "일치하는 설정이 없습니다",
 
-    "settings.categories.appearance": "테마",
+    "settings.categories.appearance": "일반",
     "settings.categories.ai": "모델",
     "settings.categories.image": "이미지 생성",
     "settings.categories.memory": "기억",
@@ -1735,17 +1796,18 @@ export const settingsLocales: Record<AppLanguage, Partial<Record<SettingsI18nKey
 // Preserved here exactly as the original computed `t` in Settings/index.vue behaved.
 const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldId, string>>> = {
   "en-US": {
-    colorScheme: "Appearance › Color Scheme",
-    language: "Appearance › Language",
-    fontCjk: "Appearance › Chinese font",
-    fontLatin: "Appearance › English font",
-    fontMono: "Appearance › Code font",
-    zoom: "Appearance › Interface Zoom",
-    hardwareAccelerationEnabled: "Appearance › Hardware acceleration",
-    opacity: "Appearance › Opacity",
-    chromeFrostedGlass: "Appearance › Frosted glass chrome",
-    primaryHotkey: "Appearance › Primary shortcut",
-    secondaryHotkey: "Appearance › Secondary shortcut",
+    colorScheme: "General › Color scheme",
+    language: "General › Language",
+    fontCjk: "General › Chinese font",
+    fontLatin: "General › English font",
+    fontMono: "General › Code font",
+    zoom: "General › Interface zoom",
+    externalPluginGatewayEnabled: "General › External plugin gateway",
+    hardwareAccelerationEnabled: "General › Hardware acceleration",
+    opacity: "General › Opacity",
+    chromeFrostedGlass: "General › Frosted glass chrome",
+    primaryHotkey: "General › Primary shortcut",
+    secondaryHotkey: "General › Secondary shortcut",
     deepseekApiKey: "AI › DeepSeek › API Key",
     defaultModel: "AI / DeepSeek / Default Model",
     multimodalModel: "AI / DeepSeek / Multimodal Model",
@@ -1753,8 +1815,12 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     multimodalSplitAnalysis: "AI / DeepSeek / Split Multimodal Analysis",
     largeContextEnabled: "AI / Context / 1M Context Window",
     reasoningEffort: "AI › Reasoning › Reasoning Effort",
-    reasoningLanguage: "AI › DeepSeek › Reasoning Language",
-    showReasoning: "AI › Chat › Reasoning Display",
+    reasoningLanguage: "General › Chat › Reasoning language",
+    showReasoning: "General › Chat › Reasoning display",
+    showExecutionProcess: "General › Chat › Execution process",
+    showContextUsage: "General › Chat › Context usage",
+    showCacheHit: "General › Chat › Cache hit rate",
+    showTokenBudget: "General › Chat › Token budget",
     passToolReasoning: "AI › Reasoning › Tool History",
     continueThinkingAfterTools: "AI › Reasoning › Continue After Tools",
     memoryEnabled: "Memory / mem0 / Enabled",
@@ -1777,17 +1843,18 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     appIdentifier: "About › Identifier",
   },
   "zh-CN": {
-    colorScheme: "Appearance › Color Scheme",
-    language: "Appearance › Language",
-    fontCjk: "外观 › 中文字体",
-    fontLatin: "外观 › 英文字体",
-    fontMono: "外观 › 代码字体",
-    zoom: "Appearance › Interface Zoom",
-    hardwareAccelerationEnabled: "外观 › 硬件加速",
-    opacity: "Appearance › Opacity",
-    chromeFrostedGlass: "外观 › 毛玻璃顶栏与侧栏",
-    primaryHotkey: "外观 › 主快捷键",
-    secondaryHotkey: "外观 › 副快捷键",
+    colorScheme: "通用设置 › 配色",
+    language: "通用设置 › 语言",
+    fontCjk: "通用设置 › 中文字体",
+    fontLatin: "通用设置 › 英文字体",
+    fontMono: "通用设置 › 代码字体",
+    zoom: "通用设置 › 界面缩放",
+    externalPluginGatewayEnabled: "通用设置 › 外部插件网关",
+    hardwareAccelerationEnabled: "通用设置 › 硬件加速",
+    opacity: "通用设置 › 透明度",
+    chromeFrostedGlass: "通用设置 › 毛玻璃顶栏与侧栏",
+    primaryHotkey: "通用设置 › 主快捷键",
+    secondaryHotkey: "通用设置 › 副快捷键",
     deepseekApiKey: "AI › DeepSeek › API Key",
     defaultModel: "AI / DeepSeek / 默认模型",
     multimodalModel: "AI / DeepSeek / 多模态模型",
@@ -1795,8 +1862,12 @@ const settingsFieldPaths: Record<"zh-CN" | "en-US", Partial<Record<SettingFieldI
     multimodalSplitAnalysis: "AI / DeepSeek / 多模态分步分析",
     largeContextEnabled: "AI / 上下文 / 1M 上下文",
     reasoningEffort: "AI › Reasoning › Reasoning Effort",
-    reasoningLanguage: "AI › DeepSeek › Reasoning Language",
-    showReasoning: "AI › 聊天 › 思考过程显示",
+    reasoningLanguage: "通用设置 › 聊天 › 推理语言",
+    showReasoning: "通用设置 › 聊天 › 思考过程",
+    showExecutionProcess: "通用设置 › 聊天 › 执行过程",
+    showContextUsage: "通用设置 › 聊天 › 上下文",
+    showCacheHit: "通用设置 › 聊天 › 缓存命中率",
+    showTokenBudget: "通用设置 › 聊天 › token 预算",
     passToolReasoning: "AI › 推理 › 工具历史",
     continueThinkingAfterTools: "AI › 推理 › 续轮思考",
     memoryEnabled: "记忆 / mem0 / 启用",
@@ -1831,6 +1902,7 @@ const settingsFieldKeywords: Record<
     fontLatin: ["font", "english", "latin", "system", "segoe"],
     fontMono: ["font", "code", "mono", "cascadia", "consolas", "jetbrains"],
     zoom: ["zoom", "scale", "size", "font"],
+    externalPluginGatewayEnabled: ["gateway", "IDE", "VS Code", "JetBrains", "browser"],
     hardwareAccelerationEnabled: [
       "gpu",
       "hardware",
@@ -1870,6 +1942,10 @@ const settingsFieldKeywords: Record<
     reasoningEffort: ["reasoning", "effort", "thinking", "deepseek", "grok", "responses"],
     reasoningLanguage: ["reasoning", "language", "response"],
     showReasoning: ["reasoning", "thinking", "display", "chat"],
+    showExecutionProcess: ["execution", "process", "tools", "worked", "activity"],
+    showContextUsage: ["context", "window", "usage", "meter"],
+    showCacheHit: ["cache", "hit", "percent", "tokens"],
+    showTokenBudget: ["token", "budget", "usage", "count"],
     passToolReasoning: ["reasoning", "tool", "passthrough", "thinking"],
     continueThinkingAfterTools: ["reasoning", "thinking", "continue", "tools", "token"],
     memoryEnabled: ["memory", "enabled", "mem0"],
@@ -1907,6 +1983,7 @@ const settingsFieldKeywords: Record<
     fontLatin: ["字体", "英文", "系统", "segoe", "font", "english"],
     fontMono: ["字体", "代码", "等宽", "cascadia", "consolas", "font", "mono", "code"],
     zoom: ["缩放", "放大", "大小", "字体", "zoom", "scale"],
+    externalPluginGatewayEnabled: ["网关", "插件", "扩展", "上报", "VS Code", "IDEA"],
     hardwareAccelerationEnabled: ["gpu", "硬件", "加速", "渲染", "webview2", "重启"],
     opacity: ["透明", "透明度", "毛玻璃", "blur", "opacity", "glass", "acrylic", "外观"],
     chromeFrostedGlass: ["毛玻璃", "顶栏", "侧栏", "透明", "blur", "acrylic", "mica", "glass"],
@@ -1921,6 +1998,10 @@ const settingsFieldKeywords: Record<
     reasoningEffort: ["reasoning", "effort", "思考", "推理", "deepseek", "grok", "responses"],
     reasoningLanguage: ["reasoning", "language", "推理语言", "回答语言"],
     showReasoning: ["思考过程", "推理", "显示", "reasoning", "thinking"],
+    showExecutionProcess: ["执行过程", "已完成", "工具", "思考", "process"],
+    showContextUsage: ["上下文", "窗口", "占用", "context"],
+    showCacheHit: ["缓存", "命中", "cache"],
+    showTokenBudget: ["token", "预算", "用量", "tokens"],
     passToolReasoning: ["reasoning", "tool", "工具", "回传", "thinking"],
     continueThinkingAfterTools: ["续轮", "思考", "工具", "token", "thinking", "continue"],
     memoryEnabled: ["记忆", "启用", "memory", "mem0"],

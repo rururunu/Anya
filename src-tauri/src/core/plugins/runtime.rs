@@ -304,9 +304,6 @@ impl PluginRuntime {
     }
 
     fn stop_session(&self, id: &str) {
-        if id == "computer-use" {
-            super::computer::stop_engine();
-        }
         if let Some(registry) = self.registry() {
             unregister_plugin_tools(registry.as_ref(), id);
         }
@@ -338,9 +335,6 @@ impl PluginRuntime {
         }
         if method.starts_with("pty.") && !grant_has(id, "pty") {
             return Err(ToolError::new("plugin is not granted pty"));
-        }
-        if method.starts_with("computer.") {
-            return super::computer::dispatch_rpc(id, method, &params);
         }
         if method.starts_with("deepseek.") {
             let app = self
@@ -453,19 +447,11 @@ impl PluginRuntime {
                 .map(|session| session.agent_tools.clone())
                 .unwrap_or_default();
             let extra = if grant_has(&item.id, "agent.prompt") {
-                let mut extra = prompt::extra_from_manifest(
+                let extra = prompt::extra_from_manifest(
                     &item.id,
                     &manifest.contributes.agent.prompt,
                     &manifest.contributes.agent.skills,
                 );
-                if item.id == "computer-use" {
-                    if let Some(catalog) = super::computer::playbook_prompt_catalog() {
-                        if !extra.is_empty() {
-                            extra.push_str("\n\n");
-                        }
-                        extra.push_str(&catalog);
-                    }
-                }
                 extra
             } else {
                 String::new()

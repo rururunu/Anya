@@ -4,27 +4,16 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Ids rewritten on every launch; importing over them would be wiped.
-pub const OFFICIAL_PLUGIN_IDS: &[&str] = &["terminal", "computer-use", "opencli"];
+pub const OFFICIAL_PLUGIN_IDS: &[&str] = &["opencli"];
+
+pub const BUILTIN_PLUGIN_IDS: &[&str] = &["terminal", "computer-use"];
 
 use super::grant::{clear_grant, has_grant, save_grant, PluginGrant};
 use super::manifest::load_manifest;
 use crate::core::tools::error::ToolError;
 use crate::core::tools::memory::plugins_dir;
 
-const TERMINAL_MANIFEST: &str = include_str!("../../../plugins/terminal/plugin.json");
-const TERMINAL_ACTIVATE: &str = include_str!("../../../plugins/terminal/ui/src/activate.js");
-const TERMINAL_XTERM_JS: &str = include_str!("../../../plugins/terminal/ui/src/vendor/xterm.js");
-const TERMINAL_XTERM_CSS: &str = include_str!("../../../plugins/terminal/ui/src/vendor/xterm.css");
-const TERMINAL_HOST: &str = include_str!("../../../plugins/terminal/host/main.ts");
-const TERMINAL_HTML: &str = include_str!("../../../plugins/terminal/ui/index.html");
-const TERMINAL_ICON: &str = include_str!("../../../plugins/terminal/ui/icon.svg");
-const TERMINAL_ABOUT: &str = include_str!("../../../plugins/terminal/ui/about.md");
 
-const CU_MANIFEST: &str = include_str!("../../../plugins/computer-use/plugin.json");
-const CU_HOST: &str = include_str!("../../../plugins/computer-use/host/main.ts");
-const CU_ICON: &str = include_str!("../../../plugins/computer-use/ui/icon.svg");
-const CU_ABOUT: &str = include_str!("../../../plugins/computer-use/ui/about.md");
-const CU_SKILL_WINDOWS: &str = include_str!("../../../plugins/computer-use/skills/windows.md");
 
 const OC_MANIFEST: &str = include_str!("../../../plugins/opencli/plugin.json");
 const OC_HOST: &str = include_str!("../../../plugins/opencli/host/main.ts");
@@ -37,61 +26,25 @@ pub fn ensure_bundled_plugins() -> Result<(), ToolError> {
     retire_unshipped_plugin("anya-cli");
     retire_unshipped_plugin("system-terminal");
     retire_unshipped_plugin("pet-gallery");
-    write_official_terminal(plugins_dir().join("terminal"))?;
-    write_official_computer_use(plugins_dir().join("computer-use"))?;
+    if let Err(error) = retire_ai_gallery() {
+        tracing::warn!("could not retire AI gallery: {error}");
+    }
     write_official_opencli(plugins_dir().join("opencli"))?;
-    ensure_official_grant("terminal")?;
-    ensure_official_grant_disabled("computer-use")?;
     ensure_official_grant_disabled("opencli")
 }
 
-fn write_official_terminal(dir: PathBuf) -> Result<(), ToolError> {
-    fs::create_dir_all(dir.join("ui").join("src").join("vendor"))
-        .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::create_dir_all(dir.join("host")).map_err(|e| ToolError::new(e.to_string()))?;
-    fs::create_dir_all(dir.join("ui").join(".anya")).map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(dir.join("plugin.json"), TERMINAL_MANIFEST)
-        .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(
-        dir.join("ui").join("src").join("activate.js"),
-        TERMINAL_ACTIVATE,
-    )
-    .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(
-        dir.join("ui").join(".anya").join("activate.js"),
-        TERMINAL_ACTIVATE,
-    )
-    .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(
-        dir.join("ui").join("src").join("vendor").join("xterm.js"),
-        TERMINAL_XTERM_JS,
-    )
-    .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(
-        dir.join("ui").join("src").join("vendor").join("xterm.css"),
-        TERMINAL_XTERM_CSS,
-    )
-    .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(dir.join("ui").join("index.html"), TERMINAL_HTML)
-        .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(dir.join("ui").join("icon.svg"), TERMINAL_ICON)
-        .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(dir.join("ui").join("about.md"), TERMINAL_ABOUT)
-        .map_err(|e| ToolError::new(e.to_string()))?;
-    fs::write(dir.join("host").join("main.ts"), TERMINAL_HOST)
-        .map_err(|e| ToolError::new(e.to_string()))?;
-    Ok(())
-}
-
-fn write_official_computer_use(dir: PathBuf) -> Result<(), ToolError> {
-    write_plugin_file(&dir, "plugin.json", CU_MANIFEST)?;
-    write_plugin_file(&dir, "ui/icon.svg", CU_ICON)?;
-    write_plugin_file(&dir, "ui/about.md", CU_ABOUT)?;
-    write_plugin_file(&dir, "host/main.ts", CU_HOST)?;
-    write_plugin_file(&dir, "skills/windows.md", CU_SKILL_WINDOWS)?;
-    let _ = fs::remove_file(dir.join("ui").join("src").join("activate.js"));
-    let _ = fs::remove_file(dir.join("ui").join(".anya").join("activate.js"));
-    let _ = fs::remove_file(dir.join("ui").join("index.html"));
+fn retire_ai_gallery() -> Result<(), ToolError> {
+    let id = "ai-gallery";
+    let dir = plugins_dir().join(id);
+    // Hide the old plugin from discovery while preserving its archived images.
+    match fs::rename(dir.join("plugin.json"), dir.join("plugin.json.retired")) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(ToolError::new(error.to_string())),
+    }
+    if has_grant(id) {
+        clear_grant(id)?;
+    }
     Ok(())
 }
 
@@ -124,26 +77,6 @@ fn write_plugin_bytes(dir: &Path, rel: &str, contents: &[u8]) -> Result<(), Tool
         fs::create_dir_all(parent).map_err(|e| ToolError::new(e.to_string()))?;
     }
     fs::write(path, contents).map_err(|e| ToolError::new(e.to_string()))
-}
-
-/// First launch: enable the official plugin. A later Disable is remembered.
-fn ensure_official_grant(id: &str) -> Result<(), ToolError> {
-    if has_grant(id) {
-        return Ok(());
-    }
-    let manifest = load_manifest(id)?;
-    let granted_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    save_grant(
-        id,
-        PluginGrant {
-            enabled: true,
-            permissions: manifest.permissions,
-            granted_at,
-        },
-    )
 }
 
 /// Listed official plugin that stays off until the user Enable-grants it.

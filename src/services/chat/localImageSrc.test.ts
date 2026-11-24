@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   generatedImagePrompt,
   isLocalImagePath,
+  omitToolRenderedImages,
   parseGeneratedImageSources,
 } from "./localImageSrc";
 
@@ -87,6 +88,23 @@ describe("generatedImagePrompt", () => {
       "Revised prompt: second take",
     ].join("\n");
     expect(generatedImagePrompt(result, { prompt: "two cats" }, second)).toBe("second take");
+  });
+});
+
+describe("omitToolRenderedImages", () => {
+  it("removes the picture the image card already shows and keeps the caption", () => {
+    const result = [
+      "```anya-images",
+      JSON.stringify({ images: [{ path: "C:\\Users\\a\\dog.png" }] }),
+      "```",
+    ].join("\n");
+    const content = "![a dog](path:C:\\Users\\a\\dog.png)\n\n这是一只金毛。";
+    expect(omitToolRenderedImages(content, [result])).toBe("这是一只金毛。");
+  });
+
+  it("keeps images that were not produced by the tool", () => {
+    const content = "![remote](https://example.com/a.png)";
+    expect(omitToolRenderedImages(content, [undefined])).toBe(content);
   });
 });
 

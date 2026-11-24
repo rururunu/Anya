@@ -57,7 +57,7 @@ inside `workbench.main`; do not add host anchors.
 | **Two UI mounting modes: same JS heap vs. isolated window** | `ui.workbench`-permissioned plugins share Anya's own JS runtime (can read Pinia stores); `contributes.window` plugins get an isolated WebView                           | Small widgets (sidebar tabs, composer decorations) don't need cross-process overhead; complex/untrusted UI (games, chat rooms) can be fully isolated with no shared state                                              |
 | **Newline-delimited stdio JSON-RPC**                        | The Deno host and Rust `PluginRuntime` talk one JSON message per line (`{id, method, params}` / `{id, result/error}`), with a sidecar and an in-process fallback engine | Simple, dependency-free protocol in the spirit of LSP; `hello`/`describe`/`tool`/`hook`/`pty.*` all share one channel                                                                                                  |
 | **Short-lived tokens validated by the sidecar**             | `issue_token`/`validate_token`: enable issues a token bound to the host PID, expiring after an hour                                                                     | Prevents one plugin's sidecar from impersonating another plugin's host RPC calls; a token is only valid inside its own process                                                                                         |
-| **ConPTY (`portable_pty`) for terminals**                   | The terminal plugin uses `pty.open/write/resize/kill` plus frontend xterm.js (vendored inside the plugin, not an Anya dependency)                                       | A native pseudo-terminal on Windows; xterm rendering lives entirely inside the plugin so Anya doesn't need an xterm dependency just for one terminal plugin                                                            |
+| **ConPTY (`portable_pty`) for terminals**                   | The built-in workbench terminal uses `PtyHub` in `pty.rs` and xterm.js under `src/components/workbench/terminal/`. Plugins can still call `pty.open/write/resize/kill`  | A native pseudo-terminal on Windows. The workbench terminal is part of Anya; plugin sessions stay on the same PTY hub                                                                                                  |
 
 ---
 
@@ -274,12 +274,13 @@ User plugins live in AppData. Official ones are **also** checked into
 [`src-tauri/plugins/`](../src-tauri/plugins/README.md) and copied into AppData on
 launch:
 
-| Id             | Source                           | Role                                                                                                                                                                                             |
-| -------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `terminal`     | `src-tauri/plugins/terminal`     | In-app ConPTY + xterm                                                                                                                                                                            |
-| `computer-use` | `src-tauri/plugins/computer-use` | **Agent** plugin: `launch` → keyboard → UIA → pixels. Screenshot includes a control tree. Bundled Windows playbook. No UI. **Off until Enable.** Windows. See [Computer use](./computer-use.md). |
+| Id        | Source                      | Role                                                                                                |
+| --------- | --------------------------- | --------------------------------------------------------------------------------------------------- |
+| `opencli` | `src-tauri/plugins/opencli` | **Agent** plugin. Copied into AppData on launch. **Off until Enable.** See [OpenCLI](./opencli.md). |
 
-The in-app terminal prepends every plugin `bin/` to `PATH`.
+`terminal` and `computer-use` remain as folder names in `src-tauri/plugins/`, but those ids are reserved. Anya does not copy or load them. Desktop control is built in: [Computer use](./computer-use.md). The workbench terminal is built in too.
+
+Plugin-owned PTY sessions prepend each plugin `bin/` directory to `PATH`. The built-in workbench terminal does not.
 
 ### 6.2b Plugin roles
 
@@ -287,45 +288,35 @@ A plugin is one of three things (`plugin.json` `"role"`; inferred if omitted):
 
 | role      | Meaning                                                                    | Example              |
 | --------- | -------------------------------------------------------------------------- | -------------------- |
-| `ui`      | Workbench chrome (sidebar, header, window, composer)                       | `terminal`           |
+| `ui`      | Workbench chrome (sidebar, header, window, composer)                       | a sidebar plugin     |
 | `service` | Host / OS capability (CLI, daemon). UI optional.                           | custom loopback host |
-| `agent`   | Tools for the **chat agent** only. No workbench UI. Enable, then ask Anya. | `computer-use`       |
+| `agent`   | Tools for the **chat agent** only. No workbench UI. Enable, then ask Anya. | `opencli`            |
 
 Agent plugins skip `activate.js` / `ui.workbench`. After Enable, their tools are in the chat schema and a system note tells the agent to call them instead of saying Anya cannot. Type `#plugin:<id>` in the composer (same as `#skill:` / `#mcp:`) to prefer that plugin's tools for the turn. The `#` picker lists only enabled plugins with agent tools.
 
-### 6.2c Computer-use runtime
+### 6.2c Computer use is not a plugin
 
-Official `computer-use` runs in Rust on an in-process Ghost session
-(`core/plugins/computer/ghost_*.rs`). The Deno host only declares tool schemas.
-Prefer:
-
-1. `window` launch/focus/anchor
-2. `see` (prefer `mode=text`)
-3. `act` by name/role — read `verified`
-4. `wait` / `assert`; `browser`/`tab` for the web
-5. Pixel `screenshot`/`click`/`drag` only for canvas or unnamed regions
-
-Details: [Computer use](./computer-use.md).
+Desktop control is built into Anya (`core/computer/`) and uses a managed Ghost MCP process. Do not ship or enable a `computer-use` plugin. Tool order and the workbench terminal are documented in [Computer use](./computer-use.md).
 
 ### 6.3 Common plugin shapes at a glance
 
-| You want                                               | Use                                                                                                                                                                                     |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A sidebar widget (like the terminal)                   | `contributes.sidebar` + `ctx.sidebar.addTab`                                                                                                                                            |
-| A workbench main view                                  | `contributes.view` + `ctx.workbench.setView` (exclusive anchor — only one plugin can hold it at a time)                                                                                 |
-| A composer decoration/widget                           | `contributes.composer` + `ctx.composer.addAccessory` or `ctx.slots.mount("composer.accessory", ...)`                                                                                    |
-| A header action (icon, no pane)                        | `surfaces: ["header"]` + `onClick` (no `nav`/`views`). `ctx.workspace.openInTerminal()` opens the OS terminal.                                                                          |
-| Plugin-owned settings (parameters the user configures) | `ctx.home.setSettingsView(mount)` — renders on the plugin's own home page, no chrome launcher needed                                                                                    |
-| A static description of what the plugin does           | `about` in `plugin.json` (`.md`/`.html`) — renders on the plugin's home page "详情/About" tab                                                                                           |
-| A standalone mini-app/complex animation                | `contributes.window` + `ui/index.html`, a fully isolated WebView                                                                                                                        |
-| A tool the model can call                              | `contributes.agent.tools: true` + `host/main.ts`'s `describe()` returning `tools`                                                                                                       |
-| Intercepting/denying tool calls                        | `contributes.agent.hooks` + `host/main.ts`'s `handleHook` (can deny, never bypasses approval)                                                                                           |
-| Swapping the mascot/tray icon/backdrop                 | `ctx.assets.register(key, {kind, source})`                                                                                                                                              |
-| Let the user pick a local file                         | `fs.pick` + `ctx.fs.pick` (workbench) or `AnyaPlugin.pick` (isolated window)                                                                                                            |
-| Plugin-to-plugin or multi-agent messaging              | `ctx.bus.publish/subscribe`                                                                                                                                                             |
-| A loopback port (e.g. bridging an external program)    | `capabilities: [{id:"net.listen", scope:{host,portRange}}]` in `plugin.json`                                                                                                            |
-| A CLI / daemon while Anya is running                   | `role: service` + `host/main.ts`; optional `bin/` on PATH in the in-app terminal                                                                                                        |
-| See the screen and click/type                          | Official `computer-use` (`role: agent`, disabled by default). Hybrid pipeline in [Computer use](./computer-use.md). Permission `computer`. Enable, then `#plugin:computer-use` in chat. |
+| You want                                               | Use                                                                                                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| A sidebar widget                                       | `contributes.sidebar` + `ctx.sidebar.addTab`                                                                                                |
+| A workbench main view                                  | `contributes.view` + `ctx.workbench.setView` (exclusive anchor — only one plugin can hold it at a time)                                     |
+| A composer decoration/widget                           | `contributes.composer` + `ctx.composer.addAccessory` or `ctx.slots.mount("composer.accessory", ...)`                                        |
+| A header action (icon, no pane)                        | `surfaces: ["header"]` + `onClick` (no `nav`/`views`). `ctx.workspace.openInTerminal()` opens the OS terminal.                              |
+| Plugin-owned settings (parameters the user configures) | `ctx.home.setSettingsView(mount)` — renders on the plugin's own home page, no chrome launcher needed                                        |
+| A static description of what the plugin does           | `about` in `plugin.json` (`.md`/`.html`) — renders on the plugin's home page "详情/About" tab                                               |
+| A standalone mini-app/complex animation                | `contributes.window` + `ui/index.html`, a fully isolated WebView                                                                            |
+| A tool the model can call                              | `contributes.agent.tools: true` + `host/main.ts`'s `describe()` returning `tools`                                                           |
+| Intercepting/denying tool calls                        | `contributes.agent.hooks` + `host/main.ts`'s `handleHook` (can deny, never bypasses approval)                                               |
+| Swapping the mascot/tray icon/backdrop                 | `ctx.assets.register(key, {kind, source})`                                                                                                  |
+| Let the user pick a local file                         | `fs.pick` + `ctx.fs.pick` (workbench) or `AnyaPlugin.pick` (isolated window)                                                                |
+| Plugin-to-plugin or multi-agent messaging              | `ctx.bus.publish/subscribe`                                                                                                                 |
+| A loopback port (e.g. bridging an external program)    | `capabilities: [{id:"net.listen", scope:{host,portRange}}]` in `plugin.json`                                                                |
+| A CLI / daemon while Anya is running                   | `role: service` + `host/main.ts`; optional `bin/` is prepended to `PATH` for plugin-owned PTY sessions, not the built-in workbench terminal |
+| See the screen and click/type                          | Built-in computer tools on Windows. See [Computer use](./computer-use.md). Do not install a `computer-use` plugin.                          |
 
 ---
 
@@ -354,21 +345,21 @@ Details: [Computer use](./computer-use.md).
 
 ### 7.2 Permissions (`permissions`)
 
-| id                 | Meaning                                                                                                                                        |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `storage`          | Store small key-value data inside the plugin's own folder                                                                                      |
-| `ask_anya`         | Call Anya's agent (`ctx.agent.run` on a plugin session, or `send` into the current chat)                                                       |
-| `pty`              | Open a real terminal (ConPTY)                                                                                                                  |
-| `run`              | `--allow-run` in the Deno host                                                                                                                 |
-| `fs.workspace`     | Read/write the current workspace from `host/main.ts` (`Deno.readTextFile` / `writeTextFile`) — not a `ctx` method                              |
-| `fs.pick`          | Native file dialog via `ctx.fs.pick` / `AnyaPlugin.pick`                                                                                       |
-| `net`              | `--allow-net` in the Deno host                                                                                                                 |
-| `agent.tools`      | Register tools the model can call                                                                                                              |
-| `agent.hooks`      | Run hooks during an agent turn                                                                                                                 |
-| `agent.prompt`     | Append to the agent system prompt                                                                                                              |
-| `ui.workbench`     | Load into the workbench's own page (can read stores/settings)                                                                                  |
-| `computer`         | Screenshot, UIA, keyboard, and `launch` on Windows. Official plugin: `computer-use` (off until Enable). See [Computer use](./computer-use.md). |
-| `deepseek.balance` | Read DeepSeek account balance using Anya's stored API key (`ctx.host.rpc("deepseek.balance")`). The key is never handed to the plugin.         |
+| id                 | Meaning                                                                                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`          | Store small key-value data inside the plugin's own folder                                                                                                |
+| `ask_anya`         | Call Anya's agent (`ctx.agent.run` on a plugin session, or `send` into the current chat)                                                                 |
+| `pty`              | Open a real terminal (ConPTY)                                                                                                                            |
+| `run`              | `--allow-run` in the Deno host                                                                                                                           |
+| `fs.workspace`     | Read/write the current workspace from `host/main.ts` (`Deno.readTextFile` / `writeTextFile`) — not a `ctx` method                                        |
+| `fs.pick`          | Native file dialog via `ctx.fs.pick` / `AnyaPlugin.pick`                                                                                                 |
+| `net`              | `--allow-net` in the Deno host                                                                                                                           |
+| `agent.tools`      | Register tools the model can call                                                                                                                        |
+| `agent.hooks`      | Run hooks during an agent turn                                                                                                                           |
+| `agent.prompt`     | Append to the agent system prompt                                                                                                                        |
+| `ui.workbench`     | Load into the workbench's own page (can read stores/settings)                                                                                            |
+| `computer`         | Declared plugin permission for desktop control. Anya's own computer tools are built in and do not use this grant. See [Computer use](./computer-use.md). |
+| `deepseek.balance` | Read DeepSeek account balance using Anya's stored API key (`ctx.host.rpc("deepseek.balance")`). The key is never handed to the plugin.                   |
 
 ### 7.3 Workbench SDK (`ctx` inside `activate(ctx)`)
 
@@ -478,15 +469,16 @@ without opening any launcher in Anya's UI.
 
 One JSON object per line over stdin/stdout:
 
-| method                                                                                                       | Purpose                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `hello`                                                                                                      | Handshake, carries `pluginId`/`token`/`hostPid`                                                                                                                                      |
-| `describe`                                                                                                   | Returns `{ tools: [{name,description,parameters}], hooks: string[] }`                                                                                                                |
-| `tool`                                                                                                       | `{name, args}` → tool execution result                                                                                                                                               |
-| `hook`                                                                                                       | `{hook, payload}` → processed payload (`allow:false` denies the tool call)                                                                                                           |
-| `pty.open/write/resize/kill`                                                                                 | Forwarded by Anya when `pty` is granted; the host doesn't implement it itself                                                                                                        |
-| `computer.screenshot/screenInfo/listWindows/focusWindow/findControl/clickControl/click/move/scroll/type/key` | Anya-owned (Windows). Needs `computer`. Screenshot defaults to the foreground window. Click x/y are pixels in the last screenshot; prefer `findControl`/`clickControl` for named UI. |
-| `deepseek.balance`                                                                                           | Anya-owned. Needs `deepseek.balance`. Returns `{ configured, isAvailable?, balances: [{ currency, totalBalance, grantedBalance, toppedUpBalance }] }`.                               |
+| method                       | Purpose                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `hello`                      | Handshake, carries `pluginId`/`token`/`hostPid`                                                                                                        |
+| `describe`                   | Returns `{ tools: [{name,description,parameters}], hooks: string[] }`                                                                                  |
+| `tool`                       | `{name, args}` → tool execution result                                                                                                                 |
+| `hook`                       | `{hook, payload}` → processed payload (`allow:false` denies the tool call)                                                                             |
+| `pty.open/write/resize/kill` | Forwarded by Anya when `pty` is granted; the host doesn't implement it itself                                                                          |
+| `deepseek.balance`           | Anya-owned. Needs `deepseek.balance`. Returns `{ configured, isAvailable?, balances: [{ currency, totalBalance, grantedBalance, toppedUpBalance }] }`. |
+
+Desktop control is not a host method. The chat agent uses the built-in `computer_*` tools. See [Computer use](./computer-use.md).
 
 ### 7.6 `manage_plugin` tool actions (for agents)
 
@@ -528,20 +520,20 @@ One JSON object per line over stdin/stdout:
 
 ## 9. Source entry points
 
-| Concern                                       | Location                                                                                |
-| --------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Manifest / validation                         | `src-tauri/src/core/plugins/manifest.rs`                                                |
-| Lifecycle (enable/disable/reload)             | `src-tauri/src/core/plugins/runtime.rs`                                                 |
-| UI bundling + headless smoke check            | `src-tauri/src/core/plugins/bundle.rs`, `bundle_ui.ts`                                  |
-| Permissions / capabilities                    | `permissions.rs`, `capability.rs`                                                       |
-| Computer use (screenshot / input)             | `computer/`                                                                             |
-| Tokens / grant persistence                    | `grant.rs`                                                                              |
-| Runtime-error bridge                          | `diagnostics.rs`                                                                        |
-| `anya-plugin://` protocol                     | `protocol.rs`                                                                           |
-| Agent-facing tool                             | `src-tauri/src/core/tools/builtin/plugin.rs`                                            |
-| Frontend SDK                                  | `src/composables/plugins/sdk.ts`                                                        |
-| The four contract primitives                  | `src/composables/plugins/{slotRegistry,assetRegistry,eventBus,pluginI18n}.ts`           |
-| Pinia store                                   | `src/stores/plugins.ts`                                                                 |
-| UI mount consumers                            | `src/layouts/Main.vue`, `src/components/chat/PeekPanel.vue`, `src/components/plugins/*` |
-| Agent usage notes                             | `src-tauri/prompts/skills/plugin_creator.md`                                            |
-| Reference plugins (terminal + primitive demo) | `src-tauri/plugins/terminal/`, `src-tauri/plugins/examples/slot-badge-demo/`            |
+| Concern                            | Location                                                                                |
+| ---------------------------------- | --------------------------------------------------------------------------------------- |
+| Manifest / validation              | `src-tauri/src/core/plugins/manifest.rs`                                                |
+| Lifecycle (enable/disable/reload)  | `src-tauri/src/core/plugins/runtime.rs`                                                 |
+| UI bundling + headless smoke check | `src-tauri/src/core/plugins/bundle.rs`, `bundle_ui.ts`                                  |
+| Permissions / capabilities         | `permissions.rs`, `capability.rs`                                                       |
+| Computer use (screenshot / input)  | `src-tauri/src/core/computer/` (not a plugin)                                           |
+| Tokens / grant persistence         | `grant.rs`                                                                              |
+| Runtime-error bridge               | `diagnostics.rs`                                                                        |
+| `anya-plugin://` protocol          | `protocol.rs`                                                                           |
+| Agent-facing tool                  | `src-tauri/src/core/tools/builtin/plugin.rs`                                            |
+| Frontend SDK                       | `src/composables/plugins/sdk.ts`                                                        |
+| The four contract primitives       | `src/composables/plugins/{slotRegistry,assetRegistry,eventBus,pluginI18n}.ts`           |
+| Pinia store                        | `src/stores/plugins.ts`                                                                 |
+| UI mount consumers                 | `src/layouts/Main.vue`, `src/components/chat/PeekPanel.vue`, `src/components/plugins/*` |
+| Agent usage notes                  | `src-tauri/prompts/skills/plugin_creator.md`                                            |
+| Shipped plugin and reference demo  | `src-tauri/plugins/opencli/`, `src-tauri/plugins/examples/slot-badge-demo/`             |

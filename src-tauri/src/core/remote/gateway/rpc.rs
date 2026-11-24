@@ -70,7 +70,12 @@ pub(super) async fn handle_binary_chunk(payload: Vec<u8>, out: Outbound) {
     }
 }
 
-pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> Result<(), String> {
+pub(super) async fn handle_text(
+    app: &AppHandle,
+    ws: &Outbound,
+    device_id: &str,
+    text: &str,
+) -> Result<(), String> {
     let parsed: ClientMessage = match serde_json::from_str(text) {
         Ok(msg) => msg,
         Err(error) => {
@@ -101,6 +106,13 @@ pub(super) async fn handle_text(app: &AppHandle, ws: &Outbound, text: &str) -> R
     match parsed {
         ClientMessage::Hello { .. } => Ok(()),
         ClientMessage::Pong { .. } => Ok(()),
+        ClientMessage::DeliveryList { request_id, after } => {
+            let response = match super::super::delivery::list(app, device_id, after).await {
+                Ok(data) => ServerMessage::rpc_ok(request_id, data),
+                Err(error) => ServerMessage::rpc_err(request_id, &error),
+            };
+            send_msg(ws, &response).await
+        }
         ClientMessage::SessionList { request_id } => {
             let sessions = crate::core::remote::bridge::build_session_snapshot(app);
             send_msg(ws, &ServerMessage::rpc_ok(request_id, sessions)).await

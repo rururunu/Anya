@@ -10,7 +10,7 @@
 |            |                                    |
 | ---------- | ---------------------------------- |
 | **产品**   | Anya — 将你的工作&疑问随手交给Anya |
-| **版本**   | v0.2.34                            |
+| **版本**   | v0.3.0                             |
 | **运行时** | Tauri 2（WebView2 + Rust）         |
 | **界面**   | Vue 3 · Vite · Pinia · TypeScript  |
 | **领域**   | Rust（`src-tauri/src`）            |
@@ -62,7 +62,8 @@ flowchart LR
 | Anya Companion    | 安卓远程；局域网 `ws` 或 Cloudflare `wss`；文件走 HTTP Range `/f/`     |
 | IDE 插件          | 尽力而为的本地上下文推送（文件、工作区、选区）                         |
 | 浏览器选区桥接    | 可选扩展将网页选中文字传给本机程序；不采集浏览历史                     |
-| Microsoft Office  | 保存文件技能 + 内置 Deno/JavaScript 文档运行时                         |
+| Ghost             | 内置电脑操控使用的托管 MCP 子进程；私有 stdio                          |
+| Microsoft Office  | 保存文件技能 + 内置 Deno/JavaScript 文档运行时；可在设置 → 组件中关闭  |
 | 模型服务商        | 鉴权 HTTPS SSE；支持 Chat Completions、Responses 或 Anthropic Messages |
 | MCP / 搜索 / mem0 | 可选；在设置中显式启用                                                 |
 | 本地磁盘          | 聊天库、设置、`.anya/index`、嵌入模型缓存、更新公钥、检查点            |
@@ -330,7 +331,8 @@ sequenceDiagram
 | MCP / LSP / Office | `core/mcp`、`core/lsp`、`core/tools/skills` | 外部协议适配                                                                                                                                                          |
 | 协议类型           | `core/runtime/`                             | `ChatMessage`、`StreamEvent`、`WorkTimelineItem`                                                                                                                      |
 | Event bus          | `core/event/`                               | 领域事件                                                                                                                                                              |
-| 插件               | `core/plugins/`                             | 清单、授权、Deno host、官方捆绑；**computer-use** 在 `computer/`（UIA、截屏、`launch`）                                                                               |
+| 插件               | `core/plugins/`                             | 清单、授权、Deno host。启动时只复制 **opencli**。`terminal` 与 `computer-use` 是保留的内置 id。PTY 在 `pty.rs`                                                        |
+| 电脑操控           | `core/computer/`                            | Windows 上的 Ghost MCP 工具（`computer_*`）、发布包校验、HUD 轮次占用、已学习的 playbook                                                                              |
 | Remote gateway     | `core/remote/`                              | WS `/remote/v1`；`gateway/`、`state/`、`bridge/`、配对、隧道、上传、**下载 `/f/`**、预览 `/p/`                                                                        |
 
 ### 5.2 命名：三处 “runtime”
@@ -355,7 +357,10 @@ sequenceDiagram
 | 聊天 services         | `services/chat/`                                                                    | 生图模式、本地图路径、保存图片、composer 分段、token 估算                                                                            |
 | IPC                   | `services/ipc/`                                                                     | 类型化 invoke 与事件订阅                                                                                                             |
 | 流式批处理            | `services/chat/rafBatch.ts`、`composables/chat/wireChatIpc.ts`                      | delta RAF 合并；聊天 IPC 从 `main.ts` 抽出                                                                                           |
-| 设置页                | `pages/Settings/`                                                                   | 服务商 / Agent / MCP / skills / **生图** 提供商                                                                                      |
+| 设置页                | `pages/Settings/`                                                                   | 服务商 / Agent / MCP / skills / **生图** 提供商 / **组件**                                                                           |
+| 对话版式              | `components/chat/ChatPageStyleSwitch.vue`、`layouts/Main.vue`                       | 工作 / 聊天 / 流（`chatPageStyle`）                                                                                                  |
+| 新手引导              | `services/onboarding/productTour.ts`、`composables/useProductTour.ts`               | 首次启动的 driver.js 引导；可从设置 → 关于再次打开                                                                                   |
+| 终端                  | `components/workbench/NativeTerminalPanel.vue`、`commands/terminal.rs`              | 内置 PowerShell 侧栏                                                                                                                 |
 | 个人资料设置          | `components/settings/ProfileSettings.vue`、`services/settings/`                     | 本地资料、头像、设置导入导出和用量统计                                                                                               |
 | 浏览器选区            | `services/browser_selection.rs`、`bin/anya_browser_bridge.rs`、`browser-extension/` | 经过认证的可选本地网页选区桥接                                                                                                       |
 
@@ -737,11 +742,11 @@ flowchart LR
 
 实现：`core/tools/workspace_index.rs`；工具入口：`core/tools/builtin/misc.rs`。
 
-### 11.3 电脑操控
+### 11.3 电脑操控与工作台终端
 
-官方插件 `computer-use`（`core/plugins/computer/`，仅 Windows，默认关闭）。进程内嵌入 Ghost（`ghost-session`）；Deno host 只声明 schema。流水线：`window` 锚定 → `see` → `act`（读 `verified`）→ `wait`/`assert`；浏览器走 `browser`/`tab`（CDP）。Anya 保留权限、审批与 HUD。内置 playbook：`src-tauri/plugins/computer-use/skills/windows.md`（`contributes.agent.skills`）。
+[电脑操控](./computer-use.zh-CN.md) 内置于 Anya（Windows，`core/computer/`）。工具名为 `computer_*`。一轮对话首次调用时，通过私有 stdio 启动 Ghost MCP 子进程。Anya 校验官方 Windows x64 发布包，并保留工具审批与 HUD。同一时间只有一轮对话可以操控桌面。已学习的步骤保存在 `core/computer/playbook/`。`computer-use` 和 `terminal` 不能再作为插件加载。
 
-详见 [电脑操控](./computer-use.zh-CN.md)。
+工作台终端由 `commands/terminal.rs` 和 `PtyHub::open_native` 打开。有会话工作区时从该目录启动 PowerShell，并继承当前 Windows 用户环境。它不会把插件 `bin/` 加进 `PATH`。插件自己打开的 PTY 会话仍会这样做。Agent 的 shell 命令仍走 `run_shell` 和当前聊天的审批策略。
 
 ---
 
@@ -799,16 +804,17 @@ flowchart LR
 
 ## 15. 扩展点
 
-| 目标                 | 首选挂接点                                                                    |
-| -------------------- | ----------------------------------------------------------------------------- |
-| 新模型厂商           | `core/ai` 实现 `AIProvider` + 设置接线                                        |
-| 新内置工具           | `core/tools` 注册表 + 可选 `runtime/` 适配                                    |
-| 新回合策略           | `core/chat/agent_loop` 模块，由 `AgentRunner` 调用                            |
-| 新窗口表面           | Tauri window label + `src/main.ts` 启动分支                                   |
-| 外部上下文源         | `core/context` provider                                                       |
-| 新 Skill             | `src-tauri/prompts/skills/*.md`（按需加资源）                                 |
-| Agent 插件 playbook  | `contributes.agent.skills` markdown（见 [电脑操控](./computer-use.zh-CN.md)） |
-| Companion RPC / 事件 | `core/remote/protocol.rs` + AnyaAndroid 手机客户端                            |
+| 目标                 | 首选挂接点                                                                     |
+| -------------------- | ------------------------------------------------------------------------------ |
+| 新模型厂商           | `core/ai` 实现 `AIProvider` + 设置接线                                         |
+| 新内置工具           | `core/tools` 注册表 + 可选 `runtime/` 适配                                     |
+| 新回合策略           | `core/chat/agent_loop` 模块，由 `AgentRunner` 调用                             |
+| 新窗口表面           | Tauri window label + `src/main.ts` 启动分支                                    |
+| 外部上下文源         | `core/context` provider                                                        |
+| 新 Skill             | `src-tauri/prompts/skills/*.md`（按需加资源）                                  |
+| Agent 插件 playbook  | `contributes.agent.skills` markdown（见 [插件系统](./plugin-system.zh-CN.md)） |
+| 桌面操控             | Windows 上的 `core/computer/`（见 [电脑操控](./computer-use.zh-CN.md)）        |
+| Companion RPC / 事件 | `core/remote/protocol.rs` + AnyaAndroid 手机客户端                             |
 
 避免在 `AgentRunner` 之外平行再造一套 Agent 循环。
 Companion 不得再长出第二套 Agent 运行时。
@@ -835,39 +841,46 @@ Companion 不得再长出第二套 Agent 运行时。
 
 `stores/updater.ts` 检测到新版本时显示 `SidebarUpdateButton.vue`。`WorkbenchUpdateDialog.vue` 在安装前展示版本说明，并与关于页共用 `UpdaterProgress.vue`。
 
+### 15.3 v0.3.0 内置桌面操控、终端与工作台
+
+电脑操控在 Windows 上注册于 `core/computer/`。`ghost_bridge.rs`、`ghost_process.rs` 和 `ghost_release.rs` 管理 Ghost MCP 进程。HUD 上的结束会取消该轮。`commands/optional_components.rs` 允许在设置 → 组件中关闭 Office 运行时；内置引擎为 LibreOffice Kit 0.2.3。
+
+`chatPageStyle` 为 `work`、`chat` 或 `stream`（`ChatPageStyleSwitch.vue`、`layouts/Main.vue`）。默认是 `chat`。首次引导使用 `services/onboarding/productTour.ts` 里的 driver.js。设置 → 关于可以再次打开。`ensure_bundled_plugins` 只复制 `opencli`。
+
 ## 16. 相关源码入口
 
-| 关注点                      | 从此处开始                                                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 应用启动 / 托盘 / 热键      | `src-tauri/src/lib.rs`                                                                                 |
-| 聊天 IPC                    | `commands/chat.rs`                                                                                     |
-| 发送与上下文组装 / 计划门禁 | `core/chat/service/`、`core/tools/plan_mode.rs`                                                        |
-| 流式生命周期 + 时间线文本   | `core/chat/stream/`                                                                                    |
-| 时间线持久化                | `core/chat/conversation_manager/`、`core/chat/db/`                                                     |
-| Agent 循环                  | `core/chat/agent.rs`、`core/chat/agent_loop/`                                                          |
-| Run 壳                      | `core/agent/runtime/`                                                                                  |
-| Image 模式 / Images API     | `core/tools/image_mode.rs`、`core/ai/image_gen.rs`、`prompts/image-mode.md`                            |
-| 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/composables/chat/wireChatIpc.ts`、`src/stores/chat.ts`                       |
-| Chat store 旁路模块         | `src/stores/chatSessions.ts`、`chatCompose.ts`、`chatHistory.ts`、`chatStream.ts`                      |
-| 输入栏抽取                  | `src/composables/chat/useComposer*.ts`、`useMessageScroll.ts`、`useMessagePreviewRail.ts`              |
-| Remote gateway / 配对       | `core/remote/gateway/`、`pairing.rs`、`tunnel.rs`                                                      |
-| Shell jobs / 工作区 / MCP   | `core/tools/shell_jobs/`、`core/workspace/`、`core/mcp/`                                               |
-| 插件 / 电脑操控             | `core/plugins/`、`src-tauri/plugins/computer-use/`、[电脑操控](./computer-use.zh-CN.md)                |
-| DeepSeek stream             | `core/ai/deepseek/stream/`                                                                             |
-| 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                                             |
-| 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                                          |
-| 生图 UI                     | `src/components/chat/GeneratedImageCard.vue`、`ImagePreviewSidebar.vue`                                |
-| 内嵌设置                    | `pages/Settings/`                                                                                      |
-| 主题应用路径                | `src/services/theme/`、`stores/setting.ts` `applyTheme`                                                |
-| 主题图片持久化              | `services/settings_store.rs`、`commands/settings.rs`、`src/stores/setting.ts`                          |
-| 输入栏与历史消息编辑栏      | `src/components/chat/ChatInputBar.vue`、`UserMessageFooter.vue`                                        |
-| 悬浮窗定位与尺寸            | `services/window.rs`、`core/context/provider/clipboard_provider.rs`、`src/layouts/Overlay.vue`         |
-| 应用内更新界面              | `src/components/workbench/SidebarUpdateButton.vue`、`WorkbenchUpdateDialog.vue`、`UpdaterProgress.vue` |
-| 工作台毛玻璃 / 窗口圆角     | `services/workbench_glass.rs`、`overlay/appearance.ts`                                                 |
-| 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                                              |
-| Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                                                 |
-| 工作区索引                  | `core/tools/workspace_index.rs`                                                                        |
-| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                 |
+| 关注点                      | 从此处开始                                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 应用启动 / 托盘 / 热键      | `src-tauri/src/lib.rs`                                                                                    |
+| 聊天 IPC                    | `commands/chat.rs`                                                                                        |
+| 发送与上下文组装 / 计划门禁 | `core/chat/service/`、`core/tools/plan_mode.rs`                                                           |
+| 流式生命周期 + 时间线文本   | `core/chat/stream/`                                                                                       |
+| 时间线持久化                | `core/chat/conversation_manager/`、`core/chat/db/`                                                        |
+| Agent 循环                  | `core/chat/agent.rs`、`core/chat/agent_loop/`                                                             |
+| Run 壳                      | `core/agent/runtime/`                                                                                     |
+| Image 模式 / Images API     | `core/tools/image_mode.rs`、`core/ai/image_gen.rs`、`prompts/image-mode.md`                               |
+| 前端 IPC 与流式批处理       | `src/services/ipc/`、`src/composables/chat/wireChatIpc.ts`、`src/stores/chat.ts`                          |
+| Chat store 旁路模块         | `src/stores/chatSessions.ts`、`chatCompose.ts`、`chatHistory.ts`、`chatStream.ts`                         |
+| 输入栏抽取                  | `src/composables/chat/useComposer*.ts`、`useMessageScroll.ts`、`useMessagePreviewRail.ts`                 |
+| Remote gateway / 配对       | `core/remote/gateway/`、`pairing.rs`、`tunnel.rs`                                                         |
+| Shell jobs / 工作区 / MCP   | `core/tools/shell_jobs/`、`core/workspace/`、`core/mcp/`                                                  |
+| 插件                        | `core/plugins/`、`src-tauri/plugins/opencli/`                                                             |
+| 电脑操控 / 终端             | `core/computer/`、`commands/computer_use.rs`、`commands/terminal.rs`、[电脑操控](./computer-use.zh-CN.md) |
+| DeepSeek stream             | `core/ai/deepseek/stream/`                                                                                |
+| 时间线 UI                   | `src/components/chat/AgentWorkDetails.vue`                                                                |
+| 计划批准卡                  | `src/components/chat/PlanApprovalCard.vue`、`MessageList.vue`                                             |
+| 生图 UI                     | `src/components/chat/GeneratedImageCard.vue`、`ImagePreviewSidebar.vue`                                   |
+| 内嵌设置                    | `pages/Settings/`                                                                                         |
+| 主题应用路径                | `src/services/theme/`、`stores/setting.ts` `applyTheme`                                                   |
+| 主题图片持久化              | `services/settings_store.rs`、`commands/settings.rs`、`src/stores/setting.ts`                             |
+| 输入栏与历史消息编辑栏      | `src/components/chat/ChatInputBar.vue`、`UserMessageFooter.vue`                                           |
+| 悬浮窗定位与尺寸            | `services/window.rs`、`core/context/provider/clipboard_provider.rs`、`src/layouts/Overlay.vue`            |
+| 应用内更新界面              | `src/components/workbench/SidebarUpdateButton.vue`、`WorkbenchUpdateDialog.vue`、`UpdaterProgress.vue`    |
+| 工作台毛玻璃 / 窗口圆角     | `services/workbench_glass.rs`、`overlay/appearance.ts`                                                    |
+| 网关 HTTP 分流              | `core/remote/http_proxy.rs`（`/remote/v1`、`/f/`、`/p/`）                                                 |
+| Companion 文件传输          | `core/remote/upload.rs`、`download.rs`                                                                    |
+| 工作区索引                  | `core/tools/workspace_index.rs`                                                                           |
+| 手机应用                    | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                    |
 
 可选 Chrome / Edge 选区扩展通过已注册的 Native Messaging host，将网页选中文字转发给经过认证的本地回环监听器。缓存选区绑定前台浏览器窗口，并在 60 秒后过期；不会采集浏览历史。安装与边界见[扩展说明](../browser-extension/README.zh-CN.md)。
 

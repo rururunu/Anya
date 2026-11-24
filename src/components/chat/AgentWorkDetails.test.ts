@@ -9,6 +9,7 @@ it("does not retain completed work segment views while their fold is closed", as
   const wrapper = shallowMount(AgentWorkDetails, {
     props: {
       showReasoning: true,
+      showExecutionProcess: true,
       message: {
         id: "assistant-1",
         sessionId: "session-1",

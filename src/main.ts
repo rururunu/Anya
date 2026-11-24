@@ -103,8 +103,8 @@ async function bootstrap() {
     applyThemeAppearance(bootstrapThemeAppearance(settingStore.language));
     markBootPhase("cached theme painted");
     // Load persisted settings before Main mounts. Otherwise its first render
-    // sees the default onboardingCompleted=false and opens the wizard before
-    // the persisted value arrives.
+    // sees the default onboardingCompleted=false and opens the product tour
+    // before the persisted value arrives.
     await settingStore.load();
     markBootPhase("settings (ipc)");
     applyThemeAppearance({

@@ -173,11 +173,11 @@ A plugin is **not** always a sidebar. Set `"role"` in `plugin.json` (`ui` | `ser
 | --- | --- | --- |
 | `ui` | Workbench chrome (sidebar, window, composer, header) | `ui/src/activate.js` + `ui.workbench` |
 | `service` | Host / OS capability (CLI, daemon) | `host/main.ts`; UI optional |
-| `agent` | Tools the **chat agent** should call | `host/main.ts` `describe()` tools. **No UI.** Do not add sidebar/window/`ui.workbench`. After Enable, tools are in the chat schema and a system note tells the agent to use them. Users can type `#plugin:<id>` (e.g. `#plugin:computer-use`) like `#skill` / `#mcp` to prefer those tools for the turn. |
+| `agent` | Tools the **chat agent** should call | `host/main.ts` `describe()` tools. **No UI.** Do not add sidebar/window/`ui.workbench`. After Enable, tools are in the chat schema and a system note tells the agent to use them. Users can type `#plugin:<id>` (e.g. `#plugin:opencli`) like `#skill` / `#mcp` to prefer those tools for the turn. |
 
-Official: `terminal` = `ui`; `computer-use` = `agent`.
+The shipped official plugin is `opencli` (`agent`, off until Enable). `terminal` and `computer-use` are built into Anya. Those ids cannot be installed as plugins. Desktop control uses the built-in `computer_*` tools.
 
-Agent-only example (`computer-use` shape): `plugin.json` `"role": "agent"`, `"contributes": { "agent": { "tools": true, "prompt": "…", "skills": ["skills/windows.md"] } }`, permissions `agent.tools` + `agent.prompt` (+ domain permission). No `activate.js`. `skills` markdown is appended to the system prompt so the agent does not explore the UI.
+Agent-only example: `plugin.json` `"role": "agent"`, `"contributes": { "agent": { "tools": true, "prompt": "…", "skills": ["skills/usage.md"] } }`, permissions `agent.tools` + `agent.prompt` (+ domain permission). No `activate.js`. `skills` markdown is appended to the system prompt so the agent does not explore the UI.
 
 ## Layout
 
@@ -321,7 +321,7 @@ Same-heap UI can read `stores.chat` / `stores.setting`. Warn the user.
 | File shipped in the plugin | `anya-plugin://localhost/${ctx.pluginId}/ui/…` |
 | Workspace from `host/main.ts` | permission `fs.workspace`, then `Deno.readTextFile` / `writeTextFile`. **Not** a `ctx` method. |
 | Folder pick | `ctx.fs.pick({ directory: true })` — `path`/`name` only; **`url` is empty**. |
-| Share / install a plugin pack | `manage_plugin import` (`path` to zip or folder, optional `overwrite`) / `export` (`id`, optional dest `path`). Does not enable. Cannot overwrite official plugins (`terminal`, `computer-use`). Users can also Import/Export in the plugins list. |
+| Share / install a plugin pack | `manage_plugin import` (`path` to zip or folder, optional `overwrite`) / `export` (`id`, optional dest `path`). Does not enable. Cannot overwrite `opencli` or the reserved built-in ids `terminal` and `computer-use`. Users can also Import/Export in the plugins list. |
 
 Not provided: `ctx.fs.read` / `write` / `stat`; native path from `<input type="file">`; any other host RPC for files.
 
@@ -339,28 +339,9 @@ host.on("pty.data", ev => { /* ev.session, ev.data */ })
 
 Open **once** in `mount`, kill in the returned cleanup / `onDeactivate`.
 
-### Computer use (needs `computer` permission)
+### Computer use
 
-Anya implements these — do not shell out. Prefer `launch` → `key` → `click_control` / `set_value` (UIA) → pixel click only for canvas. Screenshot defaults to the **foreground window** and appends an interactive control list. Pixel click/move/scroll x/y are in the **last screenshot** (origin top-left).
-
-```
-computer.screenshot   { scope?, title? } → { content }  // JPEG + UIA overlay
-computer.screenInfo   {}
-computer.listWindows  {}
-computer.focusWindow  { title? , id? }
-computer.findControl  { name?, id?, windowTitle? }
-computer.clickControl { name?, id?, index? }
-computer.setValue     { value, name?, id?, index? }
-computer.launch       { target, args?, ms? }
-computer.click        { x, y, button?, count?, modifiers? }
-computer.drag         { x,y,x2,y2 | path | cx,cy,r }
-computer.move         { x, y }
-computer.scroll       { x, y, dy?, dx? }
-computer.type         { text }
-computer.key          { keys }           // enter, tab, win+e, ctrl+c
-```
-
-Workbench: `ctx.host.rpc("computer.screenshot")` if the plugin has UI. Official `computer-use` is `role: agent` — **no UI**; after Enable the chat agent calls `plugin_computer-use__launch` / `click_control` / `screenshot`. Windows only. Playbook: `contributes.agent.skills`.
+Desktop control is built into Anya on Windows. The chat agent calls `computer_window`, `computer_see`, `computer_find`, `computer_act`, `computer_wait`, `computer_assert`, `computer_browser`, and `computer_tab`. Do not create a `computer-use` plugin, and do not call `ctx.host.rpc("computer.*")`. The `computer` permission remains declared, but it does not expose those host methods.
 
 ### DeepSeek balance (needs `deepseek.balance` permission)
 
@@ -392,4 +373,4 @@ Known: `net.listen`, `net.connect` (loopback, ports 1024–65535), `fs.scope` (`
 
 ## Uninstall / safe mode
 
-Uninstall stops the host, unhooks tools, and **deletes the plugin folder**. Official plugins (`terminal`, `computer-use`) cannot be uninstalled. Safe mode skips **all** plugins at startup. Do not fight that by writing Anya source.
+Uninstall stops the host, unhooks tools, and **deletes the plugin folder**. `opencli` and the reserved ids `terminal` and `computer-use` cannot be uninstalled. Safe mode skips **all** plugins at startup. Do not fight that by writing Anya source.

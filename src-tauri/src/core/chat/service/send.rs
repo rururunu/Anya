@@ -269,7 +269,7 @@ impl ChatService {
         let large_context = settings
             .as_ref()
             .map(|settings| settings.large_context_enabled)
-            .unwrap_or(true);
+            .unwrap_or(false);
         let model = overrides
             .model_id
             .as_deref()
@@ -441,11 +441,11 @@ impl ChatService {
                 quality: crate::core::ai::image_gen::normalize_quality(
                     incoming.quality.as_deref().unwrap_or("auto"),
                 ),
-                n: crate::core::ai::image_gen::normalize_count(u64::from(incoming.n.unwrap_or(1))),
-                style_prompt: incoming.style_prompt.unwrap_or_default(),
+                n: 1,
+                style_prompt: String::new(),
                 reference_images: crate::core::ai::image_gen::merge_reference_sources(
                     &user_message.content,
-                    incoming.example_image.as_deref(),
+                    None,
                 ),
             })
         } else {

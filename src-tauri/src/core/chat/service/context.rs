@@ -35,7 +35,7 @@ impl ChatService {
         let large_context = settings
             .as_ref()
             .map(|settings| settings.large_context_enabled)
-            .unwrap_or(true);
+            .unwrap_or(false);
         let model = model_id
             .as_deref()
             .map(str::trim)

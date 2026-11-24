@@ -1,6 +1,5 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-import { applyChromeFrostedGlass } from "@/services/overlay/appearance";
 import { isLocalImagePath, resolveChatImageSrc } from "@/services/chat/localImageSrc";
 import type { AppLanguage, ColorScheme } from "@/types/setting";
 import {
@@ -507,7 +506,6 @@ export function applyThemeAppearance(input: ThemeAppearanceInput): ThemeState {
 
   applyDocumentColorScheme(themeId, glass);
   scheduleColorSchemeRebind(themeId, glass);
-  void applyChromeFrostedGlass(glass);
 
   const state: ThemeState = {
     themeId,

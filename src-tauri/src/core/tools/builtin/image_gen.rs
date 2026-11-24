@@ -24,7 +24,7 @@ impl Tool for GenerateImageTool {
     fn description(&self) -> &str {
         "Generate an image from a text prompt using the configured image model (default gpt-image-2). \
 When a reference image is attached (composer image or a style template example), this becomes image-to-image via Images edits. \
-Saves PNG files locally and returns their paths plus markdown the chat UI can render. \
+Saves PNG files locally. The chat UI renders them; do not repeat the image in your reply. \
 `n` greater than 1 issues that many separate image requests (hosts typically allow only one image per call). \
 Use when the user asks to draw, illustrate, design, or generate a picture. \
 Requires a provider configured under Settings → Image whose Base URL is the Images API (official example: https://api.openai.com/v1), not a chat provider."
@@ -221,7 +221,7 @@ Requires a provider configured under Settings → Image whose Base URL is the Im
             }));
         }
         lines.push(
-            "Show the user the markdown image above. Do not inline base64. The local path can be used with other file tools."
+            "The chat already displays this image. Write a short text caption only. Do not paste the markdown image, the file path, or base64, and do not call generate_image again for this request."
                 .into(),
         );
         // Machine-readable trailer for the UI; markdown above stays for the model.

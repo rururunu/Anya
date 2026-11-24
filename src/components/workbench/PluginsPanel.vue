@@ -1,126 +1,120 @@
 <template>
-  <section class="plugins-panel settings-page is-wide">
-    <nav class="settings-tabs plugins-top-tabs" role="tablist" :aria-label="copy.tabsLabel">
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'installed' }"
-        :aria-selected="tab === 'installed'"
-        @click="tab = 'installed'"
-      >
-        {{ copy.installed }}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'skills' }"
-        :aria-selected="tab === 'skills'"
-        @click="tab = 'skills'"
-      >
-        <ScrollText class="plugins-tab-icon" :size="14" :stroke-width="1.75" />
-        {{ copy.skills }}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'mcp' }"
-        :aria-selected="tab === 'mcp'"
-        @click="tab = 'mcp'"
-      >
-        <Cable class="plugins-tab-icon" :size="14" :stroke-width="1.75" />
-        {{ copy.mcp }}
-      </button>
-    </nav>
-
-    <div v-show="tab === 'installed'" class="plugins-installed">
-      <PluginDiagnostics />
+  <TabsRoot default-value="plugins" class="plugins-panel" activation-mode="manual">
+    <TabsList
+      class="plugins-tabs"
+      :aria-label="tr(settingStore.language, 'shell.plugins.sections')"
+    >
+      <TabsTrigger v-for="tab in tabs" :key="tab.id" :value="tab.id" class="plugins-tab">
+        <component :is="tab.icon" :size="16" :stroke-width="1.75" aria-hidden="true" />
+        {{ tab.label }}
+      </TabsTrigger>
+    </TabsList>
+    <TabsContent value="plugins" class="plugins-content peek-scrollbar">
       <UserPluginsPanel />
-    </div>
-    <SkillsSettings v-if="tab === 'skills'" embedded />
-    <McpSettings v-else-if="tab === 'mcp'" embedded />
-  </section>
+    </TabsContent>
+    <TabsContent value="skills" class="plugins-content peek-scrollbar">
+      <SkillsSettings embedded />
+    </TabsContent>
+    <TabsContent value="mcp" class="plugins-content peek-scrollbar">
+      <McpSettings embedded />
+    </TabsContent>
+  </TabsRoot>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { Cable, ScrollText } from "@lucide/vue";
+import { computed } from "vue";
+import { Cable, Puzzle, ScrollText } from "@lucide/vue";
+import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
 import SkillsSettings from "@/components/settings/SkillsSettings.vue";
 import McpSettings from "@/components/settings/McpSettings.vue";
 import UserPluginsPanel from "@/components/plugins/UserPluginsPanel.vue";
-import PluginDiagnostics from "@/components/plugins/PluginDiagnostics.vue";
 import { useSettingStore } from "@/stores/setting";
 import { tr } from "@/services/i18n";
 
-type PluginsTab = "installed" | "skills" | "mcp";
-
-const tab = ref<PluginsTab>("installed");
+const props = defineProps<{ pluginsLabel: string }>();
 const settingStore = useSettingStore();
-
-const copy = computed(() => ({
-  installed: tr(settingStore.language, "shell.plugins.installed"),
-  skills: tr(settingStore.language, "shell.plugins.skills"),
-  mcp: "MCP",
-  tabsLabel: tr(settingStore.language, "shell.plugins.sections"),
-}));
+const tabs = computed(() => [
+  { id: "plugins", icon: Puzzle, label: props.pluginsLabel },
+  { id: "skills", icon: ScrollText, label: tr(settingStore.language, "shell.plugins.skills") },
+  { id: "mcp", icon: Cable, label: "MCP" },
+]);
 </script>
 
 <style scoped>
 .plugins-panel {
+  --plugins-gutter: clamp(16px, 3.4vw, 32px);
   display: flex;
+  flex: 1;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
-  gap: 0;
+  background: var(--peek-list-bg);
 }
 
-.plugins-top-tabs {
-  align-self: flex-start;
-  margin-bottom: 12px;
-}
-
-.plugins-top-tabs .settings-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.plugins-tab-icon {
+.plugins-tabs {
+  display: grid;
   flex: none;
-  opacity: 0.82;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(100%, 440px);
+  max-width: calc(100% - 2 * var(--plugins-gutter));
+  gap: 4px;
+  margin: 14px auto;
+  padding: 4px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--peek-text) 5%, var(--peek-list-bg));
 }
 
-.plugins-installed {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
+.plugins-tab {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 6px;
+  border-radius: 9px;
+  color: var(--peek-muted);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.25;
+  cursor: pointer;
 }
 
-.plugins-installed :deep(.user-plugins) {
-  flex: 1;
-  min-height: 0;
+.plugins-tab svg {
+  flex: none;
 }
 
-.plugins-panel > :deep(.plugins-installed),
-.plugins-panel > :deep(.skills-settings),
-.plugins-panel > :deep(.mcp-settings) {
+.plugins-tab:hover {
+  color: var(--peek-text);
+}
+
+.plugins-tab[data-state="active"] {
+  background: var(--peek-list-bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+  color: var(--peek-text);
+  font-weight: 650;
+}
+
+.plugins-content {
   flex: 1;
   min-height: 0;
+  padding: 16px var(--plugins-gutter) 28px;
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
+  overscroll-behavior: contain;
+  border-top: 1px solid color-mix(in srgb, var(--peek-border) 65%, transparent);
+}
+
+.plugins-content > :deep(.settings-page) {
   width: 100%;
+  min-height: 0;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
 }
 
-.plugins-panel > :deep(.skills-settings),
-.plugins-panel > :deep(.mcp-settings) {
-  margin-inline: 0;
-  padding-inline: 0;
-  padding-top: 0;
-}
-
-.plugins-panel > :deep(.skills-settings) .settings-tabs,
-.plugins-panel > :deep(.mcp-settings) .settings-tabs {
-  margin-top: 0;
+.plugins-content :deep(.settings-empty) {
+  margin: 0;
+  min-height: 120px;
 }
 </style>

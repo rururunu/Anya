@@ -141,9 +141,30 @@ export async function searchSmitheryMcpServers(
   // Prefer hosted/remote servers — Anya connects them via mcp-remote.
   if (options.remoteOnly !== false) params.set("remote", "1");
 
-  const response = await fetch(`${REGISTRY_BASE}/servers?${params.toString()}`);
-  if (!response.ok) {
-    throw new Error(`Smithery registry error (${response.status})`);
+  const urls = [
+    `${REGISTRY_BASE}/servers?${params.toString()}`,
+    // Smithery has intermittently rejected the `remote=1` filter. Retry the
+    // public endpoint without it so catalog browsing remains available.
+    `${REGISTRY_BASE}/servers?${new URLSearchParams(
+      [...params].filter(([key]) => key !== "remote"),
+    ).toString()}`,
+  ];
+  let response: Response | undefined;
+  let lastStatus = 0;
+  for (const url of urls) {
+    const candidate = await fetch(url);
+    if (candidate.ok) {
+      response = candidate;
+      break;
+    }
+    lastStatus = candidate.status;
+  }
+  if (!response) {
+    throw new Error(
+      lastStatus
+        ? `Smithery registry is unavailable (HTTP ${lastStatus}). Try again later.`
+        : "Smithery registry could not be reached. Check your network connection.",
+    );
   }
   const data = (await response.json()) as SmitheryMcpServersPage;
   const servers = Array.isArray(data.servers) ? data.servers : [];

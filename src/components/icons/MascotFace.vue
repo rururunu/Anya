@@ -2,7 +2,10 @@
   <span
     ref="rootRef"
     class="mascot-face"
-    :class="[`st-${visualState}`, { interactive, pleased, turning, 'eyes-only': eyesOnly }]"
+    :class="[
+      `st-${visualState}`,
+      { interactive, pleased, turning, 'eyes-only': eyesOnly, 'idle-glance': idleGlance },
+    ]"
     :role="alt ? 'img' : undefined"
     :aria-label="alt || undefined"
     :aria-hidden="alt ? undefined : true"
@@ -20,17 +23,11 @@
           <!-- The item for the current mode is tucked behind the body and peeks out at the
              lower right, so it reads as "carried" without needing arms or hands. -->
           <Transition name="mascot-tool">
-            <g v-if="tool" :key="tool" class="mascot-tool">
+            <g v-if="tool && !eyesOnly" :key="tool" class="mascot-tool">
               <g class="mascot-tool-bob">
                 <!-- ask: a ringing phone beside its head -->
                 <template v-if="tool === 'phone'">
-                  <g
-                    :transform="
-                      eyesOnly
-                        ? 'translate(358 262) rotate(14) scale(0.62)'
-                        : 'translate(440 262) rotate(16)'
-                    "
-                  >
+                  <g transform="translate(440 262) rotate(16)">
                     <rect class="mp-obj" x="-32" y="-60" width="64" height="120" rx="16" />
                     <rect class="mp-dot" x="-22" y="-44" width="44" height="72" rx="6" />
                     <circle class="mp-dot" cx="0" cy="44" r="5" />
@@ -43,13 +40,7 @@
 
                 <!-- agent: a chunky wrench poking out from behind -->
                 <template v-else-if="tool === 'wrench'">
-                  <g
-                    :transform="
-                      eyesOnly
-                        ? 'translate(354 294) rotate(36) scale(0.62)'
-                        : 'translate(424 352) rotate(42)'
-                    "
-                  >
+                  <g transform="translate(424 352) rotate(42)">
                     <rect class="mp-obj" x="-14" y="-40" width="28" height="150" rx="14" />
                     <circle class="mp-obj" cx="0" cy="-62" r="34" />
                     <path class="mp-dot" d="M-12 -104h24v34a12 12 0 0 1-24 0z" />
@@ -58,13 +49,7 @@
 
                 <!-- plan: a clipboard with a checklist -->
                 <template v-else-if="tool === 'clipboard'">
-                  <g
-                    :transform="
-                      eyesOnly
-                        ? 'translate(362 284) rotate(-10) scale(0.6)'
-                        : 'translate(438 366) rotate(-12)'
-                    "
-                  >
+                  <g transform="translate(438 366) rotate(-12)">
                     <rect class="mp-obj" x="-52" y="-66" width="104" height="132" rx="14" />
                     <rect class="mp-dot" x="-22" y="-78" width="44" height="26" rx="9" />
                     <rect class="mp-line" x="-32" y="-34" width="18" height="18" rx="5" />
@@ -80,13 +65,7 @@
 
                 <!-- image: a fat paintbrush with a drop of paint -->
                 <template v-else-if="tool === 'brush'">
-                  <g
-                    :transform="
-                      eyesOnly
-                        ? 'translate(358 292) rotate(38) scale(0.62)'
-                        : 'translate(432 336) rotate(44)'
-                    "
-                  >
+                  <g transform="translate(432 336) rotate(44)">
                     <rect class="mp-obj" x="-12" y="-20" width="24" height="150" rx="12" />
                     <rect class="mp-obj" x="-17" y="-52" width="34" height="34" rx="6" />
                     <path class="mp-obj" d="M-17 -52L-24 -96Q0 -118 24 -96L17 -52Z" />
@@ -186,6 +165,8 @@ const props = withDefaults(
     tool?: MascotTool | null;
     /** Render only the expressive eyes without the outer body or tool prop. */
     eyesOnly?: boolean;
+    /** Look around periodically while idle. */
+    idleGlance?: boolean;
   }>(),
   {
     alt: "",
@@ -524,6 +505,9 @@ onBeforeUnmount(() => {
 .st-working .mascot-eyes {
   animation: mascot-scan 1.6s ease-in-out infinite;
 }
+.idle-glance.st-idle .mascot-eyes {
+  animation: mascot-idle-glance 9s ease-in-out infinite;
+}
 .st-talking .mascot-eye {
   animation: mascot-talk 0.42s ease-in-out infinite;
 }
@@ -712,6 +696,22 @@ onBeforeUnmount(() => {
     transform: translate(34px, 14px);
   }
 }
+@keyframes mascot-idle-glance {
+  0%,
+  26%,
+  60%,
+  100% {
+    transform: translate(0, 0);
+  }
+  31%,
+  39% {
+    transform: translate(-39px, -6px);
+  }
+  45%,
+  54% {
+    transform: translate(39px, -3px);
+  }
+}
 /* thinking: eyes rolled up to the corner, drifting slowly */
 @keyframes mascot-think {
   0%,
@@ -758,12 +758,16 @@ onBeforeUnmount(() => {
   .mascot-all.wiggle,
   .st-thinking .mascot-eyes,
   .st-working .mascot-eyes,
+  .idle-glance.st-idle .mascot-eyes,
   .st-talking .mascot-eye,
   .st-error .mascot-eyes,
   .turning .mascot-turner,
   .turning .mascot-face-turn,
   .mascot-tool-bob {
     animation: none;
+  }
+  .idle-glance .mascot-eye.blink {
+    transform: none;
   }
   .mascot-tool-enter-active,
   .mascot-tool-leave-active {

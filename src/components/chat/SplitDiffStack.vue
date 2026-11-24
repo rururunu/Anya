@@ -89,7 +89,7 @@ function registerArticle(id: string, element: Element | ComponentPublicInstance 
   }
   if (!host) return;
   articles.set(id, host);
-  observer?.observe(host);
+  if (props.active) observer?.observe(host);
 }
 
 function mount(id: string) {
@@ -215,6 +215,7 @@ watch(
   () => props.active,
   (active) => {
     if (!active) {
+      observer?.disconnect();
       for (const id of [...mountedIds.value]) unmount(id);
     } else {
       if (!observer && typeof IntersectionObserver === "undefined") {
@@ -242,7 +243,9 @@ onMounted(() => {
     },
     { root: root.value, rootMargin: PREMOUNT_MARGIN },
   );
-  for (const element of articles.values()) observer.observe(element);
+  if (props.active) {
+    for (const element of articles.values()) observer.observe(element);
+  }
 });
 
 onBeforeUnmount(() => {

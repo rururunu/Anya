@@ -3,6 +3,8 @@ identifier = "allow-settings-commands"
 description = "Enables settings read/write commands."
 commands.allow = [
   "get_app_settings",
+  "office_runtime_status",
+  "set_office_runtime_enabled",
   "set_app_settings",
   "delete_all_user_information",
   "list_system_fonts",
@@ -19,7 +21,6 @@ commands.allow = [
   "list_mcp_server_statuses",
   "connect_mcp_server",
   "reauthenticate_mcp_server",
-  "ensure_ghost_mcp",
   "cache_install_icon",
   "lookup_install_icon",
   "lookup_install_icons",

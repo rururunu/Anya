@@ -87,11 +87,7 @@
         <button type="button" @click="closeWindow(plugin.id)">{{ copy.closeWindow }}</button>
       </div>
 
-      <div
-        v-if="plugin.hasUi || plugin.id === 'computer-use' || plugin.id === 'opencli'"
-        class="home-tabs"
-        role="tablist"
-      >
+      <div v-if="plugin.hasUi || plugin.id === 'opencli'" class="home-tabs" role="tablist">
         <button
           type="button"
           class="home-tab"
@@ -122,9 +118,6 @@
         <p v-else-if="activeTab === 'about'" class="home-about-plain">
           {{ plugin.description || copy.noDesc }}
         </p>
-        <ComputerUsePlaybooksPanel
-          v-else-if="plugin.id === 'computer-use' && activeTab === 'settings'"
-        />
         <OpenCliSettingsPanel v-else-if="plugin.id === 'opencli' && activeTab === 'settings'" />
         <template v-else-if="plugin.hasUi && activeTab === 'settings'">
           <PluginHostPane
@@ -147,7 +140,6 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { ArrowLeft, Download, RefreshCw, Trash2 } from "@lucide/vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
-import ComputerUsePlaybooksPanel from "@/components/plugins/ComputerUsePlaybooksPanel.vue";
 import OpenCliSettingsPanel from "@/components/plugins/OpenCliSettingsPanel.vue";
 import PluginHostPane from "@/components/plugins/PluginHostPane.vue";
 import PluginSidebarIcon from "@/components/plugins/PluginSidebarIcon.vue";
@@ -256,10 +248,7 @@ const confirmDialogRef = ref<InstanceType<typeof AppConfirmDialog> | null>(null)
 const activeTab = ref<"about" | "settings">("about");
 
 const hasSettingsTab = computed(
-  () =>
-    Boolean(plugin.value?.hasUi) ||
-    plugin.value?.id === "computer-use" ||
-    plugin.value?.id === "opencli",
+  () => Boolean(plugin.value?.hasUi) || plugin.value?.id === "opencli",
 );
 
 watch(

@@ -12,6 +12,8 @@ import {
   setChatSessionWorkspace,
 } from "@/services/ipc";
 import { conversationConsumedTokens } from "@/services/chat/tokenEstimate";
+import { turnMascotState } from "@/services/chat/mascotState";
+import type { MascotState } from "@/components/icons/MascotFace.vue";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
 import { isSubagentSessionId, rootSessionId } from "@/services/chat/subagentSession";
 import { isPluginAgentSessionId } from "@/services/chat/pluginSession";
@@ -156,32 +158,32 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
       Boolean(chatStore.sending[activeSessionId.value]) ||
       chatStore.hasActiveAssistantResponse(activeSessionId.value),
   );
-  const runningSessionIds = computed(() => {
-    const ids = new Set(
-      Object.entries(chatStore.sending)
-        .filter(([, busy]) => Boolean(busy))
-        .map(([sessionId]) => sessionId),
-    );
+  const runningSessionStates = computed(() => {
+    const states = new Map<string, MascotState>();
+    for (const [sessionId, busy] of Object.entries(chatStore.sending)) {
+      if (busy) states.set(sessionId, "thinking");
+    }
     for (const [sessionId, messages] of Object.entries(chatStore.sessions)) {
-      if (
-        messages.some(
-          (message) =>
-            String(message.role).toLowerCase() === "assistant" &&
-            (message.status === "pending" || message.status === "streaming"),
-        )
-      ) {
-        ids.add(sessionId);
+      for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index];
+        if (
+          String(message.role).toLowerCase() === "assistant" &&
+          (message.status === "pending" || message.status === "streaming")
+        ) {
+          states.set(sessionId, turnMascotState(message));
+          break;
+        }
       }
     }
     for (const record of subagentSessionStore.visibleRecords) {
       const parentMessages = chatStore.sessions[record.parentSessionId] ?? [];
       const activities = parentMessages.flatMap((message) => message.toolActivities ?? []);
       const entry = findSubagentEntry(activities, record.entryId, settingStore.language);
-      if (entry?.status === "running") {
-        ids.add(record.sessionId);
+      if (entry?.status === "running" && !states.has(record.sessionId)) {
+        states.set(record.sessionId, "working");
       }
     }
-    return [...ids];
+    return states;
   });
   const stagedMessages = computed(() => chatStore.stagedMessages[activeSessionId.value] ?? []);
   const contextNotice = computed(() => chatStore.contextNotices[activeSessionId.value] ?? "");
@@ -570,7 +572,7 @@ export function useWorkbenchSessions(options: UseWorkbenchSessionsOptions) {
     sessionsByWorkspace,
     hasConversationMessages,
     sending,
-    runningSessionIds,
+    runningSessionStates,
     titleGeneratingSessionIds,
     stagedMessages,
     contextNotice,

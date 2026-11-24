@@ -23,6 +23,8 @@ export default defineConfig(async () => ({
   },
 
   build: {
+    // Gzip-size reporting walks every chunk after the bundle and is not used.
+    reportCompressedSize: false,
     // ECharts and Mermaid (incl. @upsetjs/venn.js) exceed 1 MB minified but load
     // only on demand via chartHydration / mermaidHydration — not on the boot path.
     chunkSizeWarningLimit: 2000,

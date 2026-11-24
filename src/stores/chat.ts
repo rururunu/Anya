@@ -1035,6 +1035,23 @@ export const useChatStore = defineStore("chat", {
       }
       if (changed) this.setSessionMessages(sessionId, messages);
     },
+    /** Put the setup-failure turn back into the pending slot so the same user message can send. */
+    reopenConfigureProviderTurn(sessionId: string) {
+      const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
+      const index = findLastMessageIndex(
+        messages,
+        (item) =>
+          normalizeRole(item.role) === "assistant" && isConfigureProviderError(item.content),
+      );
+      if (index === -1) return;
+      messages[index] = {
+        ...messages[index],
+        content: "",
+        status: "pending",
+        completedAt: undefined,
+      };
+      this.setSessionMessages(sessionId, messages);
+    },
     failOptimisticSend(sessionId: string, error: unknown) {
       const messages = [...(sessionsStore().sessions[sessionId] ?? [])];
       const index = findLastMessageIndex(
@@ -1724,6 +1741,8 @@ export const useChatStore = defineStore("chat", {
         resumePlan?: boolean;
         /** Plugin-owned session: same Rust agent loop, do not remap the overlay draft. */
         isolate?: boolean;
+        /** Send the user message already on screen after a provider key is saved. */
+        retryStaged?: boolean;
       },
     ) {
       const trimmed = message.trim();
@@ -1752,6 +1771,10 @@ export const useChatStore = defineStore("chat", {
 
       if (!options?.isolate) {
         this.setOverlayDraftSession(sessionId);
+      }
+
+      if (options?.retryStaged) {
+        this.reopenConfigureProviderTurn(sessionId);
       }
 
       if (!options?.staged) {
@@ -1813,10 +1836,7 @@ export const useChatStore = defineStore("chat", {
           modelProvider: compose.chatModelProvider.trim() || undefined,
           chatMode: compose.chatMode,
           toolApprovalMode: compose.toolApprovalMode,
-          imageGen:
-            compose.chatMode === "image"
-              ? imageGenPayload(compose.imageGen, useSettingStore().imageStyleTemplates)
-              : undefined,
+          imageGen: compose.chatMode === "image" ? imageGenPayload(compose.imageGen) : undefined,
           skipAutoPlan: options?.skipAutoPlan,
           resumePlan: options?.resumePlan,
         });

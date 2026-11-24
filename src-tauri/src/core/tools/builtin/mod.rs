@@ -37,6 +37,7 @@ pub fn register_all(
     conversation: Arc<ConversationManager>,
     event_bus: Arc<dyn EventBus>,
 ) {
+    crate::core::computer::register_tools(registry);
     let shell_jobs = ShellJobStore::new();
     let tasks = shared_task_list();
 

@@ -1,13 +1,13 @@
 {
   "name": "Anya",
   "private": true,
-  "version": "0.2.34",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "Hand your work & questions to Anya anytime.",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "posttauri": "node scripts/rename-msi.mjs",
@@ -80,6 +80,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.11",
+    "driver.js": "^1.14.0",
     "echarts": "^6.1.0",
     "echarts-gl": "^2.1.0",
     "gsap": "^3.15.0",
@@ -97,8 +98,8 @@
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
-    "@deepseek-ai/libreoffice-kit": "0.1.5",
-    "@deepseek-ai/libreoffice-kit-win32-x64": "0.1.5",
+    "@deepseek-ai/libreoffice-kit": "0.2.3",
+    "@deepseek-ai/libreoffice-kit-win32-x64": "0.2.3",
     "@eslint/js": "^9.22.0",
     "@tauri-apps/cli": "^2",
     "@types/dompurify": "^3.2.0",

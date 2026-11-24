@@ -60,8 +60,8 @@ mod tests {
         assert!(SYSTEM_PROMPT.contains("Memory is for durable, user-confirmed facts"));
         assert!(SYSTEM_PROMPT.contains("Recall only when prior context could materially affect"));
         assert!(SYSTEM_PROMPT.contains("exact callable tools and schemas"));
-        assert!(SYSTEM_PROMPT.contains("compact desktop chat panel"));
-        assert!(SYSTEM_PROMPT.contains("Do not use level-one or level-two Markdown headings"));
+        assert!(SYSTEM_PROMPT.contains("desktop coding agent embedded in a compact chat panel"));
+        assert!(SYSTEM_PROMPT.contains("## Final replies"));
     }
 
     #[test]
@@ -176,6 +176,6 @@ mod tests {
         assert!(IMAGE_MODE_PROMPT.contains("Image generation mode is active"));
         assert!(IMAGE_MODE_PROMPT.contains("generate_image"));
         assert!(IMAGE_MODE_PROMPT.contains("{{SIZE}}"));
-        assert!(IMAGE_MODE_PROMPT.contains("{{N}}"));
+        assert!(IMAGE_MODE_PROMPT.contains("n: 1"));
     }
 }

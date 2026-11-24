@@ -12,7 +12,7 @@ to locate code paths and reason about change impact.
 |             |                                                    |
 | ----------- | -------------------------------------------------- |
 | **Product** | Anya — Hand your work & questions to Anya anytime. |
-| **Version** | v0.2.34                                            |
+| **Version** | v0.3.0                                             |
 | **Runtime** | Tauri 2 (WebView2 + Rust)                          |
 | **UI**      | Vue 3 · Vite · Pinia · TypeScript                  |
 | **Domain**  | Rust (`src-tauri/src`)                             |
@@ -59,16 +59,17 @@ flowchart LR
   Host --> Disk[(SQLite · settings · index)]
 ```
 
-| Actor / system           | Interaction                                                                              |
-| ------------------------ | ---------------------------------------------------------------------------------------- |
-| User                     | Global hotkey, tray, composer, review UI, embedded settings                              |
-| Anya Companion           | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`                |
-| IDE plugins              | Best-effort local context push (file, workspace, selection)                              |
-| Browser Selection Bridge | Optional extension forwards selected webpage text to the local host; no browsing history |
-| Microsoft Office         | Saved-file skills + bundled Deno/JavaScript document runtime                             |
-| Model providers          | Authenticated HTTPS SSE; Chat Completions, Responses, or Anthropic Messages              |
-| MCP / search / mem0      | Optional; enabled explicitly in settings                                                 |
-| Local disk               | Chat DB, settings, `.anya/index`, updater pubkey, checkpoints                            |
+| Actor / system           | Interaction                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| User                     | Global hotkey, tray, composer, review UI, embedded settings                                            |
+| Anya Companion           | Android remote; LAN `ws` or Cloudflare `wss`; files over HTTP Range `/f/`                              |
+| IDE plugins              | Best-effort local context push (file, workspace, selection)                                            |
+| Browser Selection Bridge | Optional extension forwards selected webpage text to the local host; no browsing history               |
+| Ghost                    | Managed MCP subprocess for built-in computer use; private stdio                                        |
+| Microsoft Office         | Saved-file skills + bundled Deno/JavaScript document runtime; can be disabled in Settings → Components |
+| Model providers          | Authenticated HTTPS SSE; Chat Completions, Responses, or Anthropic Messages                            |
+| MCP / search / mem0      | Optional; enabled explicitly in settings                                                               |
+| Local disk               | Chat DB, settings, `.anya/index`, updater pubkey, checkpoints                                          |
 
 ---
 
@@ -349,7 +350,8 @@ sequenceDiagram
 | MCP / LSP / Office  | `core/mcp`, `core/lsp`, `core/tools/skills` | External protocol adapters                                                                                                                                                                                       |
 | Protocol types      | `core/runtime/`                             | `ChatMessage`, `StreamEvent`, `WorkTimelineItem`                                                                                                                                                                 |
 | Event bus           | `core/event/`                               | Domain events                                                                                                                                                                                                    |
-| Plugins             | `core/plugins/`                             | Manifest, grants, Deno host, official bundles; **computer-use** in `computer/` (UIA, capture, launch)                                                                                                            |
+| Plugins             | `core/plugins/`                             | Manifest, grants, Deno host. Launch copies **opencli** only. Ids `terminal` and `computer-use` are reserved built-ins. PTY hub: `pty.rs`                                                                         |
+| Computer use        | `core/computer/`                            | Windows Ghost MCP tools (`computer_*`), release checks, HUD turn ownership, learned playbooks                                                                                                                    |
 | Remote gateway      | `core/remote/`                              | WS `/remote/v1`; `gateway/`, `state/`, `bridge/`, pairing, tunnel, upload, **download `/f/`**, preview `/p/`                                                                                                     |
 
 ### 5.2 Naming: three “runtime” modules
@@ -374,7 +376,10 @@ sequenceDiagram
 | Chat services               | `services/chat/`                                                                    | Image gen mode, local image src, save image, composer segments, token estimate                                                                                          |
 | IPC                         | `services/ipc/`                                                                     | Typed invoke + event subscription                                                                                                                                       |
 | Stream batching             | `services/chat/rafBatch.ts`, `composables/chat/wireChatIpc.ts`                      | RAF coalesce; chat IPC wiring extracted from `main.ts`                                                                                                                  |
-| Settings pages              | `pages/Settings/`                                                                   | Provider / agent / MCP / skills / **Image** providers                                                                                                                   |
+| Settings pages              | `pages/Settings/`                                                                   | Provider / agent / MCP / skills / **Image** providers / **Components**                                                                                                  |
+| Conversation style          | `components/chat/ChatPageStyleSwitch.vue`, `layouts/Main.vue`                       | Work / Chat / Stream layouts (`chatPageStyle`)                                                                                                                          |
+| Product tour                | `services/onboarding/productTour.ts`, `composables/useProductTour.ts`               | First-run driver.js tour; replay from Settings → About                                                                                                                  |
+| Terminal                    | `components/workbench/NativeTerminalPanel.vue`, `commands/terminal.rs`              | Built-in PowerShell sidebar                                                                                                                                             |
 | Profile settings            | `components/settings/ProfileSettings.vue`, `services/settings/`                     | Local profile, avatar, portable settings import/export, and usage insights                                                                                              |
 | Browser selection           | `services/browser_selection.rs`, `bin/anya_browser_bridge.rs`, `browser-extension/` | Optional authenticated local bridge for webpage selections                                                                                                              |
 
@@ -786,16 +791,11 @@ models are rejected before any network request.
 
 Implementation: `core/tools/workspace_index.rs`; tool entry point: `core/tools/builtin/misc.rs`.
 
-### 11.3 Computer use
+### 11.3 Computer use and the workbench terminal
 
-Official plugin `computer-use` (`core/plugins/computer/`, Windows, off until
-Enable). In-process Ghost (`ghost-session`); Deno host only declares schemas.
-Pipeline: `window` anchor → `see` → `act` (read `verified`) → `wait`/`assert`;
-browser via `browser`/`tab` (CDP). Anya keeps grants, approval, and HUD. Bundled
-playbook: `src-tauri/plugins/computer-use/skills/windows.md` via
-`contributes.agent.skills`.
+[Computer use](./computer-use.md) is built into Anya on Windows (`core/computer/`). Tools are `computer_*`. The first call in a turn starts a Ghost MCP subprocess over private stdio. Anya checks the official Windows x64 archive, then keeps tool approval and the HUD. One chat turn owns the desktop. Learned procedures are stored by `core/computer/playbook/`. The ids `computer-use` and `terminal` cannot be loaded as plugins.
 
-See [Computer use](./computer-use.md).
+The workbench terminal is `commands/terminal.rs` and `PtyHub::open_native`. It starts PowerShell in the session workspace when one exists and inherits the Windows user environment. It does not prepend plugin `bin/` directories. Plugin-owned PTY sessions still do. Agent shell commands stay on `run_shell` and the chat approval policy.
 
 ---
 
@@ -871,16 +871,17 @@ Details: [release.md](./release.md).
 
 ## 15. Extension points
 
-| Intent                  | Preferred hook                                                              |
-| ----------------------- | --------------------------------------------------------------------------- |
-| New model vendor        | `core/ai` `AIProvider` impl + settings wiring                               |
-| New built-in tool       | `core/tools` registry + optional `runtime/` adapter                         |
-| New turn policy         | `core/chat/agent_loop` module called from `AgentRunner`                     |
-| New window surface      | Tauri window label + `src/main.ts` bootstrap branch                         |
-| External context source | `core/context` provider                                                     |
-| New skill               | `src-tauri/prompts/skills/*.md` (+ assets if needed)                        |
-| Agent plugin playbook   | `contributes.agent.skills` markdown (see [Computer use](./computer-use.md)) |
-| Companion RPC / event   | `core/remote/protocol.rs` + phone client in AnyaAndroid                     |
+| Intent                  | Preferred hook                                                                |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| New model vendor        | `core/ai` `AIProvider` impl + settings wiring                                 |
+| New built-in tool       | `core/tools` registry + optional `runtime/` adapter                           |
+| New turn policy         | `core/chat/agent_loop` module called from `AgentRunner`                       |
+| New window surface      | Tauri window label + `src/main.ts` bootstrap branch                           |
+| External context source | `core/context` provider                                                       |
+| New skill               | `src-tauri/prompts/skills/*.md` (+ assets if needed)                          |
+| Agent plugin playbook   | `contributes.agent.skills` markdown (see [Plugin system](./plugin-system.md)) |
+| Desktop control         | `core/computer/` on Windows (see [Computer use](./computer-use.md))           |
+| Companion RPC / event   | `core/remote/protocol.rs` + phone client in AnyaAndroid                       |
 
 Avoid introducing a parallel agent loop beside `AgentRunner`.
 Companion must not grow a second Agent runtime.
@@ -909,36 +910,43 @@ Call diagnostics go to configuration-directory JSONL files; `scripts/deepseek-me
 
 `SidebarUpdateButton.vue` appears when `stores/updater.ts` reports an available version. `WorkbenchUpdateDialog.vue` shows release notes before install and shares `UpdaterProgress.vue` with About settings.
 
+### 15.3 Built-in desktop, terminal, and workbench in v0.3.0
+
+Computer use registers in `core/computer/` on Windows. `ghost_bridge.rs`, `ghost_process.rs`, and `ghost_release.rs` own the Ghost MCP process. HUD Stop cancels that turn. `commands/optional_components.rs` can disable the Office runtime from Settings → Components; the bundled engine is LibreOffice Kit 0.2.3.
+
+`chatPageStyle` is `work`, `chat`, or `stream` (`ChatPageStyleSwitch.vue`, `layouts/Main.vue`). The default is `chat`. The first-run tour is driver.js in `services/onboarding/productTour.ts`. Settings → About can start it again. `ensure_bundled_plugins` copies `opencli` only.
+
 ## 16. Related source entry points
 
-| Concern                          | Start here                                                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| App bootstrap / tray / hotkey    | `src-tauri/src/lib.rs`                                                                                 |
-| Chat IPC                         | `commands/chat.rs`                                                                                     |
-| Send + context / plan gate       | `core/chat/service/`, `core/tools/plan_mode.rs`                                                        |
-| Stream lifecycle + timeline text | `core/chat/stream/`                                                                                    |
-| Work timeline persistence        | `core/chat/conversation_manager/`, `core/chat/db/`                                                     |
-| Agent loop                       | `core/chat/agent.rs`, `core/chat/agent_loop/`                                                          |
-| Run shell                        | `core/agent/runtime/`                                                                                  |
-| Image mode / Images API          | `core/tools/image_mode.rs`, `core/ai/image_gen.rs`, `prompts/image-mode.md`                            |
-| Frontend IPC + stream batch      | `src/services/ipc/`, `src/composables/chat/wireChatIpc.ts`, `src/stores/chat.ts`                       |
-| Chat store helpers               | `src/stores/chatSessions.ts`, `chatCompose.ts`, `chatHistory.ts`, `chatStream.ts`                      |
-| Composer extraction              | `src/composables/chat/useComposer*.ts`, `useMessageScroll.ts`, `useMessagePreviewRail.ts`              |
-| Rust chat modules                | `core/chat/{db,service,stream}/` (facade `mod.rs` keeps command imports stable)                        |
-| Remote gateway / pairing         | `core/remote/gateway/`, `pairing.rs`, `tunnel.rs`                                                      |
-| Shell jobs / workspace / MCP     | `core/tools/shell_jobs/`, `core/workspace/`, `core/mcp/`                                               |
-| Plugins / computer use           | `core/plugins/`, `src-tauri/plugins/computer-use/`, [Computer use](./computer-use.md)                  |
-| DeepSeek stream                  | `core/ai/deepseek/stream/`                                                                             |
-| Gateway HTTP split               | `core/remote/http_proxy.rs` (`/remote/v1`, `/f/`, `/p/`)                                               |
-| Companion file transfer          | `core/remote/upload.rs`, `download.rs`                                                                 |
-| Workspace index                  | `core/tools/workspace_index.rs`                                                                        |
-| Theme apply path                 | `src/services/theme/`, `stores/setting.ts` `applyTheme`                                                |
-| Theme image persistence          | `services/settings_store.rs`, `commands/settings.rs`, `src/stores/setting.ts`                          |
-| Composer and sent-message editor | `src/components/chat/ChatInputBar.vue`, `UserMessageFooter.vue`                                        |
-| Overlay positioning and sizing   | `services/window.rs`, `core/context/provider/clipboard_provider.rs`, `src/layouts/Overlay.vue`         |
-| In-app updater UI                | `src/components/workbench/SidebarUpdateButton.vue`, `WorkbenchUpdateDialog.vue`, `UpdaterProgress.vue` |
-| Workbench glass / window radius  | `services/workbench_glass.rs`, `overlay/appearance.ts`                                                 |
-| Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                 |
+| Concern                          | Start here                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| App bootstrap / tray / hotkey    | `src-tauri/src/lib.rs`                                                                                  |
+| Chat IPC                         | `commands/chat.rs`                                                                                      |
+| Send + context / plan gate       | `core/chat/service/`, `core/tools/plan_mode.rs`                                                         |
+| Stream lifecycle + timeline text | `core/chat/stream/`                                                                                     |
+| Work timeline persistence        | `core/chat/conversation_manager/`, `core/chat/db/`                                                      |
+| Agent loop                       | `core/chat/agent.rs`, `core/chat/agent_loop/`                                                           |
+| Run shell                        | `core/agent/runtime/`                                                                                   |
+| Image mode / Images API          | `core/tools/image_mode.rs`, `core/ai/image_gen.rs`, `prompts/image-mode.md`                             |
+| Frontend IPC + stream batch      | `src/services/ipc/`, `src/composables/chat/wireChatIpc.ts`, `src/stores/chat.ts`                        |
+| Chat store helpers               | `src/stores/chatSessions.ts`, `chatCompose.ts`, `chatHistory.ts`, `chatStream.ts`                       |
+| Composer extraction              | `src/composables/chat/useComposer*.ts`, `useMessageScroll.ts`, `useMessagePreviewRail.ts`               |
+| Rust chat modules                | `core/chat/{db,service,stream}/` (facade `mod.rs` keeps command imports stable)                         |
+| Remote gateway / pairing         | `core/remote/gateway/`, `pairing.rs`, `tunnel.rs`                                                       |
+| Shell jobs / workspace / MCP     | `core/tools/shell_jobs/`, `core/workspace/`, `core/mcp/`                                                |
+| Plugins                          | `core/plugins/`, `src-tauri/plugins/opencli/`                                                           |
+| Computer use / terminal          | `core/computer/`, `commands/computer_use.rs`, `commands/terminal.rs`, [Computer use](./computer-use.md) |
+| DeepSeek stream                  | `core/ai/deepseek/stream/`                                                                              |
+| Gateway HTTP split               | `core/remote/http_proxy.rs` (`/remote/v1`, `/f/`, `/p/`)                                                |
+| Companion file transfer          | `core/remote/upload.rs`, `download.rs`                                                                  |
+| Workspace index                  | `core/tools/workspace_index.rs`                                                                         |
+| Theme apply path                 | `src/services/theme/`, `stores/setting.ts` `applyTheme`                                                 |
+| Theme image persistence          | `services/settings_store.rs`, `commands/settings.rs`, `src/stores/setting.ts`                           |
+| Composer and sent-message editor | `src/components/chat/ChatInputBar.vue`, `UserMessageFooter.vue`                                         |
+| Overlay positioning and sizing   | `services/window.rs`, `core/context/provider/clipboard_provider.rs`, `src/layouts/Overlay.vue`          |
+| In-app updater UI                | `src/components/workbench/SidebarUpdateButton.vue`, `WorkbenchUpdateDialog.vue`, `UpdaterProgress.vue`  |
+| Workbench glass / window radius  | `services/workbench_glass.rs`, `overlay/appearance.ts`                                                  |
+| Phone app                        | [AnyaAndroid](https://github.com/rururunu/AnyaAndroid)                                                  |
 
 Successful text-file reads render as collapsible syntax-highlighted code cards. Clicking the file opens a read-only sidebar in either the workbench or popup and highlights the returned line range. The sidebar supports line wrapping; when the file changed, it retains the captured excerpt and can open the current file context. The preview command accepts a recorded successful read activity ID, resolves its original workspace, and loads up to 1 MiB of UTF-8 text. Unavailable files fall back to the captured read excerpt.
 

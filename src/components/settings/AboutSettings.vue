@@ -3,11 +3,14 @@
     <WorkbenchUpdateDialog ref="updateDialogRef" />
     <header class="about-hero">
       <div class="about-logo" aria-hidden="true">
-        <MascotFace interactive />
+        <img src="/mascot/anya-app-icon.png" alt="" width="96" height="96" />
       </div>
       <h1>{{ name }}</h1>
       <p class="about-tagline">{{ copy.description }}</p>
       <p class="about-version">{{ copy.versionLabel }}</p>
+      <button type="button" class="about-btn about-replay" @click="requestProductTour">
+        {{ copy.replayTour }}
+      </button>
     </header>
 
     <section class="about-update" :class="updateTone" aria-labelledby="about-updates-title">
@@ -91,11 +94,11 @@
 import { computed, ref } from "vue";
 import { ArrowUpCircle, CheckCircle2, RefreshCw, ShieldCheck } from "@lucide/vue";
 import { tr } from "@/services/i18n";
+import { requestProductTour } from "@/services/onboarding/productTour";
 import { useSettingStore } from "@/stores/setting";
 import { useUpdaterStore } from "@/stores/updater";
 import WorkbenchUpdateDialog from "@/components/workbench/WorkbenchUpdateDialog.vue";
 import UpdaterProgress from "@/components/workbench/UpdaterProgress.vue";
-import MascotFace from "@/components/icons/MascotFace.vue";
 
 const settingStore = useSettingStore();
 const updaterStore = useUpdaterStore();
@@ -120,6 +123,7 @@ const copy = computed(() => {
     privacyDescription: tr(language, "about.privacyDescription"),
     copyId: tr(language, "about.copyIdentifier"),
     copied: tr(language, "about.copied"),
+    replayTour: tr(language, "about.replayTour"),
     updates: tr(language, "updater.sectionTitle"),
     updateAvailableDetail: tr(language, "updater.updateAvailableDetail", {
       version: updaterStore.latestVersion || "?",
@@ -205,14 +209,11 @@ async function copyIdentifier() {
 }
 
 .about-logo {
-  width: 156px;
-  height: 156px;
   margin-bottom: 20px;
 }
 
-.about-logo :deep(.mascot-face) {
-  opacity: 0.96;
-  filter: drop-shadow(0 12px 28px color-mix(in srgb, var(--peek-text) 16%, transparent));
+.about-logo img {
+  display: block;
 }
 
 .about-hero h1 {
@@ -238,6 +239,10 @@ async function copyIdentifier() {
   font-size: 11px;
   font-weight: 550;
   letter-spacing: 0.02em;
+}
+
+.about-replay {
+  margin-top: 16px;
 }
 
 .about-update {

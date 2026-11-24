@@ -29,12 +29,11 @@ import { normalizeMarkdownInput } from "@/services/chat/markdownNormalize";
 import { buildMermaidPlaceholder, shouldRenderMermaidBlock } from "@/services/chat/mermaidDiagram";
 import {
   isLocalImagePath,
-  resolveChatImageSrc,
   resolveMarkdownImagePath,
   markdownWorkspaceRoot,
 } from "@/services/chat/localImageSrc";
 import { computed, inject } from "vue";
-import { loadImageSourceAsDataUrl } from "@/services/chat/imageEditReference";
+import { loadLocalImageAsDataUrl } from "@/services/chat/imageEditReference";
 import { disposeChartBlocks, hydrateChartBlocks } from "./chartHydration";
 import { disposeMermaidBlocks, hydrateMermaidBlocks } from "./mermaidHydration";
 
@@ -114,9 +113,9 @@ renderer.code = ({ text, lang }) => {
 
 renderer.image = ({ href, title, text }) => {
   const original = resolveMarkdownImagePath(href ?? "", imageWorkspaceRoot.value);
-  const src = resolveChatImageSrc(original);
+  const srcAttr = isLocalImagePath(original) ? "" : ` src="${escapeHtmlAttribute(original)}"`;
   const titleAttr = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
-  return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(text ?? "")}" data-image-source="${escapeHtmlAttribute(original)}"${titleAttr} />`;
+  return `<img${srcAttr} alt="${escapeHtmlAttribute(text ?? "")}" data-image-source="${escapeHtmlAttribute(original)}"${titleAttr} />`;
 };
 
 function iconForLanguage(language: string): Component {
@@ -289,7 +288,7 @@ function hydrateLocalImages(root: HTMLElement) {
     image.dataset.imageSource = source;
     let pending = localImages.get(source);
     if (!pending) {
-      pending = loadImageSourceAsDataUrl(source);
+      pending = loadLocalImageAsDataUrl(source);
       localImages.set(source, pending);
     }
     void pending
@@ -480,6 +479,52 @@ function showCopyResult(button: HTMLButtonElement, label: string, success: boole
   color: var(--peek-assistant-text, var(--peek-text));
   overflow-wrap: break-word;
   word-break: normal;
+}
+
+.markdown-body.agent-work-content {
+  font-weight: 400;
+  line-height: 1.8;
+}
+
+.markdown-body.agent-work-content :deep(p:not(:last-child)) {
+  margin-bottom: 0.85em;
+}
+
+.markdown-body.agent-work-content :deep(:is(h1, h2, h3, h4)) {
+  margin: 1.35em 0 0.5em;
+  font-weight: 650;
+}
+
+.markdown-body.agent-work-content :deep(:is(h1, h2, h3, h4):first-child) {
+  margin-top: 0;
+}
+
+.markdown-body.agent-work-content :deep(h1) {
+  font-size: 1.45em;
+}
+
+.markdown-body.agent-work-content :deep(h2) {
+  font-size: 1.28em;
+}
+
+.markdown-body.agent-work-content :deep(h3) {
+  font-size: 1.12em;
+}
+
+.markdown-body.agent-work-content :deep(:is(ul, ol)) {
+  margin-bottom: 0.9em;
+}
+
+.markdown-body.agent-work-content :deep(li) {
+  line-height: inherit;
+}
+
+.markdown-body.agent-work-content :deep(li > p + p) {
+  margin-top: 0.55em;
+}
+
+.markdown-body.agent-work-content :deep(li > p:not(:last-child)) {
+  margin-bottom: 0;
 }
 .markdown-body :deep(img) {
   max-width: 100%;

@@ -194,16 +194,8 @@ pub fn webview_gpu_disabled() -> bool {
     WEBVIEW_GPU_DISABLED.load(Ordering::Relaxed)
 }
 
-fn should_disable_webview_gpu(
-    hardware_acceleration_enabled: bool,
-    chrome_frosted_glass: bool,
-) -> bool {
-    !hardware_acceleration_enabled && !chrome_frosted_glass
-}
-
 /// Read the settings needed before Tauri creates the WebView2 environment.
-/// Hardware acceleration defaults off. Frosted-glass chrome also needs GPU
-/// compositing, otherwise transparent regions cannot blend with DWM Acrylic.
+/// Hardware acceleration defaults off.
 pub fn configure_prestart_webview() {
     let Some(app_data) = std::env::var_os("APPDATA") else {
         // No settings file yet — apply the default (GPU off).
@@ -232,12 +224,7 @@ pub fn configure_prestart_webview() {
         .and_then(|settings| settings.get("hardwareAccelerationEnabled"))
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    let chrome_frosted_glass = parsed
-        .as_ref()
-        .and_then(|settings| settings.get("chromeFrostedGlass"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    if should_disable_webview_gpu(hardware_acceleration_enabled, chrome_frosted_glass) {
+    if !hardware_acceleration_enabled {
         disable_webview_gpu();
         return;
     }
@@ -387,6 +374,12 @@ pub fn persist_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), S
     persist_settings_file(&path, settings)
 }
 
+pub(crate) fn external_plugin_gateway_enabled(app: &AppHandle) -> bool {
+    app.try_state::<SettingsState>().is_some_and(|state| {
+        state.settings.lock().is_ok_and(|settings| settings.external_plugin_gateway_enabled)
+    })
+}
+
 pub fn get_settings(app: &AppHandle) -> Result<AppSettings, String> {
     let state = app
         .try_state::<SettingsState>()
@@ -449,9 +442,13 @@ pub fn update_settings<R>(
     )?;
     if previous != next {
         apply_changed_runtime_settings(Some(&previous), &next);
-        if previous.chrome_frosted_glass != next.chrome_frosted_glass
-            || previous.opacity != next.opacity
-            || previous.color_scheme != next.color_scheme
+        if previous.external_plugin_gateway_enabled != next.external_plugin_gateway_enabled {
+            crate::core::context::providers::local_api::configure_gateway(
+                app,
+                next.external_plugin_gateway_enabled,
+            );
+        }
+        if previous.color_scheme != next.color_scheme
             || previous.custom_themes != next.custom_themes
         {
             crate::services::workbench_glass::apply_from_settings(app, &next);
@@ -813,14 +810,6 @@ mod tests {
             assert!(!super::migrate_shell_timeout(&mut settings));
             assert_eq!(settings.shell_timeout_secs, 120);
         }
-    }
-
-    #[test]
-    fn frosted_glass_keeps_webview_gpu_enabled() {
-        assert!(super::should_disable_webview_gpu(false, false));
-        assert!(!super::should_disable_webview_gpu(true, false));
-        assert!(!super::should_disable_webview_gpu(false, true));
-        assert!(!super::should_disable_webview_gpu(true, true));
     }
 
     #[test]

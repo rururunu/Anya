@@ -1,6 +1,6 @@
 //! Per-model context window caps.
 //!
-//! The settings toggle chooses 64k vs 1M as a *ceiling*. Actual budgets must
+//! The settings toggle chooses 258k vs 1M as a *ceiling*. Actual budgets must
 //! never exceed what the selected model can accept, otherwise compaction
 //! stays quiet while the provider already rejects oversized prompts.
 
@@ -61,8 +61,8 @@ pub fn model_native_context_window(model_id: &str) -> Option<usize> {
 
 /// Resolve the effective context window for compaction / usage meters.
 ///
-/// - Large-context **off** → 64k (or lower if the model is smaller).
-/// - Large-context **on** → min(1M, model native). Unknown models cap at 256k
+/// - Large-context **off** → 258k (or lower if the model is smaller).
+/// - Large-context **on** → min(1M, model native). Unknown models cap at 258k
 ///   so a small chat model never inherits a fake 1M budget.
 pub fn effective_context_window(large_context_enabled: bool, model_id: &str) -> usize {
     let configured = if large_context_enabled {
@@ -70,11 +70,7 @@ pub fn effective_context_window(large_context_enabled: bool, model_id: &str) -> 
     } else {
         DEFAULT_MAX_TURN_TOKENS
     };
-    let native = model_native_context_window(model_id).unwrap_or(if large_context_enabled {
-        256_000
-    } else {
-        DEFAULT_MAX_TURN_TOKENS
-    });
+    let native = model_native_context_window(model_id).unwrap_or(DEFAULT_MAX_TURN_TOKENS);
     configured.min(native)
 }
 
@@ -118,11 +114,14 @@ mod tests {
 
     #[test]
     fn unknown_model_does_not_inherit_1m() {
-        assert_eq!(effective_context_window(true, "mystery-model-9b"), 256_000);
+        assert_eq!(
+            effective_context_window(true, "mystery-model-9b"),
+            DEFAULT_MAX_TURN_TOKENS
+        );
     }
 
     #[test]
-    fn large_context_off_stays_at_64k() {
+    fn large_context_off_stays_at_258k() {
         assert_eq!(
             effective_context_window(false, "gemini-2.5-pro"),
             DEFAULT_MAX_TURN_TOKENS

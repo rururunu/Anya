@@ -7,7 +7,7 @@
     <!-- Live turn: keep chronological interleaving for follow-along. -->
     <template v-if="streaming">
       <AgentWorkSegment
-        v-for="(segment, segmentIndex) in segments"
+        v-for="(segment, segmentIndex) in liveSegments"
         :key="segment.id"
         :segment="segment"
         :streaming="streaming"
@@ -30,7 +30,7 @@
     <!-- Completed: fold thinking + tools; keep generated images and the final reply open. -->
     <template v-else>
       <details
-        v-if="preambleSegments.length"
+        v-if="showExecutionProcess && preambleSegments.length"
         class="agent-work-fold"
         :open="foldOpen"
         @toggle="handleFoldToggle"
@@ -62,6 +62,26 @@
           />
         </div>
       </details>
+
+      <AgentWorkSegment
+        v-for="segment in quietPreamble"
+        :key="segment.id"
+        :segment="segment"
+        :streaming="false"
+        :follow="false"
+        :language="language"
+        :show-reasoning-summary="true"
+        :show-narration-summary="false"
+        :all-activities="visibleActivities"
+        :collapsible="false"
+        :process-open="false"
+        headline=""
+        :cards-collapsed="displayMode === 'compact'"
+        @inspect-subagent="emit('inspectSubagent', $event)"
+        @preview-image="emit('previewImage', $event)"
+        @edit-from-image="emit('editFromImage', $event)"
+        @toggle-process="toggleProcess"
+      />
 
       <AgentWorkSegment
         v-for="segment in replySegments"
@@ -104,6 +124,7 @@ import {
 import { activityMatchesQuery, textIncludesQuery } from "@/services/chat/conversationFind";
 import { conversationFindKey } from "@/composables/chat/useConversationFind";
 import { isImageGenActivity } from "@/services/chat/toolActivityEnrichment";
+import { omitToolRenderedImages } from "@/services/chat/localImageSrc";
 import { tr } from "@/services/i18n";
 import { hasSynchronizedLiveTimeline } from "@/stores/chatStream";
 
@@ -112,6 +133,8 @@ const props = withDefaults(
     message: ChatMessage;
     language?: AppLanguage;
     showReasoning?: boolean;
+    /** Show the completed-work summary and live tool activity. */
+    showExecutionProcess?: boolean;
     /** detailed = shell/diff inline; compact = fold into process details. */
     displayMode?: AgentWorkDisplay;
     /** Content is a special-cased marker (e.g. "configure a provider") rendered
@@ -122,6 +145,7 @@ const props = withDefaults(
   }>(),
   {
     displayMode: "detailed",
+    showExecutionProcess: false,
   },
 );
 const emit = defineEmits<{
@@ -173,9 +197,9 @@ const hasRunningSubagent = computed(() =>
   ),
 );
 
-/** Task lists + finished images + (in detailed mode) shell/file edits stay in the open stream. */
+/** Task lists, image generation, and (in detailed mode) shell/file edits stay in the open stream. */
 function isInlineActivity(activity: ToolActivity): boolean {
-  if (isImageGenActivity(activity)) return activity.status !== "running";
+  if (isImageGenActivity(activity)) return true;
   if (TASK_LIST_TOOLS.has(activity.toolName)) return true;
   if (props.displayMode === "compact") return false;
   return SHOWCASE_KINDS.has(activity.kind);
@@ -487,8 +511,27 @@ const segments = computed<TimelineSegment[]>(() => {
     }
     considerActivity(out, seen, activity);
   }
-  return coalesceCompletedNarration(coalesceCompletedReasoning(out));
+  return withoutRepeatedImages(coalesceCompletedNarration(coalesceCompletedReasoning(out)));
 });
+
+/** The image card already shows generate_image output. Keep the caption, drop the copy. */
+function withoutRepeatedImages(out: TimelineSegment[]): TimelineSegment[] {
+  const results = recordedActivities.value
+    .filter((activity) => isImageGenActivity(activity))
+    .map((activity) => activity.result);
+  if (results.length === 0) return out;
+  const next: TimelineSegment[] = [];
+  for (const segment of out) {
+    if (segment.type !== "content" && segment.type !== "narration") {
+      next.push(segment);
+      continue;
+    }
+    const content = omitToolRenderedImages(segment.content, results);
+    if (!content.trim()) continue;
+    next.push(content === segment.content ? segment : { ...segment, content });
+  }
+  return next;
+}
 
 function isGeneratedImageSegment(segment: TimelineSegment): boolean {
   return (
@@ -513,6 +556,24 @@ const preambleSegments = computed(() =>
 );
 const replySegments = computed(() => segments.value.filter((segment) => isReplySegment(segment)));
 
+/** Tool timelines stay behind the execution-process switch. Image cards stay visible. */
+function isQuietSegment(segment: TimelineSegment): boolean {
+  if (segment.type === "process" || segment.type === "narration") return false;
+  if (segment.type === "inline") {
+    return segment.activities.every((activity) => isImageGenActivity(activity));
+  }
+  return true;
+}
+
+const liveSegments = computed(() =>
+  props.showExecutionProcess ? segments.value : segments.value.filter(isQuietSegment),
+);
+const quietPreamble = computed(() =>
+  props.showExecutionProcess
+    ? []
+    : preambleSegments.value.filter((segment) => segment.type === "reasoning"),
+);
+
 const foldLabel = computed(() => {
   const language = props.language ?? "zh-CN";
   if (props.message.status === "done" && !props.message.content.trim()) {
@@ -533,8 +594,9 @@ const foldMeta = computed(() => {
 const lastSegmentId = computed(() => segments.value[segments.value.length - 1]?.id);
 
 function isFirstReasoningSegment(index: number) {
+  const list = liveSegments.value;
   for (let i = 0; i < index; i++) {
-    if (segments.value[i]?.type === "reasoning") return false;
+    if (list[i]?.type === "reasoning") return false;
   }
   return true;
 }
@@ -681,6 +743,21 @@ watch(
 
 .agent-work :deep(.inject-card) {
   margin: 8px 0;
+}
+
+.agent-work-fold + :deep(.tool-activity-list) :deep(.generated-image-card),
+.agent-work > :deep(.reasoning-block) + :deep(.tool-activity-list) :deep(.generated-image-card) {
+  width: 100%;
+  margin-top: 14px;
+  padding-top: 16px;
+  background-image: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--peek-text) 28%, transparent) 0 4px,
+    transparent 4px 9px
+  );
+  background-size: 9px 1px;
+  background-repeat: repeat-x;
+  background-position: left top;
 }
 
 .agent-work-fold {

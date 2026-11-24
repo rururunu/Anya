@@ -1,6 +1,6 @@
 [package]
 name = "peek"
-version = "0.2.34"
+version = "0.3.0"
 license = "MIT"
 description = "Hand your work & questions to Anya anytime."
 authors = ["you"]
@@ -30,7 +30,9 @@ path = "src/bin/anya_plugin_host.rs"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "peek_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Desktop links this rlib. staticlib and cdylib exist for iOS/Android and
+# would compile the crate again for each extra type.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -72,6 +74,7 @@ md-5 = "0.10"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    "Win32_UI_Controls",
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
@@ -105,5 +108,40 @@ tauri-plugin-process = "2"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
 
-[target.'cfg(windows)'.dependencies]
-ghost-session = { git = "https://github.com/NORTHTEKDevs/ghost", tag = "v0.23.4", package = "ghost-session" }
+# Dev and test links were dominated by full debuginfo for every dependency.
+# Keep line numbers in this crate; drop them from dependencies.
+[profile.dev]
+incremental = true
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.dev.package.peek]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
+[profile.test.package."*"]
+debug = false
+
+[profile.test.package.peek]
+debug = "line-tables-only"
+
+# Release stays at opt-level 3 for Anya itself. Dependencies compile faster at 2,
+# which is where clean release builds spend most of their time. No LTO: it
+# lengthens the link for a small runtime gain.
+[profile.release]
+opt-level = 3
+lto = false
+codegen-units = 16
+strip = "symbols"
+incremental = false
+
+[profile.release.package."*"]
+opt-level = 2
+codegen-units = 16
+
+[profile.release.package.peek]
+opt-level = 3

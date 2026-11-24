@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from "vue";
+import { computed, reactive, ref, watch, type Ref } from "vue";
 import { usePendingInteractions } from "@/composables/chat/usePendingInteractions";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
@@ -54,6 +54,43 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
   const unreadSessionIds = ref(new Set<string>());
 
   const attentionSessionIds = computed(() => Object.keys(pendingInteractions.value));
+  const interactionWaitTimes = reactive(new Map<string, { elapsed: number; startedAt?: number }>());
+  const waitingMessageIds = computed(() => {
+    const ids = new Set<string>();
+    for (const sessionId of attentionSessionIds.value) {
+      const messages = chatStore.sessions[sessionId] ?? [];
+      for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index];
+        if (
+          message.role === "assistant" &&
+          (message.status === "pending" || message.status === "streaming")
+        ) {
+          ids.add(message.id);
+          break;
+        }
+      }
+    }
+    return ids;
+  });
+  watch(
+    waitingMessageIds,
+    (current, previous) => {
+      const now = Date.now();
+      for (const id of previous) {
+        const wait = interactionWaitTimes.get(id);
+        if (current.has(id) || wait?.startedAt === undefined) continue;
+        interactionWaitTimes.set(id, { elapsed: wait.elapsed + Math.max(0, now - wait.startedAt) });
+      }
+      for (const id of current) {
+        if (previous.has(id)) continue;
+        interactionWaitTimes.set(id, {
+          elapsed: interactionWaitTimes.get(id)?.elapsed ?? 0,
+          startedAt: now,
+        });
+      }
+    },
+    { flush: "sync" },
+  );
   const unreadSessionIdList = computed(() => [...unreadSessionIds.value]);
   const activePendingInteraction = computed(() => pendingInteractions.value[activeSessionId.value]);
   const askUserSession = computed<AskUserSession | null>(() =>
@@ -164,20 +201,18 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     if (!session) return;
     const sessionId = activeSessionId.value;
     const items = parseAskUserAnswerItems(answer);
-    if (items.length) {
-      chatStore.stageAskUserAnswer(sessionId, items);
-    }
-    removePendingInteraction(sessionId, session.requestId);
-    void dismissNotificationForInteraction(session.requestId, sessionId);
     try {
       await respondAskUser({ requestId: session.requestId, answer });
+      if (items.length) chatStore.stageAskUserAnswer(sessionId, items);
       chatStore.completeAskUserToolActivities(sessionId, answer);
     } catch (error) {
       if (!isAlreadyResolvedError(error)) {
-        setPendingInteraction(sessionId, { kind: "ask_user", value: session });
+        console.error("respond_ask_user failed:", error);
+        throw error;
       }
-      console.error("respond_ask_user failed:", error);
     }
+    removePendingInteraction(sessionId, session.requestId);
+    void dismissNotificationForInteraction(session.requestId, sessionId);
   }
 
   async function completePathPermission(decision: PathPermissionDecision) {
@@ -218,6 +253,7 @@ export function useWorkbenchInteractions(options: UseWorkbenchInteractionsOption
     pendingInteractions,
     unreadSessionIds,
     attentionSessionIds,
+    interactionWaitTimes,
     unreadSessionIdList,
     activePendingInteraction,
     askUserSession,

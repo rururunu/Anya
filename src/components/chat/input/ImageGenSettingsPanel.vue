@@ -48,22 +48,6 @@
       </div>
     </section>
 
-    <section class="settings-block">
-      <h4 class="settings-label">{{ tr(language, "imageGen.countTitle") }}</h4>
-      <div class="segment-track">
-        <button
-          v-for="count in IMAGE_GEN_COUNTS"
-          :key="count"
-          type="button"
-          class="segment-option"
-          :class="{ selected: modelValue.count === count }"
-          @click="emit('update:modelValue', applyImageGenField(modelValue, 'count', String(count)))"
-        >
-          {{ count }}
-        </button>
-      </div>
-    </section>
-
     <section class="settings-block size-block">
       <h4 class="settings-label">{{ tr(language, "imageGen.sizeTitle") }}</h4>
       <div class="size-row">
@@ -119,13 +103,11 @@ import { tr } from "@/services/i18n";
 import type { ChatI18nKey } from "@/services/locales/chat";
 import type { AppLanguage } from "@/types/setting";
 import {
-  applyImageGenField,
   applyImageGenHeight,
   applyImageGenRatio,
   applyImageGenResolution,
   applyImageGenSizeLock,
   applyImageGenWidth,
-  IMAGE_GEN_COUNTS,
   IMAGE_GEN_MAX_PX,
   IMAGE_GEN_MIN_PX,
   IMAGE_GEN_RATIOS,

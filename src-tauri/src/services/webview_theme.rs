@@ -8,8 +8,7 @@ pub fn apply_webview_theme(app: &AppHandle, _settings: &AppSettings) {
     for (label, window) in app.webview_windows() {
         if label == "workbench" {
             // Workbench manages its own DWM backdrop & dark mode in workbench_glass.
-            // Calling window.set_theme() here resets DWMWA_SYSTEMBACKDROP_TYPE, causing
-            // the acrylic blur to flash and revert to opaque.
+            // Calling window.set_theme() here resets DWMWA_SYSTEMBACKDROP_TYPE.
             continue;
         }
         if let Err(error) = window.set_theme(Some(Theme::Light)) {

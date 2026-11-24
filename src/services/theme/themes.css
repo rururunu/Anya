@@ -220,6 +220,18 @@ html[data-theme] {
   --peek-space-5: 20px;
   --peek-space-6: 24px;
 
+  /* Shared product surfaces and interaction tokens. */
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 12px;
+  --ui-radius-lg: 16px;
+  --ui-control-h: 34px;
+  --ui-border-subtle: color-mix(in srgb, var(--peek-border) 78%, transparent);
+  --ui-border-strong: color-mix(in srgb, var(--peek-border) 120%, transparent);
+  --ui-surface-raised: color-mix(in srgb, var(--peek-surface) 96%, var(--peek-bg));
+  --ui-surface-hover: color-mix(in srgb, var(--peek-text) 6%, var(--peek-surface));
+  --ui-shadow-sm: 0 1px 2px rgb(16 18 24 / 6%), 0 4px 14px rgb(16 18 24 / 5%);
+  --ui-shadow-md: 0 10px 28px rgb(16 18 24 / 12%), 0 2px 6px rgb(16 18 24 / 6%);
+
   --peek-radius-sm: 6px;
   --peek-radius-md: 8px;
   --peek-radius-lg: 12px;

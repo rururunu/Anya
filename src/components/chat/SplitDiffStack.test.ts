@@ -65,5 +65,12 @@ it("releases diff editors outside the viewport and while the sidebar is hidden",
   await nextTick();
   await wrapper.setProps({ active: false });
   expect(wrapper.find(".code-diff-editor").exists()).toBe(false);
+  expect(TestObserver.current!.disconnect).toHaveBeenCalledOnce();
+  TestObserver.current!.observe.mockClear();
+  await wrapper.setProps({ active: true });
+  expect(TestObserver.current!.observe).toHaveBeenCalledWith(article);
+  TestObserver.current!.emit(article, true);
+  await nextTick();
+  expect(wrapper.find(".code-diff-editor").exists()).toBe(true);
   wrapper.unmount();
 });

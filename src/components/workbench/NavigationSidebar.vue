@@ -729,6 +729,7 @@ defineProps<{
 .quick-ask-section :deep(.nav-collapse-inner) {
   padding-top: 3px;
 }
+
 .workspace-group {
   position: relative;
   margin: 0 0 4px;

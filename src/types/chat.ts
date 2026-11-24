@@ -154,6 +154,7 @@ export interface AskUserAnswerItem {
   header?: string;
   question?: string;
   selected: string[];
+  options?: AskUserOption[];
   userSupplement?: boolean;
   kind?: string;
 }

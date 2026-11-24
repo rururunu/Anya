@@ -79,8 +79,6 @@ fn dsh_image_mode_prompt_requires_generation_with_selected_options() {
         image_mode: Some(ImageModePolicy {
             size: "1024x1536".into(),
             quality: "high".into(),
-            n: 2,
-            style_prompt: "ink painting".into(),
             has_reference: false,
         }),
         ..Default::default()
@@ -106,8 +104,7 @@ fn dsh_image_mode_prompt_requires_generation_with_selected_options() {
         .contains("Call `generate_image` exactly once"));
     assert!(prompt.content.contains("size: `1024x1536`"));
     assert!(prompt.content.contains("quality: `high`"));
-    assert!(prompt.content.contains("n: 2"));
-    assert!(prompt.content.contains("ink painting"));
+    assert!(prompt.content.contains("n: 1"));
 }
 
 #[test]
@@ -175,8 +172,6 @@ fn image_mode_policy_is_injected_with_toolbar_values() {
         image_mode: Some(ImageModePolicy {
             size: "1024x1536".into(),
             quality: "high".into(),
-            n: 2,
-            style_prompt: "anime illustration".into(),
             has_reference: true,
         }),
         ..PromptPreferences::default()
@@ -200,9 +195,7 @@ fn image_mode_policy_is_injected_with_toolbar_values() {
     assert!(block.content.contains("generate_image"));
     assert!(block.content.contains("1024x1536"));
     assert!(block.content.contains("high"));
-    assert!(block.content.contains("2"));
-    assert!(block.content.contains("anime illustration"));
-    assert!(block.content.contains("Mandatory visual style"));
+    assert!(block.content.contains("n: 1"));
     assert!(block.content.contains("image-to-image"));
     assert!(block
         .content

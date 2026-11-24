@@ -3,12 +3,10 @@
     class="settings-workbench"
     :class="{
       embedded: props.embedded,
-      'is-glass': settingStore.chromeFrostedGlass,
       'has-custom-bg': hasCustomBg,
     }"
   >
     <AppConfirmDialog ref="approvalConfirmDialogRef" />
-    <div v-if="!props.embedded" class="glass-chrome" aria-hidden="true" />
     <header v-if="!props.embedded" class="titlebar">
       <div class="titlebar-drag" data-tauri-drag-region @mousedown="onWindowDragMouseDown">
         <Settings2 class="titlebar-icon" :size="15" />
@@ -102,6 +100,7 @@
               />
               <ArchiveSettings v-else-if="activeCategory === 'archive'" />
               <TokenUsageSettings v-else-if="activeCategory === 'usage'" />
+              <OptionalComponentsSettings v-else-if="activeCategory === 'components'" />
               <AboutSettings
                 v-else-if="activeCategory === 'about'"
                 :name="appName"
@@ -165,7 +164,7 @@ import {
   History,
   Info,
   Minus,
-  Palette,
+  Package,
   Pin,
   Server,
   Settings2,
@@ -180,6 +179,7 @@ import HistorySettings from "@/components/settings/HistorySettings.vue";
 import ArchiveSettings from "@/components/settings/ArchiveSettings.vue";
 import TokenUsageSettings from "@/components/settings/TokenUsageSettings.vue";
 import ProfileSettings from "@/components/settings/ProfileSettings.vue";
+import OptionalComponentsSettings from "@/components/settings/OptionalComponentsSettings.vue";
 import AboutSettings from "@/components/settings/AboutSettings.vue";
 import ProviderSettings from "@/components/settings/ProviderSettings.vue";
 import ImageSettings from "@/components/settings/ImageSettings.vue";
@@ -188,7 +188,7 @@ import CustomThemeManager from "@/components/settings/CustomThemeManager.vue";
 import { onWindowDragMouseDown } from "@/services/overlay/windowDrag";
 import { applyOpacity, reloadAppearanceWindow } from "@/services/overlay/appearance";
 import { gsapSettingsNavMount, gsapSettingsNavUnmount } from "@/services/motion/gsapPresets";
-import { getAppInfo, relaunchApp, webviewGpuDisabled } from "@/services/ipc";
+import { getAppInfo } from "@/services/ipc";
 import {
   Sidebar,
   SidebarContent,
@@ -349,6 +349,7 @@ const t = computed(() => {
       history: tr(language, "settings.categories.history"),
       archive: tr(language, "settings.categories.archive"),
       usage: tr(language, "settings.categories.usage"),
+      components: tr(language, "settings.categories.components"),
       about: tr(language, "settings.categories.about"),
       provider: tr(language, "settings.categories.provider"),
     },
@@ -379,8 +380,9 @@ const categories = computed(() => [
   {
     id: "appearance" as const,
     label: t.value.categories.appearance,
-    icon: Palette,
+    icon: Settings2,
   },
+  { id: "components" as const, label: t.value.categories.components, icon: Package },
   { id: "about" as const, label: t.value.categories.about, icon: Info },
 ]);
 
@@ -446,7 +448,7 @@ const categorySections = computed(() => {
       "search",
     ]),
     section("data", tr(language, "settings.sections.data"), ["history", "archive", "usage"]),
-    section("system", tr(language, "settings.sections.system"), ["about"]),
+    section("system", tr(language, "settings.sections.system"), ["components", "about"]),
   ];
 });
 
@@ -594,20 +596,15 @@ function onImageModelChange(value: unknown) {
 }
 
 function onToggle(id: string) {
+  if (id === "externalPluginGatewayEnabled") {
+    void settingStore.update({
+      externalPluginGatewayEnabled: !settingStore.externalPluginGatewayEnabled,
+    });
+  }
   if (id === "hardwareAccelerationEnabled") {
     void settingStore.update({
       hardwareAccelerationEnabled: !settingStore.hardwareAccelerationEnabled,
     });
-  }
-  if (id === "chromeFrostedGlass") {
-    const enabling = !settingStore.chromeFrostedGlass;
-    void (async () => {
-      await settingStore.update({ chromeFrostedGlass: enabling });
-      // Software WebView2 cannot blend transparent chrome with DWM Acrylic.
-      if (enabling && (await webviewGpuDisabled())) {
-        await relaunchApp();
-      }
-    })();
   }
   if (id === "memoryEnabled") {
     void settingStore.update({ memoryEnabled: !settingStore.memoryEnabled });
@@ -634,6 +631,18 @@ function onToggle(id: string) {
   }
   if (id === "showReasoning") {
     void settingStore.update({ showReasoning: !settingStore.showReasoning });
+  }
+  if (id === "showExecutionProcess") {
+    void settingStore.update({ showExecutionProcess: !settingStore.showExecutionProcess });
+  }
+  if (id === "showContextUsage") {
+    void settingStore.update({ showContextUsage: !settingStore.showContextUsage });
+  }
+  if (id === "showCacheHit") {
+    void settingStore.update({ showCacheHit: !settingStore.showCacheHit });
+  }
+  if (id === "showTokenBudget") {
+    void settingStore.update({ showTokenBudget: !settingStore.showTokenBudget });
   }
   if (id === "multimodalSplitAnalysis") {
     void settingStore.update({
@@ -779,10 +788,11 @@ watch(
 }
 
 .settings-workbench.embedded {
-  --settings-chrome-bg: var(--workbench-chrome-bg, var(--peek-sidebar));
+  --settings-chrome-bg: var(--workbench-navigation-bg, var(--peek-sidebar));
 }
 
 .titlebar {
+  position: relative;
   flex: none;
   height: 42px;
   display: flex;
@@ -808,6 +818,10 @@ watch(
 }
 
 .titlebar-title {
+  position: absolute;
+  left: calc(var(--nav-col, 250px) + (100% - var(--nav-col, 250px)) / 2);
+  max-width: min(40%, 360px);
+  transform: translateX(-50%);
   overflow: hidden;
   font-size: 13px;
   font-weight: 650;
@@ -845,6 +859,22 @@ watch(
     min-width 160ms ease;
 }
 
+.embedded .settings-nav {
+  width: min(var(--settings-nav-width), 46%) !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  color: var(--peek-sidebar-text, var(--peek-text));
+}
+
+.embedded .settings-nav-content {
+  padding: 10px 10px 14px;
+}
+
+.embedded .settings-nav-group + .settings-nav-group {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .settings-content-pane {
   position: relative;
   z-index: 1;
@@ -860,6 +890,16 @@ watch(
   border-radius: var(--peek-pane-radius, 20px) 0 0 0;
   background: var(--peek-list-bg) !important;
   box-shadow: var(--peek-pane-shadow, none);
+}
+
+.embedded .settings-content-pane {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.embedded.has-custom-bg .settings-content-pane {
+  background: color-mix(in srgb, var(--peek-list-bg) 40%, transparent) !important;
 }
 
 .settings-workbench.is-glass,
@@ -983,7 +1023,7 @@ watch(
 }
 
 .settings-nav :deep([data-slot="sidebar-menu-button"][data-active="true"]) {
-  background: transparent;
+  background: var(--workbench-navigation-selected, var(--peek-row-hover));
   color: var(--peek-active-fg, var(--peek-sidebar-text, var(--peek-text)));
   font-weight: 600;
 }

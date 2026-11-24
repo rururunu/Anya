@@ -154,6 +154,35 @@ export function parseStructuredGeneratedImages(
   }
 }
 
+function imageIdentity(source: string): string {
+  let value = source.trim().replace(/^path:/i, "");
+  const titled = value.match(/^(.*?)\s+"[^"]*"$/);
+  if (titled?.[1]) value = titled[1];
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    /* Keep a path that is not percent-encoded. */
+  }
+  return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+/** Drop markdown images the generate_image card already shows. */
+export function omitToolRenderedImages(
+  content: string,
+  results: Array<string | undefined>,
+): string {
+  const shown = new Set<string>();
+  for (const result of results) {
+    for (const source of parseGeneratedImageSources(result)) shown.add(imageIdentity(source));
+  }
+  if (shown.size === 0 || !content) return content;
+  const next = content.replace(/!\[[^\]]*]\(([^)\n]+)\)/g, (full, raw: string) =>
+    shown.has(imageIdentity(raw)) ? "" : full,
+  );
+  if (next === content) return content;
+  return next.replace(/\n{3,}/g, "\n\n").replace(/^\n+|\n+$/g, "");
+}
+
 /** Absolute / `path:` image targets from generate_image tool results. */
 export function parseGeneratedImageSources(result: string | undefined): string[] {
   if (!result?.trim()) return [];

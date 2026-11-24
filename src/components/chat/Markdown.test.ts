@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import Markdown from "./Markdown.vue";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { computed, nextTick, ref } from "vue";
 import { markdownWorkspaceRoot, resolveMarkdownImagePath } from "@/services/chat/localImageSrc";
 
@@ -12,7 +13,7 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   ),
 }));
 vi.mock("@tauri-apps/api/core", () => ({
-  convertFileSrc: (path: string) => `http://asset.localhost/${path}`,
+  convertFileSrc: vi.fn((path: string) => `http://asset.localhost/${path}`),
 }));
 vi.mock("@tauri-apps/api/path", () => ({
   tempDir: async () => "C:/Temp",
@@ -58,9 +59,22 @@ describe("local markdown images", () => {
     });
     await flushPromises();
     expect(readFile).toHaveBeenCalledWith("C:/workspace/build/review/p-01.png");
+    expect(convertFileSrc).not.toHaveBeenCalled();
     expect(wrapper.get("img").attributes("src")).toMatch(/^data:image\/png;base64,/);
     await wrapper.get("img").trigger("click");
     expect(wrapper.emitted("previewImage")?.[0]).toEqual(["C:/workspace/build/review/p-01.png"]);
+    wrapper.unmount();
+  });
+  it("does not request an asset URL when a workspace image cannot be read", async () => {
+    vi.mocked(readFile).mockRejectedValueOnce(new Error("File unavailable"));
+    const wrapper = mount(Markdown, {
+      props: { content: "![Slide](.anya/deck/pv-112648/images/page-0001.png)" },
+      global: { provide: { [markdownWorkspaceRoot as symbol]: computed(() => "C:/workspace") } },
+    });
+    await flushPromises();
+    expect(readFile).toHaveBeenCalledWith("C:/workspace/.anya/deck/pv-112648/images/page-0001.png");
+    expect(convertFileSrc).not.toHaveBeenCalled();
+    expect(wrapper.get("img").attributes("src")).toBeUndefined();
     wrapper.unmount();
   });
   it("normalizes file URLs, escaped filenames and Windows relative paths without changing remote URLs", () => {

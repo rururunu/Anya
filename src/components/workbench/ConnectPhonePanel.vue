@@ -2,10 +2,7 @@
   <section class="connect-phone">
     <div class="connect-shell">
       <header class="connect-header">
-        <div class="connect-header-main">
-          <h2>{{ copy.title }}</h2>
-          <p>{{ copy.subtitle }}</p>
-        </div>
+        <p>{{ copy.subtitle }}</p>
         <button type="button" class="tunnel-settings-btn" @click="tunnelConfigOpen = true">
           {{ copy.publicTunnelConfigButton }}
         </button>
@@ -266,6 +263,16 @@
         </template>
       </div>
 
+      <div
+        v-if="pairing?.qrPayload && pairing.expiresAtEpochMs > now"
+        class="mt-3 flex justify-center"
+      >
+        <Button size="sm" variant="outline" class="gap-1.5" :disabled="busy" @click="copyPairLink">
+          <Copy :size="13" aria-hidden="true" />
+          {{ copiedPairLink === pairing.qrPayload ? copy.copied : copy.copyPairLink }}
+        </Button>
+      </div>
+
       <section class="devices">
         <div class="devices-header">
           <h3>{{ copy.devices }}</h3>
@@ -329,6 +336,7 @@ type ConnectTab = "qr" | "code";
 const settingStore = useSettingStore();
 const status = ref<GatewayStatus | null>(null);
 const pairing = ref<PairingSessionInfo | null>(null);
+const copiedPairLink = ref("");
 const busy = ref(false);
 const tunnelConnecting = ref(false);
 const error = ref("");
@@ -336,6 +344,7 @@ const now = ref(Date.now());
 const tab = ref<ConnectTab>("qr");
 let unlisten: UnlistenFn | null = null;
 let timer: number | undefined;
+let disposed = false;
 
 // Cloudflare tunnel (optional): pairing will use wss public host.
 const cloudflaredEnabled = ref(false);
@@ -355,7 +364,6 @@ const isChinese = computed(() => settingStore.language === "zh-CN");
 const copy = computed(() =>
   isChinese.value
     ? {
-        title: "连接手机",
         subtitle: "用 Companion 扫码或输入配对码，远程查看会话与处理审批。",
         connectMethods: "连接方式",
         gatewayOn: "远程网关已开启",
@@ -375,6 +383,7 @@ const copy = computed(() =>
         fillToken: "配对令牌",
         lanFillHint: "同一 Wi‑Fi 也可填内网主机 {host}、端口 {port}、协议 ws",
         copy: "复制",
+        copyPairLink: "复制分享链接",
         devices: "已配对设备",
         connectedCount: "在线 {n}",
         online: "在线",
@@ -407,7 +416,6 @@ const copy = computed(() =>
         tunnelConnecting: "正在建立公网隧道，可能需要几秒到 25 秒，请稍候…",
       }
     : {
-        title: "Connect phone",
         subtitle: "Scan or enter a code in Companion to view sessions and approvals.",
         connectMethods: "Connection methods",
         gatewayOn: "Remote gateway on",
@@ -427,6 +435,7 @@ const copy = computed(() =>
         fillToken: "Pairing token",
         lanFillHint: "On the same Wi‑Fi: host {host}, port {port}, scheme ws",
         copy: "Copy",
+        copyPairLink: "Copy pairing link",
         devices: "Paired devices",
         connectedCount: "{n} online",
         online: "Online",
@@ -500,16 +509,23 @@ onMounted(async () => {
   } catch (e) {
     tunnelLoadError.value = String(e);
   }
-  unlisten = await listen<GatewayStatus>("remote-gateway-status", (event) => {
+  if (disposed) return;
+  const stopListening = await listen<GatewayStatus>("remote-gateway-status", (event) => {
     status.value = event.payload;
     if (event.payload.pairing) pairing.value = event.payload.pairing;
   });
+  if (disposed) {
+    stopListening();
+    return;
+  }
+  unlisten = stopListening;
   timer = window.setInterval(() => {
     now.value = Date.now();
   }, 15000);
 });
 
 onUnmounted(() => {
+  disposed = true;
   unlisten?.();
   if (timer) window.clearInterval(timer);
   if (commandCopiedTimer) window.clearTimeout(commandCopiedTimer);
@@ -624,6 +640,17 @@ async function copyText(value: string) {
   }
 }
 
+async function copyPairLink() {
+  const current = pairing.value;
+  if (!current?.qrPayload || current.expiresAtEpochMs <= Date.now()) return;
+  try {
+    await navigator.clipboard.writeText(current.qrPayload);
+    copiedPairLink.value = current.qrPayload;
+  } catch {
+    error.value = isChinese.value ? "复制失败" : "Copy failed";
+  }
+}
+
 async function copyQuickTunnelCommand() {
   await copyText(quickTunnelCommand.value);
   commandCopied.value = true;
@@ -645,7 +672,7 @@ function formatTime(epochMs: number) {
   justify-content: center;
   width: 100%;
   min-height: 100%;
-  padding: 28px 20px 24px;
+  padding: 20px 20px 24px;
   box-sizing: border-box;
 }
 
@@ -667,20 +694,8 @@ function formatTime(epochMs: number) {
   text-align: left;
 }
 
-.connect-header-main {
-  min-width: 0;
-  flex: 1;
-}
-
-.connect-header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
 .connect-header p {
-  margin: 6px 0 0;
+  margin: 0;
   color: var(--muted-foreground);
   font-size: 13px;
   line-height: 1.5;

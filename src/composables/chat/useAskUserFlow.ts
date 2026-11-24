@@ -112,6 +112,7 @@ export function useAskUserFlow(options: {
           header: question.header,
           question: question.question,
           kind: question.kind,
+          options: question.options,
           selected: userSupplement ? [] : selected.filter((item) => item !== ASK_SKIP_MARKER),
           userSupplement,
         };

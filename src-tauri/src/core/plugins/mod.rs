@@ -4,7 +4,6 @@ mod agent;
 mod bundle;
 mod bundled;
 mod capability;
-pub mod computer;
 mod contract;
 mod deepseek;
 mod deno;
@@ -19,6 +18,7 @@ mod package;
 mod permissions;
 mod prompt;
 mod pty;
+pub(crate) use pty::PtyHub;
 mod runtime;
 mod safe;
 mod scaffold;
@@ -34,19 +34,13 @@ pub use capability::{
     capability_label, is_known_capability, validate_capability_decl, CapabilityDecl,
     KNOWN_CAPABILITY_CATEGORIES,
 };
-pub use computer::{
-    delete_computer_playbook, get_computer_playbook, list_computer_playbooks,
-    stop_engine as stop_computer_engine, ComputerPlaybook,
-};
+pub use crate::core::computer::{finish_computer_turn, stop_computer_turn};
 pub(crate) use deno::deno_path;
 
 /// Whether a plugin agent tool requires the tool-approval picker.
 pub fn requires_tool_approval(full_name: &str) -> bool {
     if full_name.starts_with("plugin_opencli__") {
         return opencli::requires_tool_approval(full_name);
-    }
-    if full_name.starts_with("plugin_computer-use__") {
-        return computer::requires_tool_approval(full_name);
     }
     false
 }

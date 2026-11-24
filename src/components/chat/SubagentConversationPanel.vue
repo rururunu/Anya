@@ -25,6 +25,7 @@
         :message="viewMessage"
         :language="language"
         :show-reasoning="showReasoning"
+        :show-execution-process="showExecutionProcess"
         :display-mode="displayMode"
       />
 
@@ -64,6 +65,7 @@ const props = defineProps<{
   parentMessages: ChatMessage[];
   language: AppLanguage;
   showReasoning: boolean;
+  showExecutionProcess: boolean;
   displayMode: AgentWorkDisplay;
 }>();
 

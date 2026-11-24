@@ -6,14 +6,16 @@
         :class="{ 'has-image': Boolean(displayIconUrl) && !iconBroken }"
         aria-hidden="true"
       >
-        <img
-          v-if="displayIconUrl && !iconBroken"
-          :src="displayIconUrl"
-          alt=""
-          referrerpolicy="no-referrer"
-          @error="iconBroken = true"
-        />
-        <span v-else class="icon-fallback">{{ fallbackLetter }}</span>
+        <slot name="icon">
+          <img
+            v-if="displayIconUrl && !iconBroken"
+            :src="displayIconUrl"
+            alt=""
+            referrerpolicy="no-referrer"
+            @error="iconBroken = true"
+          />
+          <span v-else class="icon-fallback">{{ fallbackLetter }}</span>
+        </slot>
       </div>
       <div class="card-identity">
         <div class="title-row">

@@ -6,6 +6,7 @@ type RawAskUserAnswer = {
   selected?: unknown;
   userSupplement?: unknown;
   kind?: unknown;
+  options?: unknown;
 };
 
 export const PLAN_SWITCH_KIND = "planSwitch";
@@ -51,6 +52,22 @@ export function normalizeAskUserAnswerItems(
         ? item.selected.map((value) => String(value).trim()).filter(Boolean)
         : [],
       userSupplement: Boolean(item.userSupplement),
+      ...(Array.isArray(item.options)
+        ? {
+            options: item.options.flatMap((option) =>
+              typeof option?.label === "string"
+                ? [
+                    {
+                      label: option.label,
+                      ...(typeof option.description === "string"
+                        ? { description: option.description }
+                        : {}),
+                    },
+                  ]
+                : [],
+            ),
+          }
+        : {}),
     }))
     .filter((item) => item.userSupplement || item.selected.length > 0);
 }

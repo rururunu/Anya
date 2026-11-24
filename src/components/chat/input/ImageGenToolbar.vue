@@ -23,23 +23,6 @@
       </span>
       <span class="image-gen-split" aria-hidden="true"></span>
       <span class="image-gen-seg">{{ resolutionLabel }}</span>
-      <span class="image-gen-split" aria-hidden="true"></span>
-      <span class="image-gen-seg">{{ modelValue.count }}</span>
-    </button>
-
-    <button
-      type="button"
-      class="image-gen-style"
-      data-picker-trigger
-      data-tauri-drag-region="false"
-      :class="{ open: openField === 'style' }"
-      :aria-expanded="openField === 'style'"
-      aria-haspopup="listbox"
-      :title="tr(language, 'imageGen.style')"
-      @mousedown.stop
-      @click.stop="onOpen('style', $event)"
-    >
-      {{ styleLabel }}
     </button>
 
     <button
@@ -54,7 +37,14 @@
       @mousedown.stop
       @click.stop="onOpen('model', $event)"
     >
-      {{ modelLabel }}
+      <component
+        :is="modelIcon"
+        v-if="modelIcon"
+        :size="13"
+        class="image-gen-model-icon"
+        aria-hidden="true"
+      />
+      <span class="image-gen-model-label">{{ modelLabel }}</span>
     </button>
   </div>
 </template>
@@ -67,7 +57,6 @@ import type { AppLanguage } from "@/types/setting";
 import {
   IMAGE_GEN_RATIOS,
   IMAGE_GEN_RESOLUTIONS,
-  IMAGE_GEN_STYLE_PRESETS,
   isImageGenSettingsField,
   listImageModelChoices,
   selectedImageModelChoiceId,
@@ -76,6 +65,7 @@ import {
   type ImageGenFieldId,
 } from "@/services/chat/imageGenMode";
 import { useSettingStore } from "@/stores/setting";
+import { getModelIcon } from "@/lib/providerIcons";
 
 const props = defineProps<{
   modelValue: ImageGenCompose;
@@ -105,26 +95,22 @@ const resolutionLabel = computed(
     "2K",
 );
 
-const styleLabel = computed(() => {
-  const builtin = IMAGE_GEN_STYLE_PRESETS.find((item) => item.id === props.modelValue.styleId);
-  if (builtin) return tr(props.language, builtin.labelKey as ChatI18nKey);
-  const custom = settingStore.imageStyleTemplates.find(
-    (item) => item.id === props.modelValue.styleId,
-  );
-  return custom?.name ?? tr(props.language, "imageGen.style.none");
-});
-
-const modelLabel = computed(() => {
+const selectedModelId = computed(() => {
   const choices = listImageModelChoices(settingStore.imageProviders);
   const selected = selectedImageModelChoiceId(
     settingStore.imageModelProvider,
     settingStore.imageModel,
     choices,
   );
-  if (selected) {
-    return decodeImageModelSelection(selected)?.model ?? settingStore.imageModel;
-  }
-  return settingStore.imageModel.trim() || tr(props.language, "imageGen.model");
+  return decodeImageModelSelection(selected)?.model ?? settingStore.imageModel.trim();
+});
+
+const modelLabel = computed(() => selectedModelId.value || tr(props.language, "imageGen.model"));
+
+const modelIcon = computed(() => {
+  const id = selectedModelId.value;
+  if (!id) return null;
+  return getModelIcon({ id, displayName: id });
 });
 
 function onOpen(id: ImageGenFieldId, event: MouseEvent) {
@@ -186,11 +172,22 @@ function onOpen(id: ImageGenFieldId, event: MouseEvent) {
 }
 .image-gen-style {
   min-width: 0;
-  max-width: 140px;
+  max-width: 160px;
+  gap: 6px;
   padding: 0 10px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.image-gen-model-icon {
+  flex: none;
+  color: var(--peek-muted);
+  opacity: 0.9;
+}
+.image-gen-model-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

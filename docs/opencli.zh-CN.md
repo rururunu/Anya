@@ -6,7 +6,7 @@
   <a href="./opencli.zh-CN.md">简体中文</a>
 </p>
 
-官方 **Agent** 插件 `opencli`（**默认关闭**）。封装本机 [OpenCLI](https://github.com/jackwener/OpenCLI) CLI，让 Anya 能跑站点适配器，并通过 Browser Bridge 操控**已登录的 Chrome**——与 [电脑操控](./computer-use.zh-CN.md)（Ghost 桌面 + CDP）互补。
+官方 **Agent** 插件 `opencli`（**默认关闭**）。它是 Anya 启动时复制到 AppData 的唯一插件。封装本机 [OpenCLI](https://github.com/jackwener/OpenCLI) CLI，让 Anya 能跑站点适配器，并通过 Browser Bridge 操控**已登录的 Chrome**。这与内置[电脑操控](./computer-use.zh-CN.md)互补。
 
 ## 前置
 

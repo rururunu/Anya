@@ -1,11 +1,44 @@
 <template>
   <section
     class="settings-page is-wide skills-settings"
-    :class="{ 'is-smithery': tab === 'smithery' }"
+    :class="{ 'is-smithery': tab === 'smithery', 'is-embedded': embedded }"
   >
     <AppConfirmDialog ref="confirmDialogRef" />
 
-    <SettingsPageHeader :title="copy.title" :hide-title="embedded">
+    <SettingsPageHeader v-if="!embedded" :title="copy.title" />
+    <ExtensionToolbar>
+      <div class="settings-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          class="settings-tab"
+          :class="{ on: tab === 'installed' }"
+          :aria-selected="tab === 'installed'"
+          @click="tab = 'installed'"
+        >
+          {{ copy.tabInstalled }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="settings-tab"
+          :class="{ on: tab === 'builtin' }"
+          :aria-selected="tab === 'builtin'"
+          @click="tab = 'builtin'"
+        >
+          {{ copy.tabBuiltin }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="settings-tab"
+          :class="{ on: tab === 'smithery' }"
+          :aria-selected="tab === 'smithery'"
+          @click="openSmithery"
+        >
+          {{ copy.tabSmithery }}
+        </button>
+      </div>
       <template v-if="tab === 'installed'" #actions>
         <Button
           variant="ghost"
@@ -27,40 +60,7 @@
           {{ copy.installFolder }}
         </Button>
       </template>
-    </SettingsPageHeader>
-
-    <div class="settings-tabs" role="tablist">
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'installed' }"
-        :aria-selected="tab === 'installed'"
-        @click="tab = 'installed'"
-      >
-        {{ copy.tabInstalled }}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'builtin' }"
-        :aria-selected="tab === 'builtin'"
-        @click="tab = 'builtin'"
-      >
-        {{ copy.tabBuiltin }}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'smithery' }"
-        :aria-selected="tab === 'smithery'"
-        @click="openSmithery"
-      >
-        {{ copy.tabSmithery }}
-      </button>
-    </div>
+    </ExtensionToolbar>
 
     <SettingsFormError :message="error" />
 
@@ -239,6 +239,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import ExtensionToolbar from "@/components/settings/ExtensionToolbar.vue";
 import SettingsFormError from "@/components/settings/SettingsFormError.vue";
 import SettingsToggle from "@/components/settings/SettingsToggle.vue";
 import SettingsSearchField from "@/components/settings/SettingsSearchField.vue";
@@ -717,6 +718,26 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.skills-settings.is-smithery.is-embedded {
+  height: auto;
+  padding-bottom: 0;
+  overflow: visible;
+}
+
+.is-embedded .smithery-layout {
+  align-items: start;
+}
+
+.is-embedded :is(.category-sidebar, .smithery-main) {
+  height: auto;
+}
+
+.is-embedded .smithery-list-scroll {
+  max-height: none;
+  padding: 0;
+  overflow: visible;
 }
 
 @media (max-width: 640px) {

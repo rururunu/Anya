@@ -32,7 +32,7 @@ pub const CONSECUTIVE_TOOL_FAILURE_CHALLENGE: u32 = 3;
 /// challenge threshold so exploratory web/booking work can recover.
 pub const MAX_CONSECUTIVE_TOOL_FAILURES: u32 = 8;
 /// Mid-turn auto-compact window when large context is off (keep in sync with `compact::DEFAULT_CONTEXT_WINDOW`).
-pub const DEFAULT_MAX_TURN_TOKENS: usize = 64_000;
+pub const DEFAULT_MAX_TURN_TOKENS: usize = 258_000;
 /// Mid-turn auto-compact window when large context is on (keep in sync with `compact::LARGE_CONTEXT_WINDOW`).
 pub const LARGE_MAX_TURN_TOKENS: usize = 1_000_000;
 

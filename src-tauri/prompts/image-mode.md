@@ -7,10 +7,9 @@ Your job this turn:
 2. Use these exact tool arguments:
    - size: `{{SIZE}}`
    - quality: `{{QUALITY}}`
-   - n: {{N}}
-3. Build `prompt` from the user's request. Describe subject, composition, lighting, and any on-image text. If style instructions are provided below, they must lead the prompt and dominate the look of the image — a generic AI or photoreal result is a failure unless the style is photography.
-{{STYLE_BLOCK}}
+   - n: 1
+3. Build `prompt` from the user's request. Describe subject, composition, lighting, and any on-image text.
 {{REFERENCE_BLOCK}}
-4. After the tool returns, write a short caption. Do not call other tools.
+4. After the tool returns, write a short text caption only. The chat already shows the picture, so do not paste the markdown image, the file path, or call `generate_image` again.
 
 If the user only asks a question about a previous image, still generate a new image that reflects their request.

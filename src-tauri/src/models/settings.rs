@@ -163,6 +163,16 @@ pub enum AgentWorkDisplay {
     Compact,
 }
 
+/// How the workbench conversation page is presented.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatPageStyle {
+    Work,
+    #[default]
+    Chat,
+    Stream,
+}
+
 /// Chat interaction mode: Agent can mutate; Ask is read-only; Plan drafts
 /// first and blocks writers until the user approves; Image generates a picture
 /// on every turn.
@@ -424,7 +434,7 @@ pub struct AppSettings {
     /// Custom style templates for Image mode (prompt + optional example image).
     #[serde(default)]
     pub image_style_templates: Vec<ImageStyleTemplate>,
-    #[serde(default)]
+    #[serde(default = "default_reasoning_effort")]
     pub reasoning_effort: ReasoningEffort,
     #[serde(default)]
     pub reasoning_language: ReasoningLanguage,
@@ -440,9 +450,24 @@ pub struct AppSettings {
     /// Controls whether reasoning supplied by the model is rendered in chat.
     #[serde(default)]
     pub show_reasoning: bool,
+    /// Show the completed-work summary and live tool activity in chat.
+    #[serde(default)]
+    pub show_execution_process: bool,
+    /// Show the context-window meter in the composer.
+    #[serde(default)]
+    pub show_context_usage: bool,
+    /// Show cache-hit percentage on replies and in the composer.
+    #[serde(default)]
+    pub show_cache_hit: bool,
+    /// Show token counts on replies and in the composer.
+    #[serde(default)]
+    pub show_token_budget: bool,
     /// detailed = shell/diff inline in chat; compact = fold into process details.
     #[serde(default)]
     pub agent_work_display: AgentWorkDisplay,
+    /// work = current page, chat = bubbles, stream = popup layout.
+    #[serde(default)]
+    pub chat_page_style: ChatPageStyle,
     /// Allow the main agent to delegate work to user-selected models.
     #[serde(default)]
     pub multi_model_collaboration: bool,
@@ -482,13 +507,16 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub multimodal_split_analysis: bool,
     /// When true, use a 1M-token context window for compaction / turn budgets.
-    #[serde(default = "default_true")]
+    /// Off (the default) uses a 258k ceiling, still capped by the model.
+    #[serde(default = "default_false")]
     pub large_context_enabled: bool,
     #[serde(default = "default_zoom")]
     pub zoom: u32,
     /// WebView2 GPU rendering. Off by default for broader driver compatibility; changing requires restart.
     #[serde(default = "default_false")]
     pub hardware_acceleration_enabled: bool,
+    #[serde(default)]
+    pub external_plugin_gateway_enabled: bool,
     /// Primary overlay shortcut modifier, activated by a double tap.
     #[serde(default = "default_primary_hotkey")]
     pub primary_hotkey: String,
@@ -526,7 +554,11 @@ fn default_onboarding_completed_existing() -> bool {
 }
 
 fn default_chat_model() -> String {
-    String::new()
+    "deepseek-flash".to_string()
+}
+
+fn default_reasoning_effort() -> ReasoningEffort {
+    ReasoningEffort::Low
 }
 
 fn default_multimodal_model() -> String {
@@ -611,7 +643,12 @@ pub struct AppSettingsPatch {
     pub pass_tool_reasoning: Option<bool>,
     pub continue_thinking_after_tools: Option<bool>,
     pub show_reasoning: Option<bool>,
+    pub show_execution_process: Option<bool>,
+    pub show_context_usage: Option<bool>,
+    pub show_cache_hit: Option<bool>,
+    pub show_token_budget: Option<bool>,
     pub agent_work_display: Option<AgentWorkDisplay>,
+    pub chat_page_style: Option<ChatPageStyle>,
     pub multi_model_collaboration: Option<bool>,
     pub collaboration_models: Option<Vec<String>>,
     pub minimal_coding: Option<bool>,
@@ -625,6 +662,7 @@ pub struct AppSettingsPatch {
     pub large_context_enabled: Option<bool>,
     pub zoom: Option<u32>,
     pub hardware_acceleration_enabled: Option<bool>,
+    pub external_plugin_gateway_enabled: Option<bool>,
     pub primary_hotkey: Option<String>,
     pub primary_hotkey_enabled: Option<bool>,
     pub secondary_hotkey: Option<String>,
@@ -675,12 +713,17 @@ impl Default for AppSettings {
             image_model_provider: String::new(),
             image_providers: Vec::new(),
             image_style_templates: Vec::new(),
-            reasoning_effort: ReasoningEffort::default(),
+            reasoning_effort: default_reasoning_effort(),
             reasoning_language: ReasoningLanguage::default(),
             pass_tool_reasoning: true,
             continue_thinking_after_tools: true,
             show_reasoning: false,
+            show_execution_process: false,
+            show_context_usage: false,
+            show_cache_hit: false,
+            show_token_budget: false,
             agent_work_display: AgentWorkDisplay::default(),
+            chat_page_style: ChatPageStyle::default(),
             multi_model_collaboration: false,
             collaboration_models: Vec::new(),
             minimal_coding: false,
@@ -692,9 +735,10 @@ impl Default for AppSettings {
             auto_verify_after_edits: true,
             pending_restricted_shell_upgrade_notice: false,
             multimodal_split_analysis: true,
-            large_context_enabled: true,
+            large_context_enabled: false,
             zoom: 100,
             hardware_acceleration_enabled: false,
+            external_plugin_gateway_enabled: false,
             primary_hotkey: default_primary_hotkey(),
             primary_hotkey_enabled: true,
             secondary_hotkey: default_secondary_hotkey(),
@@ -858,7 +902,14 @@ impl AppSettings {
                 .continue_thinking_after_tools
                 .unwrap_or(self.continue_thinking_after_tools),
             show_reasoning: patch.show_reasoning.unwrap_or(self.show_reasoning),
+            show_execution_process: patch
+                .show_execution_process
+                .unwrap_or(self.show_execution_process),
+            show_context_usage: patch.show_context_usage.unwrap_or(self.show_context_usage),
+            show_cache_hit: patch.show_cache_hit.unwrap_or(self.show_cache_hit),
+            show_token_budget: patch.show_token_budget.unwrap_or(self.show_token_budget),
             agent_work_display: patch.agent_work_display.unwrap_or(self.agent_work_display),
+            chat_page_style: patch.chat_page_style.unwrap_or(self.chat_page_style),
             multi_model_collaboration: patch
                 .multi_model_collaboration
                 .unwrap_or(self.multi_model_collaboration),
@@ -892,6 +943,9 @@ impl AppSettings {
                 .large_context_enabled
                 .unwrap_or(self.large_context_enabled),
             zoom: patch.zoom.unwrap_or(self.zoom),
+            external_plugin_gateway_enabled: patch
+                .external_plugin_gateway_enabled
+                .unwrap_or(self.external_plugin_gateway_enabled),
             hardware_acceleration_enabled: patch
                 .hardware_acceleration_enabled
                 .unwrap_or(self.hardware_acceleration_enabled),
@@ -960,6 +1014,10 @@ mod tests {
 
         assert_eq!(settings.color_scheme, ColorScheme::Dark);
         assert!(!settings.show_reasoning);
+        assert!(!settings.show_execution_process);
+        assert!(!settings.show_context_usage);
+        assert!(!settings.show_cache_hit);
+        assert!(!settings.show_token_budget);
         assert!(settings.continue_thinking_after_tools);
         assert!(!settings.multi_model_collaboration);
         assert!(settings.collaboration_models.is_empty());
@@ -970,6 +1028,8 @@ mod tests {
         assert!(settings.image_model_provider.is_empty());
         assert!(settings.image_providers.is_empty());
         assert!(!settings.hardware_acceleration_enabled);
+        assert!(!settings.external_plugin_gateway_enabled);
+        assert_eq!(settings.chat_page_style, ChatPageStyle::Chat);
         assert!(settings.onboarding_completed);
     }
 

@@ -359,6 +359,22 @@ use share_preview_url instead."
             .unwrap_or_else(|| rel_path.clone());
         let mime = guess_share_mime(&absolute);
         let offer_id = uuid::Uuid::new_v4().to_string();
+        if let Some(app) = ctx.app_handle.as_ref() {
+            crate::core::remote::delivery::enqueue(
+                app,
+                "file",
+                json!({
+                    "sessionId": ctx.root_session_id(),
+                    "offerId": offer_id,
+                    "path": rel_path,
+                    "name": name,
+                    "mime": mime,
+                    "size": size,
+                    "workspaceId": workspace_id,
+                }),
+            )
+            .map_err(ToolError::new)?;
+        }
         ctx.event_bus.emit(BusEvent::FileOffer {
             session_id: ctx.root_session_id().to_string(),
             offer_id: offer_id.clone(),
@@ -432,6 +448,18 @@ Use after starting a Vite/Next/static server, or whenever the deliverable is a r
                 .map_err(ToolError::new)?;
         let public_url = crate::core::remote::preview::public_preview_url(app, &preview.id);
         let offer_id = preview.id.clone();
+        crate::core::remote::delivery::enqueue(
+            app,
+            "url",
+            json!({
+                "sessionId": ctx.root_session_id(),
+                "offerId": offer_id,
+                "label": label,
+                "originUrl": preview.origin_url,
+                "publicUrl": public_url,
+            }),
+        )
+        .map_err(ToolError::new)?;
         ctx.event_bus.emit(BusEvent::UrlOffer {
             session_id: ctx.root_session_id().to_string(),
             offer_id: offer_id.clone(),

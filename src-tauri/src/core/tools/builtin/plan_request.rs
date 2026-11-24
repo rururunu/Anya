@@ -86,17 +86,13 @@ impl Tool for RequestPlanModeTool {
         });
         let _pending = crate::core::tools::context::PendingAskGuard::new(ctx, &request_id);
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
         let answer = loop {
             ctx.ensure_not_cancelled()?;
             match rx.recv_timeout(std::time::Duration::from_millis(100)) {
                 Ok(answer) => break answer,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-                    if std::time::Instant::now() < deadline => {}
-                Err(_) => {
-                    return Err(ToolError::new(
-                        "plan mode request timed out or disconnected",
-                    ))
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(ToolError::new("plan mode request disconnected"));
                 }
             }
         };

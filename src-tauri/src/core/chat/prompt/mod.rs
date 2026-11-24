@@ -38,8 +38,6 @@ pub struct PromptPreferences {
 pub struct ImageModePolicy {
     pub size: String,
     pub quality: String,
-    pub n: u8,
-    pub style_prompt: String,
     pub has_reference: bool,
 }
 
@@ -48,8 +46,6 @@ impl From<&crate::core::tools::image_mode::ImageModeOptions> for ImageModePolicy
         Self {
             size: options.size.clone(),
             quality: options.quality.clone(),
-            n: options.n,
-            style_prompt: options.style_prompt.clone(),
             has_reference: !options.reference_images.is_empty(),
         }
     }
@@ -189,6 +185,10 @@ impl PromptBuilder {
             "plugin-prompts",
             plugin_prompts.as_deref(),
         );
+        if !cfg!(test) && preferences.image_mode.is_none() {
+            let catalog = crate::core::computer::prompt_context();
+            inject_system_block(&mut messages, session_id, "computer-playbooks", catalog.as_deref());
+        }
         let bot_persona = crate::core::bots::persona_block(session_id);
         inject_system_block(
             &mut messages,

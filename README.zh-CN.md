@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/mascot/mascot-icon.svg" alt="Anya" width="96" height="96" />
+  <img src="./public/mascot/anya-app-icon.png" alt="Anya" width="96" height="96" />
 </p>
 
 <h1 align="center">Anya</h1>
@@ -13,7 +13,7 @@
   &nbsp;·&nbsp; <a href="./docs/README.zh-CN.md">使用文档</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.34 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.3.0 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
@@ -26,7 +26,9 @@
 | **个性化设置** | 设置本地资料和头像，查看用量活动，并导入或导出个人资料。                         |
 | **处理文档**   | 生成、读取、转换与渲染 Word / Excel / PPT，通过卡片交付文件。                    |
 | **选择模型**   | 配置 DeepSeek、OpenAI 兼容或 Anthropic 兼容服务商。                              |
-| **扩展工具**   | 使用技能、MCP 与插件；电脑操控和 OpenCLI 需手动启用。                            |
+| **操控桌面**   | 让 Anya 操作 Windows 应用或浏览器。会改变桌面的操作遵循当前审批策略。            |
+| **使用终端**   | 在工作台侧栏打开本地 PowerShell。收起侧栏后会话继续运行。                        |
+| **扩展工具**   | 使用技能、MCP 与插件。OpenCLI 需手动启用。                                       |
 | **手机连接**   | 通过 [Companion](https://github.com/rururunu/AnyaAndroid) 对话、审批和传输文件。 |
 
 DeepSeek 模型使用原生集成的 dsh 核心工具与提示词，同时保留已启用的 Anya 插件、MCP 工具和插件管理能力，并记录缓存用量、响应耗时和重试信息。其他模型使用 Anya 通用工具集。详细说明见 [DeepSeek 链路](./docs/deepseek-harness.zh-CN.md)。
@@ -40,8 +42,10 @@ Alt+Alt 会在弹窗取得焦点前采集选中文字，并以紧凑的行内标
 输入栏右侧可以切换模型和思考强度；窗口较窄时，部分操作会收起文字，仅显示图标。弹窗与工作台可用 `#` 选择技能、插件或 MCP，`@` 选择工作区文件，`/` 查看命令；编辑已发送消息时也有这些提示。发现新版本后，可从工作台侧栏或 **设置 → 关于** 查看版本说明，再选择安装。
 
 1. 从 [Releases](../../releases) 下载并安装 MSI。
-2. 打开 **设置**，添加模型服务商并配置凭据。
+2. 打开 **设置**，添加模型服务商并配置凭据。首次启动还会引导填写服务商、输入栏、快捷键和工作区。可在 **设置 → 关于** 再次打开引导。
 3. 在工作台开始对话，或双击 **Alt** 唤出悬浮窗。
+
+工作台对话有三种版式：**工作**、**聊天**和**流**。工作是任务布局，聊天使用较窄的栏宽，流把输入栏留在对话里。**设置 → 组件**可以关闭 Office 引擎。
 
 备用快捷键：<kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd>。
 
@@ -58,7 +62,7 @@ Alt+Alt 会在弹窗取得焦点前采集选中文字，并以紧凑的行内标
 
 差异侧栏连续显示多个文件，文件树用于跳转；空间不足时自动收起文件树，也可手动切换。流式回复与长差异列表会延后非必要渲染，以减少 Agent 运行期间的界面阻塞。
 
-Office 排版、转换和公式结果需按产物检查。部分搜索与扩展功能需要额外配置。详见 [Office 工作流](./docs/office.zh-CN.md) 与 [插件说明](./docs/plugin-system.zh-CN.md)。
+Office 排版、转换和公式结果需按产物检查。部分搜索与扩展功能需要额外配置。详见 [Office 工作流](./docs/office.zh-CN.md)、[电脑操控](./docs/computer-use.zh-CN.md) 与 [插件说明](./docs/plugin-system.zh-CN.md)。
 
 ## 数据与隐私
 
@@ -98,6 +102,7 @@ pnpm tauri:build
 - [Office 工作流](./docs/office.zh-CN.md)
 - [文件交付](./docs/file-delivery.zh-CN.md)
 - [浏览器选区桥接](./browser-extension/README.zh-CN.md)
+- [电脑操控与终端](./docs/computer-use.zh-CN.md)
 - [插件开发](./docs/plugin-system.zh-CN.md)
 - [发布与更新](./docs/release.zh-CN.md)
 

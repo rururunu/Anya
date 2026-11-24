@@ -210,7 +210,14 @@ pub fn build_session_snapshot(app: &AppHandle) -> Value {
         .chat()
         .list_sessions()
         .into_iter()
-        .map(|session| map_remote_session(&session, &workspace_names))
+        .filter(|session| {
+            !session.session_id.starts_with("plugin:") && !session.session_id.contains("-sub-")
+        })
+        .map(|session| {
+            let mut dto = map_remote_session(&session, &workspace_names);
+            dto.workspace_id = session.workspace_id;
+            dto
+        })
         .collect();
     let workspace_dtos: Vec<RemoteWorkspaceDto> = workspaces
         .into_iter()

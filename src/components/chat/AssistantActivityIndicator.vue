@@ -2,7 +2,7 @@
   <div class="assistant-activity" role="status" aria-live="polite">
     <component v-if="icon" :is="icon" class="activity-icon" :size="14" aria-hidden="true" />
     <span v-else class="activity-mascot" aria-hidden="true">
-      <MascotFace busy :follow-pointer="false" />
+      <MascotFace busy eyes-only :follow-pointer="false" />
     </span>
     <span class="activity-label">{{ label }}</span>
   </div>

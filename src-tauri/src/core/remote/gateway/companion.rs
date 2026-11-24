@@ -126,8 +126,9 @@ where
                             Message::Text(text) => {
                                 let app = app.clone();
                                 let out = out.clone();
+                                let device_id = device_id.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    if let Err(error) = handle_text(&app, &out, text.as_str()).await {
+                                    if let Err(error) = handle_text(&app, &out, &device_id, text.as_str()).await {
                                         tracing::debug!(error = %error, "remote rpc handling failed");
                                     }
                                 });

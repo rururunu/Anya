@@ -14,6 +14,7 @@ pub mod event;
 pub mod lsp;
 pub mod mcp;
 pub mod plugins;
+pub mod computer;
 pub mod remote;
 pub mod rules;
 pub mod runtime;

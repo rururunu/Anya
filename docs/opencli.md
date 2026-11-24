@@ -6,7 +6,7 @@
   <a href="./opencli.zh-CN.md">简体中文</a>
 </p>
 
-Official **agent** plugin `opencli` (default **off**). Wraps the local [OpenCLI](https://github.com/jackwener/OpenCLI) CLI so Anya can run site adapters and drive a **logged-in Chrome** via Browser Bridge — complementary to [Computer Use](./computer-use.md) (Ghost desktop + CDP).
+Official **agent** plugin `opencli` (default **off**). It is the only plugin Anya copies into AppData on launch. It wraps the local [OpenCLI](https://github.com/jackwener/OpenCLI) CLI so Anya can run site adapters and drive a **logged-in Chrome** via Browser Bridge. That complements built-in [Computer Use](./computer-use.md).
 
 ## Prerequisites
 

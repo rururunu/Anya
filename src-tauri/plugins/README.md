@@ -1,17 +1,22 @@
 ﻿# Official plugins
 
-Source of truth for plugins Anya ships and copies into the user plugins
-directory on launch (`%APPDATA%\Anya\plugins\` / `Anya Debug\plugins\`).
+Source of truth for plugins Anya copies into the user plugins directory on
+launch (`%APPDATA%\Anya\plugins\` / `Anya Debug\plugins\`).
 
 | Folder | Id | What it is |
 | --- | --- | --- |
-| [`terminal/`](./terminal/) | `terminal` | In-app ConPTY + xterm (review strip). Agent tool `plugin_terminal__run`. |
-| [`computer-use/`](./computer-use/) | `computer-use` | Agent: `launch` / keyboard / UIA / pixels. Screenshot + control tree. Windows playbook. **No UI. Disabled until Enable.** Windows. |
+| [`opencli/`](./opencli/) | `opencli` | Official agent plugin. Copied on launch. **Off until Enable.** |
 | [`examples/`](./examples/) | — | Reference plugins, not auto-enabled. |
 
-Edit files here, then restart (or reload) Anya. `ensure_bundled_plugins` overwrites the AppData copies from these sources.
+`terminal/` and `computer-use/` stay in this tree, but those ids are reserved.
+Anya does not copy or load them. The workbench terminal and Windows computer use
+are built into the app. See [computer use](../../docs/computer-use.md).
 
-The in-app terminal prepends every `<plugin>/bin` to `PATH`.
+Edit `opencli/` here, then restart Anya. `ensure_bundled_plugins` overwrites the
+AppData copy from this source.
+
+The built-in terminal inherits the Windows user environment. It does not prepend
+plugin `bin/` directories. A plugin-owned PTY session still does.
 
 Pin-window AI badge (PixPin / Snipaste) is not a plugin. Optional local API while Anya is running:
 

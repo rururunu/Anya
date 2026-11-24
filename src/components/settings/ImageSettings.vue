@@ -92,76 +92,6 @@
             </article>
           </div>
         </div>
-
-        <div class="settings-group">
-          <h2 class="settings-group-title">{{ t("settings.image.templatesTitle") }}</h2>
-          <p class="settings-page-lede is-inline">{{ t("settings.image.templatesHint") }}</p>
-          <div class="templates-list">
-            <p v-if="templates.length === 0" class="templates-empty">
-              {{ t("settings.image.templateEmpty") }}
-            </p>
-            <article v-for="(item, index) in templates" :key="item.id" class="template-card">
-              <div class="template-head">
-                <Input
-                  :model-value="item.name"
-                  :placeholder="t('settings.image.templateNamePlaceholder')"
-                  class="h-8 text-xs"
-                  @update:model-value="patchTemplate(index, { name: String($event) })"
-                  @blur="saveTemplates"
-                />
-                <button
-                  type="button"
-                  class="template-delete"
-                  :aria-label="t('settings.image.templateDelete')"
-                  @click="removeTemplate(index)"
-                >
-                  <Trash2 class="size-3.5" />
-                </button>
-              </div>
-              <textarea
-                :value="item.prompt"
-                :placeholder="t('settings.image.templatePromptPlaceholder')"
-                class="template-prompt"
-                rows="3"
-                @change="onPromptChange(index, $event)"
-              ></textarea>
-              <div class="template-example">
-                <img
-                  v-if="item.exampleImage"
-                  :src="item.exampleImage"
-                  alt=""
-                  class="example-thumb"
-                />
-                <div class="example-actions">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    class="h-8"
-                    @click="pickExample(index)"
-                  >
-                    {{ t("settings.image.templatePickImage") }}
-                  </Button>
-                  <Button
-                    v-if="item.exampleImage"
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    class="h-8"
-                    @click="patchTemplate(index, { exampleImage: undefined }, true)"
-                  >
-                    {{ t("settings.image.templateRemoveImage") }}
-                  </Button>
-                </div>
-                <p class="field-hint">{{ t("settings.image.templateExampleHint") }}</p>
-              </div>
-            </article>
-            <Button type="button" size="sm" class="h-8 gap-1.5 self-start" @click="addTemplate">
-              <Plus class="size-3.5" />
-              {{ t("settings.image.addTemplate") }}
-            </Button>
-          </div>
-        </div>
       </div>
 
       <div v-else key="edit" class="view-container">
@@ -264,7 +194,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { ChevronLeft, ChevronRight, Globe2, Plus, Save, Trash2, X } from "@lucide/vue";
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
@@ -279,13 +208,11 @@ import {
 } from "@/components/ui/select";
 import { tr } from "@/services/i18n";
 import type { SettingsI18nKey } from "@/services/locales/settings";
-import type { CustomProviderConfig, ImageStyleTemplate } from "@/types/setting";
+import type { CustomProviderConfig } from "@/types/setting";
 import { useSettingStore } from "@/stores/setting";
-import { compressImageDataUrl } from "@/services/chat/compressImage";
 import {
   decodeImageModelSelection,
   listImageModelChoices,
-  newImageStyleTemplateId,
   selectedImageModelChoiceId,
 } from "@/services/chat/imageGenMode";
 import {
@@ -336,77 +263,6 @@ const selectedModelValue = computed(() =>
     listImageModelChoices(settingStore.imageProviders),
   ),
 );
-
-const templates = computed(() => settingStore.imageStyleTemplates);
-
-function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return `data:${mime};base64,${btoa(binary)}`;
-}
-
-async function pathToCompressedDataUrl(path: string): Promise<string | null> {
-  const { readFile } = await import("@tauri-apps/plugin-fs");
-  const bytes = await readFile(path);
-  const ext = path.split(".").pop()?.toLowerCase() ?? "png";
-  const mime =
-    ext === "jpg" || ext === "jpeg"
-      ? "image/jpeg"
-      : ext === "webp"
-        ? "image/webp"
-        : ext === "gif"
-          ? "image/gif"
-          : "image/png";
-  return compressImageDataUrl(bytesToDataUrl(bytes, mime));
-}
-
-async function saveTemplates(next = templates.value) {
-  await settingStore.update({ imageStyleTemplates: next });
-}
-
-function patchTemplate(index: number, patch: Partial<ImageStyleTemplate>, persist = false) {
-  const next = templates.value.map((item, i) => (i === index ? { ...item, ...patch } : item));
-  settingStore.imageStyleTemplates = next;
-  if (persist) void saveTemplates(next);
-}
-
-function onPromptChange(index: number, event: Event) {
-  const target = event.target;
-  if (!(target instanceof HTMLTextAreaElement)) return;
-  patchTemplate(index, { prompt: target.value }, true);
-}
-
-async function addTemplate() {
-  const next = [
-    ...templates.value,
-    {
-      id: newImageStyleTemplateId(),
-      name: `${t("settings.image.addTemplate")} ${templates.value.length + 1}`,
-      prompt: "",
-    },
-  ];
-  await saveTemplates(next);
-}
-
-async function removeTemplate(index: number) {
-  const next = templates.value.filter((_, i) => i !== index);
-  await saveTemplates(next);
-}
-
-async function pickExample(index: number) {
-  const selected = await openFileDialog({
-    multiple: false,
-    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
-  });
-  const path = Array.isArray(selected) ? selected[0] : selected;
-  if (!path) return;
-  const dataUrl = await pathToCompressedDataUrl(path);
-  if (!dataUrl) return;
-  patchTemplate(index, { exampleImage: dataUrl }, true);
-}
 
 async function onImageModelChange(value: unknown) {
   if (typeof value !== "string") return;
@@ -544,75 +400,6 @@ async function deleteEditing() {
 </script>
 
 <style scoped>
-.templates-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.templates-empty {
-  margin: 0;
-  padding: 12px;
-  border: 1px dashed var(--peek-border);
-  border-radius: 10px;
-  color: var(--peek-muted);
-  font-size: 12px;
-}
-.template-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--peek-border) 88%, transparent);
-  border-radius: 12px;
-  background: var(--peek-list-bg);
-}
-.template-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.template-delete {
-  display: inline-flex;
-  flex: none;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--peek-muted);
-  cursor: pointer;
-}
-.template-prompt {
-  width: 100%;
-  min-height: 72px;
-  padding: 8px 10px;
-  border: 1px solid var(--peek-border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--peek-text);
-  font-size: 12px;
-  line-height: 1.45;
-  resize: vertical;
-}
-.template-example {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.example-thumb {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid var(--peek-border);
-}
-.example-actions {
-  display: flex;
-  gap: 6px;
-}
 .view-container {
   display: flex;
   flex-direction: column;

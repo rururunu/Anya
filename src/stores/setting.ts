@@ -3,7 +3,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { DEFAULT_CHAT_MODEL } from "@/constants/chat";
 import { getAppSettings, setAppSettings } from "@/services/ipc";
-import { applyOpacity, applyChromeFrostedGlass } from "@/services/overlay/appearance";
+import { applyOpacity } from "@/services/overlay/appearance";
 import {
   readCachedComposerSettings,
   writeCachedComposerSettings,
@@ -14,6 +14,7 @@ import {
   type AppLanguage,
   type AppSettings,
   type AppSettingsPatch,
+  type ChatPageStyle,
   type ColorScheme,
   type CustomThemeConfig,
   type ThemeBackgroundConfig,
@@ -56,18 +57,24 @@ const defaultSettings: AppSettings = {
   imageProviders: [],
   imageStyleTemplates: [],
   multimodalSplitAnalysis: true,
-  largeContextEnabled: true,
-  reasoningEffort: "disabled",
+  largeContextEnabled: false,
+  reasoningEffort: "low",
   reasoningLanguage: "auto",
   passToolReasoning: true,
   continueThinkingAfterTools: true,
   showReasoning: false,
+  showExecutionProcess: false,
+  showContextUsage: false,
+  showCacheHit: false,
+  showTokenBudget: false,
   agentWorkDisplay: "detailed",
+  chatPageStyle: "chat",
   multiModelCollaboration: false,
   collaborationModels: [],
   minimalCoding: false,
   zoom: 100,
   hardwareAccelerationEnabled: false,
+  externalPluginGatewayEnabled: false,
   primaryHotkey: "Alt",
   primaryHotkeyEnabled: true,
   secondaryHotkey: "Ctrl+Alt+Space",
@@ -137,6 +144,11 @@ function normalizeOpacityValue(settings: AppSettings): number {
   return opacityVal ?? 100;
 }
 
+function normalizeChatPageStyle(value: ChatPageStyle | undefined): ChatPageStyle {
+  if (value === "chat" || value === "stream" || value === "work") return value;
+  return "chat";
+}
+
 function normalizeZoomValue(settings: AppSettings): number {
   let zoomVal = settings.zoom;
   if (zoomVal !== undefined && zoomVal <= 2.0) {
@@ -161,6 +173,7 @@ const SPECIAL_SETTING_KEYS: ReadonlySet<keyof AppSettings> = new Set([
   "reasoningEffort",
   "chatMode",
   "agentWorkDisplay",
+  "chatPageStyle",
   "onboardingCompleted",
 ]);
 
@@ -181,6 +194,7 @@ function applyCommonSettings(target: AppSettings, settings: AppSettings) {
   target.reasoningEffort = normalizeReasoningEffort(settings.reasoningEffort);
   target.chatMode = normalizeChatMode(settings.chatMode);
   target.agentWorkDisplay = settings.agentWorkDisplay === "compact" ? "compact" : "detailed";
+  target.chatPageStyle = normalizeChatPageStyle(settings.chatPageStyle ?? target.chatPageStyle);
   target.onboardingCompleted = settings.onboardingCompleted ?? true;
 }
 
@@ -204,7 +218,6 @@ function applyChangedAppearance(settings: AppSettings) {
     JSON.stringify([settings.fontLatin, settings.fontCjk, settings.fontMono]),
     String(settings.zoom),
     String(settings.opacity),
-    String(settings.chromeFrostedGlass),
   ];
   const previous = appearanceSignatures.get(settings);
   appearanceSignatures.set(settings, next);
@@ -212,7 +225,6 @@ function applyChangedAppearance(settings: AppSettings) {
   if (previous?.[1] !== next[1]) applyUiFonts(settings);
   if (previous?.[2] !== next[2]) applyZoom(settings.zoom);
   if (previous?.[3] !== next[3]) void applyOpacity(settings.opacity);
-  if (previous?.[4] !== next[4]) void applyChromeFrostedGlass(settings.chromeFrostedGlass);
 }
 
 export const useSettingStore = defineStore("setting", {

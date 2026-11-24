@@ -15,6 +15,7 @@ pub struct BrowserSelection {
     window: WindowInfo,
     received: Instant,
 }
+static SERVER: Mutex<Option<tauri::async_runtime::JoinHandle<()>>> = Mutex::new(None);
 static SELECTION: OnceLock<Mutex<Option<BrowserSelection>>> = OnceLock::new();
 fn cache() -> &'static Mutex<Option<BrowserSelection>> {
     SELECTION.get_or_init(|| Mutex::new(None))
@@ -39,6 +40,9 @@ fn matches_source(selection: &BrowserSelection, window: &WindowInfo) -> bool {
         && selection.received.elapsed() < Duration::from_secs(60)
 }
 pub fn selection_for(window: &WindowInfo) -> Option<BrowserSelection> {
+    if !crate::core::context::providers::local_api::gateway_enabled() {
+        return None;
+    }
     cache()
         .lock()
         .ok()?
@@ -102,9 +106,10 @@ fn serve(mut stream: TcpStream, token: &str) {
     if stream.read_exact(&mut bytes).is_err() {
         return;
     }
-    let ok = serde_json::from_slice::<Packet>(&bytes)
-        .ok()
-        .is_some_and(|packet| accept_packet(packet, token));
+    let ok = crate::core::context::providers::local_api::gateway_enabled()
+        && serde_json::from_slice::<Packet>(&bytes)
+            .ok()
+            .is_some_and(|packet| accept_packet(packet, token));
     let reply = if ok {
         b"{\"ok\":true}".as_slice()
     } else {
@@ -113,7 +118,22 @@ fn serve(mut stream: TcpStream, token: &str) {
     let _ = stream.write_all(&(reply.len() as u32).to_le_bytes());
     let _ = stream.write_all(reply);
 }
-pub fn start() {
+pub fn configure_gateway(enabled: bool) {
+    let Ok(mut server) = SERVER.lock() else {
+        return;
+    };
+    if !enabled {
+        if let Some(task) = server.take() {
+            task.abort();
+        }
+        if let Ok(mut selection) = cache().lock() {
+            *selection = None;
+        }
+        return;
+    }
+    if server.is_some() {
+        return;
+    }
     let Some(local) = std::env::var_os("LOCALAPPDATA") else {
         return;
     };
@@ -121,6 +141,9 @@ pub fn start() {
     let Ok(listener) = TcpListener::bind(("127.0.0.1", 0)) else {
         return;
     };
+    if listener.set_nonblocking(true).is_err() {
+        return;
+    }
     let Ok(address) = listener.local_addr() else {
         return;
     };
@@ -137,11 +160,31 @@ pub fn start() {
     if std::fs::write(directory.join("browser-bridge.json"), bytes).is_err() {
         return;
     }
-    std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            serve(stream, &config.token);
+    *server = Some(tauri::async_runtime::spawn(async move {
+        let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
+            return;
+        };
+        let token = std::sync::Arc::new(config.token);
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let token = token.clone();
+                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                        if let Ok(stream) = stream.into_std() {
+                            if stream.set_nonblocking(false).is_ok() {
+                                serve(stream, &token);
+                            }
+                        }
+                    })
+                    .await;
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "browser selection gateway accept failed");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
         }
-    });
+    }));
 }
 
 #[cfg(test)]

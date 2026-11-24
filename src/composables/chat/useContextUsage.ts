@@ -17,7 +17,7 @@ function emptyContextUsage(): ContextUsageSnapshot {
   return {
     usageRatio: 0,
     estimatedTokens: 0,
-    contextWindowTokens: 64_000,
+    contextWindowTokens: 258_000,
     systemPromptTokens: 0,
     toolsTokens: 0,
     messageTokens: 0,

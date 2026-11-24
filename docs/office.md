@@ -10,11 +10,11 @@ Office processing uses saved files, on-demand skills and a bundled JavaScript ru
 - `read_office_file`: structured saved-file reading with `path`, `sheet`, `slide`, 1-based `offset` and `limit` (maximum 500 records). `read_file` also routes Office files through this reader; its Office offset counts records, not text lines.
 - `prepare_office_runtime`: exact executable, import URL, CLI and API paths. Loading an Office skill prepares these automatically.
 
-These three Office skills are always available. `generate_word` and `docx` remain compatibility shortcuts to `documents`. No `word_*`, `excel_*` or `ppt_*` live automation tools remain.
+These three Office skills are always available while the engine is on. **Settings → Components** can turn the bundled Office engine off. `generate_word` and `docx` remain compatibility shortcuts to `documents`. No `word_*`, `excel_*` or `ppt_*` live automation tools remain.
 
 ## Execution and packaging
 
-Anya bundles Deno, an offline module containing docx, ExcelJS, PptxGenJS, JSZip and fast-xml-parser, and LibreOffice Kit 0.1.5 with its platform engine and private Node runtime. This follows the skill/script/verification approach; it does not redistribute Codex's `@oai/artifact-tool` or claim identical document-library coverage.
+Anya bundles Deno, an offline module containing docx, ExcelJS, PptxGenJS, JSZip and fast-xml-parser, and LibreOffice Kit 0.2.3 with its platform engine and private Node runtime. This follows the skill/script/verification approach; it does not redistribute Codex's `@oai/artifact-tool` or claim identical document-library coverage.
 
 `pnpm build:office-runtime` produces `src-tauri/resources/office/`. Tauri dev/build commands run this automatically and package the result as resources, including third-party notices. The runtime locates installed resources first and materializes them under `{workspace}/.anya/office-runtime/v1/`, preserving task scripts. Library loading, reading and generation require no first-run npm downloads or global Node/Python installation.
 

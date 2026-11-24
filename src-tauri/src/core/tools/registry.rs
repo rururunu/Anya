@@ -17,6 +17,7 @@ fn normalize_tool_name(name: &str) -> &str {
         }
         "Read" | "read" => "read_file",
         // Shell
+        "plugin_terminal__run" => "run_shell",
         "run_command" | "execute_command" | "execute_shell" | "exec_command" | "Shell"
         | "shell" => "run_shell",
         // Search
@@ -77,7 +78,12 @@ impl ToolRegistry {
         if let Some(tool) = self.tools.get(name.trim()) {
             return Some(Arc::clone(tool));
         }
-        let name = normalize_tool_name(name);
+        let legacy_computer = name.trim().strip_prefix("plugin_computer-use__")
+            .map(|local| format!("computer_{local}"));
+        let name = match legacy_computer.as_deref() {
+            Some(alias) if self.tools.contains_key(alias) => alias,
+            _ => normalize_tool_name(name),
+        };
         if let Some(tool) = self.tools.get(name) {
             return Some(Arc::clone(tool));
         }

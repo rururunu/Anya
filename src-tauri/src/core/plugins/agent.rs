@@ -41,17 +41,9 @@ impl Tool for PluginDynamicTool {
         if self.plugin_id == "opencli" {
             return super::opencli::is_read_only_tool(&self.local_name);
         }
-        if self.plugin_id == "computer-use" {
-            return super::computer::is_read_only_tool(&self.local_name);
-        }
         false
     }
     fn execute(&self, _ctx: &ToolContext, args: Value) -> Result<String, ToolError> {
-        if let Some(result) =
-            super::computer::try_execute_tool(&self.plugin_id, &self.local_name, &args)
-        {
-            return result;
-        }
         if let Some(result) =
             super::opencli::try_execute_tool(&self.plugin_id, &self.local_name, &args)
         {

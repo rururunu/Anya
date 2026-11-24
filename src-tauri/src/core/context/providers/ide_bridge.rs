@@ -40,7 +40,14 @@ enum PullOutcome {
 
 /// Prefer a live bridge pull; fall back to the legacy push cache.
 pub fn latest() -> Option<IDEContext> {
-    match pull_from_bridges() {
+    if !super::local_api::gateway_enabled() {
+        return None;
+    }
+    let outcome = pull_from_bridges();
+    if !super::local_api::gateway_enabled() {
+        return None;
+    }
+    match outcome {
         PullOutcome::Found(context) => {
             store_ide_context(context.clone());
             Some(context)

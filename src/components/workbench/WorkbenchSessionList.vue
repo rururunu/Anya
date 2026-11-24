@@ -32,6 +32,12 @@
         </strong>
         <span
           class="session-status"
+          :class="{
+            'has-mascot':
+              !archiveVisual(session.sessionId) && runningMascotState(session.sessionId),
+            'has-attention':
+              !archiveVisual(session.sessionId) && interactionLabel(session.sessionId),
+          }"
           role="status"
           :title="sessionStatusLabel(session.sessionId)"
           :aria-label="sessionStatusLabel(session.sessionId) || undefined"
@@ -42,20 +48,30 @@
             class="archived-icon"
             aria-hidden="true"
           />
-          <ShieldAlert
-            v-else-if="attentionSessionIds.includes(session.sessionId)"
-            :size="13"
-            class="attention-icon"
+          <span
+            v-else-if="interactionLabel(session.sessionId)"
+            class="session-attention"
+            :class="{ approval: pendingInteractions?.[session.sessionId]?.kind !== 'ask_user' }"
+          >
+            <CircleHelp
+              v-if="pendingInteractions?.[session.sessionId]?.kind === 'ask_user'"
+              :size="12"
+              aria-hidden="true"
+            />
+            <ShieldAlert v-else :size="12" aria-hidden="true" />
+            <span>{{ interactionLabel(session.sessionId) }}</span>
+          </span>
+          <MascotFace
+            v-else-if="runningMascotState(session.sessionId)"
+            eyes-only
+            :state="runningMascotState(session.sessionId)"
+            :follow-pointer="false"
+            :turn-on-change="false"
           />
           <LoaderCircle
             v-else-if="isTitleGenerating(session.sessionId)"
             :size="13"
             class="running-icon title-generating-icon"
-          />
-          <LoaderCircle
-            v-else-if="runningSessionIds.includes(session.sessionId)"
-            :size="13"
-            class="running-icon"
           />
           <span v-else-if="unreadSessionIds.includes(session.sessionId)" class="unread-dot" />
           <PenLine v-else-if="hasDraft(session.sessionId)" :size="12" class="draft-icon" />
@@ -112,10 +128,12 @@
             :title="sessionStatusLabel(child.sessionId)"
             :aria-label="sessionStatusLabel(child.sessionId) || undefined"
           >
-            <LoaderCircle
-              v-if="runningSessionIds.includes(child.sessionId)"
-              :size="12"
-              class="running-icon"
+            <MascotFace
+              v-if="runningMascotState(child.sessionId)"
+              eyes-only
+              :state="runningMascotState(child.sessionId)"
+              :follow-pointer="false"
+              :turn-on-change="false"
             />
             <span v-else-if="unreadSessionIds.includes(child.sessionId)" class="unread-dot" />
           </span>
@@ -166,10 +184,13 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { Archive, Ellipsis, LoaderCircle, PenLine, ShieldAlert, X } from "@lucide/vue";
+import { Archive, CircleHelp, Ellipsis, LoaderCircle, PenLine, ShieldAlert, X } from "@lucide/vue";
+import type { PendingInteraction } from "@/composables/workbench/types";
 import SubagentIcon from "@/components/chat/SubagentIcon.vue";
+import MascotFace, { type MascotState } from "@/components/icons/MascotFace.vue";
 import type { ArchiveVisualState } from "@/composables/workbench/useWorkbenchSessions";
 import { formatSessionPreview } from "@/services/chat/sessionPreview";
+import { MASCOT_STATE_LABEL_KEYS } from "@/services/chat/mascotState";
 import {
   isSubagentSessionId,
   parentSessionId,
@@ -195,9 +216,11 @@ const props = defineProps<{
   sessionMenuLabel: string;
   archiveVisualState?: Record<string, ArchiveVisualState>;
   dismissSubagentLabel?: string;
-  runningSessionIds: string[];
+  runningSessionIds?: string[];
+  runningSessionStates?: ReadonlyMap<string, MascotState>;
   titleGeneratingSessionIds?: string[];
   attentionSessionIds: string[];
+  pendingInteractions?: Readonly<Record<string, PendingInteraction>>;
   unreadSessionIds: string[];
   draftSessionIds?: string[];
   variant?: "workspace" | "quick";
@@ -372,15 +395,33 @@ function sessionHoverText(session: ChatSessionSummary) {
   return `${formatSessionTime(session.updatedAt)}\n${formatTurnCount(session.turnCount)}${rootNote}`;
 }
 
+function runningMascotState(sessionId: string): MascotState | undefined {
+  if (props.attentionSessionIds.includes(sessionId)) return "waiting";
+  return (
+    props.runningSessionStates?.get(sessionId) ??
+    (props.runningSessionIds?.includes(sessionId) ? "working" : undefined)
+  );
+}
+
+function interactionLabel(sessionId: string) {
+  const kind = props.pendingInteractions?.[sessionId]?.kind;
+  if (!kind) return "";
+  return tr(props.language, kind === "ask_user" ? "waitingAnswer" : "waitingApproval").replace(
+    /(?:\.\.\.|…)$/,
+    "",
+  );
+}
+
 function sessionStatusLabel(sessionId: string) {
   if (archiveVisual(sessionId)) {
     return props.archivedLabel;
   }
   if (props.attentionSessionIds.includes(sessionId)) {
-    return tr(props.language, "shell.session.actionRequired");
+    return interactionLabel(sessionId) || tr(props.language, "shell.session.actionRequired");
   }
-  if (props.runningSessionIds.includes(sessionId)) {
-    return tr(props.language, "shell.session.running");
+  const state = runningMascotState(sessionId);
+  if (state) {
+    return tr(props.language, MASCOT_STATE_LABEL_KEYS[state]);
   }
   if (isTitleGenerating(sessionId)) {
     return props.generatingTitleLabel;
@@ -627,14 +668,57 @@ function sessionStatusLabel(sessionId: string) {
   place-items: center;
   color: var(--peek-accent);
 }
+.session-status.has-mascot {
+  position: absolute;
+  inset-block: 0;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  margin-block: auto;
+}
+.session-row:hover .session-status.has-mascot,
+.session-row:focus-within .session-status.has-mascot {
+  right: 60px;
+}
+.session-status.has-attention {
+  width: auto;
+  max-width: 46%;
+}
+.session-row:has(.has-attention) {
+  padding-inline-end: max(62px, 50%);
+}
+.session-row:has(.has-attention):is(:hover, :focus-within) {
+  padding-inline-end: min(100%, calc(46% + 62px));
+}
+.session-attention {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--peek-accent) 12%, var(--peek-bg));
+  color: var(--peek-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.session-attention.approval {
+  background: color-mix(in srgb, var(--peek-warning, #d97706) 20%, var(--peek-bg));
+}
+.session-attention svg {
+  flex: none;
+}
+.session-attention > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .archived-icon {
   color: var(--peek-muted);
 }
 .running-icon {
   animation: session-running-spin 0.9s linear infinite;
-}
-.attention-icon {
-  color: var(--peek-warning, #d97706);
 }
 .draft-icon {
   color: var(--peek-muted);

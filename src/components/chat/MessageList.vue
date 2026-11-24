@@ -1,5 +1,8 @@
 <template>
-  <div class="message-list-shell" :class="{ 'has-find': findOpen }">
+  <div
+    class="message-list-shell"
+    :class="[{ 'has-find': findOpen }, `page-style-${pageStyle || 'work'}`]"
+  >
     <div
       v-if="findOpen"
       class="conversation-find-bar"
@@ -127,6 +130,9 @@
           v-memo="turnMemoDeps(turn, renderedTurns.start + turnIndex)"
           :ref="(el) => bindTurnHead(turn.key, el)"
         >
+          <p v-if="chatDayLabel(turn, turnIndex)" class="chat-day-label">
+            {{ chatDayLabel(turn, turnIndex) }}
+          </p>
           <div
             v-if="turn.user || turnBuildHost(turn)"
             class="chat-turn-sticky-sentinel"
@@ -244,11 +250,19 @@
                   :hide-timeline-inject="inlineConversation"
                   :language="settingStore.language"
                   :show-reasoning="settingStore.showReasoning"
+                  :show-execution-process="settingStore.showExecutionProcess"
                   :display-mode="settingStore.agentWorkDisplay"
                   :suppress-content="needsProviderSetup(item.message)"
                   @inspect-subagent="emit('inspectSubagent', $event)"
                   @preview-image="emit('previewImage', $event)"
                   @edit-from-image="emit('editFromImage', $event)"
+                />
+                <AskUserCard
+                  v-if="askUser && submitAskAnswer && askHostId === item.message.id"
+                  :key="askUser.requestId"
+                  :session="askUser"
+                  :language="settingStore.language"
+                  :submit-answer="submitAskAnswer"
                 />
                 <PlanApprovalCard
                   v-if="showCreatedPlanCard(item.message)"
@@ -271,14 +285,11 @@
                   v-if="item.message.environmentContext"
                   :context="item.message.environmentContext"
                 />
-                <div v-else-if="needsProviderSetup(item.message)" class="provider-setup-card">
-                  <p class="provider-setup-text">
-                    {{ providerSetupText(item.message) }}
-                  </p>
-                  <button type="button" class="provider-setup-btn" @click="openProviderSettings">
-                    {{ tr(settingStore.language, "configureProviderAction") }}
-                  </button>
-                </div>
+                <ProviderSetupCard
+                  v-else-if="needsProviderSetup(item.message)"
+                  @open-providers="openProviderSettings"
+                  @saved="retryAfterProviderSetup(item.message)"
+                />
                 <AssistantActivityIndicator
                   v-if="activityLabel(item.message)"
                   :label="activityLabel(item.message)!"
@@ -302,8 +313,8 @@
                   v-if="
                     item.message.content.trim() ||
                     processingDuration(item.message) ||
-                    turnTokenCount(item) ||
-                    turnCacheHit(item) != null ||
+                    (settingStore.showTokenBudget && turnTokenCount(item)) ||
+                    (settingStore.showCacheHit && turnCacheHit(item) != null) ||
                     canBranchMessage(item.message)
                   "
                   class="message-actions assistant-message-actions"
@@ -314,7 +325,11 @@
                       :title="turnMascotTitle(item.message)"
                       aria-hidden="true"
                     >
-                      <MascotFace :state="turnMascotState(item.message)" :follow-pointer="false" />
+                      <MascotFace
+                        eyes-only
+                        :state="messageMascotState(item.message)"
+                        :follow-pointer="false"
+                      />
                     </span>
                     <span v-if="turnMascotLabel(item.message)" class="turn-state">
                       {{ turnMascotLabel(item.message) }}
@@ -328,14 +343,14 @@
                     }}
                   </span>
                   <span
-                    v-if="turnTokenCount(item)"
+                    v-if="settingStore.showTokenBudget && turnTokenCount(item)"
                     class="token-usage"
                     :title="tokenEstimateTitle(turnTokenCount(item))"
                   >
                     ≈ {{ formatTokenCount(turnTokenCount(item), settingStore.language) }} tokens
                   </span>
                   <span
-                    v-if="turnCacheHit(item) != null"
+                    v-if="settingStore.showCacheHit && turnCacheHit(item) != null"
                     class="cache-hit"
                     :title="turnCacheHitTitle(item)"
                   >
@@ -414,6 +429,13 @@
             />
           </article>
         </section>
+        <AskUserCard
+          v-if="askUser && submitAskAnswer && !askHostId"
+          :key="askUser.requestId"
+          :session="askUser"
+          :language="settingStore.language"
+          :submit-answer="submitAskAnswer"
+        />
         <slot name="composer" />
         <div class="turn-spacer" aria-hidden="true" />
       </div>
@@ -451,9 +473,12 @@ import CodeChangesSummary from "@/components/chat/CodeChangesSummary.vue";
 import PresentedFiles from "@/components/chat/PresentedFiles.vue";
 import PlanApprovalCard from "@/components/chat/PlanApprovalCard.vue";
 import AssistantActivityIndicator from "@/components/chat/AssistantActivityIndicator.vue";
-import MascotFace, { type MascotState } from "@/components/icons/MascotFace.vue";
+import MascotFace from "@/components/icons/MascotFace.vue";
+import AskUserCard from "@/components/chat/AskUserCard.vue";
+import type { AskUserSession } from "@/composables/chat/useAskUserFlow";
 import ImageAnalysisDetails from "@/components/chat/ImageAnalysisDetails.vue";
 import EnvironmentContextCard from "@/components/chat/EnvironmentContextCard.vue";
+import ProviderSetupCard from "@/components/chat/ProviderSetupCard.vue";
 import UserMessageCard from "@/components/chat/UserMessageCard.vue";
 import UserAvatar from "@/components/chat/UserAvatar.vue";
 import AvatarFrame from "@/components/chat/AvatarFrame.vue";
@@ -471,6 +496,7 @@ import { useSettingStore } from "@/stores/setting";
 import { useChatStore } from "@/stores/chat";
 import { useChatSessionsStore } from "@/stores/chatSessions";
 import type { ChatMessage, CheckpointInfo, TaskItem } from "@/types/chat";
+import type { ChatPageStyle } from "@/types/setting";
 import {
   parseSelectionAttachment,
   replaceUserVisibleText,
@@ -478,7 +504,11 @@ import {
 import { extractAttachedFileChips, type AttachedFileChip } from "@/services/chat/attachFiles";
 import { isSoftInjectContent, stripSoftInjectMarker } from "@/services/chat/softInject";
 import { withTimelineInject } from "@/stores/chatStream";
-import { isAskUserTool } from "@/services/chat/askUserAnswer";
+import {
+  isWaitingForAskUser,
+  MASCOT_STATE_LABEL_KEYS,
+  turnMascotState,
+} from "@/services/chat/mascotState";
 import { isCompactionSummary } from "@/services/chat/compactMarker";
 import {
   extractPlanTitle,
@@ -490,7 +520,7 @@ import {
   savePlanFromMessage,
   tasksFromMessage,
 } from "@/services/chat/planProposal";
-import { tr, type I18nKey } from "@/services/i18n";
+import { tr } from "@/services/i18n";
 import { createLogger } from "@/services/logger";
 import { copyText } from "@/services/clipboard";
 import {
@@ -536,6 +566,10 @@ const props = defineProps<{
   checkpoints?: CheckpointInfo[];
   inlineConversation?: boolean;
   showScrollToBottom?: boolean;
+  pageStyle?: ChatPageStyle;
+  askUser?: AskUserSession | null;
+  interactionWaitTimes?: ReadonlyMap<string, { elapsed: number; startedAt?: number }>;
+  submitAskAnswer?: (answer: string) => Promise<void>;
 }>();
 const workspaceName = computed(() => props.workspaceName?.trim() || "");
 provide(
@@ -609,8 +643,20 @@ function needsProviderSetup(message: ChatMessage): boolean {
   return message.status === "error" && isConfigureProviderError(message.content);
 }
 
-function providerSetupText(_message: ChatMessage): string {
-  return tr(settingStore.language, "configureProviderHint");
+function userTextBefore(assistant: ChatMessage): string {
+  const index = props.messages.findIndex((item) => item.id === assistant.id);
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const message = props.messages[cursor];
+    if (message && normalizeRole(message.role) === "user") return message.content.trim();
+  }
+  return "";
+}
+
+async function retryAfterProviderSetup(assistant: ChatMessage) {
+  const sessionId = props.sessionId;
+  const text = userTextBefore(assistant);
+  if (!sessionId || !text) return;
+  await chatStore.send(text, sessionId, { staged: true, retryStaged: true });
 }
 
 function openProviderSettings() {
@@ -850,6 +896,15 @@ const displayItems = computed((): DisplayItem[] => {
   return items;
 });
 
+const askHostId = computed(() => {
+  if (!props.askUser) return undefined;
+  for (let index = displayItems.value.length - 1; index >= 0; index--) {
+    const item = displayItems.value[index];
+    if (item.kind === "assistant" && isPending(item.message)) return item.message.id;
+  }
+  return undefined;
+});
+
 const displayTurns = computed((): DisplayTurn[] => {
   void lastDoneAssistantId.value;
   void approvedPlanMessageId.value;
@@ -927,6 +982,8 @@ function messageMemoDeps(item: DisplayItem) {
   return [
     item.key,
     item.kind,
+    message.id === askHostId.value ? props.askUser : undefined,
+    props.interactionWaitTimes?.get(message.id),
     message.status,
     message.content.length,
     message.reasoning?.length ?? 0,
@@ -959,6 +1016,8 @@ function turnMemoDeps(turn: DisplayTurn, turnIndex = 0) {
   return [
     turn.key,
     turnIndex === 0 ? 1 : 0,
+    props.inlineConversation ? 1 : 0,
+    props.pageStyle ?? "work",
     isTurnHeadStuck(turn.key) ? 1 : 0,
     ...(turn.user ? messageMemoDeps(turn.user) : []),
     ...turn.body.flatMap((item) => messageMemoDeps(item)),
@@ -991,6 +1050,25 @@ const renderedTurns = computed(() => {
   const start = Math.max(0, turns.length - renderWindow.value);
   return { start, items: turns.slice(start) };
 });
+
+function chatDayLabel(turn: DisplayTurn, indexInWindow: number): string {
+  if (props.pageStyle !== "chat") return "";
+  const stamp = turn.user?.message.timestamp || turn.body[0]?.message.timestamp || 0;
+  if (!stamp) return "";
+  const previous = indexInWindow > 0 ? renderedTurns.value.items[indexInWindow - 1] : undefined;
+  const previousStamp =
+    previous?.user?.message.timestamp || previous?.body[0]?.message.timestamp || 0;
+  if (previousStamp && new Date(previousStamp).toDateString() === new Date(stamp).toDateString()) {
+    return "";
+  }
+  return new Date(stamp).toLocaleString(settingStore.language, {
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 /** Loaded but held back by the window: reveal these before fetching a page. */
 const hiddenLoadedTurns = computed(() => renderedTurns.value.start);
 const listRef = ref<HTMLElement | null>(null);
@@ -1095,6 +1173,13 @@ const {
 watch(queuedMessages, () => {
   if (props.inlineConversation && stickToBottom.value) void nextTick(scrollToLatest);
 });
+
+watch(
+  () => props.askUser?.requestId,
+  (requestId) => {
+    if (requestId && stickToBottom.value) void nextTick(scrollToLatest);
+  },
+);
 
 function copyButtonLabel(messageId: string) {
   if (copyStatus.value?.id !== messageId) return tr(settingStore.language, "copy");
@@ -1217,7 +1302,11 @@ function processingDuration(message: ChatMessage): string | undefined {
   const finishedAt = running ? durationClock.value : message.completedAt;
   if (!finishedAt || finishedAt < startedAt) return undefined;
 
-  const totalSeconds = Math.max(0, Math.floor((finishedAt - startedAt) / 1000));
+  const wait = props.interactionWaitTimes?.get(message.id);
+  const waitingMs =
+    (wait?.elapsed ?? 0) +
+    (wait?.startedAt === undefined ? 0 : Math.max(0, finishedAt - wait.startedAt));
+  const totalSeconds = Math.max(0, Math.floor((finishedAt - startedAt - waitingMs) / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return minutes > 0 ? `${minutes} m ${seconds} s` : `${seconds} s`;
@@ -1308,45 +1397,15 @@ function isPending(message: ChatMessage) {
   return message.status === "pending" || message.status === "streaming";
 }
 
-function isWaitingForAskUser(message: ChatMessage) {
-  return (message.toolActivities ?? []).some(
-    (activity) => isAskUserTool(activity.toolName) && activity.status === "running",
-  );
+function messageMascotState(message: ChatMessage) {
+  return message.id === askHostId.value ? "waiting" : turnMascotState(message);
 }
-
-/** Face shown next to the turn stats, following what the agent is doing right now. */
-function turnMascotState(message: ChatMessage): MascotState {
-  switch (message.status) {
-    case "error":
-      return "error";
-    case "cancelled":
-      return "idle";
-    case "done":
-      return "done";
-  }
-  if (isWaitingForAskUser(message)) return "waiting";
-  if ((message.toolActivities ?? []).some((activity) => activity.status === "running")) {
-    return "working";
-  }
-  if (message.content.trim()) return "talking";
-  return "thinking";
-}
-
-const MASCOT_STATE_LABEL_KEYS: Record<MascotState, I18nKey> = {
-  idle: "mascotState.idle",
-  thinking: "mascotState.thinking",
-  working: "mascotState.working",
-  talking: "mascotState.talking",
-  waiting: "mascotState.waiting",
-  done: "mascotState.done",
-  error: "mascotState.error",
-};
 function turnMascotTitle(message: ChatMessage) {
-  return tr(settingStore.language, MASCOT_STATE_LABEL_KEYS[turnMascotState(message)]);
+  return tr(settingStore.language, MASCOT_STATE_LABEL_KEYS[messageMascotState(message)]);
 }
 /** Visible caption next to the face: only while something is actually happening. */
 function turnMascotLabel(message: ChatMessage) {
-  const state = turnMascotState(message);
+  const state = messageMascotState(message);
   if (state === "idle" || state === "done") return "";
   return tr(settingStore.language, MASCOT_STATE_LABEL_KEYS[state]);
 }
@@ -1364,7 +1423,8 @@ function activityLabel(message: ChatMessage) {
   if (message.activityStatus === "reject_empty_completion") {
     return "检测到空完成，正在纠正并强制重试修改...";
   }
-  if (!isPending(message) || isWaitingForAskUser(message)) return "";
+  if (!isPending(message) || message.id === askHostId.value || isWaitingForAskUser(message))
+    return "";
 
   // Prefer real reply progress over a stale analyzing label.
   if (
@@ -1762,6 +1822,13 @@ defineExpose({ openFind, closeFind, scrollToLatest });
   content-visibility: visible;
   contain: none;
 }
+.chat-day-label {
+  margin: 6px 0 0;
+  color: var(--peek-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
 .chat-turn {
   display: flex;
   flex-direction: column;
@@ -1771,10 +1838,7 @@ defineExpose({ openFind, closeFind, scrollToLatest });
 }
 .chat-turn:has(.chat-turn-head) {
   --turn-head-height: 40px;
-  --chat-sticky-fade: 12px;
-  --code-block-sticky-top: calc(
-    var(--chat-sticky-top, 0px) + var(--turn-head-height) + var(--chat-sticky-fade)
-  );
+  --code-block-sticky-top: calc(var(--chat-sticky-top, 0px) + var(--turn-head-height));
 }
 .chat-turn-sticky-sentinel {
   height: 1px;
@@ -1806,21 +1870,6 @@ defineExpose({ openFind, closeFind, scrollToLatest });
   min-height: 8px;
   background: var(--peek-list-bg);
   pointer-events: none;
-}
-.chat-turn-head.is-stuck::after {
-  content: "";
-  position: absolute;
-  right: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
-  top: 100%;
-  left: var(--chat-reply-inset, var(--peek-radius-composer, 16px));
-  height: var(--chat-sticky-fade, 12px);
-  pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    var(--peek-list-bg) 0%,
-    color-mix(in srgb, var(--peek-list-bg) 42%, transparent) 55%,
-    transparent 100%
-  );
 }
 .chat-turn.is-first-turn .chat-turn-head.is-stuck::before {
   content: none;
@@ -1972,44 +2021,6 @@ defineExpose({ openFind, closeFind, scrollToLatest });
   box-shadow: var(--peek-assistant-shadow, none);
 }
 
-.provider-setup-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  max-width: 420px;
-}
-
-.provider-setup-text {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--peek-text);
-  white-space: pre-wrap;
-}
-
-.provider-setup-btn {
-  appearance: none;
-  border: 1px solid color-mix(in srgb, var(--peek-text) 14%, transparent);
-  background: var(--peek-text);
-  color: var(--peek-bg, #fff);
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-size: 12.5px;
-  font-weight: 560;
-  cursor: pointer;
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
-}
-
-.provider-setup-btn:hover {
-  opacity: 0.92;
-}
-
-.provider-setup-btn:active {
-  transform: translateY(0.5px);
-}
 .assistant-bubble :deep(.markdown-body) {
   font-size: var(--peek-agent-font-size, 13px);
   line-height: 1.7;

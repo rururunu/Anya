@@ -598,3 +598,62 @@ html.has-custom-bg .settings-row:hover,
     align-items: stretch;
   }
 }
+
+/* Settings use the same calm, raised surfaces as the workbench. */
+.settings-page {
+  width: min(100%, 68rem);
+  padding: 36px clamp(24px, 4cqi, 56px) 56px;
+}
+
+.settings-page-header {
+  margin-bottom: 30px;
+}
+
+.settings-page-header h2 {
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+.settings-group {
+  margin-bottom: 30px;
+}
+
+.settings-group-title,
+.settings-section-label {
+  letter-spacing: 0.02em;
+}
+
+.settings-card,
+.settings-nav-list {
+  border-color: var(--ui-border-subtle, var(--peek-border));
+  border-radius: var(--ui-radius-lg, 16px);
+  box-shadow: var(--ui-shadow-sm, none);
+}
+
+.settings-row {
+  min-height: 68px;
+  padding: 18px 20px;
+  border-top-color: var(--ui-border-subtle, var(--peek-border));
+}
+
+.settings-row-copy h3 {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.settings-row-copy p {
+  max-width: 58ch;
+  line-height: 1.55;
+}
+
+.settings-list-row,
+.settings-nav-row {
+  min-height: 48px;
+  padding: 12px 16px;
+}
+
+.settings-nav-row:hover,
+.settings-list-row:hover,
+.settings-row:hover {
+  background: var(--ui-surface-hover, var(--peek-row-hover));
+}

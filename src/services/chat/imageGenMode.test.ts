@@ -11,7 +11,6 @@ import {
   imageGenPayload,
   listImageModelChoices,
   normalizeImageGenCompose,
-  normalizeImageStyleTemplates,
   selectedImageModelChoiceId,
 } from "./imageGenMode";
 
@@ -28,19 +27,11 @@ describe("imageGenMode", () => {
       normalizeImageGenCompose({
         ratio: "21:9",
         quality: "ultra",
-        styleId: "unknown",
-        count: 99,
       }),
     ).toMatchObject({
       ratio: "21:9",
       resolution: "2k",
-      styleId: "unknown",
-      count: 1,
     });
-  });
-
-  it("falls back to none when styleId is empty", () => {
-    expect(normalizeImageGenCompose({ styleId: "  " }).styleId).toBe("none");
   });
 
   it("migrates the old quality field onto resolution", () => {
@@ -48,17 +39,10 @@ describe("imageGenMode", () => {
     expect(normalizeImageGenCompose({ quality: "high" }).resolution).toBe("4k");
   });
 
-  it("builds a send payload from pixel size and style", () => {
-    const payload = imageGenPayload(
-      applyImageGenField(
-        applyImageGenRatio({ ...defaultImageGenCompose(), count: 2, styleId: "anime" }, "3:4"),
-        "count",
-        "2",
-      ),
-    );
-    expect(payload.n).toBe(2);
+  it("builds a send payload from pixel size", () => {
+    const payload = imageGenPayload(applyImageGenRatio(defaultImageGenCompose(), "3:4"));
+    expect(payload.n).toBe(1);
     expect(payload.size).toBe("1536x2048");
-    expect(payload.stylePrompt).toContain("anime");
   });
 
   it("keeps aspect lock when editing width", () => {
@@ -73,24 +57,6 @@ describe("imageGenMode", () => {
   it("rescales both edges when resolution changes", () => {
     const next = applyImageGenResolution(applyImageGenRatio(defaultImageGenCompose(), "1:1"), "4k");
     expect(next).toMatchObject({ width: 3840, height: 3840, resolution: "4k" });
-  });
-
-  it("includes custom template prompt and example image in the payload", () => {
-    const templates = normalizeImageStyleTemplates([
-      {
-        id: "custom-1",
-        name: "Film",
-        prompt: "35mm grain",
-        exampleImage: "data:image/png;base64,abc",
-      },
-    ]);
-    expect(normalizeImageGenCompose({ styleId: "custom-1" }).styleId).toBe("custom-1");
-    const payload = imageGenPayload(
-      { ...defaultImageGenCompose(), styleId: "custom-1" },
-      templates,
-    );
-    expect(payload.stylePrompt).toBe("35mm grain");
-    expect(payload.exampleImage).toBe("data:image/png;base64,abc");
   });
 
   it("snaps every preset size to a multiple of 16", () => {

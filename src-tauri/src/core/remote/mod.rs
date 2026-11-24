@@ -6,6 +6,7 @@
 
 mod bridge;
 mod compose;
+pub(crate) mod delivery;
 mod download;
 mod gateway;
 mod http_proxy;

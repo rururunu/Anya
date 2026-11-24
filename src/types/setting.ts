@@ -56,6 +56,9 @@ export type ReasoningLanguage = "auto" | "zh" | "en";
 /** How agent tool/work cards are shown in chat. */
 export type AgentWorkDisplay = "detailed" | "compact";
 
+/** Workbench conversation presentation. */
+export type ChatPageStyle = "work" | "chat" | "stream";
+
 export type WebSearchProvider = "serper" | "tavily";
 
 export type ToolApprovalMode = "ask" | "auto" | "alwaysAllow";
@@ -86,6 +89,7 @@ export type CategoryId =
   | "history"
   | "archive"
   | "usage"
+  | "components"
   | "about"
   | "provider";
 
@@ -222,8 +226,18 @@ export interface AppSettings {
   continueThinkingAfterTools: boolean;
   /** Display reasoning content supplied by the model in chat. */
   showReasoning: boolean;
+  /** Show the completed-work summary and live tool activity. */
+  showExecutionProcess: boolean;
+  /** Show the context-window meter in the composer. */
+  showContextUsage: boolean;
+  /** Show cache-hit percentage on replies and in the composer. */
+  showCacheHit: boolean;
+  /** Show token counts on replies and in the composer. */
+  showTokenBudget: boolean;
   /** detailed = shell/diff inline; compact = fold into process details. */
   agentWorkDisplay: AgentWorkDisplay;
+  /** work = current page, chat = bubbles, stream = popup layout. */
+  chatPageStyle: ChatPageStyle;
   /** Chinese UI font family. Empty = Microsoft YaHei stack. */
   fontCjk: string;
   /** Latin UI font family. Empty = Source Sans 3. */
@@ -237,6 +251,7 @@ export interface AppSettings {
   zoom: number;
   /** WebView2 hardware acceleration. A full app restart is required to apply changes. */
   hardwareAccelerationEnabled: boolean;
+  externalPluginGatewayEnabled: boolean;
   primaryHotkey: string;
   /** Listen for double-tap primary shortcut globally. */
   primaryHotkeyEnabled: boolean;
@@ -293,7 +308,12 @@ export interface AppSettingsPatch {
   passToolReasoning?: boolean;
   continueThinkingAfterTools?: boolean;
   showReasoning?: boolean;
+  showExecutionProcess?: boolean;
+  showContextUsage?: boolean;
+  showCacheHit?: boolean;
+  showTokenBudget?: boolean;
   agentWorkDisplay?: AgentWorkDisplay;
+  chatPageStyle?: ChatPageStyle;
   fontCjk?: string;
   fontLatin?: string;
   fontMono?: string;
@@ -309,6 +329,7 @@ export interface AppSettingsPatch {
   pendingRestrictedShellUpgradeNotice?: boolean;
   zoom?: number;
   hardwareAccelerationEnabled?: boolean;
+  externalPluginGatewayEnabled?: boolean;
   primaryHotkey?: string;
   primaryHotkeyEnabled?: boolean;
   secondaryHotkey?: string;

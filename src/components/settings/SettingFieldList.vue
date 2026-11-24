@@ -834,8 +834,13 @@ function toggleActive(id: string) {
   if (id === "passToolReasoning") return settingStore.passToolReasoning;
   if (id === "continueThinkingAfterTools") return settingStore.continueThinkingAfterTools;
   if (id === "showReasoning") return settingStore.showReasoning;
+  if (id === "showExecutionProcess") return settingStore.showExecutionProcess;
+  if (id === "showContextUsage") return settingStore.showContextUsage;
+  if (id === "showCacheHit") return settingStore.showCacheHit;
+  if (id === "showTokenBudget") return settingStore.showTokenBudget;
   if (id === "multimodalSplitAnalysis") return settingStore.multimodalSplitAnalysis;
   if (id === "largeContextEnabled") return settingStore.largeContextEnabled;
+  if (id === "externalPluginGatewayEnabled") return settingStore.externalPluginGatewayEnabled;
   if (id === "hardwareAccelerationEnabled") return settingStore.hardwareAccelerationEnabled;
   if (id === "chromeFrostedGlass") return settingStore.chromeFrostedGlass;
   if (id === "pixpinPinAiEnabled") return settingStore.pixpinPinAiEnabled;

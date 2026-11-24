@@ -56,14 +56,6 @@ pub(super) fn inject_optional_policy_suffix(
         );
     }
     if let Some(image) = image_mode {
-        let style_block = if image.style_prompt.trim().is_empty() {
-            String::new()
-        } else {
-            format!(
-                "   Mandatory visual style. Put these rendering instructions at the START of the generate_image prompt, before the subject. Follow them strictly so the result is unmistakably this medium — do not fall back to a generic or photoreal look unless the style is photography:\n   {}\n",
-                image.style_prompt.trim()
-            )
-        };
         let reference_block = if image.has_reference {
             "   A reference image is already attached. The runtime will call the Images edits API (image-to-image) with that reference. Write `prompt` as an edit or restyle instruction; do not skip generate_image.\n".to_string()
         } else {
@@ -72,8 +64,6 @@ pub(super) fn inject_optional_policy_suffix(
         let content = IMAGE_MODE_PROMPT
             .replace("{{SIZE}}", &image.size)
             .replace("{{QUALITY}}", &image.quality)
-            .replace("{{N}}", &image.n.to_string())
-            .replace("{{STYLE_BLOCK}}", &style_block)
             .replace("{{REFERENCE_BLOCK}}", &reference_block);
         inject_system_block(messages, session_id, "image-mode", Some(&content));
     }

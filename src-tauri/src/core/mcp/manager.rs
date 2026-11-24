@@ -43,6 +43,12 @@ pub struct McpManager {
     connect_lock: Mutex<()>,
 }
 
+fn is_legacy_anya_ghost(server: &McpServerConfig) -> bool {
+    server.id == "ghost"
+        && server.source.as_deref() == Some("curated")
+        && server.qualified_name.as_deref() == Some("io.github.NORTHTEKDevs/ghost")
+}
+
 impl McpManager {
     /// Creates an MCP manager with no configured servers.
     pub fn new() -> Self {
@@ -57,6 +63,7 @@ impl McpManager {
     pub fn configure(&self, settings: &AppSettings) {
         remote_auth::configure_smithery_api_key(&settings.smithery_api_key);
         let mut servers = settings.mcp_servers.clone();
+        servers.retain(|server| !is_legacy_anya_ghost(server));
         let _ = remote_auth::normalize_mcp_servers(&mut servers);
         if let Ok(mut s) = self.servers.lock() {
             *s = servers;
@@ -187,6 +194,9 @@ impl McpManager {
         registry: &ToolRegistry,
         remaining_budget: usize,
     ) -> Result<usize, ToolError> {
+        if is_legacy_anya_ghost(server) {
+            return Err(ToolError::new("Ghost MCP is now managed by Anya Computer Use"));
+        }
         let mut proc = McpProcess::spawn(server)?;
         let tools = proc.list_tools()?;
         {

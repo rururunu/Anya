@@ -10,6 +10,55 @@
       />
     </KeepAlive>
     <div v-if="!pluginsStore.selectedPluginId" class="user-plugins-list">
+      <ExtensionToolbar>
+        <h3 class="extension-section-label">
+          {{ tr(settingStore.language, "shell.plugins.installed") }}
+        </h3>
+        <template #actions>
+          <div class="user-plugins-toolbar">
+            <div class="toolbar-icons">
+              <Button
+                variant="ghost"
+                size="icon"
+                class="size-8 shrink-0 text-muted-foreground"
+                :title="copy.refresh"
+                :aria-label="copy.refresh"
+                @click="refresh"
+              >
+                <RefreshCw class="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="size-8 shrink-0 text-muted-foreground"
+                :title="copy.openDir"
+                :aria-label="copy.openDir"
+                @click="openDir"
+              >
+                <FolderOpen class="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="size-8 shrink-0 text-muted-foreground"
+                :title="copy.closeAll"
+                :aria-label="copy.closeAll"
+                @click="closeAllWindows"
+              >
+                <AppWindow class="size-3.5" />
+              </Button>
+            </div>
+            <Button variant="ghost" size="sm" class="h-8 gap-1.5" @click="importFolder">
+              <FolderPlus class="size-3.5" />
+              {{ actionCopy.importFolder }}
+            </Button>
+            <Button size="sm" class="h-8 gap-1.5" @click="importZip">
+              <Upload class="size-3.5" />
+              {{ actionCopy.importZip }}
+            </Button>
+          </div>
+        </template>
+      </ExtensionToolbar>
       <p v-if="pluginsStore.safeMode" class="user-plugins-safe">
         {{ copy.safeMode }}
         <button type="button" class="settings-tab" @click="exitSafeMode">
@@ -17,81 +66,36 @@
         </button>
       </p>
       <p class="user-plugins-warn">{{ copy.warning }}</p>
-      <div class="user-plugins-toolbar">
-        <div class="toolbar-icons">
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-8 shrink-0 text-muted-foreground"
-            :title="copy.refresh"
-            :aria-label="copy.refresh"
-            @click="refresh"
-          >
-            <RefreshCw class="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-8 shrink-0 text-muted-foreground"
-            :title="copy.openDir"
-            :aria-label="copy.openDir"
-            @click="openDir"
-          >
-            <FolderOpen class="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-8 shrink-0 text-muted-foreground"
-            :title="copy.closeAll"
-            :aria-label="copy.closeAll"
-            @click="closeAllWindows"
-          >
-            <AppWindow class="size-3.5" />
-          </Button>
-        </div>
-        <Button variant="ghost" size="sm" class="h-8 gap-1.5" @click="importFolder">
-          <FolderPlus class="size-3.5" />
-          {{ actionCopy.importFolder }}
-        </Button>
-        <Button size="sm" class="h-8 gap-1.5" @click="importZip">
-          <Upload class="size-3.5" />
-          {{ actionCopy.importZip }}
-        </Button>
-      </div>
-      <p v-if="!plugins.length" class="user-plugins-empty">{{ copy.empty }}</p>
-      <div class="user-plugins-grid">
-        <article
+      <PluginDiagnostics />
+      <p v-if="!plugins.length" class="settings-empty">{{ copy.empty }}</p>
+      <div v-else class="user-plugins-list-items">
+        <CatalogItemCard
           v-for="plugin in plugins"
           :key="plugin.id"
-          class="user-plugin-card"
-          @click="pluginsStore.setSelectedPluginId(plugin.id)"
+          :title="plugin.name"
+          :meta="typeLabel(plugin)"
+          :description="plugin.description || actionCopy.noDesc"
+          :pills="plugin.apiSupported ? [] : [actionCopy.apiUnsupported]"
+          :expand-label="copy.expand"
+          :collapse-label="copy.collapse"
         >
-          <div class="card-icon">
-            <PluginSidebarIcon :name="iconSrc(plugin)" :size="44" />
-          </div>
-          <div class="card-main">
-            <div class="card-name">
-              <strong>{{ plugin.name }}</strong>
-              <span v-if="!plugin.apiSupported" class="row-warn" :title="actionCopy.apiUnsupported">
-                !
-              </span>
-            </div>
-            <div class="card-meta">
-              <span class="row-type">{{ typeLabel(plugin) }}</span>
-              <span class="row-sep">|</span>
-              <span class="row-desc">{{ plugin.description || actionCopy.noDesc }}</span>
-            </div>
-          </div>
-          <label
-            class="row-toggle"
-            :title="plugin.enabled ? actionCopy.disable : actionCopy.enable"
-            @click.stop
-          >
-            <input type="checkbox" :checked="plugin.enabled" @change="onToggle(plugin)" />
-            <span class="toggle-track"><span class="toggle-thumb" /></span>
-          </label>
-        </article>
+          <template #icon>
+            <PluginSidebarIcon :name="iconSrc(plugin)" :size="40" />
+          </template>
+          <template #action>
+            <SettingsToggle
+              :model-value="plugin.enabled"
+              :aria-label="plugin.enabled ? actionCopy.disable : actionCopy.enable"
+              :title="plugin.enabled ? actionCopy.disable : actionCopy.enable"
+              @click.prevent="onToggle(plugin)"
+            />
+            <CatalogRoundAction
+              :icon="ChevronRight"
+              :label="copy.details + ' · ' + plugin.name"
+              @click="pluginsStore.setSelectedPluginId(plugin.id)"
+            />
+          </template>
+        </CatalogItemCard>
       </div>
     </div>
   </section>
@@ -99,9 +103,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { AppWindow, FolderOpen, FolderPlus, RefreshCw, Upload } from "@lucide/vue";
+import { AppWindow, ChevronRight, FolderOpen, FolderPlus, RefreshCw, Upload } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
+import CatalogItemCard from "@/components/settings/CatalogItemCard.vue";
+import CatalogRoundAction from "@/components/settings/CatalogRoundAction.vue";
+import ExtensionToolbar from "@/components/settings/ExtensionToolbar.vue";
+import SettingsToggle from "@/components/settings/SettingsToggle.vue";
+import PluginDiagnostics from "@/components/plugins/PluginDiagnostics.vue";
+import { tr } from "@/services/i18n";
 import {
   clearPluginSafeMode,
   closeAllUserPluginWindows,
@@ -139,6 +149,9 @@ const copy = computed(() =>
         warning:
           "启用会把已打包的 activate.js 加载进工作台同一页，并可读取会话和设置（含 API Key）。令牌只约束 Deno/终端。不要启用不信任的本地插件。Enable 时会把 UI 打成一份 ESM。",
         refresh: "刷新",
+        details: "查看详情",
+        expand: "展开",
+        collapse: "收起",
         openDir: "打开插件目录",
         closeAll: "关闭全部插件窗口",
         empty:
@@ -150,6 +163,9 @@ const copy = computed(() =>
         warning:
           "Enabling loads the bundled activate.js into the same page as Anya. It can read chats and settings (including API keys). OS tokens only constrain Deno/PTY. Do not enable untrusted local plugins. Enable bundles UI to one ESM file.",
         refresh: "Refresh",
+        details: "View details",
+        expand: "More",
+        collapse: "Less",
         openDir: "Open folder",
         closeAll: "Close plugin windows",
         empty:
@@ -184,159 +200,36 @@ async function exitSafeMode() {
 </script>
 
 <style scoped>
-.user-plugins {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex: 1;
-  min-height: 0;
-}
+.user-plugins,
 .user-plugins-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex: 1;
-  min-height: 0;
+  min-width: 0;
 }
-.user-plugins-warn {
+.extension-section-label {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--peek-muted, #8b939e);
+  font-size: 14px;
+  font-weight: 650;
 }
+.user-plugins-warn,
 .user-plugins-safe {
-  margin: 0;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--peek-text) 4%, transparent);
+  color: var(--peek-muted);
   font-size: 12px;
-  line-height: 1.45;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  color: #fbbf24;
+  line-height: 1.5;
 }
-.user-plugins-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
+.user-plugins-safe,
+.user-plugins-toolbar,
 .toolbar-icons {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
 }
-.user-plugins-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
-}
-.user-plugin-card {
-  border: 1px solid var(--peek-border, rgba(255, 255, 255, 0.08));
-  border-radius: 12px;
-  padding: 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  cursor: pointer;
-}
-.user-plugin-card:hover {
-  background: var(--peek-row-hover);
-}
-.card-icon {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  background: color-mix(in srgb, var(--peek-text, #1c1915) 5%, transparent);
-}
-.card-icon :deep(.plugin-sidebar-icon-img) {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-}
-.card-main {
-  flex: 1;
-  min-width: 0;
+.user-plugins-list-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-top: 0;
-}
-.card-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-}
-.card-name strong {
-  font-weight: 600;
-}
-.row-warn {
-  margin-left: 6px;
-  color: #fbbf24;
-  font-weight: 700;
-}
-.card-meta {
-  font-size: 11.5px;
-  color: var(--peek-muted, #8b939e);
-  display: flex;
-  gap: 5px;
-  min-width: 0;
-}
-.row-type {
-  flex: none;
-  font-weight: 600;
-  opacity: 0.85;
-}
-.row-sep {
-  flex: none;
-  opacity: 0.5;
-}
-.row-desc {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.row-toggle {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  cursor: pointer;
-}
-.row-toggle input {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-}
-.toggle-track {
-  width: 34px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--peek-border, rgba(255, 255, 255, 0.18));
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  transition: background-color 0.15s ease;
-}
-.toggle-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  transform: translateX(0);
-  transition: transform 0.15s ease;
-}
-.row-toggle input:checked + .toggle-track {
-  background: var(--peek-accent, #ef4444);
-}
-.row-toggle input:checked + .toggle-track .toggle-thumb {
-  transform: translateX(14px);
+  gap: 10px;
 }
 </style>

@@ -1,9 +1,26 @@
 <template>
   <section class="generated-image-card" :class="[activity.status]">
-    <p v-if="activity.status === 'running'" class="generated-image-placeholder">
-      <Paintbrush :size="13" class="generated-image-draw" aria-hidden="true" />
-      {{ generatingLabel }}
-    </p>
+    <div
+      v-if="activity.status === 'running'"
+      class="generated-image-pending"
+      role="status"
+      :aria-label="generatingLabel"
+    >
+      <p class="generated-image-pending-label">
+        <span class="pending-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        {{ generatingLabel }}
+      </p>
+      <div
+        v-for="slot in pendingSlots"
+        :key="slot"
+        class="generated-image-pending-frame"
+        :style="{ aspectRatio: pendingAspect }"
+      />
+    </div>
     <div v-else-if="activity.status === 'error' && errorText" class="generated-image-error">
       <Markdown :content="errorMarkdown" />
     </div>
@@ -141,7 +158,7 @@
             :title="editFromImageTitle"
             @click="editFull(source)"
           >
-            <Paintbrush :size="12" :stroke-width="2.2" aria-hidden="true" />
+            <Paintbrush :size="13" :stroke-width="1.75" aria-hidden="true" />
             {{ editFromImageLabel }}
           </button>
           <button
@@ -151,7 +168,7 @@
             :title="selectRegionTitle"
             @click="startSelect(source)"
           >
-            <Brush :size="12" :stroke-width="2.2" aria-hidden="true" />
+            <Brush :size="13" :stroke-width="1.75" aria-hidden="true" />
             {{ selectRegionLabel }}
           </button>
         </template>
@@ -214,6 +231,19 @@ const {
 } = useGeneratedImagePaint();
 
 const sources = computed(() => parseGeneratedImageSources(props.activity.result));
+const pendingSlots = computed(() => {
+  const count = Number(props.activity.arguments?.n);
+  const slots = Number.isFinite(count) ? Math.trunc(count) : 1;
+  return Array.from({ length: Math.min(4, Math.max(1, slots)) }, (_, index) => index);
+});
+const pendingAspect = computed(() => {
+  const size = String(props.activity.arguments?.size ?? "");
+  const match = size.match(/(\d+)\s*x\s*(\d+)/i);
+  const width = Number(match?.[1]);
+  const height = Number(match?.[2]);
+  if (!width || !height) return "1 / 1";
+  return `${width} / ${height}`;
+});
 const errorText = computed(() => {
   const result = props.activity.result?.trim();
   if (result) return result;
@@ -320,32 +350,95 @@ async function saveAs(source: string) {
   flex-flow: row wrap;
   align-items: flex-start;
   align-self: flex-start;
-  gap: 8px;
+  gap: 10px;
   width: fit-content;
   max-width: 100%;
 }
-.generated-image-placeholder {
-  display: inline-flex;
+.generated-image-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(100%, 440px);
+}
+.generated-image-pending-label {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
-  color: var(--peek-muted);
-  font-size: 12px;
+  color: var(--peek-text);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
 }
-.generated-image-draw {
-  flex: none;
-  color: var(--peek-accent);
-  animation: generated-image-draw 1.6s ease-in-out infinite;
+.pending-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
 }
-@keyframes generated-image-draw {
+.pending-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pending-dot 1.1s ease-in-out infinite;
+}
+.pending-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.pending-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes pending-dot {
   0%,
+  80%,
   100% {
-    opacity: 0.55;
-    transform: rotate(-12deg);
+    opacity: 0.25;
   }
-  50% {
+  40% {
     opacity: 1;
-    transform: rotate(8deg);
+  }
+}
+.generated-image-pending-frame {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-height: 440px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--peek-text) 5%, var(--peek-surface, #fff));
+}
+.generated-image-pending-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    transparent 32%,
+    color-mix(in srgb, #fff 55%, transparent) 42%,
+    #fff 50%,
+    color-mix(in srgb, #fff 55%, transparent) 58%,
+    transparent 68%,
+    transparent 100%
+  );
+  transform: translateX(-120%);
+  animation: pending-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes pending-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pending-dots i {
+    animation: none;
+    opacity: 0.7;
+  }
+  .generated-image-pending-frame::after {
+    animation: none;
+    opacity: 0.35;
   }
 }
 .generated-image-error {
@@ -374,6 +467,9 @@ async function saveAs(source: string) {
   position: relative;
   display: inline-block;
   max-width: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   transition:
     max-width 160ms ease,
     transform 160ms ease;
@@ -386,18 +482,27 @@ async function saveAs(source: string) {
   max-width: 100%;
   margin: 0;
   padding: 0;
+  overflow: hidden;
   border: 0;
+  border-radius: 14px;
+  outline: none;
+  box-shadow: none;
   background: transparent;
+  appearance: none;
   cursor: zoom-in;
+  line-height: 0;
 }
 .generated-image-hit img {
   display: block;
   width: auto;
   height: auto;
-  max-width: min(100%, 360px);
-  max-height: 280px;
+  max-width: min(100%, 460px);
+  max-height: min(52vh, 420px);
   object-fit: contain;
-  border-radius: 8px;
+  border: 0;
+  border-radius: 14px;
+  outline: none;
+  box-shadow: none;
   color-scheme: only light;
 }
 .generated-image-select-stage {
@@ -415,7 +520,9 @@ async function saveAs(source: string) {
   max-width: min(100%, 560px);
   max-height: min(72vh, 520px);
   object-fit: contain;
+  border: 0;
   border-radius: 10px;
+  box-shadow: none;
   color-scheme: only light;
   outline: 2px solid color-mix(in srgb, var(--peek-accent) 55%, transparent);
   outline-offset: 1px;
@@ -450,7 +557,8 @@ async function saveAs(source: string) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  margin-top: 4px;
   line-height: 1.2;
 }
 .brush-size {
@@ -497,29 +605,33 @@ async function saveAs(source: string) {
 .action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 26px;
+  gap: 6px;
+  height: 28px;
   margin: 0;
-  padding: 0 9px;
-  border: 1px solid color-mix(in srgb, var(--peek-text) 12%, transparent);
-  border-radius: 999px;
-  background: var(--peek-surface, #fff);
-  color: var(--peek-text);
-  font-size: 11px;
-  font-weight: 550;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: color-mix(in srgb, var(--peek-text) 58%, transparent);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   cursor: pointer;
 }
 .action-btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--peek-text) 22%, transparent);
-  background: color-mix(in srgb, var(--peek-text) 4%, var(--peek-surface, #fff));
+  background: color-mix(in srgb, var(--peek-text) 6%, transparent);
+  color: var(--peek-text);
 }
 .action-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 .action-btn.primary {
-  border-color: color-mix(in srgb, var(--peek-accent) 40%, transparent);
-  background: color-mix(in srgb, var(--peek-accent) 12%, var(--peek-surface, #fff));
+  background: color-mix(in srgb, var(--peek-accent) 10%, transparent);
+  color: var(--peek-accent);
+}
+.action-btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--peek-accent) 16%, transparent);
   color: var(--peek-accent);
 }
 .action-btn.primary:disabled {

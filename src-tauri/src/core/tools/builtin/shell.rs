@@ -24,6 +24,7 @@ impl Tool for RunShellTool {
             "type": "object",
             "properties": {
                 "command": { "type": "string" },
+                "cwd": { "type": "string", "description": "Optional working directory. Defaults to the current workspace." },
                 "description": {
                     "type": "string",
                     "description": "Short human-readable label for the UI (e.g. 'Run unit tests'). Prefer 3–8 words."
@@ -42,27 +43,35 @@ impl Tool for RunShellTool {
         let pass_all = crate::core::tools::tool_approval::shared_tool_approval_store()
             .mode_for_session(ctx.root_session_id())
             == crate::models::settings::ToolApprovalMode::AlwaysAllow;
+        crate::core::tools::sandbox::reject_user_plugin_hunt(command)?;
+        let cwd = match args["cwd"].as_str().filter(|cwd| !cwd.trim().is_empty()) {
+            Some(raw) => crate::core::tools::path::resolve_tool_path(
+                ctx,
+                raw,
+                crate::core::tools::path_permission::PathAccess::Read,
+                self.name(),
+            )?,
+            None => ctx.workspace_root.clone(),
+        };
+        if !cwd.is_dir() {
+            return Err(ToolError::new("cwd must be a directory"));
+        }
         if !pass_all {
-            crate::core::tools::sandbox::reject_workspace_escape_writes(
+            crate::core::tools::sandbox::reject_workspace_escape_writes_from(
                 command,
-                Some(&ctx.workspace_root),
+                &ctx.workspace_root,
+                &cwd,
             )?;
         }
-        crate::core::tools::sandbox::reject_user_plugin_hunt(command)?;
         if args["run_in_background"].as_bool().unwrap_or(false) {
             return self.jobs.spawn_background(
                 command.to_string(),
-                Some(&ctx.workspace_root),
+                Some(&cwd),
                 Arc::clone(&ctx.cancelled),
                 Some(ctx.clone()),
             );
         }
-        run_foreground(
-            command,
-            Some(&ctx.workspace_root),
-            &ctx.cancelled,
-            Some(ctx),
-        )
+        run_foreground(command, Some(&cwd), &ctx.cancelled, Some(ctx))
     }
 }
 

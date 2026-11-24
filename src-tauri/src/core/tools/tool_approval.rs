@@ -183,7 +183,8 @@ impl ToolApprovalStore {
             || (mode == ToolApprovalMode::Auto
                 && !tool.name().starts_with("mcp__")
                 && !matches!(tool.name(), "run_shell" | "pwsh" | "bash")
-                && !crate::core::plugins::requires_tool_approval(tool.name()))
+                && !(crate::core::plugins::requires_tool_approval(tool.name())
+                    || crate::core::computer::requires_tool_approval(tool.name())))
         {
             return Ok(());
         }
@@ -314,7 +315,9 @@ fn read_only_effect(tool: &dyn Tool, args: &Value) -> bool {
 }
 
 fn requires_approval(tool: &dyn Tool) -> bool {
-    if crate::core::plugins::requires_tool_approval(tool.name()) {
+    if crate::core::plugins::requires_tool_approval(tool.name())
+        || crate::core::computer::requires_tool_approval(tool.name())
+    {
         return true;
     }
     if tool.read_only() {

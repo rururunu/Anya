@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/mascot/mascot-icon.svg" alt="Anya" width="96" height="96" />
+  <img src="./public/mascot/anya-app-icon.png" alt="Anya" width="96" height="96" />
 </p>
 
 <h1 align="center">Anya</h1>
@@ -13,21 +13,23 @@
   &nbsp;·&nbsp; <a href="./docs/README.md">Documentation</a>
 </p>
 
-<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.2.34 &nbsp;·&nbsp; MIT</sub></p>
+<p align="center"><sub>Windows 10 / 11 &nbsp;·&nbsp; v0.3.0 &nbsp;·&nbsp; MIT</sub></p>
 
 ---
 
 ## What it does
 
-| Feature                | What you can do                                                                                      |
-| ---------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Ask anywhere**       | Double-tap Alt to open the overlay with files or images.                                             |
-| **Work on projects**   | Organize workspaces and chats, run tasks, and review changes.                                        |
-| **Personalize Anya**   | Set up a local profile and avatar, review usage activity, and import or export profile information.  |
-| **Handle documents**   | Generate, read, convert, and render Word / Excel / PowerPoint files; deliver them as cards.          |
-| **Choose your model**  | Configure DeepSeek, OpenAI-compatible, or Anthropic-compatible providers.                            |
-| **Extend your tools**  | Use skills, MCP, and plugins; manually enable computer use and OpenCLI.                              |
-| **Connect your phone** | Chat, approve actions, and transfer files with [Companion](https://github.com/rururunu/AnyaAndroid). |
+| Feature                 | What you can do                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Ask anywhere**        | Double-tap Alt to open the overlay with files or images.                                             |
+| **Work on projects**    | Organize workspaces and chats, run tasks, and review changes.                                        |
+| **Personalize Anya**    | Set up a local profile and avatar, review usage activity, and import or export profile information.  |
+| **Handle documents**    | Generate, read, convert, and render Word / Excel / PowerPoint files; deliver them as cards.          |
+| **Choose your model**   | Configure DeepSeek, OpenAI-compatible, or Anthropic-compatible providers.                            |
+| **Operate the desktop** | Ask Anya to use a Windows app or browser. Changes follow the current approval policy.                |
+| **Use a terminal**      | Open local PowerShell in the workbench sidebar. The session stays open when the sidebar is hidden.   |
+| **Extend your tools**   | Use skills, MCP, and plugins. OpenCLI stays off until you enable it.                                 |
+| **Connect your phone**  | Chat, approve actions, and transfer files with [Companion](https://github.com/rururunu/AnyaAndroid). |
 
 DeepSeek models use natively integrated dsh core tools and prompts while retaining enabled Anya plugin and MCP tools plus plugin management. Cache usage, response timing, and retries are recorded. Other models use Anya's general tool set. See [DeepSeek integration](./docs/deepseek-harness.md).
 
@@ -40,8 +42,10 @@ The **Profile** settings page shows local usage insights and lets you transfer y
 The chat composer keeps model and thinking controls on the right; on narrow windows, controls collapse to icons. In the overlay and workbench, `#` suggests skills, plugins, and MCP servers, `@` suggests workspace files, and `/` suggests commands. These suggestions also appear when editing a sent message. When an update is available, open it from the workbench sidebar or **Settings → About** to review the release notes before installing.
 
 1. Download and install the MSI from [Releases](../../releases).
-2. Open **Settings**, add a model provider, and configure its credentials.
+2. Open **Settings**, add a model provider, and configure its credentials. The first launch also walks through the provider, composer, shortcut, and workspace. Replay that tour from **Settings → About**.
 3. Start a chat in the workbench, or double-tap **Alt** to open the overlay.
+
+The workbench conversation has three layouts: **Work**, **Chat**, and **Stream**. Work is the task layout, Chat uses a narrower column, and Stream keeps the composer in the thread. **Settings → Components** can turn the Office engine off.
 
 Fallback shortcut: <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd>.
 
@@ -58,7 +62,7 @@ The workbench and overlay recover pending questions and approvals when opened or
 
 The Diff sidebar shows files in one continuous list. Its file tree navigates to a file, collapses automatically when space is tight, and can be toggled manually. Streaming replies and long diff lists defer unnecessary rendering to reduce interface stalls during Agent runs.
 
-Office layout, conversion, and formula results need checks for each artifact. Some search and extension features require additional setup. See [Office workflows](./docs/office.md) and [plugins](./docs/plugin-system.md).
+Office layout, conversion, and formula results need checks for each artifact. Some search and extension features require additional setup. See [Office workflows](./docs/office.md), [computer use](./docs/computer-use.md), and [plugins](./docs/plugin-system.md).
 
 ## Data and privacy
 
@@ -98,6 +102,7 @@ Built with **Tauri 2 + Vue 3 + TypeScript + Rust**.
 - [Office workflows](./docs/office.md)
 - [File delivery](./docs/file-delivery.md)
 - [Browser Selection Bridge](./browser-extension/README.md)
+- [Computer use and terminal](./docs/computer-use.md)
 - [Plugin development](./docs/plugin-system.md)
 - [Releases and updates](./docs/release.md)
 

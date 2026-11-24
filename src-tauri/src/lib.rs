@@ -211,6 +211,7 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            commands::terminal::setup(app.handle());
             if std::env::args().nth(1).as_deref() == Some("--anya-factory-reset-failed") {
                 use tauri_plugin_dialog::DialogExt;
                 app.dialog()
@@ -228,7 +229,6 @@ pub fn run() {
             crate::core::chat::telemetry::init_logging(&config_dir);
             boot_timing::flush_pending();
             boot_timing::phase("logging ready");
-            crate::services::browser_selection::start();
             // Stable root for mcp-remote OAuth tokens (package still appends mcp-remote-{ver}/).
             crate::core::mcp::init_mcp_remote_config_dir(config_dir.join("mcp-auth"));
             let settings = load_settings(app.handle());
@@ -238,8 +238,10 @@ pub fn run() {
             crate::services::pin_badge::start(app.handle().clone());
             app.manage(SettingsState::new(settings.clone()));
             app.manage(AppState::new(app.handle().clone()));
-            crate::core::context::providers::local_api::start_server(app.handle().clone());
-            boot_timing::phase("local api server started");
+            crate::core::context::providers::local_api::configure_gateway(
+                app.handle(),
+                settings.external_plugin_gateway_enabled,
+            );
             register_enabled_mcp_tools(app.handle());
             boot_timing::phase("mcp registration queued");
             setup_tray(app)?;
@@ -286,7 +288,6 @@ pub fn run() {
                     return;
                 }
                 if matches!(event, tauri::WindowEvent::Resized(_)) {
-                    crate::services::workbench_glass::sync_covering(window.app_handle());
                     crate::services::workbench_window::schedule_remember(window.app_handle());
                     return;
                 }
@@ -355,13 +356,13 @@ pub fn run() {
             window::take_overlay_context,
             window::open_image_preview,
             window::get_preview_image,
+            commands::terminal::workbench_terminal,
             computer_use::dismiss_computer_use_hud,
-            computer_use::list_computer_use_playbooks,
-            computer_use::get_computer_use_playbook,
-            computer_use::delete_computer_use_playbook,
             opencli::get_opencli_setup_status,
             opencli::install_opencli_cli,
             opencli::run_opencli_doctor,
+            commands::optional_components::office_runtime_status,
+            commands::optional_components::set_office_runtime_enabled,
             settings::get_app_settings,
             settings::set_app_settings,
             services::factory_reset::delete_all_user_information,
@@ -401,13 +402,13 @@ pub fn run() {
             mcp::list_mcp_server_statuses,
             mcp::connect_mcp_server,
             mcp::reauthenticate_mcp_server,
-            mcp::ensure_ghost_mcp,
             icons::cache_install_icon,
             icons::lookup_install_icon,
             icons::lookup_install_icons,
             icons::clear_install_icon,
             app::get_app_info,
             app::webview_gpu_disabled,
+            app::apply_workbench_mica,
             app::relaunch_app,
             updater::download_and_install_update,
             diff::build_code_diff,
@@ -482,7 +483,11 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, event| {
+        .run(|app_handle, event| {
+            if matches!(&event, RunEvent::Exit) {
+                crate::core::computer::shutdown();
+                commands::terminal::shutdown(app_handle);
+            }
             if let RunEvent::ExitRequested { api, code, .. } = event {
                 // Tray-style: ignore window-driven exit unless an update is installing
                 // (or the process requested an explicit exit code).

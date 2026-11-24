@@ -127,18 +127,15 @@ fn start(ctx: &ToolContext, args: &Value, name: &str) -> Result<Arc<Job>, ToolEr
     let pass_all = crate::core::tools::tool_approval::shared_tool_approval_store()
         .mode_for_session(ctx.root_session_id())
         == crate::models::settings::ToolApprovalMode::AlwaysAllow;
-    if !pass_all {
-        crate::core::tools::sandbox::reject_workspace_escape_writes(
-            command,
-            Some(&ctx.workspace_root),
-        )?;
-    }
     let directory = match args["workdir"].as_str() {
         Some(raw) => super::files::path(ctx, raw, false, name)?,
         None => ctx.workspace_root.clone(),
     };
     if !directory.is_dir() {
         return Err(ToolError::new("workdir must be a directory"));
+    }
+    if !pass_all {
+        crate::core::tools::sandbox::reject_workspace_escape_writes_from(command, &ctx.workspace_root, &directory)?;
     }
     let mut process = Command::new(if cfg!(windows) { "powershell" } else { "bash" });
     if cfg!(windows) {

@@ -23,14 +23,14 @@ struct LivePty {
 }
 
 pub struct PtyHub {
-    sessions: Mutex<HashMap<String, LivePty>>,
+    sessions: Arc<Mutex<HashMap<String, LivePty>>>,
     events: HostEventFn,
 }
 
 impl PtyHub {
     pub fn new(events: HostEventFn) -> Self {
         Self {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
             events,
         }
     }
@@ -38,6 +38,26 @@ impl PtyHub {
     pub fn open(
         &self,
         plugin_id: &str,
+        cols: u16,
+        rows: u16,
+        cwd: Option<&str>,
+        shell: Option<&str>,
+    ) -> Result<String, ToolError> {
+        self.open_session(Some(plugin_id), cols, rows, cwd, shell)
+    }
+
+    pub fn open_native(
+        &self,
+        cols: u16,
+        rows: u16,
+        cwd: Option<&str>,
+    ) -> Result<String, ToolError> {
+        self.open_session(None, cols, rows, cwd, None)
+    }
+
+    fn open_session(
+        &self,
+        plugin_id: Option<&str>,
         cols: u16,
         rows: u16,
         cwd: Option<&str>,
@@ -60,7 +80,9 @@ impl PtyHub {
         if let Some(cwd) = cwd.map(str::trim).filter(|s| !s.is_empty()) {
             cmd.cwd(cwd);
         }
-        apply_plugin_bin_path(&mut cmd);
+        if plugin_id.is_some() {
+            apply_plugin_bin_path(&mut cmd);
+        }
         let child = pair
             .slave
             .spawn_command(cmd)
@@ -83,9 +105,35 @@ impl PtyHub {
             .lock()
             .map_err(|_| ToolError::new("pty lock"))?
             .insert(id.clone(), live);
+        if plugin_id.is_none() {
+            let sessions = Arc::clone(&self.sessions);
+            let id = id.clone();
+            thread::spawn(move || loop {
+                thread::sleep(std::time::Duration::from_millis(100));
+                let Ok(mut sessions) = sessions.lock() else {
+                    break;
+                };
+                let Some(live) = sessions.get(&id) else { break };
+                let exited = live
+                    .child
+                    .lock()
+                    .ok()
+                    .and_then(|mut child| child.try_wait().ok())
+                    .flatten()
+                    .is_some();
+                if exited {
+                    // Close the ConPTY master to let the reader finish and emit
+                    // the exit event after the remaining terminal output.
+                    let ended = sessions.remove(&id);
+                    drop(sessions);
+                    drop(ended);
+                    break;
+                }
+            });
+        }
         let events = Arc::clone(&self.events);
         let session = id.clone();
-        let plugin = plugin_id.to_string();
+        let plugin = plugin_id.map(str::to_owned);
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -224,6 +272,40 @@ fn apply_plugin_bin_path(cmd: &mut CommandBuilder) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires Windows ConPTY and PowerShell"]
+    fn native_terminal_reads_system_resources() {
+        let (send, receive) = std::sync::mpsc::channel();
+        let hub = PtyHub::new(Arc::new(move |event| {
+            let _ = send.send(event);
+        }));
+        let temp = std::env::temp_dir();
+        let id = hub.open_native(90, 26, temp.to_str()).unwrap();
+        hub.write(
+            &id,
+            "if ((Get-Location).Path -eq [IO.Path]::GetTempPath().TrimEnd('\\') -and (Test-Path \"$env:WINDIR\\System32\\cmd.exe\")) { [Console]::WriteLine(('ANYA_NATIVE_' + 'SYSTEM_OK')) }; exit\r",
+        ).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let mut output = String::new();
+        let mut exited = false;
+        while let Ok(event) =
+            receive.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+        {
+            if event["session"] != id {
+                continue;
+            }
+            if event["event"] == "pty.exit" {
+                exited = true;
+                break;
+            }
+            output.push_str(event["data"].as_str().unwrap_or_default());
+        }
+        hub.kill(&id).unwrap();
+        assert!(output.contains("ANYA_NATIVE_SYSTEM_OK"), "{output}");
+        assert!(exited, "native terminal did not report shell exit");
+    }
 
     #[test]
     fn plugin_bin_dirs_lists_bin_folders() {

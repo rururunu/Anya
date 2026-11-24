@@ -2,6 +2,7 @@
   <div
     ref="chatInputShellRef"
     class="chat-input-shell"
+    data-tour="composer"
     :style="chipPickerStyle"
     :class="{
       'overlay-pickers': props.overlayPickers,
@@ -557,6 +558,7 @@
           </div>
 
           <div
+            v-if="currentWorkspace"
             class="model-picker approval-slot"
             :class="{ dormant: effectiveChatMode === 'ask' }"
             :aria-hidden="effectiveChatMode === 'ask'"
@@ -645,7 +647,10 @@
               </TooltipProvider>
             </div>
 
-            <div v-if="showThinkingTierPicker" class="model-picker thinking-slot">
+            <div
+              v-if="showThinkingTierPicker && currentWorkspace"
+              class="model-picker thinking-slot"
+            >
               <button
                 ref="thinkingTierButtonRef"
                 type="button"
@@ -668,25 +673,33 @@
           </div>
 
           <span
-            v-if="conversationTokenCount || cacheHitPercent != null"
+            v-if="
+              (settingStore.showTokenBudget && conversationTokenCount) ||
+              (settingStore.showCacheHit && cacheHitPercent != null)
+            "
             class="conversation-token-meta"
           >
             <span
-              v-if="conversationTokenCount"
+              v-if="settingStore.showTokenBudget && conversationTokenCount"
               class="conversation-token-count"
               :title="conversationTokenTitle"
             >
               {{ formatTokenCount(conversationTokenCount, language) }}
             </span>
             <span
-              v-if="conversationTokenCount && cacheHitPercent != null"
+              v-if="
+                settingStore.showTokenBudget &&
+                conversationTokenCount &&
+                settingStore.showCacheHit &&
+                cacheHitPercent != null
+              "
               class="conversation-token-sep"
               aria-hidden="true"
             >
               |
             </span>
             <span
-              v-if="cacheHitPercent != null"
+              v-if="settingStore.showCacheHit && cacheHitPercent != null"
               class="conversation-cache-hit"
               :title="cacheHitTitle"
             >
@@ -695,7 +708,7 @@
           </span>
 
           <ContextUsageRing
-            v-if="contextUsage.contextWindowTokens > 0"
+            v-if="settingStore.showContextUsage && contextUsage.contextWindowTokens > 0"
             :usage="contextUsage"
             :panel-target="props.floatingPickerTarget"
             :panel-style="chipPickerStyle"
@@ -872,6 +885,7 @@ import {
   type ImageGenFieldId,
 } from "@/services/chat/imageGenMode";
 import type { ChatI18nKey } from "@/services/locales/chat";
+import { hasConfiguredProvider } from "@/services/onboarding/providerReady";
 import type {
   CapturedContext,
   ChatModelInfo,
@@ -977,6 +991,7 @@ const emit = defineEmits<{
   historyClose: [];
   removeSelection: [];
   previewImage: [source: string];
+  configureProvider: [];
   layoutChange: [
     payload: {
       showSuggestions: boolean;
@@ -1482,7 +1497,12 @@ const currentModelProviderIcon = computed(() => {
   return getModelIcon(entry);
 });
 
+const needsProviderSetup = computed(
+  () => chatModelStore.models.length === 0 && !hasConfiguredProvider(settingStore),
+);
+
 const currentModelDisplayName = computed(() => {
+  if (needsProviderSetup.value) return tr(language.value, "modelNotConfigured");
   const current = chatModel.value.trim();
   if (!current || (chatModelStore.models.length === 0 && !chatModelStore.loading)) {
     return tr(language.value, "chooseModel");
@@ -1500,6 +1520,7 @@ const currentProviderHover = computed(() => {
 });
 
 const modelBadgeTitle = computed(() => {
+  if (needsProviderSetup.value) return tr(language.value, "modelNotConfigured");
   const current = chatModel.value.trim();
   if (!current || chatModelStore.models.length === 0) {
     return tr(language.value, "chooseModel");
@@ -1718,9 +1739,7 @@ const thinkingPopupOpen = computed(
 const showImageGenPicker = computed(() => imageGenPickerOpen.value !== null);
 const showImageGenSettingsPanel = computed(() => isImageGenSettingsField(imageGenPickerOpen.value));
 const showImageGenListPicker = computed(() => isImageGenListField(imageGenPickerOpen.value));
-const imageGenFieldGroups = computed(() =>
-  imageGenFieldDefs(imageGenOptions.value, settingStore.imageStyleTemplates),
-);
+const imageGenFieldGroups = computed(() => imageGenFieldDefs(imageGenOptions.value));
 const imageGenPickerGroup = computed(
   () => imageGenFieldGroups.value.find((group) => group.id === imageGenPickerOpen.value) ?? null,
 );
@@ -1733,10 +1752,14 @@ const imageGenPickerOptions = computed(() => {
     if (choices.length === 0) {
       return [{ id: "", label: tr(language.value, "imageGen.noModels") }];
     }
-    return choices.map((option) => ({
-      id: option.id,
-      label: option.label ?? option.id,
-    }));
+    return choices.map((option) => {
+      const modelId = decodeImageModelSelection(option.id)?.model ?? option.label ?? option.id;
+      return {
+        id: option.id,
+        label: option.label ?? option.id,
+        icon: getModelIcon({ id: modelId, displayName: modelId }) ?? undefined,
+      };
+    });
   }
   return (imageGenPickerGroup.value?.options ?? []).map((option) => ({
     id: option.id,
@@ -2247,6 +2270,10 @@ function toggleModelMenu() {
     closeModelPicker();
     return;
   }
+  if (needsProviderSetup.value) {
+    emit("configureProvider");
+    return;
+  }
   void openModelPicker();
 }
 
@@ -2318,9 +2345,6 @@ async function selectImageGenOption(id: string) {
     return;
   }
   setImageGenOptions(applyImageGenField(imageGenOptions.value, field, id));
-  if (field === "style") {
-    closeImageGenPicker();
-  }
 }
 
 function flashModelChipConfirm() {
@@ -5142,14 +5166,14 @@ watch(
 }
 
 .workbench-composer .input-bar {
-  min-height: 100px;
+  min-height: var(--workbench-composer-min-height, 100px);
   max-height: min(280px, 100%);
-  padding: 12px 12px 8px;
-  gap: 8px;
+  padding: 13px 10px 9px;
+  gap: 10px;
   overflow: hidden;
   border: 1px solid
     var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
-  border-radius: var(--peek-radius-composer, 16px);
+  border-radius: var(--peek-radius-composer, 20px);
   background: var(--peek-composer-fill);
   box-shadow: var(--peek-composer-shadow, none);
   transition: border-color var(--motion-fast, 110ms) var(--motion-ease-out, ease);
@@ -5170,10 +5194,12 @@ watch(
 
 .workbench-composer {
   --composer-line-height: 24px;
+  --composer-control-size: 28px;
 }
 
 .workbench-composer .input-content {
   flex: 1 1 auto;
+  padding-inline: 3px;
   min-height: 28px;
   max-height: min(calc(var(--composer-line-height) * 8), 34vh);
   align-items: flex-start;
@@ -5335,22 +5361,23 @@ watch(
 
 .workbench-composer .input-footer {
   flex: none;
-  min-height: 30px;
+  min-height: 32px;
   align-items: center;
   padding-top: 0;
   margin-top: auto;
 }
 
 .workbench-composer .input-footer-primary {
-  flex: 1;
-  gap: 3px;
+  flex: 1 1 auto;
+  gap: 4px;
   flex-wrap: wrap;
   overflow: visible;
 }
 
 .workbench-composer .input-footer-actions {
   flex: none;
-  gap: 8px;
+  gap: 7px;
+  margin-inline-start: auto;
 }
 
 @container composer (min-width: 601px) {
@@ -5368,9 +5395,8 @@ watch(
 }
 
 .workbench-composer .footer-chip {
-  height: var(--peek-control-icon, 28px);
-  padding-right: 8px;
-  padding-left: 8px;
+  height: var(--composer-control-size);
+  padding-inline: 7px;
   font-size: 13px;
 }
 
@@ -5429,7 +5455,7 @@ watch(
   border: 1px solid
     var(--peek-composer-border, color-mix(in srgb, var(--peek-text) 16%, transparent));
   border-bottom: 0;
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--peek-radius-composer, 20px) var(--peek-radius-composer, 20px) 0 0;
   background: var(--peek-interaction-fill, var(--peek-composer-fill, var(--peek-surface)));
   box-shadow: none;
 }
@@ -5447,25 +5473,22 @@ watch(
     .command-suggestion-open
   ):not(.attach-panel-open)
   .input-bar {
-  border-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
+  border-color: var(--peek-composer-border);
   border-top-color: transparent;
-  border-radius: 0 0 16px 16px;
+  border-radius: 0 0 var(--peek-radius-composer, 20px) var(--peek-radius-composer, 20px);
   box-shadow: none;
 }
 
 .workbench-composer.attach-panel-open.picker-open .input-bar {
-  box-shadow: none;
-  border-top-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
-  border-radius: 16px;
+  border-color: var(--peek-composer-border);
+  border-radius: var(--peek-radius-composer, 20px);
 }
 
 .workbench-composer.interaction-request-open.picker-open .input-bar {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
   /* Keep outer frame continuous; middle seam uses the same stroke. */
-  border-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
-  border-top-color: color-mix(in srgb, var(--peek-text) 16%, transparent);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--peek-shadow) 24%, transparent);
+  border-color: var(--peek-composer-border);
 }
 
 .workbench-composer.overlay-pickers :deep(.command-item) {
@@ -5775,7 +5798,7 @@ watch(
     display: none;
   }
   .workbench-composer .model-picker:not(.thinking-slot) .footer-chip {
-    width: var(--peek-control-icon, 28px);
+    width: var(--composer-control-size);
     max-width: none;
     padding: 0;
     justify-content: center;
@@ -5785,6 +5808,22 @@ watch(
     width: auto;
     max-width: none;
     padding-inline: 4px;
+  }
+}
+
+@container composer (max-width: 420px) {
+  .workbench-composer .input-footer {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .workbench-composer .input-footer-actions {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .workbench-composer .conversation-token-meta {
+    display: none;
   }
 }
 
@@ -6244,15 +6283,30 @@ watch(
 }
 
 .workbench-composer .send-btn {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
+}
+
+.workbench-composer .send-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 .workbench-composer .attach-trigger-btn {
-  width: var(--peek-control-icon, 28px);
-  height: var(--peek-control-icon, 28px);
-  margin-left: -6px;
-  margin-right: 6px;
+  width: var(--composer-control-size);
+  height: var(--composer-control-size);
+  transition:
+    background-color var(--motion-fast, 110ms) ease,
+    color var(--motion-fast, 110ms) ease;
+}
+
+.workbench-composer .attach-trigger-btn:hover,
+.workbench-composer .attach-trigger-btn.open {
+  background: color-mix(in srgb, var(--peek-text) 6%, var(--peek-composer-chip-bg, transparent));
+}
+
+.workbench-composer .send-btn:disabled {
+  opacity: 1;
 }
 
 .send-btn:disabled:not(.pause) {

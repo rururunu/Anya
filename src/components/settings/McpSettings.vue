@@ -41,7 +41,40 @@
       </DialogPortal>
     </DialogRoot>
 
-    <SettingsPageHeader :title="copy.title" :hide-title="embedded">
+    <SettingsPageHeader v-if="!embedded" :title="copy.title" />
+    <ExtensionToolbar>
+      <div class="settings-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          class="settings-tab"
+          :class="{ on: tab === 'installed' }"
+          :aria-selected="tab === 'installed'"
+          @click="tab = 'installed'"
+        >
+          {{ copy.tabInstalled }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="settings-tab"
+          :class="{ on: tab === 'catalog' }"
+          :aria-selected="tab === 'catalog'"
+          @click="openCatalog"
+        >
+          {{ copy.tabBuiltin }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="settings-tab"
+          :class="{ on: tab === 'smithery' }"
+          :aria-selected="tab === 'smithery'"
+          @click="openSmithery"
+        >
+          {{ copy.tabSmithery }}
+        </button>
+      </div>
       <template #actions>
         <Button
           variant="outline"
@@ -65,40 +98,7 @@
           {{ copy.add }}
         </Button>
       </template>
-    </SettingsPageHeader>
-
-    <div class="settings-tabs" role="tablist">
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'installed' }"
-        :aria-selected="tab === 'installed'"
-        @click="tab = 'installed'"
-      >
-        {{ copy.tabInstalled }}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'catalog' }"
-        :aria-selected="tab === 'catalog'"
-        @click="openCatalog"
-      >
-        {{ copy.tabBuiltin }}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="settings-tab"
-        :class="{ on: tab === 'smithery' }"
-        :aria-selected="tab === 'smithery'"
-        @click="openSmithery"
-      >
-        {{ copy.tabSmithery }}
-      </button>
-    </div>
+    </ExtensionToolbar>
 
     <SettingsFormError :message="error" />
 
@@ -171,6 +171,7 @@ import { ExternalLink, Plus, Settings } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import SettingsPageHeader from "@/components/settings/SettingsPageHeader.vue";
+import ExtensionToolbar from "@/components/settings/ExtensionToolbar.vue";
 import SettingsFormError from "@/components/settings/SettingsFormError.vue";
 import {
   DialogContent,
@@ -365,7 +366,13 @@ const smitheryHasMore = computed(
   () => smitheryLoaded.value && smitheryPage.value < smitheryTotalPages.value,
 );
 
-const servers = computed(() => settingStore.mcpServers ?? []);
+const isRetiredGhost = (server: McpServerConfig) =>
+  server.id === "ghost" &&
+  server.source === "curated" &&
+  server.qualifiedName === "io.github.NORTHTEKDevs/ghost";
+const servers = computed(() =>
+  (settingStore.mcpServers ?? []).filter((server) => !isRetiredGhost(server)),
+);
 const curatedEntries = computed(() =>
   filterInstallable(filterCurated(catalogQuery.value || props.query || ""), runtimeSupport.value),
 );
@@ -783,7 +790,10 @@ async function persist(next: McpServerConfig[]) {
   saving.value = true;
   error.value = "";
   try {
-    await settingStore.update({ mcpServers: next });
+    const retired = (settingStore.mcpServers ?? []).filter(
+      (server) => isRetiredGhost(server) && !next.some((item) => item.id === server.id),
+    );
+    await settingStore.update({ mcpServers: [...next, ...retired] });
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
     throw err;
@@ -887,20 +897,6 @@ function toPlainInstall(entry: CatalogEntry): McpServerConfig {
 
 async function addFromCatalog(entry: CatalogEntry) {
   if (isInstalled(entry.install.id)) return;
-  if (entry.install.id === "ghost" || entry.install.command === "__anya_ensure_ghost__") {
-    saving.value = true;
-    error.value = "";
-    try {
-      await invoke("ensure_ghost_mcp");
-      await settingStore.load();
-      void refreshServerStatuses();
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
-    } finally {
-      saving.value = false;
-    }
-    return;
-  }
   const install = toPlainInstall(entry);
   if (!install.id || !install.command) {
     error.value = copy.value.commandRequired;
@@ -989,10 +985,8 @@ function openCatalog() {
 }
 
 async function openSmithery() {
-  if (!hasSmitheryApiKey()) {
-    openSmitheryConfig({ required: true, continueTo: "smithery-tab" });
-    return;
-  }
+  // Browsing the public registry does not require an API key. The key is
+  // requested only when installing a hosted server that needs Connect/OAuth.
   await enterSmitheryTab();
 }
 

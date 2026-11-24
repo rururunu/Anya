@@ -188,14 +188,23 @@ fn base64_decode_utf16le_or_utf8(payload: &str) -> Result<String, ToolError> {
     Ok(s)
 }
 
-/// Heuristic: block redirects / copy targets that clearly write outside the workspace.
-pub fn reject_workspace_escape_writes(
+#[cfg(test)]
+fn reject_workspace_escape_writes(
     command: &str,
     workspace: Option<&Path>,
 ) -> Result<(), ToolError> {
     let Some(workspace) = workspace else {
         return Ok(());
     };
+    reject_workspace_escape_writes_from(command, workspace, workspace)
+}
+
+/// Resolve obvious shell write destinations from cwd and check the workspace boundary.
+pub fn reject_workspace_escape_writes_from(
+    command: &str,
+    workspace: &Path,
+    cwd: &Path,
+) -> Result<(), ToolError> {
     let workspace = normalize_path(workspace);
     let patterns = escape_write_path_candidates(command);
     for raw in patterns {
@@ -203,7 +212,7 @@ pub fn reject_workspace_escape_writes(
         let resolved = if candidate.is_absolute() {
             normalize_path(candidate)
         } else {
-            normalize_path(&workspace.join(candidate))
+            normalize_path(&cwd.join(candidate))
         };
         if !resolved.starts_with(&workspace) {
             return Err(ToolError::new(format!(

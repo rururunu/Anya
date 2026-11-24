@@ -138,7 +138,7 @@ html.chrome-frosted-glass .settings-workbench,
     @apply font-sans;
     font-family: var(--peek-font-sans);
     font-size: var(--peek-font-md, 14px);
-    font-weight: 500;
+    font-weight: 450;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }

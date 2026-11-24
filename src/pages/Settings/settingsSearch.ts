@@ -12,6 +12,7 @@ const standalonePrefixes: Record<string, readonly string[]> = {
   archive: ["settings.archive."],
   workspace: ["workspace."],
   usage: ["usage."],
+  components: ["settings.components."],
   about: ["about."],
 };
 

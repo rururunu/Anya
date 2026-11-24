@@ -44,6 +44,12 @@ pub enum ClientMessage {
         #[serde(rename = "requestId")]
         request_id: String,
     },
+    #[serde(rename = "delivery.list")]
+    DeliveryList {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        after: i64,
+    },
     /// Full history, or a window of it. `detail: "light"` drops the per-turn execution
     /// process (reasoning / work timeline / tool activities); `limit` + `beforeMessageId`
     /// page backwards through older turns. All three are optional so older companions keep

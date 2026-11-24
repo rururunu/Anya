@@ -10,11 +10,11 @@ Office 能力采用保存文件、按需加载技能和内置 JavaScript 文档�
 - `read_office_file`：结构化读取保存文件，支持 `path`、`sheet`、`slide`、从 1 开始的 `offset` 和 `limit`（最多 500 条记录）。`read_file` 也使用此读取器；Office 文件的 offset 表示记录位置，而不是文本行号。
 - `prepare_office_runtime`：返回准确的可执行文件、模块导入 URL、CLI 和 API 路径。加载 Office 技能时自动准备。
 
-这三个 Office 技能始终可用。`generate_word` 和 `docx` 保留为 `documents` 的兼容快捷入口。原有 `word_*`、`excel_*`、`ppt_*` 实时自动化工具已删除。
+引擎开启时，这三个 Office 技能始终可用。**设置 → 组件**可以关闭内置 Office 引擎。`generate_word` 和 `docx` 保留为 `documents` 的兼容快捷入口。原有 `word_*`、`excel_*`、`ppt_*` 实时自动化工具已删除。
 
 ## 执行与打包
 
-Anya 内置 Deno，以及包含 docx、ExcelJS、PptxGenJS、JSZip 和 fast-xml-parser 的离线模块，以及 LibreOffice Kit 0.1.5、对应平台引擎和专用 Node 运行时。采用技能、脚本、验证的工作方式，不分发 Codex 的 `@oai/artifact-tool`，也不宣称文档库能力完全一致。
+Anya 内置 Deno，以及包含 docx、ExcelJS、PptxGenJS、JSZip 和 fast-xml-parser 的离线模块，以及 LibreOffice Kit 0.2.3、对应平台引擎和专用 Node 运行时。采用技能、脚本、验证的工作方式，不分发 Codex 的 `@oai/artifact-tool`，也不宣称文档库能力完全一致。
 
 `pnpm build:office-runtime` 生成 `src-tauri/resources/office/`。Tauri 开发和构建命令自动执行此步骤，并将模块和第三方许可声明作为资源打包。运行时优先使用安装资源，再放入 `{workspace}/.anya/office-runtime/v1/`，保留任务脚本。加载文档库、读取和生成文件不需要首次 npm 下载或全局 Node/Python。
 

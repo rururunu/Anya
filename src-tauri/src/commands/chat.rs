@@ -233,6 +233,7 @@ pub async fn set_chat_session_archived(
 
 #[tauri::command]
 pub async fn set_chat_session_workspace(
+    app: AppHandle,
     state: State<'_, AppState>,
     session_id: String,
     workspace_id: String,
@@ -257,7 +258,9 @@ pub async fn set_chat_session_workspace(
         .chat()
         .conversation()
         .rebind_workspace(&session_id, &workspace_id)
-        .await
+        .await?;
+    crate::core::remote::broadcast_session_snapshots(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -437,6 +440,7 @@ pub fn delete_chat_session(
     });
     crate::core::remote::cleanup_session_uploads(&app, &session_id, workspace_root.as_deref());
     state.core.chat().conversation().delete_session(&session_id);
+    crate::core::remote::broadcast_session_snapshots(&app);
     Ok(())
 }
 

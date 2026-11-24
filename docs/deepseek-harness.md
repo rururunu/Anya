@@ -45,7 +45,7 @@ Host guidance lists the tools exposed for the current turn and requires capabili
 - Todos replace the list and allow one in-progress item by default. Questions retain stable ids and wait for an answer or cancellation. Plan writers unlock only after the user chooses Approve.
 - Skills use the dsh catalog and `skill_content` framing. Office skills continue using the bundled Deno, Office Node and LibreOffice Kit.
 
-This ports core tool contracts rather than running the complete official plugin ecosystem. Anya supplies search, interaction UI, skill storage, image upload, child execution and permissions. Child delegation uses the upstream foreground configuration and exposes no background parameter. Enabled Anya MCP and plugin tools, including Anya's computer-use plugin, remain available as host tools; this does not port the upstream harness's optional MCP, LSP, PTY, computer-use, teams, or continuable-agent plugins. This implementation must not be described as a byte-for-byte copy of all official plugins and protocols.
+This ports core tool contracts rather than running the complete official plugin ecosystem. Anya supplies search, interaction UI, skill storage, image upload, child execution and permissions. Child delegation uses the upstream foreground configuration and exposes no background parameter. Enabled Anya MCP and plugin tools remain available as host tools. Built-in computer tools are separate from those plugins. This does not port the upstream harness's optional MCP, LSP, PTY, computer-use, teams, or continuable-agent plugins. This implementation must not be described as a byte-for-byte copy of all official plugins and protocols.
 
 ## Permissions and read previews
 

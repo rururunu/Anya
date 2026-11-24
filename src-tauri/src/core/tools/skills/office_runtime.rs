@@ -12,20 +12,42 @@ use crate::core::tools::error::ToolError;
 
 const API: &str = include_str!("../../../../prompts/skills/office-api.md");
 
-fn runtime_source(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
-    if let Some(app) = &ctx.app_handle {
-        if let Ok(resources) = app.path().resource_dir() {
-            let installed = resources.join("office");
-            if installed.join("runtime.mjs").is_file() {
-                return Ok(installed);
-            }
+pub(crate) fn disabled_marker(app: &tauri::AppHandle) -> tauri::Result<PathBuf> {
+    Ok(app
+        .path()
+        .app_data_dir()?
+        .join("office-components")
+        .join(".disabled"))
+}
+
+pub(crate) fn bundled_runtime(app: Option<&tauri::AppHandle>) -> Option<PathBuf> {
+    if let Some(directory) = app.and_then(|app| app.path().resource_dir().ok()) {
+        let installed = directory.join("office");
+        if installed.join("kit/BUILD.json").is_file() {
+            return Some(installed);
         }
     }
-    let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/office");
-    if development.join("runtime.mjs").is_file() {
-        return Ok(development);
+    #[cfg(debug_assertions)]
+    {
+        let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/office");
+        if development.join("kit/BUILD.json").is_file() {
+            return Some(development);
+        }
     }
-    Err(ToolError::new("Office runtime resources are missing. Build with `pnpm build:office-runtime`, or reinstall the packaged app."))
+    None
+}
+
+fn runtime_source(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
+    if let Some(app) = &ctx.app_handle {
+        if disabled_marker(app).is_ok_and(|path| path.exists()) {
+            return Err(ToolError::new(
+                "Office is disabled. Enable it in Settings > Components.",
+            ));
+        }
+    }
+    bundled_runtime(ctx.app_handle.as_ref()).ok_or_else(|| {
+        ToolError::new("Office runtime resources are missing. Build with pnpm build:office-runtime, or reinstall Anya.")
+    })
 }
 
 fn materialize(source: &Path, workspace: &Path) -> Result<PathBuf, ToolError> {

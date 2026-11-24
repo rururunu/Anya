@@ -177,6 +177,7 @@ pub fn registry(backing: Arc<ToolManager>) -> ToolRegistry {
     // Image mode passes only generate_image into this adapter.
     for name in backing.registry().names() {
         if HOST_TOOLS.contains(&name.as_str())
+            || name.starts_with("computer_")
             || name.starts_with("plugin_")
             || name.starts_with("mcp__")
         {

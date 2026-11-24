@@ -186,12 +186,13 @@ const tools = [
   },
   {
     name: "clipboard",
-    description: "Clipboard get / set / paste.",
+    description: "Clipboard get / set / paste. Paste requires window= or an anchored target.",
     parameters: {
       type: "object",
       properties: {
         op: { type: "string", description: "get | set | paste" },
         text: { type: "string" },
+        window: { type: "string", description: "Target window for paste" },
       },
     },
   },

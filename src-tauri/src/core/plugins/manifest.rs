@@ -246,6 +246,9 @@ pub fn plugin_dir(id: &str) -> Result<PathBuf, ToolError> {
 }
 
 pub fn load_manifest(id: &str) -> Result<PluginManifest, ToolError> {
+    if super::bundled::BUILTIN_PLUGIN_IDS.contains(&sanitize_plugin_id(id)?.as_str()) {
+        return Err(ToolError::new("This capability is built into Anya"));
+    }
     let dir = plugin_dir(id)?;
     let raw = fs::read_to_string(dir.join("plugin.json"))
         .map_err(|e| ToolError::new(format!("read plugin.json: {e}")))?;

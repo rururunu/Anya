@@ -50,12 +50,6 @@ pub fn close() {
     let _ = app.clone().run_on_main_thread(move || hide_windows(&app));
 }
 
-/// Alias used by chat lifecycle and the stop button.
-pub fn force_dismiss() {
-    crate::core::plugins::stop_computer_engine();
-    close();
-}
-
 /// Temporarily cloak the HUD so desktop screenshots do not include the glow.
 pub struct CaptureSuspend {
     owned: bool,

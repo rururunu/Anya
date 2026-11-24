@@ -40,6 +40,7 @@ async function onStop() {
     await dismissComputerUseHud();
   } catch (error) {
     console.error("dismiss_computer_use_hud failed:", error);
+  } finally {
     stopping.value = false;
   }
 }

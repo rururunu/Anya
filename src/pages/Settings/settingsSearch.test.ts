@@ -15,4 +15,9 @@ describe("standalone settings search", () => {
     expect(matchesStandaloneSettingsCategory("usage", "en-US", "Token usage")).toBe(true);
     expect(matchesStandaloneSettingsCategory("archive", "zh-CN", "恢复选中")).toBe(true);
   });
+  it("finds the Components page by its Office component content", () => {
+    expect(matchesStandaloneSettingsCategory("components", "zh-CN", "官方来源")).toBe(true);
+    expect(matchesStandaloneSettingsCategory("components", "en-US", "PowerPoint")).toBe(true);
+    expect(matchesStandaloneSettingsCategory("appearance", "en-US", "PowerPoint")).toBe(false);
+  });
 });

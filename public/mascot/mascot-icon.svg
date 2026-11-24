@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Blob mascot icon">
-  <title>Blob mascot - icon pose</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Anya making a peace sign">
+  <title>Anya making a peace sign</title>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#1c1c1e"/>
@@ -19,7 +19,7 @@
 
   <rect width="512" height="512" rx="116" fill="url(#bg)"/>
 
-  <g transform="rotate(10 256 268)">
+  <g transform="translate(-10 36) scale(.87) rotate(-8 256 268)">
     <use href="#blob" fill="url(#body)"/>
     <use href="#blob" fill="url(#shade)"/>
     <g fill="#111">
@@ -27,4 +27,21 @@
       <rect x="313" y="252" width="34" height="92" rx="17"/>
     </g>
   </g>
+
+  <path
+    d="M365 320C353 308 344 292 340 278L317 203C313 190 319 179 330 175C342 171 353 177 358 189L382 249L401 165C404 152 416 145 429 148C442 151 449 163 446 176L429 265C442 271 448 283 446 298L442 326C438 350 422 366 399 367C380 368 367 358 359 348L343 329C336 320 337 309 345 303C353 297 363 300 370 307L382 320"
+    fill="url(#body)"
+    stroke="#171719"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M382 320L369 301C363 291 366 281 375 276C383 271 392 273 397 280L404 289C411 280 422 281 430 286"
+    fill="none"
+    stroke="#171719"
+    stroke-width="10"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>

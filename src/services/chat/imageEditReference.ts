@@ -70,6 +70,13 @@ function mimeFromPath(path: string): string {
   return "image/png";
 }
 
+export async function loadLocalImageAsDataUrl(source: string): Promise<string> {
+  const { readFile } = await import("@tauri-apps/plugin-fs");
+  const path = unwrapLocalImagePath(source);
+  const bytes = await readFile(path);
+  return bytesToDataUrl(bytes, mimeFromPath(path));
+}
+
 /** Load a chat image source (`path:`, data URL, http) into a data URL. */
 export async function loadImageSourceAsDataUrl(source: string): Promise<string> {
   const value = source.trim();
@@ -78,10 +85,7 @@ export async function loadImageSourceAsDataUrl(source: string): Promise<string> 
 
   if (isLocalImagePath(value)) {
     try {
-      const { readFile } = await import("@tauri-apps/plugin-fs");
-      const path = unwrapLocalImagePath(value);
-      const bytes = await readFile(path);
-      return bytesToDataUrl(bytes, mimeFromPath(path));
+      return await loadLocalImageAsDataUrl(value);
     } catch {
       // Fall through to fetch via convertFileSrc.
     }

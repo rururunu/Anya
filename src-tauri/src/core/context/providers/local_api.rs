@@ -7,9 +7,9 @@
 //! Preferred IDE context path is on-demand pull via [`super::ide_bridge`].
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::path::PathBuf;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -34,7 +34,7 @@ struct StoredIDEContext {
 }
 
 static LATEST_IDE_CONTEXT: OnceLock<RwLock<Option<StoredIDEContext>>> = OnceLock::new();
-static SERVER_STARTED: OnceLock<()> = OnceLock::new();
+static SERVER: Mutex<Option<tauri::async_runtime::JoinHandle<()>>> = Mutex::new(None);
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
 #[derive(Debug, Deserialize)]
@@ -89,6 +89,9 @@ pub fn latest_cached() -> Option<IDEContext> {
 
 /// Whether the stored IDE context was received within `max_age` (pull or push).
 pub fn is_fresh(max_age: Duration) -> bool {
+    if !gateway_enabled() {
+        return false;
+    }
     match context_store().read() {
         Ok(stored) => stored
             .as_ref()
@@ -144,45 +147,61 @@ pub fn parse_ide_context_payload(body: &[u8]) -> Result<Option<IDEContext>, Stri
     }))
 }
 
-pub fn start_server(app: AppHandle) {
-    let _ = APP_HANDLE.set(app);
+pub fn gateway_enabled() -> bool {
+    APP_HANDLE
+        .get()
+        .is_some_and(|app| crate::services::settings_store::external_plugin_gateway_enabled(app))
+}
 
-    if SERVER_STARTED.set(()).is_err() {
+pub fn configure_gateway(app: &AppHandle, enabled: bool) {
+    let _ = APP_HANDLE.set(app.clone());
+    crate::services::browser_selection::configure_gateway(enabled);
+    let Ok(mut server) = SERVER.lock() else {
+        return;
+    };
+    if !enabled {
+        if let Some(task) = server.take() {
+            task.abort();
+        }
+        clear_ide_context();
+        return;
+    }
+    if server.is_some() {
         return;
     }
 
-    std::thread::spawn(|| {
-        let listener = match TcpListener::bind(LISTEN_ADDRESS) {
-            Ok(listener) => listener,
-            Err(error) => {
-                tracing::warn!(
-                    provider = "local_api",
-                    address = LISTEN_ADDRESS,
-                    error = %error,
-                    "local API server failed to start"
-                );
-                return;
+    *server = Some(tauri::async_runtime::spawn(async {
+        let listener = loop {
+            match tokio::net::TcpListener::bind(LISTEN_ADDRESS).await {
+                Ok(listener) => break listener,
+                Err(error) => {
+                    tracing::warn!(address = LISTEN_ADDRESS, %error, "external plugin gateway bind failed");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
             }
         };
-        tracing::debug!(
-            provider = "local_api",
-            address = LISTEN_ADDRESS,
-            "local API server listening"
-        );
-
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    if let Err(error) = handle_connection(stream) {
-                        tracing::warn!(provider = "local_api", error = %error, "request failed");
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let result = tauri::async_runtime::spawn_blocking(move || {
+                        let stream = stream.into_std().map_err(|error| error.to_string())?;
+                        stream
+                            .set_nonblocking(false)
+                            .map_err(|error| error.to_string())?;
+                        handle_connection(stream)
+                    })
+                    .await;
+                    if let Ok(Err(error)) = result {
+                        tracing::warn!(provider = "local_api", %error, "request failed");
                     }
                 }
                 Err(error) => {
-                    tracing::warn!(provider = "local_api", error = %error, "accept failed");
+                    tracing::warn!(provider = "local_api", %error, "accept failed");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
-    });
+    }));
 }
 
 fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
@@ -195,6 +214,9 @@ fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
 
     let request = read_request(&stream)?;
+    if !gateway_enabled() {
+        return Ok(());
+    }
     let result = match request.path.as_str() {
         IDE_CONTEXT_PATH => receive_ide_payload(&request.body),
         ASK_IMAGE_PATH => receive_ask_image(&request.body),

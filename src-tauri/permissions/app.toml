@@ -3,7 +3,9 @@ identifier = "allow-app-commands"
 description = "Enables app info and updater install commands."
 commands.allow = [
     "get_app_info",
+    "workbench_terminal",
     "webview_gpu_disabled",
+    "apply_workbench_mica",
     "relaunch_app",
     "download_and_install_update",
 ]

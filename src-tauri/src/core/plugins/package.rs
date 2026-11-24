@@ -15,7 +15,7 @@ const SKIP_DIR_NAMES: &[&str] = &[".anya", "node_modules", "data", "bin"];
 
 /// True when `id` is a bundled official plugin that launch will overwrite.
 pub fn is_official_plugin_id(id: &str) -> bool {
-    OFFICIAL_PLUGIN_IDS.iter().any(|known| *known == id)
+    OFFICIAL_PLUGIN_IDS.contains(&id) || super::bundled::BUILTIN_PLUGIN_IDS.contains(&id)
 }
 
 /// Writes `{id}-{version}.anya-plugin.zip` (or `dest` when it already ends in `.zip`).
@@ -364,6 +364,7 @@ mod tests {
     fn official_ids_are_blocked() {
         assert!(is_official_plugin_id("terminal"));
         assert!(is_official_plugin_id("computer-use"));
+        assert!(!is_official_plugin_id("ai-gallery"));
         assert!(!is_official_plugin_id("pet-gallery"));
         assert!(!is_official_plugin_id("system-terminal"));
         assert!(!is_official_plugin_id("anya-cli"));

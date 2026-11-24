@@ -97,6 +97,7 @@
                 :message="activeEntry.message"
                 :language="settingStore.language"
                 :show-reasoning="settingStore.showReasoning"
+                :show-execution-process="settingStore.showExecutionProcess"
                 :display-mode="settingStore.agentWorkDisplay"
               />
             </div>

@@ -168,7 +168,7 @@
             :active-id="activeId"
             :wrap-lines="wrapLines"
             :view-mode="viewMode"
-            :active="active ?? true"
+            :active="active"
           />
         </section>
         <div
@@ -300,14 +300,17 @@ import type { ChatMessage } from "@/types/chat";
 type DiffViewMode = "unified" | "split";
 type ChangeEntry = CodeChangeEntry & { language: CodeLanguageInfo };
 
-const props = defineProps<{
-  messages: ChatMessage[];
-  width: number;
-  embedded?: boolean;
-  active?: boolean;
-  focusPath?: string;
-  focusAt?: number;
-}>();
+const props = withDefaults(
+  defineProps<{
+    messages: ChatMessage[];
+    width: number;
+    embedded?: boolean;
+    active?: boolean;
+    focusPath?: string;
+    focusAt?: number;
+  }>(),
+  { active: true },
+);
 const settingStore = useSettingStore();
 const activeId = ref("");
 const treeHidden = ref(localStorage.getItem("anya.diffTreeHidden") === "true");

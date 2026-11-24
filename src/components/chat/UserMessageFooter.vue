@@ -7,6 +7,7 @@ import ModelPicker from "@/components/chat/input/ModelPicker.vue";
 import OptionPicker from "@/components/chat/input/OptionPicker.vue";
 import { AppConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useComposerFooterDisplay } from "@/composables/chat/useComposerFooterDisplay";
+import { useSettingStore } from "@/stores/setting";
 import { fullApprovalConfirmOptions } from "@/services/chat/fullApprovalConfirm";
 import { tr } from "@/services/i18n";
 
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   send: [];
 }>();
 
+const settingStore = useSettingStore();
 const modeOpen = ref(false);
 const modelOpen = ref(false);
 const thinkingOpen = ref(false);
@@ -282,29 +284,44 @@ function onThinkingOpen(open: boolean) {
       </div>
 
       <span
-        v-if="conversationTokenCount || cacheHitPercent != null"
+        v-if="
+          (settingStore.showTokenBudget && conversationTokenCount) ||
+          (settingStore.showCacheHit && cacheHitPercent != null)
+        "
         class="conversation-token-meta"
       >
         <span
-          v-if="conversationTokenCount"
+          v-if="settingStore.showTokenBudget && conversationTokenCount"
           class="conversation-token-count"
           :title="conversationTokenTitle"
         >
           {{ formatTokenCount(conversationTokenCount, language) }}
         </span>
         <span
-          v-if="conversationTokenCount && cacheHitPercent != null"
+          v-if="
+            settingStore.showTokenBudget &&
+            conversationTokenCount &&
+            settingStore.showCacheHit &&
+            cacheHitPercent != null
+          "
           class="conversation-token-sep"
           aria-hidden="true"
         >
           |
         </span>
-        <span v-if="cacheHitPercent != null" class="conversation-cache-hit" :title="cacheHitTitle">
+        <span
+          v-if="settingStore.showCacheHit && cacheHitPercent != null"
+          class="conversation-cache-hit"
+          :title="cacheHitTitle"
+        >
           {{ cacheHitPercent }}%
         </span>
       </span>
 
-      <ContextUsageRing v-if="contextUsage.contextWindowTokens > 0" :usage="contextUsage" />
+      <ContextUsageRing
+        v-if="settingStore.showContextUsage && contextUsage.contextWindowTokens > 0"
+        :usage="contextUsage"
+      />
 
       <button
         type="button"

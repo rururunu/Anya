@@ -8,6 +8,7 @@ pub(crate) async fn init_all(pool: &SqlitePool) -> Result<(), String> {
     crate::core::chat::journal::init_journal_schema(pool).await?;
     crate::core::chat::journal::compact_recovery_journal(pool).await?;
     init_token_usage_schema(pool).await?;
+    crate::core::remote::delivery::init_schema(pool).await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS chat_permission_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
