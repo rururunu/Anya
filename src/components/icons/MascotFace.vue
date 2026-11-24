@@ -125,21 +125,13 @@
 </template>
 
 <script lang="ts">
-/** Items the mascot can hold; the caller maps app state (e.g. chat mode) onto these. */
-export type MascotTool = "phone" | "wrench" | "clipboard" | "brush";
-
-/**
- * Facial state, roughly mirroring an agent turn:
- * idle (blinks, follows) / thinking (eyes drift up) / working (eyes scan) /
- * talking (eyes pulse) / waiting (wide round eyes) / done (happy squint) / error (> < eyes).
- */
-export type MascotState =
-  "idle" | "thinking" | "working" | "talking" | "waiting" | "done" | "error";
+export type { MascotState, MascotTool } from "@/types/mascot";
 </script>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useEventListener } from "@vueuse/core";
+import type { MascotState, MascotTool } from "@/types/mascot";
 
 /**
  * The blob mascot's face: two pill eyes that follow the pointer while it is
